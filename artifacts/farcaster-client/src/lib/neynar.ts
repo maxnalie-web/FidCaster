@@ -375,17 +375,17 @@ export async function getFollowers(
   key: string,
   cursor?: string
 ): Promise<{ users: Array<{ user: NeynarUser }>; next?: { cursor: string } }> {
-  // Server proxy: Hub FIDs (no rate limit) + Neynar bulk profiles (cached)
+  // Server proxy: 100% Hub — FIDs + profiles, zero Neynar calls, no rate limit
   const q = new URLSearchParams({ fid: String(fid), viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
   try {
     const res = await fetch(`/api/farcaster/followers?${q}`, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(20000),
     });
     if (res.ok) return res.json();
   } catch { /* fall through */ }
-  // Fallback: direct Neynar
+  // Fallback: direct Neynar (only if server unavailable)
   const qd = new URLSearchParams({ fid: String(fid), limit: "50", viewer_fid: String(viewerFid) });
   if (cursor) qd.set("cursor", cursor);
   return neynar(`/farcaster/followers?${qd}`, "GET", key);
@@ -397,17 +397,17 @@ export async function getFollowing(
   key: string,
   cursor?: string
 ): Promise<{ users: Array<{ user: NeynarUser }>; next?: { cursor: string } }> {
-  // Server proxy: Hub FIDs (no rate limit) + Neynar bulk profiles (cached)
+  // Server proxy: 100% Hub — FIDs + profiles, zero Neynar calls, no rate limit
   const q = new URLSearchParams({ fid: String(fid), viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
   try {
     const res = await fetch(`/api/farcaster/following?${q}`, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(20000),
     });
     if (res.ok) return res.json();
   } catch { /* fall through */ }
-  // Fallback: direct Neynar
+  // Fallback: direct Neynar (only if server unavailable)
   const qd = new URLSearchParams({ fid: String(fid), limit: "50", viewer_fid: String(viewerFid) });
   if (cursor) qd.set("cursor", cursor);
   return neynar(`/farcaster/following?${qd}`, "GET", key);

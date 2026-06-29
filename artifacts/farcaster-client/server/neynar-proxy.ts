@@ -130,10 +130,11 @@ async function hubGenericProxy(req: Request, res: Response): Promise<void> {
   }
 }
 
-// ── Follow list via Hub FIDs + Neynar bulk profile lookup ────────────────────
-// Hub gives us follower/following FIDs with no rate limit (up to 1000/page).
-// We then batch-fetch profiles from Neynar (1 call per 100 users).
-// Result: 10k followers = ~10 Hub calls + ~100 Neynar calls vs 200 Neynar calls.
+// ── Follow list — 100% Hub, zero Neynar calls ────────────────────────────────
+// Step 1: Hub linksByFid / linksByTargetFid  → FIDs (free, no rate limit)
+// Step 2: Hub userDataByFid in parallel      → profiles (free, no rate limit)
+// viewer_context.following: true when viewing own following list (everyone listed
+// is being followed). Defaults false otherwise — Follow button is idempotent.
 
 type HubLinkMsg = {
   data?: {
@@ -142,14 +143,30 @@ type HubLinkMsg = {
   };
 };
 
+async function fetchHubProfile(fid: number): Promise<Record<string, unknown>> {
+  const cacheKey = `hub:user:${fid}`;
+  const cached = cacheGet(cacheKey);
+  if (cached !== undefined) {
+    const c = cached as { users?: Record<string, unknown>[] };
+    if (c.users?.[0]) return c.users[0];
+  }
+  const r = await fetch(`${HUB_BASE}/userDataByFid?fid=${fid}&pageSize=10`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!r.ok) return { fid, username: String(fid), display_name: String(fid), pfp_url: "", profile: { bio: { text: "" } } };
+  const data = await r.json() as { messages?: HubMsg[] };
+  const user = normalizeHubUser(fid, data.messages ?? []);
+  cacheSet(cacheKey, { users: [user] }, 300_000); // 5 min per profile
+  return user;
+}
+
 async function fetchFollowList(
   mode: "followers" | "following",
   fid: number,
   viewerFid: number,
-  apiKey: string,
   pageToken?: string
 ): Promise<{ users: { user: Record<string, unknown> }[]; next?: { cursor: string } }> {
-  // 1. Get FIDs from Hub (free, no rate limit)
+  // 1. Get FIDs from Hub
   const hubEndpoint = mode === "followers"
     ? `linksByTargetFid?target_fid=${fid}&link_type=follow&pageSize=100${pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : ""}`
     : `linksByFid?fid=${fid}&link_type=follow&pageSize=100${pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : ""}`;
@@ -164,45 +181,53 @@ async function fetchFollowList(
     .filter((f): f is number => typeof f === "number" && f > 0);
 
   const nextCursor = hubData.nextPageToken && hubData.nextPageToken !== "" ? hubData.nextPageToken : undefined;
-
   if (fids.length === 0) return { users: [], next: nextCursor ? { cursor: nextCursor } : undefined };
 
-  // 2. Batch fetch profiles from Neynar (up to 100 per request)
-  const q = new URLSearchParams({ fids: fids.join(","), viewer_fid: String(viewerFid), limit: "100" });
-  const profileRes = await fetch(`${NEYNAR_V2}/farcaster/user/bulk?${q}`, {
-    headers: { accept: "application/json", api_key: apiKey },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!profileRes.ok) throw new Error(`Neynar user/bulk error ${profileRes.status}`);
-  const profileData = await profileRes.json() as { users?: Record<string, unknown>[] };
+  // 2. Fetch profiles from Hub in parallel batches of 20
+  const BATCH = 20;
+  const profileMap = new Map<number, Record<string, unknown>>();
+  for (let i = 0; i < fids.length; i += BATCH) {
+    const batch = fids.slice(i, i + BATCH);
+    const results = await Promise.allSettled(batch.map(f => fetchHubProfile(f)));
+    results.forEach((r, idx) => {
+      if (r.status === "fulfilled") profileMap.set(batch[idx], r.value);
+    });
+  }
 
-  // Preserve Hub order (by follow time, newest first from pageToken)
-  const profileMap = new Map((profileData.users ?? []).map(u => [u.fid as number, u]));
+  // viewer_context: if viewing own following list, all entries are being followed
+  const ownFollowing = mode === "following" && fid === viewerFid;
+
   const users = fids
-    .map(f => profileMap.get(f))
-    .filter((u): u is Record<string, unknown> => u !== undefined)
-    .map(u => ({ user: u }));
+    .map(f => {
+      const profile = profileMap.get(f);
+      if (!profile) return undefined;
+      return {
+        user: {
+          ...profile,
+          viewer_context: { following: ownFollowing, followed_by: mode === "followers" },
+        },
+      };
+    })
+    .filter((u): u is { user: Record<string, unknown> } => u !== undefined);
 
   return { users, next: nextCursor ? { cursor: nextCursor } : undefined };
 }
 
 async function followListHandler(mode: "followers" | "following", req: Request, res: Response): Promise<void> {
-  const apiKey = process.env.NEYNAR_API_KEY;
-  if (!apiKey) { res.status(503).json({ error: "Neynar API key not configured." }); return; }
-
   const fid = Number(req.query.fid);
   const viewerFid = Number(req.query.viewer_fid ?? req.query.fid);
   if (!fid) { res.status(400).json({ error: "fid required" }); return; }
 
   const cursor = (req.query.cursor as string) || undefined;
-  const cacheKey = `follow:${mode}:${fid}:${viewerFid}:${cursor ?? ""}`;
+  // Cache key includes viewerFid only for viewer_context accuracy
+  const cacheKey = `follow:${mode}:${fid}:v${viewerFid}:${cursor ?? "start"}`;
 
   const hit = cacheGet(cacheKey);
   if (hit !== undefined) { res.setHeader("X-Cache", "HIT"); res.json(hit); return; }
 
   try {
-    const result = await fetchFollowList(mode, fid, viewerFid, apiKey, cursor);
-    cacheSet(cacheKey, result, 180_000); // 3 min cache
+    const result = await fetchFollowList(mode, fid, viewerFid, cursor);
+    cacheSet(cacheKey, result, 180_000); // 3 min page cache (profiles cached 5 min separately)
     res.setHeader("X-Cache", "MISS");
     res.json(result);
   } catch (e: unknown) {

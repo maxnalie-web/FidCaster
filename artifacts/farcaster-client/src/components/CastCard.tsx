@@ -69,6 +69,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const [recasted, setRecasted] = useState(cast.viewer_context?.recasted ?? false);
   const [showRecastMenu, setShowRecastMenu] = useState(false);
   const [showQuoteComposer, setShowQuoteComposer] = useState(false);
+  const [showReplyComposer, setShowReplyComposer] = useState(false);
   const recastMenuRef = useRef<HTMLDivElement>(null);
   const [likeCount, setLikeCount] = useState(cast.reactions.likes_count);
   const [recastCount, setRecastCount] = useState(cast.reactions.recasts_count);
@@ -386,7 +387,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
           {/* Reactions bar */}
           <div className="flex items-center gap-1 py-1 border-t border-border/60 -mx-1" onClick={(e) => e.stopPropagation()}>
             <button
-              onClick={() => {}}
+              onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer."); return; } setShowReplyComposer(true); }}
               className="flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-[hsl(210,100%,50%)] hover:bg-[hsl(210,100%,50%)]/10 transition-colors"
               title="Reply"
             >
@@ -657,6 +658,29 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             </div>
           </div>
       </div>
+
+      {showReplyComposer && createPortal(
+        <div className="fixed inset-0 z-[150] flex items-center justify-center" onClick={() => setShowReplyComposer(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h2 className="font-semibold text-sm text-foreground">Reply</h2>
+              <button onClick={() => setShowReplyComposer(false)} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <CastComposer
+              replyTo={cast}
+              onCanceled={() => setShowReplyComposer(false)}
+              onPublished={() => setShowReplyComposer(false)}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
 
       {showQuoteComposer && createPortal(
         <div className="fixed inset-0 z-[150] flex items-center justify-center" onClick={() => setShowQuoteComposer(false)}>
