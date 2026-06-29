@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { cacheGet, cacheSet } from "./cache.js";
-import { neynarThrottle, singleFlight } from "./neynar-limit.js";
+import { neynarThrottle, singleFlight, penalize429 } from "./neynar-limit.js";
 
 const NEYNAR_V2 = "https://api.neynar.com/v2";
 const HUB_BASE  = "https://hub.pinata.cloud/v1";
@@ -53,6 +53,7 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
         signal: AbortSignal.timeout(15_000),
       });
       if (!r.ok) {
+        if (r.status === 429) penalize429();
         const body = await r.json().catch(() => ({}));
         const err = new Error(`HTTP ${r.status}`) as Error & { status?: number; body?: unknown };
         err.status = r.status; err.body = body;
@@ -66,6 +67,10 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
     res.json(data);
   } catch (e: unknown) {
     const err = e as Error & { status?: number; body?: unknown };
+    if (err.status === 429) {
+      res.status(503).set("Retry-After", "5").json({ error: "Rate limit — retry in 5s" });
+      return;
+    }
     if (err.status) { res.status(err.status).json(err.body ?? { error: err.message }); return; }
     res.status(502).json({ error: e instanceof Error ? e.message : "Upstream error" });
   }
@@ -172,7 +177,7 @@ async function fetchFollowList(
         headers: { accept: "application/json", api_key: apiKey },
         signal: AbortSignal.timeout(15_000),
       });
-      if (!r.ok) { lastErr = new Error(`${mode} HTTP ${r.status}`); continue; }
+      if (!r.ok) { if (r.status === 429) penalize429(); lastErr = new Error(`${mode} HTTP ${r.status}`); continue; }
       const d = await r.json() as FollowPage;
       return { users: d.users ?? [], next: d.next ?? undefined };
     } catch (e) {
@@ -270,10 +275,33 @@ export function registerProxyRoutes(app: Express): void {
     void hubGenericProxy(req, res);
   });
 
-  // ── General Neynar read proxy (future use) ─────────────────────────────────
-  // /api/fc/* — requires /api/fc to be in Vite proxy config
+  // ── General Neynar read proxy ──────────────────────────────────────────────
   app.use("/api/fc", (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") { next(); return; }
     void neynarProxy(req, res);
+  });
+
+  // ── Warpcast mini-app discovery proxy (avoids browser CORS) ───────────────
+  app.get("/api/warpcast/discover-frames", async (_req: Request, res: Response) => {
+    const cacheKey = "warpcast:discover-frames";
+    const hit = cacheGet(cacheKey);
+    if (hit !== undefined) { res.setHeader("X-Cache", "HIT"); res.json(hit); return; }
+    try {
+      for (const url of ["https://client.warpcast.com/v2/discover-frames", "https://client.warpcast.com/v2/featured-frames"]) {
+        const r = await fetch(url, {
+          headers: { accept: "application/json", "User-Agent": "FarcasterClient/1.0" },
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!r.ok) continue;
+        const data = await r.json();
+        cacheSet(cacheKey, data, 300_000);
+        res.setHeader("X-Cache", "MISS");
+        res.json(data);
+        return;
+      }
+      res.status(404).json({ error: "Warpcast frames not available" });
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : "Upstream error" });
+    }
   });
 }

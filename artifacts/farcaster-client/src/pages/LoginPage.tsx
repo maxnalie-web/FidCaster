@@ -9,7 +9,7 @@ import {
   CheckCircle2, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useLandingStats, formatVolume, formatCount, formatUserCount } from "@/hooks/useLandingStats";
+import { useLandingStats, formatVolume, formatCount, formatUserCount, type MarketListing } from "@/hooks/useLandingStats";
 
 /* ─── Mock data ─── */
 const MOCK_FEED = [
@@ -40,14 +40,6 @@ const MOCK_FEED = [
   },
 ];
 
-const MOCK_LISTINGS = [
-  { fid: 42, price: "2.50", eth: "ETH", pct: "+12%", up: true, seller: "0x7c3a…ed12", age: "2h ago" },
-  { fid: 100, price: "0.85", eth: "ETH", pct: "-3%", up: false, seller: "0x2b1f…9c34", age: "4h ago" },
-  { fid: 1337, price: "0.12", eth: "ETH", pct: "+8%", up: true, seller: "0x8e4d…f502", age: "6h ago" },
-  { fid: 420, price: "0.45", eth: "ETH", pct: "+25%", up: true, seller: "0x1a9c…3b7e", age: "9h ago" },
-  { fid: 88, price: "0.33", eth: "ETH", pct: "0%", up: true, seller: "0x4f2a…d891", age: "11h ago" },
-  { fid: 69, price: "0.28", eth: "ETH", pct: "+4%", up: true, seller: "0x3e7b…c420", age: "13h ago" },
-];
 
 const MOCK_ACTIVITY = [
   { type: "sold" as const, fid: 234, price: "0.08 ETH", who: "0x1a2b…3c4d", time: "30s" },
@@ -370,9 +362,20 @@ function ActivityTicker() {
 }
 
 /* ─── FID listing card ─── */
-function ListingCard({ listing, index }: { listing: typeof MOCK_LISTINGS[0]; index: number }) {
+function ListingCard({ listing, index }: { listing: MarketListing; index: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-40px" });
+
+  const sellerShort = listing.seller.length >= 10
+    ? `${listing.seller.slice(0, 6)}…${listing.seller.slice(-4)}`
+    : listing.seller;
+  const ageMs = Date.now() - listing.listedAt * 1000;
+  const ageLabel = ageMs < 3_600_000
+    ? `${Math.floor(ageMs / 60_000)}m ago`
+    : ageMs < 86_400_000
+    ? `${Math.floor(ageMs / 3_600_000)}h ago`
+    : `${Math.floor(ageMs / 86_400_000)}d ago`;
+
   return (
     <motion.div
       ref={ref}
@@ -402,28 +405,29 @@ function ListingCard({ listing, index }: { listing: typeof MOCK_LISTINGS[0]; ind
             #{listing.fid}
           </div>
         </div>
-        <span className={cn("text-xs font-bold px-2 py-1 rounded-full",
-          listing.up ? "text-emerald-400" : "text-red-400")}
-          style={{
-            background: listing.up ? "rgba(52,211,153,0.12)" : "rgba(239,68,68,0.1)",
-            border: `1px solid ${listing.up ? "rgba(52,211,153,0.2)" : "rgba(239,68,68,0.2)"}`,
-          }}>
-          {listing.pct}
+        <span
+          className="text-xs font-bold px-2 py-1 rounded-full text-emerald-400"
+          style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.2)" }}
+        >
+          Listed
         </span>
       </div>
       <div className="flex items-end justify-between">
         <div>
           <div className="text-[10px] text-white/25 uppercase tracking-widest mb-0.5">Price</div>
-          <div className="text-white font-extrabold text-lg">{listing.price} <span className="text-white/40 text-sm font-normal">ETH</span></div>
+          <div className="text-white font-extrabold text-lg">
+            {parseFloat(listing.priceEth).toFixed(4)} <span className="text-white/40 text-sm font-normal">ETH</span>
+          </div>
         </div>
         <div className="text-right">
           <div className="text-[10px] text-white/25 mb-0.5">Seller</div>
-          <div className="text-white/40 text-xs font-mono">{listing.seller}</div>
-          <div className="text-white/20 text-[10px]">{listing.age}</div>
+          <div className="text-white/40 text-xs font-mono">{sellerShort}</div>
+          <div className="text-white/20 text-[10px]">{ageLabel}</div>
         </div>
       </div>
-      <button
-        className="mt-4 w-full py-2 rounded-xl text-xs font-bold transition-all duration-200 opacity-0 group-hover:opacity-100"
+      <a
+        href="/market"
+        className="mt-4 block w-full py-2 rounded-xl text-xs font-bold text-center transition-all duration-200 opacity-0 group-hover:opacity-100"
         style={{
           background: "rgba(124,58,237,0.25)",
           border: "1px solid rgba(124,58,237,0.4)",
@@ -431,7 +435,7 @@ function ListingCard({ listing, index }: { listing: typeof MOCK_LISTINGS[0]; ind
         }}
       >
         Buy on Optimism →
-      </button>
+      </a>
     </motion.div>
   );
 }
@@ -498,7 +502,8 @@ function SectionHeading({ tag, title, sub }: { tag: string; title: React.ReactNo
 ════════════════════════════════════════ */
 export function LoginPage() {
   const [, navigate] = useLocation();
-  const { market, network } = useLandingStats(90_000);
+  const { market, network, listings } = useLandingStats(90_000);
+  const displayListings = listings.filter(l => l.buyable).slice(0, 6);
 
   /* ── Derived live values (fall back to placeholder "—" until loaded) ── */
   const mktVolume   = market ? formatVolume(market.totalVolumeEth) : "—";
@@ -754,9 +759,15 @@ export function LoginPage() {
 
           {/* Listing grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {MOCK_LISTINGS.map((listing, i) => (
-              <ListingCard key={listing.fid} listing={listing} index={i} />
-            ))}
+            {displayListings.length > 0
+              ? displayListings.map((listing, i) => (
+                  <ListingCard key={listing.fid} listing={listing} index={i} />
+                ))
+              : Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="rounded-2xl p-5 animate-pulse"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", minHeight: 140 }} />
+                ))
+            }
           </div>
 
           {/* CTA */}

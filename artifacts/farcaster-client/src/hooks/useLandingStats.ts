@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 
+export interface MarketListing {
+  fid: number;
+  seller: string;
+  priceEth: string;
+  listedAt: number;
+  buyable: boolean;
+}
+
 export interface MarketStats {
   activeListings: number;
   totalListings: number;
@@ -20,6 +28,7 @@ export interface FarcasterNetworkStats {
 export interface LandingStats {
   market: MarketStats | null;
   network: FarcasterNetworkStats | null;
+  listings: MarketListing[];
   loading: boolean;
   error: string | null;
 }
@@ -51,6 +60,7 @@ export function useLandingStats(refreshIntervalMs = 60_000): LandingStats {
   const [state, setState] = useState<LandingStats>({
     market: null,
     network: null,
+    listings: [],
     loading: true,
     error: null,
   });
@@ -58,18 +68,24 @@ export function useLandingStats(refreshIntervalMs = 60_000): LandingStats {
 
   async function fetchAll() {
     try {
-      const [marketRes, networkRes] = await Promise.allSettled([
+      const [marketRes, networkRes, listingsRes] = await Promise.allSettled([
         fetch("/api/fid-market/stats").then(r => r.ok ? r.json() : null),
         fetch("/api/farcaster/network-stats").then(r => r.ok ? r.json() : null),
+        fetch("/api/fid-market/cached-listings").then(r => r.ok ? r.json() : null),
       ]);
 
       if (!mounted.current) return;
+
+      const rawListings = listingsRes.status === "fulfilled" && listingsRes.value
+        ? (listingsRes.value.listings as MarketListing[] ?? [])
+        : [];
 
       setState(prev => ({
         ...prev,
         loading: false,
         market: marketRes.status === "fulfilled" ? (marketRes.value as MarketStats | null) : prev.market,
         network: networkRes.status === "fulfilled" ? (networkRes.value as FarcasterNetworkStats | null) : prev.network,
+        listings: rawListings.length > 0 ? rawListings : prev.listings,
         error: null,
       }));
     } catch (e) {

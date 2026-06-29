@@ -409,16 +409,15 @@ function categoryFromUrl(url: string): string {
  *  4. Curated static list — always-available offline fallback
  */
 export async function fetchMiniApps(): Promise<MiniApp[]> {
-  // ── 1 & 2: Farcaster API (official mini-app / frames discovery source) ──
+  // ── 1: Server-proxied Warpcast discovery (avoids browser CORS) ──────────
   const warpcastEndpoints = [
-    "https://client.warpcast.com/v2/discover-frames",
-    "https://client.warpcast.com/v2/featured-frames",
+    "/api/warpcast/discover-frames",
   ];
 
   for (const endpoint of warpcastEndpoints) {
     try {
       const res = await fetch(endpoint, {
-        headers: { accept: "application/json", "User-Agent": "FarcasterClient/1.0" },
+        headers: { accept: "application/json" },
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) continue;

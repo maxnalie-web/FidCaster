@@ -6,6 +6,7 @@ import { FeedPanel } from "@/components/FeedPanel";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { SearchPanel } from "@/components/SearchPanel";
 import { WalletPanel } from "@/components/WalletPanel";
+import { MiniAppsPanel } from "@/components/MiniAppsPanel";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { FidSoldScreen } from "@/components/FidSoldScreen";
 import { FarcasterSignIn } from "@/components/FarcasterSignIn";
@@ -16,14 +17,14 @@ import {
   FileText, MessageSquare, Settings, Wallet,
   Plus, X, Loader2, CheckCircle2, Clock, UserCircle,
   Sun, Moon, AlertCircle, PenSquare, Copy,
-  MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft,
+  MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers,
 } from "lucide-react";
 import { createWalletClient, custom } from "viem";
 import { optimism } from "viem/chains";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-type MainTab = "feed" | "notifications" | "search" | "wallet" | "profile";
+type MainTab = "feed" | "notifications" | "search" | "wallet" | "profile" | "miniapps";
 type ProfileSection = "posts" | "settings";
 type SettingsTab = "username" | "signer";
 
@@ -31,6 +32,7 @@ const SIDEBAR_ITEMS: { id: MainTab; label: string; icon: typeof Home }[] = [
   { id: "feed",          label: "Home",          icon: Home },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "search",        label: "Search",        icon: Search },
+  { id: "miniapps",      label: "Mini Apps",     icon: Layers },
   { id: "wallet",        label: "Wallet",        icon: Wallet },
   { id: "profile",       label: "Profile",       icon: User },
 ];
@@ -38,7 +40,7 @@ const SIDEBAR_ITEMS: { id: MainTab; label: string; icon: typeof Home }[] = [
 const BOTTOM_NAV: { id: MainTab; icon: typeof Home }[] = [
   { id: "feed",          icon: Home },
   { id: "search",        icon: Search },
-  { id: "wallet",        icon: Wallet },
+  { id: "miniapps",      icon: Layers },
   { id: "notifications", icon: Bell },
   { id: "profile",       icon: User },
 ];
@@ -323,13 +325,14 @@ function ComposeModal({ onClose, onPublished }: { onClose: () => void; onPublish
 
 /* ─── Mobile Drawer ──────────────────────────────────────────────────────── */
 function MobileDrawer({
-  open, onClose, profile, fid, accounts, switchAccount, logout, theme, setTheme, onAddAccount, onOpenSettings, onNavigateToProfile,
+  open, onClose, profile, fid, accounts, switchAccount, removeAccount, logout, theme, setTheme, onAddAccount, onOpenSettings, onNavigateToProfile,
 }: {
   open: boolean; onClose: () => void;
   profile: { pfpUrl?: string; username?: string; bio?: string; displayName?: string } | null;
   fid: number;
   accounts: { fid: number; username?: string; pfpUrl?: string }[];
   switchAccount: (fid: number) => void;
+  removeAccount: (fid: number) => void;
   logout: () => void;
   theme: string; setTheme: (t: string) => void;
   onAddAccount: () => void; onOpenSettings: () => void;
@@ -386,25 +389,36 @@ function MobileDrawer({
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 mb-1">
               Accounts ({accounts.length})
             </p>
-            <div className="overflow-y-auto" style={{ maxHeight: "calc(40vh)" }}>
+            {/* cap to 4 rows */}
+            <div className="overflow-y-auto" style={{ maxHeight: "176px" }}>
               {accounts.map((acc) => (
-                <button
-                  key={acc.fid}
-                  onClick={() => { switchAccount(acc.fid); onClose(); }}
-                  className={cn(
-                    "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-full text-sm transition-colors",
-                    acc.fid === fid ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                <div key={acc.fid} className="flex items-center group">
+                  <button
+                    onClick={() => { switchAccount(acc.fid); onClose(); }}
+                    className={cn(
+                      "flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-full text-sm transition-colors min-w-0",
+                      acc.fid === fid ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    )}
+                  >
+                    <div className="w-7 h-7 rounded-full overflow-hidden bg-muted shrink-0">
+                      {acc.pfpUrl ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" loading="lazy" /> : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
+                    </div>
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="font-medium truncate">{acc.username || `FID ${acc.fid}`}</p>
+                      <p className="text-[10px] opacity-50 font-mono">FID {acc.fid}</p>
+                    </div>
+                    {acc.fid === fid && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                  </button>
+                  {acc.fid !== fid && (
+                    <button
+                      onClick={() => removeAccount(acc.fid)}
+                      className="shrink-0 mr-1 p-1.5 rounded-full opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                      title="Remove account"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   )}
-                >
-                  <div className="w-7 h-7 rounded-full overflow-hidden bg-muted shrink-0">
-                    {acc.pfpUrl ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" loading="lazy" /> : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="font-medium truncate">{acc.username || `FID ${acc.fid}`}</p>
-                    <p className="text-[10px] opacity-50 font-mono">FID {acc.fid}</p>
-                  </div>
-                  {acc.fid === fid && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
-                </button>
+                </div>
               ))}
             </div>
             <div className="h-px bg-border my-1.5 mx-2" />
@@ -437,38 +451,50 @@ function MobileDrawer({
 
 /* ─── Account Dropdown Panel ─────────────────────────────────────────────── */
 function AccountDropdownPanel({
-  accounts, currentFid, onSwitch, onAddAccount, onLogout,
+  accounts, currentFid, onSwitch, onAddAccount, onLogout, onRemoveAccount,
 }: {
   accounts: { fid: number; username?: string; pfpUrl?: string }[];
   currentFid: number;
   onSwitch: (fid: number) => void;
   onAddAccount: () => void;
   onLogout: () => void;
+  onRemoveAccount: (fid: number) => void;
 }) {
   return (
     <div className="absolute left-0 bottom-full mb-2 bg-popover border border-border rounded-2xl p-1.5 min-w-[240px] shadow-2xl z-50">
       <div className="px-2.5 py-1.5 mb-1">
         <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Accounts</p>
       </div>
-      <div className="overflow-y-auto" style={{ maxHeight: "min(60vh, 320px)" }}>
+      {/* cap to 4 rows visible (~36px each) */}
+      <div className="overflow-y-auto" style={{ maxHeight: "160px" }}>
         {accounts.map((acc) => (
-          <button
-            key={acc.fid}
-            onClick={() => { if (acc.fid !== currentFid) onSwitch(acc.fid); }}
-            className={cn(
-              "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-full text-xs transition-colors",
-              acc.fid === currentFid ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+          <div key={acc.fid} className="flex items-center group">
+            <button
+              onClick={() => { if (acc.fid !== currentFid) onSwitch(acc.fid); }}
+              className={cn(
+                "flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-full text-xs transition-colors min-w-0",
+                acc.fid === currentFid ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              )}
+            >
+              <div className="w-7 h-7 rounded-full overflow-hidden bg-muted shrink-0">
+                {acc.pfpUrl ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" loading="lazy" /> : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="font-semibold truncate">{acc.username || `FID ${acc.fid}`}</p>
+                <p className="opacity-60 font-mono text-[9px]">FID {acc.fid}</p>
+              </div>
+              {acc.fid === currentFid && <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />}
+            </button>
+            {acc.fid !== currentFid && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemoveAccount(acc.fid); }}
+                className="shrink-0 mr-1.5 p-1 rounded-full opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                title="Remove account"
+              >
+                <X className="w-3 h-3" />
+              </button>
             )}
-          >
-            <div className="w-7 h-7 rounded-full overflow-hidden bg-muted shrink-0">
-              {acc.pfpUrl ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" loading="lazy" /> : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className="font-semibold truncate">{acc.username || `FID ${acc.fid}`}</p>
-              <p className="opacity-60 font-mono text-[9px]">FID {acc.fid}</p>
-            </div>
-            {acc.fid === currentFid && <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />}
-          </button>
+          </div>
         ))}
       </div>
       <div className="h-px bg-border my-1" />
@@ -486,7 +512,7 @@ function AccountDropdownPanel({
 export function DashboardPage() {
   const {
     fid, profile, signerApproved, autoSignerLoading, signerError,
-    retrySignerSetup, accounts, logout, isLoading, addAccount, switchAccount,
+    retrySignerSetup, accounts, logout, isLoading, addAccount, switchAccount, removeAccount,
     fidSold, authMethod, isCheckingSession, error: walletError,
   } = useWallet();
   const [, navigate] = useLocation();
@@ -503,7 +529,7 @@ export function DashboardPage() {
     }
   }, [walletError]);
 
-  const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile"];
+  const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile", "miniapps"];
   const [mainTab, setMainTab] = useState<MainTab>(() => {
     try {
       const p = new URLSearchParams(window.location.search);
@@ -567,6 +593,8 @@ export function DashboardPage() {
         return <NotificationsPanel />;
       case "search":
         return <SearchPanel />;
+      case "miniapps":
+        return <MiniAppsPanel />;
       case "wallet":
         return <WalletPanel />;
       case "profile":
@@ -747,6 +775,7 @@ export function DashboardPage() {
               onSwitch={(f) => { switchAccount(f); setShowAccountMenu(false); }}
               onAddAccount={() => { setShowAddAccount(true); setShowAccountMenu(false); }}
               onLogout={() => { logout(); setShowAccountMenu(false); }}
+              onRemoveAccount={(f) => { void removeAccount(f); }}
             />
           )}
         </div>
@@ -842,6 +871,7 @@ export function DashboardPage() {
         fid={fidNum}
         accounts={accounts}
         switchAccount={switchAccount}
+        removeAccount={(f) => { void removeAccount(f); }}
         logout={logout}
         theme={theme}
         setTheme={setTheme}
