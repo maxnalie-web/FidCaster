@@ -124,8 +124,13 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
     navigate(`/profile/${user.fid}`);
   }
 
+  // Guards against overlapping loads (observer + tab-change firing at once),
+  // which would stall the list or insert duplicate rows.
+  const inFlightRef = useRef(false);
   const load = useCallback(
     async (tab: "followers" | "following", cur?: string) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
       const isFirst = !cur;
       if (isFirst) { setLoading(true); setUsers([]); setCursor(undefined); }
       else setLoadingMore(true);
@@ -133,12 +138,17 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
         const fn = tab === "followers" ? getFollowers : getFollowing;
         const res = await fn(fid, viewerFid, neynarKey, cur);
         const newUsers = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
-        setUsers((prev) => (isFirst ? newUsers : [...prev, ...newUsers]));
+        setUsers((prev) => {
+          if (isFirst) return newUsers;
+          const seen = new Set(prev.map((u) => u.fid));
+          return [...prev, ...newUsers.filter((u) => !seen.has(u.fid))];
+        });
         setCursor(res.next?.cursor);
       } catch { /* ignore */ }
       finally {
         if (isFirst) setLoading(false);
         else setLoadingMore(false);
+        inFlightRef.current = false;
       }
     },
     [fid, viewerFid, neynarKey]

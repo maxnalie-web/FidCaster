@@ -57,15 +57,19 @@ function formatCountFull(n: number): string {
 // Matches @mentions and http(s) URLs so we can linkify cast bodies.
 const MENTION_URL_RE = /(\bhttps?:\/\/[^\s<]+|@[a-zA-Z0-9_][a-zA-Z0-9_.-]*)/g;
 
-/** Renders cast text with clickable @mentions (→ profile) and URLs. */
+/** Renders cast text with clickable @mentions (→ profile) and URLs.
+ *  `onOpen` (if given) fires when the body text itself is clicked — used to open
+ *  the cast's thread. Mention/URL clicks stop propagation so they don't trigger it. */
 function CastBody({
   cast,
   navigate,
   className,
+  onOpen,
 }: {
   cast: NeynarCast;
   navigate: (p: string) => void;
   className?: string;
+  onOpen?: () => void;
 }) {
   const text = cast.text ?? "";
   const fidByName = new Map<string, number>();
@@ -112,7 +116,18 @@ function CastBody({
   }
   if (last < text.length) parts.push(text.slice(last));
 
-  return <p className={className}>{parts}</p>;
+  return (
+    <p
+      className={cn(className, onOpen && "cursor-pointer")}
+      onClick={onOpen ? (e) => {
+        // Ignore clicks that landed on a mention/link inside the text.
+        if ((e.target as HTMLElement).closest("a,button")) return;
+        onOpen();
+      } : undefined}
+    >
+      {parts}
+    </p>
+  );
 }
 
 type Props = {
@@ -371,6 +386,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
           {/* Cast text */}
           {cast.text && (
             <CastBody cast={cast} navigate={navigate}
+              onOpen={expanded ? undefined : () => navigate(`/cast/${cast.hash}`)}
               className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words mb-3" />
           )}
 
@@ -619,6 +635,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             {/* Cast text */}
             {cast.text && (
               <CastBody cast={cast} navigate={navigate}
+                onOpen={expanded ? undefined : () => navigate(`/cast/${cast.hash}`)}
                 className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words mb-2.5" />
             )}
 
