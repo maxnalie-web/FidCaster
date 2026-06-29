@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Heart, Repeat2, MessageCircle, User, ExternalLink, Loader2, X, ChevronLeft, ChevronRight, Trash2, MoreHorizontal, Check, Copy, Quote } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,67 @@ function formatCount(n: number): string {
 function formatCountFull(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return String(n);
+}
+
+// Matches @mentions and http(s) URLs so we can linkify cast bodies.
+const MENTION_URL_RE = /(\bhttps?:\/\/[^\s<]+|@[a-zA-Z0-9_][a-zA-Z0-9_.-]*)/g;
+
+/** Renders cast text with clickable @mentions (→ profile) and URLs. */
+function CastBody({
+  cast,
+  navigate,
+  className,
+}: {
+  cast: NeynarCast;
+  navigate: (p: string) => void;
+  className?: string;
+}) {
+  const text = cast.text ?? "";
+  const fidByName = new Map<string, number>();
+  for (const u of cast.mentioned_profiles ?? []) {
+    if (u.username) fidByName.set(u.username.toLowerCase(), u.fid);
+  }
+
+  const parts: ReactNode[] = [];
+  let last = 0;
+  let i = 0;
+  let m: RegExpExecArray | null;
+  MENTION_URL_RE.lastIndex = 0;
+  while ((m = MENTION_URL_RE.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("@")) {
+      const name = tok.slice(1).replace(/[.]+$/, "");
+      const fid = fidByName.get(name.toLowerCase());
+      parts.push(
+        <button
+          key={`m${i}`}
+          onClick={(e) => { e.stopPropagation(); if (fid) navigate(`/profile/${fid}`); }}
+          className="text-primary hover:underline font-medium"
+        >
+          @{name}
+        </button>
+      );
+    } else {
+      parts.push(
+        <a
+          key={`u${i}`}
+          href={tok}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-primary hover:underline break-all"
+        >
+          {tok.replace(/^https?:\/\//, "").slice(0, 40)}{tok.length > 47 ? "…" : ""}
+        </a>
+      );
+    }
+    last = m.index + tok.length;
+    i++;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+
+  return <p className={className}>{parts}</p>;
 }
 
 type Props = {
@@ -149,12 +210,9 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
     if (expanded) return;
     const target = e.target as HTMLElement;
     if (target.closest("button") || target.closest("a")) return;
-    // If this cast is a reply, open the parent thread and scroll to this cast
-    if (cast.parent_hash) {
-      navigate(`/cast/${cast.parent_hash}#${cast.hash}`);
-    } else {
-      navigate(`/cast/${cast.hash}`);
-    }
+    // Always open THIS cast's own thread — so clicking a comment opens the
+    // comment itself (its replies + mentions), not the parent it replied to.
+    navigate(`/cast/${cast.hash}`);
   }
 
   function copyLink() {
@@ -312,9 +370,8 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
           {/* Cast text */}
           {cast.text && (
-            <p className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words mb-3">
-              {cast.text}
-            </p>
+            <CastBody cast={cast} navigate={navigate}
+              className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words mb-3" />
           )}
 
           {/* Images */}
@@ -561,9 +618,8 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
             {/* Cast text */}
             {cast.text && (
-              <p className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words mb-2.5">
-                {cast.text}
-              </p>
+              <CastBody cast={cast} navigate={navigate}
+                className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words mb-2.5" />
             )}
 
             {/* Images */}

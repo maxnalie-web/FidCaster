@@ -95,6 +95,32 @@ async function neynar<T>(
   key: string,
   body?: unknown
 ): Promise<T> {
+  // Reads ALWAYS go through our Express proxy (/api/fc): the server holds the
+  // registered 300-RPM key and caches responses. The browser must never call
+  // api.neynar.com directly for reads — the client's fallback key is the public
+  // demo key (NEYNAR_API_DOCS = 6 req/60s = PUBLIC_TRIAL), which is the sole
+  // source of the rate-limit errors. Routing through the server eliminates them.
+  if (method === "GET") {
+    let proxied: Response | null = null;
+    try {
+      proxied = await fetch(`${PROXY_BASE}${path}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch {
+      proxied = null; // server unreachable → fall through to direct as last resort
+    }
+    if (proxied) {
+      if (proxied.ok) return proxied.json() as Promise<T>;
+      const err = await proxied.json().catch(() => ({}));
+      throw new Error(
+        (err as { error?: string; message?: string }).error ??
+        (err as { message?: string }).message ?? `HTTP ${proxied.status}`
+      );
+    }
+  }
+
   const res = await fetch(`${NEYNAR_BASE}${path}`, {
     method,
     headers: headers(key),

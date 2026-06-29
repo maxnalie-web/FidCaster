@@ -34,6 +34,9 @@ export type FarcasterProfile = {
 
 const FNAMES_API = "https://fnames.farcaster.xyz";
 const NEYNAR_BASE = "https://api.neynar.com/v2";
+// All reads go through the Express proxy (server's 300-RPM key + cache), never
+// the browser's weak demo key. See src/lib/neynar.ts for the full rationale.
+const PROXY_BASE = "/api/fc";
 
 function neynarKey(): string {
   try { return localStorage.getItem("fc_neynar_key") || "NEYNAR_API_DOCS"; } catch { return "NEYNAR_API_DOCS"; }
@@ -64,8 +67,8 @@ export async function fetchReactionCounts(
       const chunk = hashes.slice(i, i + CHUNK);
       const params = new URLSearchParams({ hashes: chunk.join(",") });
       if (viewerFid) params.set("viewer_fid", String(viewerFid));
-      const res = await fetch(`${NEYNAR_BASE}/farcaster/casts?${params}`, {
-        headers: { accept: "application/json", api_key: neynarKey() },
+      const res = await fetch(`${PROXY_BASE}/farcaster/casts?${params}`, {
+        headers: { accept: "application/json" },
         signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) continue;
@@ -118,8 +121,8 @@ export async function fetchProfile(fid: bigint): Promise<FarcasterProfile> {
   const fidNum = Number(fid);
   try {
     const params = new URLSearchParams({ fids: String(fidNum), viewer_fid: String(fidNum) });
-    const res = await fetch(`${NEYNAR_BASE}/farcaster/user/bulk?${params}`, {
-      headers: { accept: "application/json", api_key: neynarKey() },
+    const res = await fetch(`${PROXY_BASE}/farcaster/user/bulk?${params}`, {
+      headers: { accept: "application/json" },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -450,9 +453,9 @@ export async function fetchMiniApps(): Promise<MiniApp[]> {
   // ── 3: Neynar "frames" channel feed (community-shared mini apps) ────────
   try {
     const res = await fetch(
-      `${NEYNAR_BASE}/farcaster/feed/channels?channel_ids=frames&limit=50&with_recasts=false&with_replies=false`,
+      `${PROXY_BASE}/farcaster/feed/channels?channel_ids=frames&limit=50&with_recasts=false&with_replies=false`,
       {
-        headers: { accept: "application/json", api_key: neynarKey() },
+        headers: { accept: "application/json" },
         signal: AbortSignal.timeout(6000),
       }
     );
