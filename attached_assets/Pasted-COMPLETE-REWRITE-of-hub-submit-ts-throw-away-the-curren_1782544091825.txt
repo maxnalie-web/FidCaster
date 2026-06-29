@@ -1,0 +1,181 @@
+COMPLETE REWRITE of hub-submit.ts — throw away the current manual protobuf 
+implementation and replace with the official @farcaster/hub-nodejs library.
+
+The current code manually builds protobuf with encodeVarint/blake3/ed25519 
+which is broken. The official library handles all of this correctly.
+
+STEP 1 — Install on the SERVER side (not browser):
+npm install @farcaster/hub-nodejs
+
+STEP 2 — This is a BROWSER app (React/Vite). hub-nodejs does NOT work in 
+the browser. So we need a different approach:
+
+Create a SERVER API route that does the hub submission.
+The browser sends the action to our server, server uses hub-nodejs, 
+server submits to Snapchain.
+
+CREATE: server/farcaster-submit.ts (or api/farcaster/submit.ts)
+
+import {
+  makeCastAdd,
+  makeCastRemove, 
+  makeLinkAdd,
+  makeLinkRemove,
+  makeReactionAdd,
+  makeReactionRemove,
+  NobleEd25519Signer,
+  FarcasterNetwork,
+  getSSLHubRpcClient,
+} from '@farcaster/hub-nodejs';
+
+const HUB_URL = 'snapchain.neynar.com:2283';
+
+export async function submitFarcasterAction(
+  signerPrivateKeyHex: string,
+  fid: number,
+  action: {
+    type: 'like' | 'unlike' | 'recast' | 'unrecast' | 'follow' | 'unfollow' | 'cast',
+    castHash?: string,
+    castAuthorFid?: number,
+    targetFid?: number,
+    text?: string,
+  }
+) {
+  // Convert hex private key to Uint8Array
+  const privateKeyBytes = new Uint8Array(
+    Buffer.from(signerPrivateKeyHex.replace('0x', ''), 'hex')
+  );
+  
+  const signer = new NobleEd25519Signer(privateKeyBytes);
+  
+  const dataOptions = {
+    fid: fid,
+    network: FarcasterNetwork.MAINNET,
+  };
+
+  const hubClient = getSSLHubRpcClient(HUB_URL);
+  
+  let messageResult;
+  
+  if (action.type === 'like') {
+    const hashBytes = Buffer.from(action.castHash!.replace('0x',''), 'hex');
+    messageResult = await makeReactionAdd(
+      { type: 1, targetCastId: { fid: action.castAuthorFid!, hash: hashBytes } },
+      dataOptions, signer
+    );
+  } else if (action.type === 'unlike') {
+    const hashBytes = Buffer.from(action.castHash!.replace('0x',''), 'hex');
+    messageResult = await makeReactionRemove(
+      { type: 1, targetCastId: { fid: action.castAuthorFid!, hash: hashBytes } },
+      dataOptions, signer
+    );
+  } else if (action.type === 'recast') {
+    const hashBytes = Buffer.from(action.castHash!.replace('0x',''), 'hex');
+    messageResult = await makeReactionAdd(
+      { type: 2, targetCastId: { fid: action.castAuthorFid!, hash: hashBytes } },
+      dataOptions, signer
+    );
+  } else if (action.type === 'unrecast') {
+    const hashBytes = Buffer.from(action.castHash!.replace('0x',''), 'hex');
+    messageResult = await makeReactionRemove(
+      { type: 2, targetCastId: { fid: action.castAuthorFid!, hash: hashBytes } },
+      dataOptions, signer
+    );
+  } else if (action.type === 'follow') {
+    messageResult = await makeLinkAdd(
+      { type: 'follow', targetFid: action.targetFid! },
+      dataOptions, signer
+    );
+  } else if (action.type === 'unfollow') {
+    messageResult = await makeLinkRemove(
+      { type: 'follow', targetFid: action.targetFid! },
+      dataOptions, signer
+    );
+  } else if (action.type === 'cast') {
+    messageResult = await makeCastAdd(
+      { text: action.text!, embeds: [], embedsDeprecated: [], mentions: [], mentionsPositions: [] },
+      dataOptions, signer
+    );
+  }
+
+  if (!messageResult || messageResult.isErr()) {
+    throw new Error(`Failed to create message: ${messageResult?.error}`);
+  }
+
+  const submitResult = await hubClient.submitMessage(messageResult.value);
+  hubClient.close();
+  
+  if (submitResult.isErr()) {
+    throw new Error(`Hub rejected message: ${submitResult.error.message}`);
+  }
+  
+  return { hash: Buffer.from(submitResult.value.hash).toString('hex') };
+}
+
+STEP 3 — Create API endpoint: POST /api/farcaster/action
+
+Request body:
+{
+  signerPrivateKey: string,  // hex
+  fid: number,
+  action: { type, castHash?, castAuthorFid?, targetFid?, text? }
+}
+
+Call submitFarcasterAction() and return result.
+
+IMPORTANT SECURITY: This endpoint must only be callable by authenticated users.
+Check that the fid in the request matches the logged-in user's fid.
+
+STEP 4 — Update hub-submit.ts in the browser to call our API instead:
+
+export async function hubReact(fid, signer, castHash, castFid, type, opts) {
+  const res = await fetch('/api/farcaster/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      signerPrivateKey: Buffer.from(signer.privateKey).toString('hex'),
+      fid: Number(fid),
+      action: {
+        type: opts?.remove ? `un${type}` : type,
+        castHash,
+        castAuthorFid: castFid,
+      }
+    })
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function hubFollow(fid, signer, targetFid, opts) {
+  const res = await fetch('/api/farcaster/action', {
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      signerPrivateKey: Buffer.from(signer.privateKey).toString('hex'),
+      fid: Number(fid),
+      action: {
+        type: opts?.unfollow ? 'unfollow' : 'follow',
+        targetFid,
+      }
+    })
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function hubPublishCast(fid, signer, text, opts) {
+  const res = await fetch('/api/farcaster/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      signerPrivateKey: Buffer.from(signer.privateKey).toString('hex'),
+      fid: Number(fid),
+      action: { type: 'cast', text }
+    })
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+STEP 5 — Test:
+After implementation, test a like action and show me:
+1. The server logs
+2. The response from /api/farcaster/action
+3. Whether it succeeded or failed with exact error

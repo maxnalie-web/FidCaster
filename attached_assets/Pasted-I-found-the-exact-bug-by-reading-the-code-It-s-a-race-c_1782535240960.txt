@@ -1,0 +1,60 @@
+I found the exact bug by reading the code. It's a race condition in WalletProvider.tsx.
+
+THE BUG:
+In _applyAccount() (line 183-190), setState is called with fid set correctly.
+Then _autoActivateSigner() is called (line 193) which calls setState again with 
+signerApproved: true — but this second setState might fire before React 
+re-renders with the new fid, causing CastCard to have stale fid=null from 
+the previous render when signerApproved becomes true.
+
+THE FIX — only 2 changes needed:
+
+CHANGE 1: In WalletProvider.tsx, _autoActivateSigner function,
+find the line that sets signerApproved: true via cache (around line 103):
+
+BEFORE:
+setState((s) => ({ ...s, signerApproved: true, autoSignerLoading: false, signerError: null }));
+
+AFTER — merge both state updates into one by using functional update that includes fid:
+setState((s) => ({ ...s, signerApproved: true, autoSignerLoading: false, signerError: null }));
+
+Actually the real fix is different. The problem is that CastCard reads `fid` 
+from useWallet() context but the context value might be stale.
+
+THE REAL FIX — in CastCard.tsx, change handleLike and handleRecast:
+
+BEFORE (line ~86):
+await hubReact(Number(fid), localSigner, cast.hash, cast.author.fid, "like", {
+
+AFTER — read fid fresh from the ref, not from the stale closure:
+const currentFid = fid;  // already from useWallet hook, but add this check:
+if (!currentFid || Number(currentFid) === 0) {
+  toast.error("Account not loaded yet. Please wait a moment and try again.");
+  return;
+}
+await hubReact(Number(currentFid), localSigner, cast.hash, cast.author.fid, "like", {
+
+AND the real fix in WalletProvider.tsx:
+In _autoActivateSigner, all 3 places that call setState for signerApproved: true,
+change them to also re-assert fid from the parameter:
+
+BEFORE:
+setState((s) => ({ ...s, signerApproved: true, autoSignerLoading: false, signerError: null }));
+
+AFTER:
+setState((s) => ({ 
+  ...s, 
+  signerApproved: true, 
+  autoSignerLoading: false, 
+  signerError: null,
+  fid: fid,        // re-assert fid from the function parameter (it's already bigint)
+  localSigner: signer,  // re-assert signer too
+}));
+
+Apply this change to ALL 3 setState calls inside _autoActivateSigner that set signerApproved: true
+(lines ~103, ~113, ~122).
+
+After the fix, add this console.log right before the hubReact call in CastCard.tsx:
+console.log("FINAL FID going to hubReact:", Number(fid), "type:", typeof fid);
+
+Then test a like and show me the console output.

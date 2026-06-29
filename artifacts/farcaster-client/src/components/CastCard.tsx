@@ -1,0 +1,778 @@
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Heart, Repeat2, MessageCircle, User, ExternalLink, Loader2, X, ChevronLeft, ChevronRight, Trash2, MoreHorizontal, Check, Copy, Quote } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useWallet } from "@/hooks/useWallet";
+import { useLocation } from "wouter";
+import { hubReact, hubDeleteCast, neynarAction } from "@/lib/hub-submit";
+import { hasPowerBadge, getCastReactions, type NeynarCast, type NeynarUser, type NeynarEmbed } from "@/lib/neynar";
+import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
+import { CastComposer } from "@/components/CastComposer";
+import { toast } from "sonner";
+
+function timeAgo(ts: string): string {
+  const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+}
+
+function formatTimestamp(ts: string): string {
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const date = d.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+  return `${time} · ${date}`;
+}
+
+const IMAGE_EXT_RE = /\.(jpg|jpeg|png|gif|webp|avif|svg)(\?.*)?$/i;
+const IMAGE_DOMAINS = [
+  "imagedelivery.net", "media.warpcast.com", "i.imgur.com", "imgur.com",
+  "i.redd.it", "cdn.discordapp.com", "pbs.twimg.com", "0x0.st", "files.catbox.moe",
+];
+
+function isImageEmbed(e: NeynarEmbed): boolean {
+  const url = e.url ?? "";
+  if (!url) return false;
+  if (IMAGE_EXT_RE.test(url)) return true;
+  const ct = e.metadata?.content_type ?? "";
+  if (ct.startsWith("image/")) return true;
+  if (IMAGE_DOMAINS.some((d) => url.includes(d))) {
+    if (!url.match(/\.(html?|php|aspx?)(\?|$)/i)) return true;
+  }
+  return false;
+}
+
+function formatCount(n: number): string {
+  if (n === 0) return "";
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatCountFull(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+type Props = {
+  cast: NeynarCast;
+  viewerFid: number;
+  onViewProfile?: (user: NeynarUser) => void;
+  compact?: boolean;
+  expanded?: boolean;
+};
+
+export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: Props) {
+  const { fid, localSigner, signerUuid, signerApproved, autoSignerLoading, signerError, neynarKey } = useWallet();
+  const [, navigate] = useLocation();
+  const [liked, setLiked] = useState(cast.viewer_context?.liked ?? false);
+  const [recasted, setRecasted] = useState(cast.viewer_context?.recasted ?? false);
+  const [showRecastMenu, setShowRecastMenu] = useState(false);
+  const [showQuoteComposer, setShowQuoteComposer] = useState(false);
+  const recastMenuRef = useRef<HTMLDivElement>(null);
+  const [likeCount, setLikeCount] = useState(cast.reactions.likes_count);
+  const [recastCount, setRecastCount] = useState(cast.reactions.recasts_count);
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [recastLoading, setRecastLoading] = useState(false);
+  const [likeError, setLikeError] = useState(false);
+  const [recastError, setRecastError] = useState(false);
+  const [deleted, setDeleted] = useState(() => {
+    try {
+      const raw = localStorage.getItem("fc_deleted_casts");
+      const list: { hash: string; ts: number }[] = raw ? JSON.parse(raw) : [];
+      return list.some((e) => e.hash === cast.hash);
+    } catch { return false; }
+  });
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [lightbox, setLightbox] = useState<{ urls: string[]; idx: number } | null>(null);
+  const [reactionsModal, setReactionsModal] = useState<{ type: "likes" | "recasts"; users: NeynarUser[]; loading: boolean } | null>(null);
+
+  const canWrite = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(fid);
+  const isOwnCast = viewerFid > 0 && cast.author.fid === viewerFid;
+
+  useEffect(() => {
+    if (!showMenu) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showMenu]);
+
+  useEffect(() => {
+    if (!showRecastMenu) return;
+    function onClickOutside(e: MouseEvent) {
+      if (recastMenuRef.current && !recastMenuRef.current.contains(e.target as Node)) setShowRecastMenu(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showRecastMenu]);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+      if (e.key === "ArrowRight") setLightbox((lb) => lb && lb.idx < lb.urls.length - 1 ? { ...lb, idx: lb.idx + 1 } : lb);
+      if (e.key === "ArrowLeft") setLightbox((lb) => lb && lb.idx > 0 ? { ...lb, idx: lb.idx - 1 } : lb);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
+  function signerTooltip(): string {
+    if (autoSignerLoading) return "Registering your signer on-chain…";
+    if (signerError) return "Signer setup failed — open Wallet to retry";
+    if (!signerApproved) return "Open Wallet to set up your signer";
+    return "";
+  }
+
+  async function openReactions(type: "likes" | "recasts", e: React.MouseEvent) {
+    e.stopPropagation();
+    setReactionsModal({ type, users: [], loading: true });
+    try {
+      const data = await getCastReactions(cast.hash, type, neynarKey);
+      setReactionsModal({ type, users: data.reactions.map((r) => r.user), loading: false });
+    } catch {
+      setReactionsModal((prev) => prev ? { ...prev, loading: false } : null);
+    }
+  }
+
+  function goToProfile(user: NeynarUser) {
+    if (onViewProfile) onViewProfile(user);
+    else navigate(`/profile/${user.fid}`);
+  }
+
+  function openThread(e: React.MouseEvent) {
+    if (expanded) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button") || target.closest("a")) return;
+    // If this cast is a reply, open the parent thread and scroll to this cast
+    if (cast.parent_hash) {
+      navigate(`/cast/${cast.parent_hash}#${cast.hash}`);
+    } else {
+      navigate(`/cast/${cast.hash}`);
+    }
+  }
+
+  function copyLink() {
+    const url = `${window.location.origin}/cast/${cast.hash}`;
+    navigator.clipboard.writeText(url).then(() => toast.success("Link copied"));
+    setShowMenu(false);
+  }
+
+  function openExternal() {
+    const url = `https://farcaster.xyz/${cast.author.username}/${cast.hash.slice(0, 10)}`;
+    window.open(url, "_blank", "noreferrer");
+    setShowMenu(false);
+  }
+
+  async function handleLike() {
+    if (!fid || likeLoading) return;
+    if (!canWrite) {
+      toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer.");
+      return;
+    }
+    const wasLiked = liked;
+    setLiked(!wasLiked); setLikeCount((c) => c + (wasLiked ? -1 : 1));
+    setLikeLoading(true); setLikeError(false);
+    try {
+      if (localSigner) {
+        await hubReact(Number(fid), localSigner, cast.hash, cast.author.fid, "like", { remove: wasLiked, neynarKey });
+      } else if (signerUuid) {
+        await neynarAction(signerUuid, { type: wasLiked ? "unlike" : "like", castHash: cast.hash });
+      }
+    } catch (e) {
+      setLiked(wasLiked); setLikeCount((c) => c + (wasLiked ? 1 : -1)); setLikeError(true);
+      const msg = e instanceof Error ? e.message : "Like failed";
+      toast.error(msg.includes("SIGNER_NOT_REGISTERED") ? "Signer not registered — go to Profile → Settings → Signer." : msg.slice(0, 120));
+      setTimeout(() => setLikeError(false), 2000);
+    } finally { setLikeLoading(false); }
+  }
+
+  async function handleRecast() {
+    if (!fid || recastLoading) return;
+    if (!canWrite) {
+      toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer.");
+      return;
+    }
+    const wasRecasted = recasted;
+    setRecasted(!wasRecasted); setRecastCount((c) => c + (wasRecasted ? -1 : 1));
+    setRecastLoading(true); setRecastError(false);
+    try {
+      if (localSigner) {
+        await hubReact(Number(fid), localSigner, cast.hash, cast.author.fid, "recast", { remove: wasRecasted, neynarKey });
+      } else if (signerUuid) {
+        await neynarAction(signerUuid, { type: wasRecasted ? "unrecast" : "recast", castHash: cast.hash });
+      }
+    } catch (e) {
+      setRecasted(wasRecasted); setRecastCount((c) => c + (wasRecasted ? 1 : -1)); setRecastError(true);
+      const msg = e instanceof Error ? e.message : "Recast failed";
+      toast.error(msg.includes("SIGNER_NOT_REGISTERED") ? "Signer not registered." : msg.slice(0, 120));
+      setTimeout(() => setRecastError(false), 2000);
+    } finally { setRecastLoading(false); }
+  }
+
+  async function handleDelete() {
+    if (!fid || deleteLoading) return;
+    if (!signerApproved || (!localSigner && !signerUuid)) {
+      toast.error("Signer not active — wait for signer approval or reconnect with your recovery phrase.");
+      return;
+    }
+    setShowMenu(false); setDeleteLoading(true);
+    try {
+      if (localSigner) {
+        await hubDeleteCast(Number(fid), localSigner, cast.hash);
+      } else if (signerUuid) {
+        await neynarAction(signerUuid, { type: "delete-cast", castHash: cast.hash });
+      }
+      setDeleted(true);
+      try {
+        const raw = localStorage.getItem("fc_deleted_casts");
+        const list: { hash: string; ts: number }[] = raw ? JSON.parse(raw) : [];
+        const pruned = list.filter((e) => Date.now() - e.ts < 86_400_000);
+        pruned.push({ hash: cast.hash, ts: Date.now() });
+        localStorage.setItem("fc_deleted_casts", JSON.stringify(pruned));
+      } catch { /* storage full or private mode */ }
+      toast.success("Cast removed");
+    } catch (e) {
+      toast.error((e instanceof Error ? e.message : "Delete failed").slice(0, 120));
+    } finally { setDeleteLoading(false); }
+  }
+
+  if (deleted) return null;
+
+  const imageEmbeds = cast.embeds.filter(isImageEmbed);
+  const imageUrls = imageEmbeds.flatMap((e) => (e.url ? [e.url] : []));
+  const linkEmbeds = cast.embeds.filter((e) => e.url && !isImageEmbed(e) && !e.url.endsWith(".m3u8"));
+  const noWriteTitle = !canWrite ? signerTooltip() : undefined;
+
+  const replyCount = cast.replies.count;
+  const viewCount = (cast as NeynarCast & { reactions?: { views_count?: number } }).reactions?.views_count;
+
+  if (expanded) {
+    return (
+      <>
+        <div className="px-4 pt-4 pb-0">
+          {/* Author row */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <button onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }}>
+                <div className="w-11 h-11 rounded-full overflow-hidden bg-muted flex items-center justify-center hover:opacity-90 transition-opacity">
+                  {cast.author.pfp_url ? (
+                    <img src={cast.author.pfp_url} alt={cast.author.display_name} className="w-full h-full object-cover" loading="eager"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  ) : (
+                    <User className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }} className="text-left hover:opacity-80 transition-opacity">
+                <p className="font-bold text-[0.9375rem] text-foreground leading-tight">
+                  {cast.author.display_name || cast.author.username}
+                </p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[0.8125rem] text-muted-foreground">@{cast.author.username}</p>
+                  {hasPowerBadge(cast.author) && (
+                    <span title="Power Badge" className="shrink-0 inline-flex">
+                      <PowerBadgeIcon size={15} />
+                    </span>
+                  )}
+                </div>
+              </button>
+            </div>
+            {/* More menu */}
+            <div className="relative shrink-0" ref={menuRef}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v); }}
+                className="p-2 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              >
+                <MoreHorizontal className="w-5 h-5" />
+              </button>
+              {showMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-2xl shadow-2xl z-50 min-w-[180px] py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={copyLink} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors">
+                    <Copy className="w-4 h-4 text-muted-foreground" /> Copy link
+                  </button>
+                  {isOwnCast && (
+                    <>
+                      <div className="my-1 border-t border-border" />
+                      <button onClick={handleDelete} disabled={deleteLoading} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-destructive hover:bg-destructive/8 transition-colors disabled:opacity-50">
+                        {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        Delete cast
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Cast text */}
+          {cast.text && (
+            <p className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words mb-3">
+              {cast.text}
+            </p>
+          )}
+
+          {/* Images */}
+          {imageEmbeds.length > 0 && (
+            <div className={cn("mb-3 grid gap-0.5 rounded-2xl overflow-hidden", imageEmbeds.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+              {imageEmbeds.slice(0, 4).map((e, i) => (
+                <div key={i} className="overflow-hidden bg-muted cursor-zoom-in" style={{ maxHeight: 350 }}
+                  onClick={() => { if (e.url) setLightbox({ urls: imageUrls, idx: i }); }}>
+                  <img src={e.url} alt="" className="w-full h-full object-cover hover:opacity-95 transition-opacity" loading="lazy"
+                    onError={(el) => { const p = (el.target as HTMLImageElement).parentElement; if (p) p.style.display = "none"; }} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Link embeds */}
+          {linkEmbeds.length > 0 && (
+            <div className="mb-3">
+              {linkEmbeds.slice(0, 1).map((e, i) => (
+                <a key={i} href={e.url} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary/80 hover:text-primary hover:underline truncate max-w-full">
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{e.url}</span>
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Timestamp */}
+          <div className="py-3 border-t border-border/60">
+            <span className="text-[0.8125rem] text-muted-foreground">{formatTimestamp(cast.timestamp)}</span>
+          </div>
+
+          {/* Stats row */}
+          {(recastCount > 0 || likeCount > 0 || replyCount > 0) && (
+            <div className="flex items-center gap-4 py-3 border-t border-border/60 flex-wrap">
+              {recastCount > 0 && (
+                <button
+                  onClick={(e) => openReactions("recasts", e)}
+                  className="text-[0.9375rem] text-foreground hover:underline"
+                >
+                  <span className="font-bold">{formatCountFull(recastCount)}</span>
+                  <span className="text-muted-foreground ml-1">{recastCount === 1 ? "recast" : "recasts"}</span>
+                </button>
+              )}
+              {replyCount > 0 && (
+                <span className="text-[0.9375rem] text-foreground">
+                  <span className="font-bold">{formatCountFull(replyCount)}</span>
+                  <span className="text-muted-foreground ml-1">{replyCount === 1 ? "reply" : "replies"}</span>
+                </span>
+              )}
+              {likeCount > 0 && (
+                <button
+                  onClick={(e) => openReactions("likes", e)}
+                  className="text-[0.9375rem] text-foreground hover:underline"
+                >
+                  <span className="font-bold">{formatCountFull(likeCount)}</span>
+                  <span className="text-muted-foreground ml-1">{likeCount === 1 ? "like" : "likes"}</span>
+                </button>
+              )}
+              {viewCount && viewCount > 0 && (
+                <span className="text-[0.9375rem] text-foreground">
+                  <span className="font-bold">{formatCountFull(viewCount)}</span>
+                  <span className="text-muted-foreground ml-1">views</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Reactions bar */}
+          <div className="flex items-center gap-1 py-1 border-t border-border/60 -mx-1" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => {}}
+              className="flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-[hsl(210,100%,50%)] hover:bg-[hsl(210,100%,50%)]/10 transition-colors"
+              title="Reply"
+            >
+              <MessageCircle className="w-5 h-5" />
+            </button>
+            <div className="relative" ref={recastMenuRef}>
+              <button
+                onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
+                disabled={recastLoading}
+                title={noWriteTitle}
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-2.5 rounded-full transition-colors",
+                  recastError ? "text-destructive"
+                    : recasted ? "text-[hsl(145,63%,42%)] bg-[hsl(145,63%,42%)]/10"
+                    : "text-muted-foreground hover:text-[hsl(145,63%,42%)] hover:bg-[hsl(145,63%,42%)]/10",
+                  recastLoading && "opacity-40 cursor-default"
+                )}
+              >
+                {recastLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Repeat2 className="w-5 h-5" />}
+              </button>
+              {showRecastMenu && (
+                <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-xl shadow-2xl z-50 min-w-[140px] py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => { setShowRecastMenu(false); handleRecast(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <Repeat2 className="w-4 h-4 text-[hsl(145,63%,42%)]" />
+                    {recasted ? "Undo Recast" : "Recast"}
+                  </button>
+                  <button
+                    onClick={() => { setShowRecastMenu(false); setShowQuoteComposer(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <Quote className="w-4 h-4 text-primary" />
+                    Quote Cast
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleLike}
+              disabled={!canWrite || likeLoading}
+              title={noWriteTitle}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-2.5 rounded-full transition-colors",
+                likeError ? "text-destructive"
+                  : liked ? "text-rose-500 bg-rose-500/10"
+                  : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
+                (!canWrite || likeLoading) && "opacity-40 cursor-default"
+              )}
+            >
+              {likeLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Heart className={cn("w-5 h-5", liked && "fill-current")} />}
+            </button>
+          </div>
+        </div>
+
+        {lightbox && createPortal(
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/92 backdrop-blur-md" onClick={() => setLightbox(null)}>
+            <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={() => setLightbox(null)}>
+              <X className="w-5 h-5" />
+            </button>
+            {lightbox.urls.length > 1 && (
+              <>
+                <button className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-30"
+                  disabled={lightbox.idx === 0}
+                  onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, idx: lb.idx - 1 } : lb); }}>
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-30"
+                  disabled={lightbox.idx === lightbox.urls.length - 1}
+                  onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, idx: lb.idx + 1 } : lb); }}>
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+            <img src={lightbox.urls[lightbox.idx]} alt="" className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+            {lightbox.urls.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {lightbox.urls.map((_, i) => (
+                  <button key={i}
+                    className={`w-1.5 h-1.5 rounded-full transition-all ${i === lightbox.idx ? "bg-white scale-125" : "bg-white/40"}`}
+                    onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, idx: i } : lb); }} />
+                ))}
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div
+        className={cn(
+          "group border-b border-border hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors duration-150 cursor-pointer px-4 py-3"
+        )}
+        onClick={openThread}
+      >
+        <div className="flex-1 min-w-0">
+            {/* Author row */}
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2 min-w-0">
+                {/* Avatar inline with name */}
+                <button className="shrink-0" onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }}>
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center hover:opacity-90 transition-opacity">
+                    {cast.author.pfp_url ? (
+                      <img src={cast.author.pfp_url} alt={cast.author.display_name} className="w-full h-full object-cover" loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ) : (
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </div>
+                </button>
+                <div className="flex items-center gap-1 min-w-0 flex-wrap">
+                <button
+                  onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }}
+                  className="font-semibold text-[0.9375rem] text-foreground hover:underline truncate"
+                >
+                  {cast.author.display_name || cast.author.username}
+                </button>
+                <span className="text-[0.875rem] text-muted-foreground truncate hidden sm:inline">@{cast.author.username}</span>
+                {hasPowerBadge(cast.author) && (
+                  <span title="Power Badge" className="shrink-0 inline-flex">
+                    <PowerBadgeIcon size={15} />
+                  </span>
+                )}
+                <span className="text-muted-foreground/50 text-sm shrink-0">·</span>
+                <span className="text-[0.875rem] text-muted-foreground shrink-0">{timeAgo(cast.timestamp)}</span>
+                </div>
+              </div>
+
+              {/* More menu — always visible for all casts */}
+              <div className="relative shrink-0 ml-1" ref={menuRef}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v); }}
+                  className="p-1.5 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {showMenu && (
+                  <div
+                    className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-2xl shadow-2xl z-50 min-w-[180px] py-1 overflow-hidden"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={copyLink}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <Copy className="w-4 h-4 text-muted-foreground" />
+                      Copy link
+                    </button>
+                    {isOwnCast && (
+                      <>
+                        <div className="my-1 border-t border-border" />
+                        <button
+                          onClick={handleDelete}
+                          disabled={deleteLoading}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-destructive hover:bg-destructive/8 transition-colors disabled:opacity-50"
+                        >
+                          {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                          Delete cast
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Cast text */}
+            {cast.text && (
+              <p className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words mb-2.5">
+                {cast.text}
+              </p>
+            )}
+
+            {/* Images */}
+            {imageEmbeds.length > 0 && (
+              <div className={cn("mb-2.5 grid gap-0.5 rounded-2xl overflow-hidden", imageEmbeds.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+                {imageEmbeds.slice(0, 4).map((e, i) => (
+                  <div key={i} className="overflow-hidden bg-muted cursor-zoom-in" style={{ maxHeight: 300 }}
+                    onClick={(ev) => { ev.stopPropagation(); if (e.url) setLightbox({ urls: imageUrls, idx: i }); }}>
+                    <img src={e.url} alt="" className="w-full h-full object-cover hover:opacity-95 transition-opacity" loading="lazy"
+                      onError={(el) => { const p = (el.target as HTMLImageElement).parentElement; if (p) p.style.display = "none"; }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Link embeds */}
+            {linkEmbeds.length > 0 && (
+              <div className="mb-2.5">
+                {linkEmbeds.slice(0, 1).map((e, i) => (
+                  <a key={i} href={e.url} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()}
+                    className="inline-flex items-center gap-1.5 text-sm text-primary/80 hover:text-primary hover:underline truncate max-w-full">
+                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{e.url}</span>
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {/* Reactions */}
+            <div className="flex items-center gap-1 -ml-1.5" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => navigate(`/cast/${cast.hash}`)}
+                className="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-muted-foreground hover:text-[hsl(210,100%,50%)] hover:bg-[hsl(210,100%,50%)]/10 transition-colors text-sm"
+                title="Reply"
+              >
+                <MessageCircle className="w-[18px] h-[18px]" />
+                {cast.replies.count > 0 && <span className="text-[0.8125rem]">{formatCount(cast.replies.count)}</span>}
+              </button>
+
+              <div className="relative" ref={recastMenuRef}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
+                  disabled={recastLoading}
+                  title={noWriteTitle}
+                  className={cn(
+                    "flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors text-sm",
+                    recastError ? "text-destructive"
+                      : recasted ? "text-[hsl(145,63%,42%)] bg-[hsl(145,63%,42%)]/10"
+                      : "text-muted-foreground hover:text-[hsl(145,63%,42%)] hover:bg-[hsl(145,63%,42%)]/10",
+                    recastLoading && "opacity-40 cursor-default"
+                  )}
+                >
+                  {recastLoading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Repeat2 className="w-[18px] h-[18px]" />}
+                  {recastCount > 0 && <span className="text-[0.8125rem]">{formatCount(recastCount)}</span>}
+                </button>
+                {showRecastMenu && (
+                  <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-xl shadow-2xl z-50 min-w-[140px] py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => { setShowRecastMenu(false); handleRecast(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <Repeat2 className="w-4 h-4 text-[hsl(145,63%,42%)]" />
+                      {recasted ? "Undo Recast" : "Recast"}
+                    </button>
+                    <button
+                      onClick={() => { setShowRecastMenu(false); setShowQuoteComposer(true); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <Quote className="w-4 h-4 text-primary" />
+                      Quote Cast
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={handleLike}
+                disabled={!canWrite || likeLoading}
+                title={noWriteTitle}
+                className={cn(
+                  "flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors text-sm",
+                  likeError ? "text-destructive"
+                    : liked ? "text-rose-500 bg-rose-500/10"
+                    : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
+                  (!canWrite || likeLoading) && "opacity-40 cursor-default"
+                )}
+              >
+                {likeLoading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Heart className={cn("w-[18px] h-[18px]", liked && "fill-current")} />}
+                {likeCount > 0 && <span className="text-[0.8125rem]">{formatCount(likeCount)}</span>}
+              </button>
+
+            </div>
+          </div>
+      </div>
+
+      {showQuoteComposer && createPortal(
+        <div className="fixed inset-0 z-[150] flex items-center justify-center" onClick={() => setShowQuoteComposer(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h2 className="font-semibold text-sm text-foreground">Quote Cast</h2>
+              <button onClick={() => setShowQuoteComposer(false)} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <CastComposer
+              quoteCast={cast}
+              onCanceled={() => setShowQuoteComposer(false)}
+              onPublished={() => setShowQuoteComposer(false)}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {lightbox && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/92 backdrop-blur-md" onClick={() => setLightbox(null)}>
+          <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={() => setLightbox(null)}>
+            <X className="w-5 h-5" />
+          </button>
+          {lightbox.urls.length > 1 && (
+            <>
+              <button className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-30"
+                disabled={lightbox.idx === 0}
+                onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, idx: lb.idx - 1 } : lb); }}>
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-30"
+                disabled={lightbox.idx === lightbox.urls.length - 1}
+                onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, idx: lb.idx + 1 } : lb); }}>
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
+          <img src={lightbox.urls[lightbox.idx]} alt="" className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+          {lightbox.urls.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {lightbox.urls.map((_, i) => (
+                <button key={i}
+                  className={`w-1.5 h-1.5 rounded-full transition-all ${i === lightbox.idx ? "bg-white scale-125" : "bg-white/40"}`}
+                  onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, idx: i } : lb); }} />
+              ))}
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {reactionsModal && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center"
+          onClick={() => setReactionsModal(null)}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full sm:max-w-sm bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[70vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-border shrink-0">
+              <h2 className="font-semibold text-sm text-foreground capitalize">
+                {reactionsModal.type === "likes" ? "Liked by" : "Recasted by"}
+              </h2>
+              <button
+                onClick={() => setReactionsModal(null)}
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 py-1">
+              {reactionsModal.loading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                </div>
+              ) : reactionsModal.users.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-10">No one yet</p>
+              ) : (
+                reactionsModal.users.map((u) => (
+                  <button
+                    key={u.fid}
+                    onClick={() => { setReactionsModal(null); navigate(`/profile/${u.fid}`); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/40 transition-colors text-left"
+                  >
+                    {u.pfp_url ? (
+                      <img src={u.pfp_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold text-foreground truncate">{u.display_name || u.username}</span>
+                        {hasPowerBadge(u) && <PowerBadgeIcon size={14} />}
+                      </div>
+                      <span className="text-xs text-muted-foreground">@{u.username}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">{u.follower_count >= 1000 ? `${(u.follower_count / 1000).toFixed(1)}k` : u.follower_count} followers</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}

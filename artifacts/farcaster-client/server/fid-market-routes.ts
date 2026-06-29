@@ -1,0 +1,770 @@
+import type { Express } from "express";
+import rateLimit from "express-rate-limit";
+import {
+  createPublicClient, createWalletClient, http, fallback, formatEther, parseTransaction,
+  type Address,
+} from "viem";
+import { optimism } from "viem/chains";
+
+const VALID_ETH_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const VALID_HEX_STRING = /^0x[0-9a-fA-F]+$/;
+
+function isValidAddress(addr: unknown): addr is `0x${string}` {
+  return typeof addr === "string" && VALID_ETH_ADDRESS.test(addr);
+}
+
+function isValidHex(hex: unknown): hex is `0x${string}` {
+  return typeof hex === "string" && VALID_HEX_STRING.test(hex);
+}
+
+const marketReadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+const marketWriteLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+// Read at call time so env loaded in index.ts is visible (module-level const would be stale)
+function getNeynarKey() { return process.env.NEYNAR_API_KEY || ""; }
+export const FID_MARKET_ADDRESS = "0xcc11C0Bc08bbF8A5C0AAca80E884C6c7CC0eE3c3" as const;
+const ID_REGISTRY_ADDRESS = "0x00000000Fc6c5F01Fc30151999387Bb99A9f489b" as const;
+const FEE_BPS = 900;
+
+const optimismClient = createPublicClient({
+  chain: optimism,
+  transport: fallback(
+    [
+      "https://mainnet.optimism.io",
+      "https://optimism.llamarpc.com",
+      "https://1rpc.io/op",
+      "https://optimism.drpc.org",
+      "https://optimism-rpc.publicnode.com",
+    ].map((url) => http(url, { timeout: 15000, retryCount: 2 })),
+    { rank: true }
+  ),
+});
+
+// Dedicated lightweight client for contract reads (avoids rank-probe overhead during scans)
+const readClient = createPublicClient({
+  chain: optimism,
+  transport: http("https://mainnet.optimism.io", { timeout: 10000, retryCount: 3 }),
+});
+
+const idRegistryAbi = [
+  {
+    name: "idOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "fid", type: "uint256" }],
+  },
+  {
+    name: "custodyOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "fid", type: "uint256" }],
+    outputs: [{ name: "owner", type: "address" }],
+  },
+] as const;
+
+const fidMarketAbi = [
+  {
+    name: "listings",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "fid", type: "uint256" }],
+    outputs: [
+      { name: "seller", type: "address" },
+      { name: "priceWei", type: "uint256" },
+      { name: "fromDeadline", type: "uint256" },
+      { name: "fromSig", type: "bytes" },
+      { name: "listedAt", type: "uint64" },
+    ],
+  },
+  {
+    name: "credits",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "addr", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "paused",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+// Real on-chain topic hashes (verified from live logs — event names in bytecode differ from ABI guesses)
+const LISTED_TOPIC   = "0xfb1726c338f0dfd05a26a0e8764ed02544cf83687d8d0f82eb3e177d35e47c4e" as `0x${string}`;
+const CANCELLED_TOPIC = "0x26deca31ff8139a06c52453ce8985d34f7648a6d9af1d283c4063d052c355a0f" as `0x${string}`;
+// Bought topic candidates (no trades yet; will auto-detect from first real trade)
+const BOUGHT_TOPIC_CANDIDATES: `0x${string}`[] = [
+  "0x39a259c9be698827d9b797bc664b90f310b0f58f7f74df05f0be40a8283ec222",
+  "0xa3b62bc36326052d97ea62d63c3d60308ed4c3ea8ac079dd8499f1e9c4f80c0f",
+  "0x9e2f5c2330afb3c7cfcf473e62546420851afccbeaf15b45b799f048243170aa",
+  "0x44d6d25963f097ad14f29f06854a01f575648a1ef82f30e562ccd3889717e339",
+  "0x592a032e7884ba506196d55a5fc14b6dd3f8f1a70beaf433d32006136a513758",
+  "0xa58eabed0d7a06e6be26cc28514851bd33923b7a87a3c6674166ebac5ba12430",
+];
+let confirmedBoughtTopic: `0x${string}` | null = null;
+
+export interface CachedListing {
+  fid: number;
+  seller: string;
+  priceWei: string;
+  priceEth: string;
+  fromDeadline: number;
+  listedAt: number;
+  active: boolean;
+  sigExpired: boolean;
+  listingExpired: boolean;
+  buyable: boolean;
+}
+
+export interface CachedTrade {
+  fid: number;
+  seller: string;
+  buyer: string;
+  priceWei: string;
+  priceEth: string;
+  feeWei: string;
+  blockNumber: number;
+  transactionHash: string;
+}
+
+export interface CachedActivity {
+  type: "listed" | "sold" | "cancelled";
+  fid: number;
+  seller: string;
+  buyer?: string;
+  priceWei: string;
+  priceEth: string;
+  blockNumber: number;
+  transactionHash: string;
+}
+
+let listingsCache: CachedListing[] = [];
+let listingsCacheTime = 0;
+let tradesCache: CachedTrade[] = [];
+let tradesCacheTime = 0;
+let totalTradedEth = "0";
+let activityCache: CachedActivity[] = [];
+let trackedFids = new Set<number>();
+const MAX_TRACKED_FIDS = 50_000;
+
+// Generic TTL cache for expensive lookups (Neynar profile, wallet→FID, per-FID data)
+class TtlCache<V> {
+  private store = new Map<string, { value: V; exp: number }>();
+  constructor(private ttlMs: number) {}
+  get(key: string): V | undefined {
+    const e = this.store.get(key);
+    if (!e) return undefined;
+    if (Date.now() > e.exp) { this.store.delete(key); return undefined; }
+    return e.value;
+  }
+  set(key: string, value: V) { this.store.set(key, { value, exp: Date.now() + this.ttlMs }); }
+  size() { return this.store.size; }
+  prune() { const now = Date.now(); for (const [k, v] of this.store) if (now > v.exp) this.store.delete(k); }
+}
+
+const fidInfoCache  = new TtlCache<unknown>(5 * 60_000);   // Neynar profiles — 5 min
+const walletFidCache = new TtlCache<number | null>(10 * 60_000); // wallet→FID — 10 min
+const fidDataCache  = new TtlCache<unknown>(30_000);         // per-FID listing — 30 s
+
+// Prune expired entries every 10 minutes
+setInterval(() => { fidInfoCache.prune(); walletFidCache.prune(); fidDataCache.prune(); }, 10 * 60_000);
+let initialScanDone = false;
+let lastScannedBlock = BigInt(0);
+
+const INITIAL_SCAN_RANGE = BigInt(50_000);
+const EVENT_SCAN_RANGE = BigInt(50_000);
+const LOG_CHUNK_SIZE = BigInt(5_000);
+let isRefreshingListings = false;
+
+async function getLogsRaw(fromBlock: bigint, toBlock: bigint, chunkSize: bigint, topic: `0x${string}`) {
+  const logs: any[] = [];
+  let from = fromBlock;
+  while (from <= toBlock) {
+    const to = from + chunkSize - 1n > toBlock ? toBlock : from + chunkSize - 1n;
+    try {
+      const chunk = await optimismClient.getLogs({
+        address: FID_MARKET_ADDRESS,
+        topics: [[topic]],
+        fromBlock: from,
+        toBlock: to,
+      });
+      logs.push(...chunk);
+    } catch(err: any) {
+      console.error(`[FidMarket] getLogsRaw chunk ${from}-${to} topic=${topic.slice(0,10)} err:`, err?.shortMessage || err?.message);
+    }
+    from = to + 1n;
+  }
+  return logs;
+}
+
+function parseFidFromTopic(t: string): number {
+  try { return Number(BigInt(t)); } catch { return 0; }
+}
+function parseAddressFromTopic(t: string): string {
+  return ("0x" + t.slice(26)).toLowerCase();
+}
+
+async function readFidListing(fid: number): Promise<CachedListing | null> {
+  try {
+    const result = await readClient.readContract({
+      address: FID_MARKET_ADDRESS,
+      abi: fidMarketAbi,
+      functionName: "listings",
+      args: [BigInt(fid)],
+    });
+    const [seller, priceWei, fromDeadline, , listedAt] = result as [string, bigint, bigint, unknown, bigint];
+    if (!seller || seller === "0x0000000000000000000000000000000000000000") return null;
+    const now = Math.floor(Date.now() / 1000);
+    const deadlineNum = Number(fromDeadline);
+    const listedAtNum = Number(listedAt);
+    const sigExpired = deadlineNum > 0 && deadlineNum < now;
+    const listingExpired = listedAtNum > 0 && now - listedAtNum > 7 * 24 * 3600;
+    const active = !!seller && seller !== "0x0000000000000000000000000000000000000000";
+    const buyable = active && !sigExpired && !listingExpired && priceWei > BigInt(0);
+    return {
+      fid,
+      seller: seller.toLowerCase(),
+      priceWei: priceWei.toString(),
+      priceEth: formatEther(priceWei),
+      fromDeadline: deadlineNum,
+      listedAt: listedAtNum,
+      active,
+      sigExpired,
+      listingExpired,
+      buyable,
+    };
+  } catch (err: any) {
+    console.error(`[FidMarket] readFidListing(${fid}) error:`, err?.shortMessage || err?.message || err);
+    return null;
+  }
+}
+
+// Raw activity snapshots — merged into activityCache after both refreshes run
+let _pendingListedActivity: CachedActivity[] = [];
+let _pendingCancelledActivity: CachedActivity[] = [];
+let _pendingSoldActivity: CachedActivity[] = [];
+
+function rebuildActivity() {
+  // Keep only Listed events with a real price (priceWei > 0).
+  // Listed events with priceWei=0 are internal state-reset side-effects of cancel().
+  const realListings = _pendingListedActivity.filter(e => BigInt(e.priceWei) > 0n);
+
+  // Collect txHashes that produced a real listing.
+  // list() first cancels any existing listing (emitting Cancelled) then emits Listed —
+  // all in the same transaction. Those Cancelled events are NOT user-initiated cancels;
+  // they're a re-list. Filter them out so only standalone cancels appear in the feed.
+  const relistTxHashes = new Set(realListings.map(e => e.transactionHash));
+  const realCancels = _pendingCancelledActivity.filter(
+    e => !relistTxHashes.has(e.transactionHash)
+  );
+
+  const merged = [...realListings, ..._pendingSoldActivity, ...realCancels];
+  merged.sort((a, b) => b.blockNumber - a.blockNumber);
+
+  // Deduplicate by transactionHash+type (guards against overlapping scan windows)
+  const seen = new Set<string>();
+  activityCache = merged.filter(e => {
+    const key = `${e.transactionHash}:${e.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 100);
+}
+
+async function refreshListings() {
+  if (isRefreshingListings) return;
+  isRefreshingListings = true;
+  try {
+    const currentBlock = await optimismClient.getBlockNumber();
+    const range = initialScanDone ? EVENT_SCAN_RANGE : INITIAL_SCAN_RANGE;
+    const scanFrom = currentBlock > range ? currentBlock - range : BigInt(0);
+
+    // Use verified raw topic hashes (event names in bytecode differ from ABI guesses)
+    const [listedLogs, cancelledLogs] = await Promise.all([
+      getLogsRaw(scanFrom, currentBlock, LOG_CHUNK_SIZE, LISTED_TOPIC),
+      getLogsRaw(scanFrom, currentBlock, LOG_CHUNK_SIZE, CANCELLED_TOPIC),
+    ]);
+    if (!initialScanDone) initialScanDone = true;
+
+    // Listed log: topics[1]=fid, topics[2]=seller, data=priceWei
+    const listedActivity: CachedActivity[] = [];
+    for (const log of listedLogs) {
+      const fid = log.topics?.[1] ? parseFidFromTopic(log.topics[1]) : 0;
+      if (fid <= 0) continue;
+      if (trackedFids.size < MAX_TRACKED_FIDS) trackedFids.add(fid);
+      const seller = log.topics?.[2] ? parseAddressFromTopic(log.topics[2]) : "";
+      const priceWei = log.data && log.data.length >= 66 ? BigInt("0x" + log.data.slice(2, 66)) : 0n;
+      listedActivity.push({
+        type: "listed", fid, seller,
+        priceWei: priceWei.toString(), priceEth: formatEther(priceWei),
+        blockNumber: Number(log.blockNumber), transactionHash: log.transactionHash || "",
+      });
+    }
+
+    // Cancelled log: topics[1]=fid OR fid in data
+    const cancelledActivity: CachedActivity[] = [];
+    for (const log of cancelledLogs) {
+      let fid = 0;
+      let seller = "";
+      if (log.topics?.[1]) {
+        fid = parseFidFromTopic(log.topics[1]);
+        seller = log.topics?.[2] ? parseAddressFromTopic(log.topics[2]) : "";
+      } else if (log.data && log.data.length >= 66) {
+        fid = Number(BigInt("0x" + log.data.slice(2, 66)));
+      }
+      if (fid <= 0) continue;
+      if (trackedFids.size < MAX_TRACKED_FIDS) trackedFids.add(fid);
+      cancelledActivity.push({
+        type: "cancelled", fid, seller,
+        priceWei: "0", priceEth: "0",
+        blockNumber: Number(log.blockNumber), transactionHash: log.transactionHash || "",
+      });
+    }
+
+    _pendingListedActivity = listedActivity;
+    _pendingCancelledActivity = cancelledActivity;
+
+    // Check ALL tracked FIDs on-chain — readFidListing returns null for delisted ones
+    const fidsToCheck = Array.from(trackedFids);
+    const results: CachedListing[] = [];
+    for (let i = 0; i < fidsToCheck.length; i += 10) {
+      const batch = fidsToCheck.slice(i, i + 10);
+      const settled = await Promise.allSettled(batch.map(fid => readFidListing(fid)));
+      for (const r of settled) {
+        if (r.status === "fulfilled" && r.value && r.value.active) results.push(r.value);
+      }
+    }
+
+    listingsCache = results;
+    listingsCacheTime = Date.now();
+    console.log(`[FidMarket] Listings: ${results.length} active`);
+  } catch (err) {
+    console.error("[FidMarket] Listings refresh error:", err);
+  } finally {
+    isRefreshingListings = false;
+  }
+}
+
+async function refreshTrades() {
+  try {
+    const currentBlock = await optimismClient.getBlockNumber();
+    const scanFrom = currentBlock > EVENT_SCAN_RANGE ? currentBlock - EVENT_SCAN_RANGE : BigInt(0);
+
+    // Scan all Bought topic candidates until one returns logs (auto-detects the real topic)
+    let boughtLogs: any[] = [];
+    const topicsToTry = confirmedBoughtTopic
+      ? [confirmedBoughtTopic]
+      : BOUGHT_TOPIC_CANDIDATES;
+
+    for (const topic of topicsToTry) {
+      const logs = await getLogsRaw(scanFrom, currentBlock, LOG_CHUNK_SIZE, topic);
+      if (logs.length === 0) continue;
+
+      // Validate that at least one log has the expected Bought structure:
+      // topics[1]=fid (non-zero), topics[2]=seller, topics[3]=buyer
+      const isValidBoughtLog = logs.some((log: any) => {
+        const fid = log.topics?.[1] ? parseFidFromTopic(log.topics[1]) : 0;
+        const hasSeller = typeof log.topics?.[2] === "string" && log.topics[2].length === 66;
+        const hasBuyer  = typeof log.topics?.[3] === "string" && log.topics[3].length === 66;
+        return fid > 0 && fid < 1_000_000_000 && hasSeller && hasBuyer;
+      });
+      if (!isValidBoughtLog) continue;
+
+      if (!confirmedBoughtTopic) {
+        confirmedBoughtTopic = topic;
+        console.log(`[FidMarket] Confirmed Bought topic: ${topic}`);
+      }
+      boughtLogs = logs;
+      break;
+    }
+
+    // Bought log: topics[1]=fid, topics[2]=seller, topics[3]=buyer (all indexed), data=priceWei+feeWei
+    const allBought: CachedTrade[] = boughtLogs.map((log: any) => {
+      const fid = log.topics?.[1] ? parseFidFromTopic(log.topics[1]) : 0;
+      const seller = log.topics?.[2] ? parseAddressFromTopic(log.topics[2]) : "";
+      const buyer = log.topics?.[3] ? parseAddressFromTopic(log.topics[3]) : "";
+      let priceWei = 0n;
+      let feeWei = 0n;
+      if (log.data && log.data.length >= 130) {
+        priceWei = BigInt("0x" + log.data.slice(2, 66));
+        feeWei = BigInt("0x" + log.data.slice(66, 130));
+      } else if (log.data && log.data.length >= 66) {
+        priceWei = BigInt("0x" + log.data.slice(2, 66));
+      }
+      return {
+        fid, seller, buyer,
+        priceWei: priceWei.toString(),
+        priceEth: formatEther(priceWei),
+        feeWei: feeWei.toString(),
+        blockNumber: Number(log.blockNumber),
+        transactionHash: log.transactionHash || "",
+      };
+    // Only real purchases: fid > 0, priceWei > 0, and buyer address present
+    }).filter(t => t.fid > 0 && BigInt(t.priceWei) > 0n && t.buyer !== "").reverse();
+
+    for (const t of allBought) { if (trackedFids.size < MAX_TRACKED_FIDS) trackedFids.add(t.fid); }
+
+    let total = BigInt(0);
+    for (const t of allBought) total += BigInt(t.priceWei);
+    totalTradedEth = formatEther(total);
+    tradesCache = allBought.slice(0, 50);
+    tradesCacheTime = Date.now();
+    lastScannedBlock = currentBlock;
+
+    // Build sold activity entries
+    _pendingSoldActivity = allBought.map(t => ({
+      type: "sold" as const,
+      fid: t.fid, seller: t.seller, buyer: t.buyer,
+      priceWei: t.priceWei, priceEth: t.priceEth,
+      blockNumber: t.blockNumber, transactionHash: t.transactionHash,
+    }));
+
+    console.log(`[FidMarket] Trades: ${allBought.length}, total: ${totalTradedEth} ETH`);
+  } catch (err) {
+    console.error("[FidMarket] Trades refresh error:", err);
+  }
+}
+
+async function neynarFetch(endpoint: string) {
+  const res = await fetch(`https://api.neynar.com${endpoint}`, {
+    headers: { accept: "application/json", "api_key": getNeynarKey() },
+    signal: AbortSignal.timeout(8000),
+  });
+  return res;
+}
+
+type FidInfo = { username: string | null; displayName: string | null; pfpUrl: string | null };
+
+async function getFidInfo(fid: number): Promise<FidInfo | null> {
+  const key = String(fid);
+  const cached = fidInfoCache.get(key) as FidInfo | undefined;
+  if (cached) return cached;
+  try {
+    const res = await neynarFetch(`/v2/farcaster/user/bulk?fids=${fid}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const user = data.users?.[0];
+    if (!user) return null;
+    const info: FidInfo = { username: user.username || null, displayName: user.display_name || null, pfpUrl: user.pfp_url || null };
+    fidInfoCache.set(key, info);
+    return info;
+  } catch { return null; }
+}
+
+async function getFidsInfoBulk(fids: number[]) {
+  const results: Record<number, FidInfo> = {};
+  const uncached: number[] = [];
+  for (const fid of fids) {
+    const c = fidInfoCache.get(String(fid)) as FidInfo | undefined;
+    if (c) results[fid] = c;
+    else uncached.push(fid);
+  }
+  if (uncached.length > 0) {
+    try {
+      const res = await neynarFetch(`/v2/farcaster/user/bulk?fids=${uncached.join(",")}`);
+      if (res.ok) {
+        const data = await res.json();
+        for (const user of data.users || []) {
+          const info: FidInfo = { username: user.username || null, displayName: user.display_name || null, pfpUrl: user.pfp_url || null };
+          results[user.fid] = info;
+          fidInfoCache.set(String(user.fid), info);
+        }
+      }
+    } catch {}
+    for (const fid of uncached) {
+      if (!results[fid]) results[fid] = { username: null, displayName: null, pfpUrl: null };
+    }
+  }
+  return results;
+}
+
+export function registerFidMarketRoutes(app: Express) {
+  app.get("/api/fid-market/stats", marketReadLimiter, (_req, res) => {
+    const activeListings = listingsCache.filter(l => l.active && l.buyable);
+    const allActive = listingsCache.filter(l => l.active);
+
+    let totalPriceWei = BigInt(0);
+    for (const l of activeListings) {
+      try { totalPriceWei += BigInt(l.priceWei); } catch {}
+    }
+    const avgPriceEth = activeListings.length > 0
+      ? parseFloat(formatEther(totalPriceWei / BigInt(activeListings.length))).toFixed(4)
+      : "0";
+
+    const minPriceEth = activeListings.length > 0
+      ? Math.min(...activeListings.map(l => parseFloat(l.priceEth))).toFixed(4)
+      : "0";
+
+    res.json({
+      activeListings: activeListings.length,
+      totalListings: allActive.length,
+      totalVolumeEth: parseFloat(totalTradedEth).toFixed(4),
+      totalTrades: tradesCache.length,
+      feeBps: FEE_BPS,
+      feePercent: (FEE_BPS / 100).toFixed(0),
+      avgPriceEth,
+      minPriceEth,
+      lastUpdated: Math.max(listingsCacheTime, tradesCacheTime),
+      isReady: initialScanDone,
+    });
+  });
+
+  app.get("/api/fid-market/cached-listings", marketReadLimiter, (_req, res) => {
+    res.json({ listings: listingsCache, lastUpdated: listingsCacheTime, feeBps: FEE_BPS });
+  });
+
+  app.get("/api/fid-market/cached-trades", marketReadLimiter, (_req, res) => {
+    res.json({ trades: tradesCache, totalTradedEth, totalTradedCount: tradesCache.length, lastUpdated: tradesCacheTime });
+  });
+
+  app.get("/api/fid-market/activity", marketReadLimiter, (_req, res) => {
+    res.json({ activity: activityCache, lastUpdated: tradesCacheTime });
+  });
+
+  app.get("/api/fid-market/fid-info", marketReadLimiter, async (req, res) => {
+    const fid = parseInt(req.query.fid as string, 10);
+    if (!fid || fid <= 0 || fid >= 1_000_000_000) return res.status(400).json({ error: "Valid FID required" });
+    const info = await getFidInfo(fid);
+    res.json({ fid, ...(info || { username: null, displayName: null, pfpUrl: null }) });
+  });
+
+  app.get("/api/fid-market/fid-info-bulk", marketReadLimiter, async (req, res) => {
+    const fidsParam = req.query.fids as string;
+    if (!fidsParam || typeof fidsParam !== "string") return res.status(400).json({ error: "fids required" });
+    const fids = fidsParam.split(",").map(Number).filter(f => Number.isInteger(f) && f > 0 && f < 1_000_000_000).slice(0, 50);
+    if (fids.length === 0) return res.status(400).json({ error: "Valid FIDs required" });
+
+    // getFidsInfoBulk reads/writes per-FID cache entries internally
+    const results = await getFidsInfoBulk(fids);
+    res.json(results);
+  });
+
+  app.get("/api/fid-market/fid-data/:fid", marketReadLimiter, async (req, res) => {
+    const fid = parseInt(req.params.fid, 10);
+    if (!fid || fid <= 0 || fid >= 1_000_000_000) return res.status(400).json({ error: "Valid FID required" });
+
+    const cached = fidDataCache.get(String(fid));
+    if (cached) return res.json(cached);
+
+    try {
+      const [listing, ownerResult] = await Promise.allSettled([
+        readFidListing(fid),
+        optimismClient.readContract({
+          address: ID_REGISTRY_ADDRESS,
+          abi: idRegistryAbi,
+          functionName: "custodyOf",
+          args: [BigInt(fid)],
+        }),
+      ]);
+
+      const listingData = listing.status === "fulfilled" ? listing.value : null;
+      const owner = ownerResult.status === "fulfilled" ? (ownerResult.value as string).toLowerCase() : "0x0000000000000000000000000000000000000000";
+
+      let paused = false;
+      try {
+        paused = await optimismClient.readContract({ address: FID_MARKET_ADDRESS, abi: fidMarketAbi, functionName: "paused" }) as boolean;
+      } catch {}
+
+      const payload = {
+        fid,
+        owner,
+        listing: listingData || { active: false },
+        buyable: listingData?.buyable ?? false,
+        sigExpired: listingData?.sigExpired ?? false,
+        listingExpired: listingData?.listingExpired ?? false,
+        paused,
+        feeBps: FEE_BPS,
+        marketAddress: FID_MARKET_ADDRESS,
+      };
+      fidDataCache.set(String(fid), payload);
+      res.json(payload);
+    } catch (err) {
+      console.error("[FidMarket] fid-data error:", err);
+      res.status(500).json({ error: "Failed to fetch FID data" });
+    }
+  });
+
+  app.get("/api/fid-market/wallet-fid", marketReadLimiter, async (req, res) => {
+    const address = req.query.address as string;
+    if (!isValidAddress(address)) return res.status(400).json({ error: "Valid Ethereum address required (0x + 40 hex chars)" });
+    const normalizedAddress = address.toLowerCase() as Address;
+
+    const cachedFid = walletFidCache.get(normalizedAddress);
+    if (cachedFid !== undefined) {
+      if (cachedFid === null || cachedFid === 0) return res.json({ fid: 0, found: false });
+      const info = fidInfoCache.get(String(cachedFid));
+      if (info) return res.json({ fid: cachedFid, found: true, ...(info as object) });
+    }
+
+    try {
+      const fid = await optimismClient.readContract({
+        address: ID_REGISTRY_ADDRESS,
+        abi: idRegistryAbi,
+        functionName: "idOf",
+        args: [normalizedAddress],
+      }) as bigint;
+      const fidNum = Number(fid);
+      walletFidCache.set(normalizedAddress, fidNum);
+      if (fidNum === 0) return res.json({ fid: 0, found: false });
+      const info = await getFidInfo(fidNum);
+      fidInfoCache.set(String(fidNum), info);
+      res.json({ fid: fidNum, found: true, ...info });
+    } catch (err) {
+      res.status(500).json({ error: "FID lookup failed" });
+    }
+  });
+
+  app.get("/api/fid-market/id-nonce/:fid", marketReadLimiter, async (req, res) => {
+    try {
+      const fidNum = parseInt(req.params.fid, 10);
+      if (!Number.isInteger(fidNum) || fidNum <= 0 || fidNum >= 1_000_000_000) {
+        return res.status(400).json({ error: "Invalid FID" });
+      }
+      const fid = BigInt(fidNum);
+      const nonce = await optimismClient.readContract({
+        address: ID_REGISTRY_ADDRESS,
+        abi: [{ name: "nonces", type: "function", stateMutability: "view", inputs: [{ name: "fid", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] }] as const,
+        functionName: "nonces",
+        args: [fid],
+      });
+      res.json({ nonce: nonce.toString() });
+    } catch (err: any) {
+      console.error("[id-nonce]", err);
+      res.status(500).json({ error: err.shortMessage || err.message || "nonce fetch failed" });
+    }
+  });
+
+  app.post("/api/fid-market/track-fid", marketWriteLimiter, async (req, res) => {
+    const { fid } = req.body;
+    if (!fid || typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0 || fid >= 1_000_000_000) {
+      return res.status(400).json({ error: "Valid FID required" });
+    }
+    if (trackedFids.size >= MAX_TRACKED_FIDS && !trackedFids.has(fid)) {
+      return res.status(429).json({ error: "Tracked FID limit reached" });
+    }
+    trackedFids.add(fid);
+    refreshListings().then(rebuildActivity);
+    res.json({ tracked: true, fid });
+  });
+
+  app.post("/api/fid-market/prepare-tx", marketWriteLimiter, async (req, res) => {
+    try {
+      const { from, to, data, value } = req.body as {
+        from: Address; to: Address; data: `0x${string}`; value?: string;
+      };
+      if (!isValidAddress(from) || !isValidAddress(to)) {
+        return res.status(400).json({ error: "from and to must be valid Ethereum addresses" });
+      }
+      if (data !== undefined && !isValidHex(data)) {
+        return res.status(400).json({ error: "data must be a hex string starting with 0x" });
+      }
+      if (value !== undefined && (typeof value !== "string" || !/^\d+$/.test(value))) {
+        return res.status(400).json({ error: "value must be a decimal string" });
+      }
+
+      let valueBig: bigint;
+      try {
+        valueBig = value ? BigInt(value) : BigInt(0);
+      } catch {
+        return res.status(400).json({ error: "Invalid value" });
+      }
+
+      const [nonce, fees] = await Promise.all([
+        optimismClient.getTransactionCount({ address: from }),
+        optimismClient.estimateFeesPerGas(),
+      ]);
+
+      // estimateGas simulates the call — if it throws, the tx will revert on-chain.
+      // Propagate the revert reason immediately instead of silently falling back.
+      let gasEstimate: bigint;
+      try {
+        gasEstimate = await optimismClient.estimateGas({
+          account: from,
+          to,
+          data: data || "0x",
+          value: valueBig,
+        });
+      } catch (gasErr: any) {
+        const reason =
+          gasErr?.cause?.reason ||
+          gasErr?.shortMessage ||
+          gasErr?.message ||
+          "Transaction would revert";
+        console.error("[prepare-tx] estimateGas revert:", reason);
+        return res.status(400).json({ error: reason });
+      }
+
+      const gas = (gasEstimate * BigInt(130)) / BigInt(100);
+
+      res.json({
+        nonce,
+        maxFeePerGas: fees.maxFeePerGas?.toString() ?? "2000000000",
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas?.toString() ?? "1000000",
+        gas: gas.toString(),
+        chainId: optimism.id,
+      });
+    } catch (err: any) {
+      console.error("[prepare-tx]", err);
+      res.status(500).json({ error: err.shortMessage || err.message || "prepare failed" });
+    }
+  });
+
+  const RELAY_WHITELIST = new Set([FID_MARKET_ADDRESS.toLowerCase()]);
+  app.post("/api/fid-market/relay-tx", marketWriteLimiter, async (req, res) => {
+    try {
+      const { rawTx } = req.body as { rawTx: `0x${string}` };
+      if (!rawTx || !isValidHex(rawTx) || rawTx.length < 4) {
+        return res.status(400).json({ error: "rawTx must be a valid hex-encoded signed transaction" });
+      }
+
+      let parsedTo: string | undefined;
+      try {
+        const parsed = parseTransaction(rawTx);
+        parsedTo = parsed.to?.toLowerCase();
+      } catch {
+        return res.status(400).json({ error: "Could not parse transaction" });
+      }
+      if (!parsedTo || !RELAY_WHITELIST.has(parsedTo)) {
+        return res.status(403).json({ error: "Transaction target not whitelisted" });
+      }
+
+      const txHash = await optimismClient.request({
+        method: "eth_sendRawTransaction",
+        params: [rawTx],
+      });
+
+      res.json({ txHash });
+    } catch (err: any) {
+      console.error("[relay-tx]", err);
+      res.status(500).json({ error: err.shortMessage || err.message || "relay failed" });
+    }
+  });
+
+  startIndexer();
+}
+
+function startIndexer() {
+  console.log("[FidMarket] Starting indexer...");
+  Promise.all([refreshListings(), refreshTrades()]).then(() => {
+    rebuildActivity();
+    console.log(`[FidMarket] Initial scan done. Tracked FIDs: ${trackedFids.size}`);
+  });
+  setInterval(() => { Promise.all([refreshListings(), refreshTrades()]).then(rebuildActivity); }, 30_000);
+}
