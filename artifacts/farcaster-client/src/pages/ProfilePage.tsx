@@ -10,6 +10,7 @@ import {
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
+import { BatchFollowSheet } from "@/components/BatchFollowSheet";
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
   hasPowerBadge, getFollowing, type NeynarUser, type NeynarCast,
@@ -265,8 +266,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
 
   const [user, setUser] = useState<NeynarUser | null>(null);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
-  const [batchUnfollowProgress, setBatchUnfollowProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
-  const batchUnfollowCancelRef = useRef(false);
+  const [showBatchSheet, setShowBatchSheet] = useState(false);
   const canBatchOps = isOwnProfile && signerApproved && Boolean(localSigner) &&
     (adminCfg.privilegedUsers.some(u => u.toLowerCase() === myProfile?.username?.toLowerCase()) ||
      adminCfg.privilegedUsers.some(u => u === String(myFid)));
@@ -298,35 +298,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   }, [showMoreMenu]);
 
   const canWrite = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(myFid);
-
-  async function startBatchUnfollow() {
-    if (!myFidNum || !localSigner || batchUnfollowProgress) return;
-    batchUnfollowCancelRef.current = false;
-    const total = user?.following_count || 0;
-    setBatchUnfollowProgress({ done: 0, total, errors: 0 });
-    let cursor: string | undefined;
-    let done = 0;
-    let errors = 0;
-    try {
-      do {
-        if (batchUnfollowCancelRef.current) break;
-        const res = await getFollowing(targetFid, myFidNum, neynarKey, cursor);
-        const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean) as NeynarUser[];
-        cursor = res.next?.cursor;
-        for (const fu of batch) {
-          if (batchUnfollowCancelRef.current) break;
-          try {
-            await hubFollow(myFidNum, localSigner, fu.fid, { unfollow: true });
-            done++;
-          } catch { errors++; }
-          setBatchUnfollowProgress({ done, total: Math.max(total, done + errors), errors });
-          await new Promise(r => setTimeout(r, 650));
-        }
-      } while (cursor && !batchUnfollowCancelRef.current);
-    } catch { /* ok */ }
-    setBatchUnfollowProgress(null);
-    toast.success(batchUnfollowCancelRef.current ? `Cancelled after ${done} unfollows` : `Unfollowed ${done} users`);
-  }
 
   const loadTab = useCallback(async (tab: ProfileTab, cursor?: string) => {
     const gen = profileGenRef.current;
@@ -723,15 +694,10 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                 </button>
                 {canBatchOps && (
                   <button
-                    onClick={startBatchUnfollow}
-                    disabled={!!batchUnfollowProgress}
-                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-rose-500/8 text-rose-500 border border-rose-500/20 hover:bg-rose-500/15 transition-colors disabled:opacity-50 shrink-0"
+                    onClick={() => setShowBatchSheet(true)}
+                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-rose-500/8 text-rose-500 border border-rose-500/20 hover:bg-rose-500/15 transition-colors shrink-0"
                   >
-                    {batchUnfollowProgress ? (
-                      <><Loader2 className="w-3 h-3 animate-spin" /> {batchUnfollowProgress.done}/{batchUnfollowProgress.total || "?"}</>
-                    ) : (
-                      <><Zap className="w-3 h-3" /> Batch Unfollow</>
-                    )}
+                    <Zap className="w-3 h-3" /> Batch Unfollow
                   </button>
                 )}
               </div>
@@ -832,35 +798,17 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         </div>
       )}
 
-      {/* ── Batch Unfollow Progress Modal ── */}
-      {batchUnfollowProgress && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-2xl p-6 shadow-2xl max-w-xs w-full mx-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Zap className="w-4 h-4 text-rose-500" />
-              <h3 className="font-bold text-base">Batch Unfollow</h3>
-            </div>
-            <p className="text-xs text-muted-foreground mb-4">~1.5/sec — respecting rate limits</p>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-rose-500 rounded-full transition-all duration-300"
-                  style={{ width: `${batchUnfollowProgress.total > 0 ? (batchUnfollowProgress.done / batchUnfollowProgress.total) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="text-sm font-mono shrink-0">{batchUnfollowProgress.done}/{batchUnfollowProgress.total || "?"}</span>
-            </div>
-            {batchUnfollowProgress.errors > 0 && (
-              <p className="text-xs text-rose-400 mb-2">{batchUnfollowProgress.errors} failed</p>
-            )}
-            <button
-              onClick={() => { batchUnfollowCancelRef.current = true; }}
-              className="w-full py-2.5 rounded-xl bg-muted text-foreground text-sm font-semibold hover:bg-muted/70 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      {/* ── Batch Unfollow Sheet ── */}
+      {showBatchSheet && myFid && localSigner && (
+        <BatchFollowSheet
+          mode="unfollow"
+          sourceFid={targetFid}
+          myFid={myFidNum!}
+          localSigner={localSigner}
+          neynarKey={neynarKey}
+          onClose={() => setShowBatchSheet(false)}
+          zIndex="z-[90]"
+        />
       )}
     </div>
   );

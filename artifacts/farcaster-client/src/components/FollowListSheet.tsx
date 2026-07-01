@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
+import { BatchFollowSheet } from "@/components/BatchFollowSheet";
 
 function FollowRow({
   user,
@@ -125,44 +126,7 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
-  const batchCancelRef = useRef(false);
-
-  async function startBatchFollow() {
-    if (!canBatch || !myFid || !localSigner) return;
-    // Only follow users we are definitely not following yet (viewer_context.following === false).
-    // Skip users where viewer_context is missing or already true.
-    const toFollow = users.filter(u => u.viewer_context?.following === false && u.fid !== viewerFid);
-    if (toFollow.length === 0) { toast.info("No new users to follow in current list — scroll to load more"); return; }
-    batchCancelRef.current = false;
-    setBatchProgress({ done: 0, total: toFollow.length, errors: 0 });
-    let done = 0;
-    let errors = 0;
-    for (let i = 0; i < toFollow.length; i++) {
-      if (batchCancelRef.current) break;
-      try {
-        await hubFollow(Number(myFid), localSigner, toFollow[i].fid);
-        done++;
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "";
-        if (msg.includes("429") || msg.toLowerCase().includes("rate")) {
-          // Hit rate limit — pause 60 s and retry this one
-          await new Promise(r => setTimeout(r, 62_000));
-          try {
-            await hubFollow(Number(myFid), localSigner, toFollow[i].fid);
-            done++;
-          } catch { errors++; }
-        } else {
-          errors++;
-        }
-      }
-      setBatchProgress({ done: done + errors, total: toFollow.length, errors });
-      // ~2 s delay between follows stays comfortably under server limit (200/min).
-      if (i < toFollow.length - 1) await new Promise(r => setTimeout(r, 2_000));
-    }
-    setBatchProgress(null);
-    toast.success(batchCancelRef.current ? `Cancelled (${done} followed)` : `Followed ${done} users`);
-  }
+  const [showBatchSheet, setShowBatchSheet] = useState(false);
 
   function goToProfile(user: NeynarUser) {
     onClose();
@@ -217,31 +181,24 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
           <span className="font-bold text-base text-foreground">{count.toLocaleString()} {activeTab === "followers" ? "Followers" : "Following"}</span>
         </div>
 
-        {/* Tabs + optional batch follow */}
+        {/* Tabs + batch follow button */}
         <div className="flex items-center border-b border-border shrink-0">
           {(["followers", "following"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={cn(
-                "feed-tab capitalize",
-                activeTab === tab && "active"
-              )}
+              className={cn("feed-tab capitalize", activeTab === tab && "active")}
             >
               {tab === "followers" ? "Followers" : "Following"}
             </button>
           ))}
-          {canBatch && activeTab === "followers" && (
+          {canBatch && (
             <button
-              onClick={startBatchFollow}
-              disabled={!!batchProgress || loading}
-              className="ml-auto mr-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-primary/8 text-primary border border-primary/20 hover:bg-primary/15 transition-colors disabled:opacity-40 shrink-0"
+              onClick={() => setShowBatchSheet(true)}
+              className="ml-auto mr-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-primary/8 text-primary border border-primary/20 hover:bg-primary/15 transition-colors shrink-0"
             >
-              {batchProgress ? (
-                <><Loader2 className="w-3 h-3 animate-spin" /> {batchProgress.done}/{batchProgress.total}</>
-              ) : (
-                <><Zap className="w-3 h-3" /> Batch Follow</>
-              )}
+              <Zap className="w-3 h-3" />
+              {activeTab === "followers" ? "Batch Follow" : "Batch Unfollow"}
             </button>
           )}
         </div>
@@ -272,35 +229,17 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
         </div>
       </div>
 
-      {/* Batch Follow Progress Modal */}
-      {batchProgress && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-2xl p-6 shadow-2xl max-w-xs w-full mx-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Zap className="w-4 h-4 text-primary" />
-              <h3 className="font-bold text-base">Batch Follow</h3>
-            </div>
-            <p className="text-xs text-muted-foreground mb-4">~1.5/sec — respecting rate limits</p>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-300"
-                  style={{ width: `${batchProgress.total > 0 ? (batchProgress.done / batchProgress.total) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="text-sm font-mono shrink-0">{batchProgress.done}/{batchProgress.total}</span>
-            </div>
-            {batchProgress.errors > 0 && (
-              <p className="text-xs text-rose-400 mb-2">{batchProgress.errors} failed</p>
-            )}
-            <button
-              onClick={() => { batchCancelRef.current = true; }}
-              className="w-full py-2.5 rounded-xl bg-muted text-foreground text-sm font-semibold hover:bg-muted/70 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      {/* BatchFollowSheet */}
+      {showBatchSheet && myFid && localSigner && (
+        <BatchFollowSheet
+          mode={activeTab === "followers" ? "follow" : "unfollow"}
+          sourceFid={fid}
+          myFid={Number(myFid)}
+          localSigner={localSigner}
+          neynarKey={neynarKey}
+          onClose={() => setShowBatchSheet(false)}
+          zIndex="z-[80]"
+        />
       )}
     </div>
   );
