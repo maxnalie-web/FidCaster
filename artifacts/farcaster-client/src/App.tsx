@@ -11,6 +11,7 @@ import { ThreadPage } from "@/pages/ThreadPage";
 import FidMarketPage from "@/pages/FidMarketPage";
 import FidDetailPage from "@/pages/FidDetailPage";
 import { AdminPage } from "@/pages/AdminPage";
+import { FollowPage } from "@/pages/FollowPage";
 import { useEffect, useState } from "react";
 import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-config";
 
@@ -62,6 +63,7 @@ function Router() {
         <Route path="/market" component={FidMarketPage} />
         <Route path="/market/:id" component={FidDetailPage} />
         <Route path="/admin" component={AdminPage} />
+        <Route path="/follow" component={FollowPage} />
         <Route>
           <div className="min-h-screen bg-background flex items-center justify-center">
             <div className="text-center text-muted-foreground space-y-3">

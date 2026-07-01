@@ -10,7 +10,7 @@ import {
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
-import { BatchFollowSheet } from "@/components/BatchFollowSheet";
+
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
   hasPowerBadge, getFollowing, type NeynarUser, type NeynarCast,
@@ -266,10 +266,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
 
   const [user, setUser] = useState<NeynarUser | null>(null);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
-  const [showBatchSheet, setShowBatchSheet] = useState(false);
-  const canBatchOps = isOwnProfile && signerApproved && Boolean(localSigner) &&
-    (adminCfg.privilegedUsers.some(u => u.toLowerCase() === myProfile?.username?.toLowerCase()) ||
-     adminCfg.privilegedUsers.some(u => u === String(myFid)));
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
@@ -694,22 +690,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                 </button>
               </div>
 
-              {/* Batch tools card · own profile only */}
-              {canBatchOps && (
-                <button
-                  onClick={() => setShowBatchSheet(true)}
-                  className="w-full mt-3 group flex items-center gap-3 px-4 py-3 rounded-2xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-rose-500/12 flex items-center justify-center shrink-0 group-hover:bg-rose-500/20 transition-colors">
-                    <Zap className="w-4 h-4 text-rose-500" />
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="text-[13px] font-bold text-rose-500 leading-tight">Batch Unfollow</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Smart cleanup · skip mutuals · filter by type</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-rose-500/50 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all shrink-0" />
-                </button>
-              )}
             </div>
 
             {/* ── Tabs ── */}
@@ -807,18 +787,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         </div>
       )}
 
-      {/* ── Batch Unfollow Sheet ── */}
-      {showBatchSheet && myFid && localSigner && (
-        <BatchFollowSheet
-          mode="unfollow"
-          sourceFid={targetFid}
-          myFid={myFidNum!}
-          localSigner={localSigner}
-          neynarKey={neynarKey}
-          onClose={() => setShowBatchSheet(false)}
-          zIndex="z-[90]"
-        />
-      )}
     </div>
   );
 }
