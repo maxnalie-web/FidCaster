@@ -1,64 +1,118 @@
 /**
- * Neynar rate protection — guarantees the server never trips Neynar's per-key
- * rate limit, even with many concurrent users.
+ * Neynar rate protection — multi-key round-robin + token bucket + single-flight.
+ *
+ * Supply extra keys via env vars:
+ *   NEYNAR_API_KEY        — primary key (always used if set)
+ *   NEYNAR_API_KEY_2 … NEYNAR_API_KEY_N — additional keys
+ *   NEYNAR_API_KEYS       — comma-separated list (alternative / additive)
  *
  * Three mechanisms:
- *
- * 1. Token bucket (`neynarThrottle`) — the registered key allows ~300 req/min.
- *    We refill at a safe 250/min. A request with no token WAITS in line instead
- *    of being sent, so Neynar never returns HTTP 429. Queue is capped so excess
- *    requests are shed fast rather than piling up memory indefinitely.
- *
- * 2. 429 backoff (`penalize429`) — if Neynar somehow returns 429, drain the
- *    token bucket and block all outgoing requests for 5 seconds. Prevents
- *    cascading retries from making the situation worse.
- *
- * 3. Single-flight (`singleFlight`) — if 1000 users request the same uncached
- *    resource at once, only ONE request goes to Neynar; the other 999 await the
- *    same in-flight promise. This collapses traffic spikes into a burst of 1.
+ * 1. Token bucket per key — each key refills at 250 req/min (safe under 300 RPM).
+ *    `neynarThrottle()` picks the key with the most tokens → natural load balancing.
+ * 2. 429 backoff (`penalize429`) — drains that key's bucket + blocks it 5 s.
+ * 3. Single-flight — N concurrent cache-miss requests share ONE upstream fetch.
  */
 
-// ── Token bucket ──────────────────────────────────────────────────────────────
-const RPM = 250;                       // safety margin under the 300 RPM key limit
-const REFILL_MS = 60_000 / RPM;        // ms to regenerate one token (~240ms)
-const MAX_QUEUE = 150;                 // drop requests rather than queue unboundedly
-let tokens = RPM;
-let lastRefill = Date.now();
-let penaltyUntil = 0;                  // epoch ms — all requests block until this
-let queueDepth = 0;
+// ── Collect all configured API keys ──────────────────────────────────────────
+function collectKeys(): string[] {
+  const keys: string[] = [];
+  const primary = process.env.NEYNAR_API_KEY;
+  if (primary) keys.push(primary);
 
-function refill(): void {
-  const now = Date.now();
-  const gained = Math.floor((now - lastRefill) / REFILL_MS);
-  if (gained > 0) {
-    tokens = Math.min(RPM, tokens + gained);
-    lastRefill = now;
+  // NEYNAR_API_KEY_2, NEYNAR_API_KEY_3 … NEYNAR_API_KEY_100
+  for (let i = 2; i <= 200; i++) {
+    const k = process.env[`NEYNAR_API_KEY_${i}`];
+    if (k) keys.push(k); else break;
+  }
+
+  // NEYNAR_API_KEYS=key1,key2,key3
+  const csv = process.env.NEYNAR_API_KEYS;
+  if (csv) {
+    for (const k of csv.split(",").map(s => s.trim()).filter(Boolean)) {
+      if (!keys.includes(k)) keys.push(k);
+    }
+  }
+
+  return keys.length > 0 ? keys : [];
+}
+
+// ── Token bucket per key ──────────────────────────────────────────────────────
+const RPM = 250;
+const REFILL_MS = 60_000 / RPM;   // ~240 ms per token
+const MAX_QUEUE = 150;
+
+interface Bucket {
+  key: string;
+  tokens: number;
+  lastRefill: number;
+  penaltyUntil: number;
+}
+
+let buckets: Bucket[] = [];
+
+function initBuckets(): void {
+  const keys = collectKeys();
+  buckets = keys.map(key => ({ key, tokens: RPM, lastRefill: Date.now(), penaltyUntil: 0 }));
+  if (buckets.length > 1) {
+    console.log(`[neynar] ${buckets.length} API keys loaded — effective RPM: ${buckets.length * RPM}`);
   }
 }
 
-/** Call whenever Neynar returns HTTP 429 to impose a back-off. */
-export function penalize429(): void {
-  tokens = 0;
-  penaltyUntil = Date.now() + 5_000;
+initBuckets();
+
+function refillBucket(b: Bucket): void {
+  const now = Date.now();
+  const gained = Math.floor((now - b.lastRefill) / REFILL_MS);
+  if (gained > 0) {
+    b.tokens = Math.min(RPM, b.tokens + gained);
+    b.lastRefill = now;
+  }
 }
 
-export function neynarThrottle(): Promise<void> {
+/** Pick the bucket with the most tokens (not penalised). */
+function bestBucket(): Bucket | null {
+  const now = Date.now();
+  let best: Bucket | null = null;
+  for (const b of buckets) {
+    if (b.penaltyUntil > now) continue;
+    refillBucket(b);
+    if (!best || b.tokens > best.tokens) best = b;
+  }
+  return best ?? (buckets[0] ?? null);
+}
+
+/** Call with the key that got HTTP 429 to back it off for 5 s. */
+export function penalize429(key?: string): void {
+  const target = key ? buckets.find(b => b.key === key) : buckets[0];
+  if (!target) return;
+  target.tokens = 0;
+  target.penaltyUntil = Date.now() + 5_000;
+}
+
+let queueDepth = 0;
+
+/**
+ * Waits until a token is available on the best key, then returns that key string.
+ * Callers must use the returned key for their Neynar request so 429s can be
+ * attributed back to the right bucket via `penalize429(key)`.
+ */
+export function neynarThrottle(): Promise<string> {
+  if (buckets.length === 0) return Promise.resolve(process.env.NEYNAR_API_KEY ?? "");
   if (queueDepth >= MAX_QUEUE) {
     return Promise.reject(new Error("Rate limit queue full — try again shortly"));
   }
   queueDepth++;
   return new Promise((resolve) => {
     const take = (): void => {
+      const b = bestBucket();
+      if (!b) { setTimeout(take, REFILL_MS); return; }
       const now = Date.now();
-      if (now < penaltyUntil) {
-        setTimeout(take, penaltyUntil - now + 50);
-        return;
-      }
-      refill();
-      if (tokens > 0) {
-        tokens--;
+      if (now < b.penaltyUntil) { setTimeout(take, b.penaltyUntil - now + 50); return; }
+      refillBucket(b);
+      if (b.tokens > 0) {
+        b.tokens--;
         queueDepth = Math.max(0, queueDepth - 1);
-        resolve();
+        resolve(b.key);
       } else {
         setTimeout(take, REFILL_MS);
       }
@@ -68,13 +122,6 @@ export function neynarThrottle(): Promise<void> {
 }
 
 // ── Single-flight ─────────────────────────────────────────────────────────────
-// If N concurrent requests all miss the cache for the same key, only ONE upstream
-// fetch is started; the rest await the same Promise and receive the same result.
-//
-// Metrics emitted to stdout (grep "[sf]"):
-//   sf:join   key   — saved an upstream call (N-1 callers join the in-flight promise)
-//   sf:fetch  key   — first caller; a real upstream request is about to start
-//   sf:done   key   — upstream finished (success or error); waiters unblock
 const inflight = new Map<string, Promise<unknown>>();
 
 export function singleFlight<T>(key: string, fn: () => Promise<T>): Promise<T> {

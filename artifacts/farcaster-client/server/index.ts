@@ -503,7 +503,7 @@ registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 // SPA and all API routes. Vite's dev server handles this in development.
 if (process.env.NODE_ENV === "production") {
   const __dir = dirname(fileURLToPath(import.meta.url));
-  const distPath = resolve(__dir, "../../dist/public");
+  const distPath = resolve(__dir, "../dist/public");
   if (existsSync(distPath)) {
     // Static assets (JS/CSS/images) have content-hashed names → safe to cache 1y
     app.use(express.static(distPath, {

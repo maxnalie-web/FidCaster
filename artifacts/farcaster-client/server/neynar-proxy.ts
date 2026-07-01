@@ -26,8 +26,9 @@ function ttlFor(path: string): number {
 // ── Neynar read proxy ─────────────────────────────────────────────────────────
 // Mounted at /api/fc → req.path already has /api/fc stripped by Express
 async function neynarProxy(req: Request, res: Response): Promise<void> {
-  const apiKey = process.env.NEYNAR_API_KEY;
-  if (!apiKey) { res.status(503).json({ error: "Neynar API key not configured on server." }); return; }
+  if (!process.env.NEYNAR_API_KEY && !process.env.NEYNAR_API_KEYS) {
+    res.status(503).json({ error: "Neynar API key not configured on server." }); return;
+  }
 
   // req.path = /farcaster/notifications, req.query = { fid: "16333", ... }
   const neynarPath = req.path;
@@ -49,13 +50,13 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
     const data = await singleFlight(cacheKey, async () => {
       const cached2 = cacheGet(cacheKey);
       if (cached2 !== undefined) return cached2;
-      await neynarThrottle(); // never exceed the key's RPM — queue if needed
+      const selectedKey = await neynarThrottle(); // picks key with most tokens
       const r = await fetch(upstream, {
-        headers: { accept: "application/json", api_key: apiKey },
+        headers: { accept: "application/json", api_key: selectedKey },
         signal: AbortSignal.timeout(15_000),
       });
       if (!r.ok) {
-        if (r.status === 429) penalize429();
+        if (r.status === 429) penalize429(selectedKey);
         const body = await r.json().catch(() => ({}));
         const err = new Error(`HTTP ${r.status}`) as Error & { status?: number; body?: unknown };
         err.status = r.status; err.body = body;
@@ -162,24 +163,21 @@ async function fetchFollowList(
   mode: "followers" | "following",
   fid: number,
   viewerFid: number,
-  apiKey: string,
   cursor?: string
 ): Promise<FollowPage> {
   const q = new URLSearchParams({ fid: String(fid), viewer_fid: String(viewerFid), limit: "100", sort_type: "desc_chron" });
   if (cursor) q.set("cursor", cursor);
   const upstream = `${NEYNAR_V2}/farcaster/${mode}?${q}`;
 
-  // One throttled fetch, retried a couple of times on transient upstream failure
-  // before giving up — so a momentary blip doesn't blank the page.
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await neynarThrottle();
+      const selectedKey = await neynarThrottle();
       const r = await fetch(upstream, {
-        headers: { accept: "application/json", api_key: apiKey },
+        headers: { accept: "application/json", api_key: selectedKey },
         signal: AbortSignal.timeout(15_000),
       });
-      if (!r.ok) { if (r.status === 429) penalize429(); lastErr = new Error(`${mode} HTTP ${r.status}`); continue; }
+      if (!r.ok) { if (r.status === 429) penalize429(selectedKey); lastErr = new Error(`${mode} HTTP ${r.status}`); continue; }
       const d = await r.json() as FollowPage;
       return { users: d.users ?? [], next: d.next ?? undefined };
     } catch (e) {
@@ -191,7 +189,6 @@ async function fetchFollowList(
 }
 
 async function followListHandler(mode: "followers" | "following", req: Request, res: Response): Promise<void> {
-  const apiKey = process.env.NEYNAR_API_KEY ?? "";
   const fid = Number(req.query.fid);
   const viewerFid = Number(req.query.viewer_fid ?? req.query.fid);
   if (!fid) { res.status(400).json({ error: "fid required" }); return; }
@@ -206,7 +203,7 @@ async function followListHandler(mode: "followers" | "following", req: Request, 
     const result = await singleFlight(cacheKey, async () => {
       const cached = cacheGet(cacheKey);
       if (cached !== undefined) return cached as FollowPage;
-      const r = await fetchFollowList(mode, fid, viewerFid, apiKey, cursor);
+      const r = await fetchFollowList(mode, fid, viewerFid, cursor);
       cacheSet(cacheKey, r, 180_000);
       return r;
     });
@@ -223,9 +220,6 @@ export function registerProxyRoutes(app: Express): void {
   // Mounted under /api/farcaster (already in Vite proxy config).
   // Intercepts GET /api/farcaster/notifications before the global 404.
   app.get("/api/farcaster/notifications", async (req: Request, res: Response) => {
-    const apiKey = process.env.NEYNAR_API_KEY;
-    if (!apiKey) { res.status(503).json({ error: "Neynar API key not configured." }); return; }
-
     const qs = new URLSearchParams(req.query as Record<string, string>).toString();
     const cacheKey = `neynar:/farcaster/notifications?${qs}`;
 
@@ -236,9 +230,9 @@ export function registerProxyRoutes(app: Express): void {
       const data = await singleFlight(cacheKey, async () => {
         const cached = cacheGet(cacheKey);
         if (cached !== undefined) return cached;
-        await neynarThrottle();
+        const selectedKey = await neynarThrottle();
         const r = await fetch(`${NEYNAR_V2}/farcaster/notifications?${qs}`, {
-          headers: { accept: "application/json", api_key: apiKey },
+          headers: { accept: "application/json", api_key: selectedKey },
           signal: AbortSignal.timeout(15_000),
         });
         if (!r.ok) {
