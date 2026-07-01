@@ -50,7 +50,6 @@ const BOTTOM_NAV: { id: MainTab; icon: typeof Home }[] = [
 const SETTINGS_TABS: { id: SettingsTab; label: string; icon: typeof Home }[] = [
   { id: "username", label: "Username", icon: AtSign },
   { id: "signer",   label: "Signer",   icon: CheckCircle2 },
-  { id: "profile",  label: "Profile",  icon: User },
 ];
 
 /* ─── Signer Panel ───────────────────────────────────────────────────────── */

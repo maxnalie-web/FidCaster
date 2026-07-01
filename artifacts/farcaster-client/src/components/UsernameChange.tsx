@@ -184,10 +184,7 @@ export function UsernameChange() {
 
         if (!releaseRes.success) {
           const errMsg = releaseRes.error ?? "Release failed";
-          const hint = errMsg.toLowerCase().includes("invalid_signature") || errMsg.toLowerCase().includes("validation")
-            ? `Signature rejected — the connected wallet may not match the custody address that owns @${profile.username}.`
-            : errMsg;
-          setFnamePhase({ id: "error", msg: hint });
+          setFnamePhase({ id: "error", msg: errMsg });
           return;
         }
 
@@ -216,11 +213,7 @@ export function UsernameChange() {
         setFnamePhase({ id: "done" });
         await refreshProfile();
       } else {
-        const errMsg = claimRes.error ?? "Claim failed";
-        const hint = errMsg.toLowerCase().includes("invalid_signature") || errMsg.toLowerCase().includes("validation")
-          ? `Signature rejected — make sure the connected wallet is correct for this account.`
-          : errMsg;
-        setFnamePhase({ id: "error", msg: hint });
+        setFnamePhase({ id: "error", msg: claimRes.error ?? "Claim failed" });
       }
     } catch (e: unknown) {
       setFnamePhase({ id: "error", msg: e instanceof Error ? e.message : "Unknown error" });

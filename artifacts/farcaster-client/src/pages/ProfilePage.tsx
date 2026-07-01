@@ -522,7 +522,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
             {/* ── Profile card ── */}
             <div className="px-4">
               {/* Avatar + actions row */}
-              <div className="flex items-end justify-between -mt-10 mb-3">
+              <div className="flex items-end justify-between -mt-3 mb-3">
                 {/* Avatar */}
                 <div className="relative w-[82px] h-[82px] shrink-0">
                   <button
