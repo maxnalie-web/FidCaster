@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import express from "express";
@@ -28,7 +28,9 @@ try {
 
 const app = express();
 app.set("trust proxy", 1);
-const PORT = Number(process.env.API_PORT ?? "3001");
+// In production the artifact routes traffic to PORT (set to 5173 in artifact.toml).
+// In dev the server runs on API_PORT (3001) and Vite proxies /api/* to it.
+const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? "3001");
 const START_TIME = Date.now();
 
 // Additional production origins from env: ALLOWED_ORIGINS=https://fidcaster.com,https://www.fidcaster.com
@@ -496,7 +498,38 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
 registerFidMarketRoutes(app);
 registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 
-app.use((_req, res) => {
+// ── Production static file serving ────────────────────────────────────────────
+// In production the Express server is the only process — it serves the React
+// SPA and all API routes. Vite's dev server handles this in development.
+if (process.env.NODE_ENV === "production") {
+  const __dir = dirname(fileURLToPath(import.meta.url));
+  const distPath = resolve(__dir, "../../dist/public");
+  if (existsSync(distPath)) {
+    // Static assets (JS/CSS/images) have content-hashed names → safe to cache 1y
+    app.use(express.static(distPath, {
+      maxAge: "1y",
+      index: false, // handled explicitly below
+      etag: true,
+      setHeaders: (res: express.Response, filePath: string) => {
+        // HTML files must never be cached — they reference hashed assets
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        }
+      },
+    }));
+
+    // SPA fallback — any non-/api/* path serves index.html
+    app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+      if (req.path.startsWith("/api/")) { next(); return; }
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.sendFile(resolve(distPath, "index.html"));
+    });
+  } else {
+    console.warn("[server] dist/public not found — run `pnpm build` first");
+  }
+}
+
+app.use((_req: express.Request, res: express.Response) => {
   res.status(404).json({ error: "Not found" });
 });
 

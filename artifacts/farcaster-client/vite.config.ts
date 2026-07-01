@@ -54,9 +54,6 @@ export default defineConfig({
     "import.meta.env.VITE_APP_MNEMONIC": JSON.stringify(
       process.env.APP_MNEMONIC ?? ""
     ),
-    "import.meta.env.VITE_NEYNAR_API_KEY": JSON.stringify(
-      process.env.NEYNAR_API_KEY ?? ""
-    ),
   },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),

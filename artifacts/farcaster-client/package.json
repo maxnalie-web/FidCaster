@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^8.4.1",
+    "tsx": "catalog:",
     "@capgo/capacitor-inappbrowser": "^8.6.34",
     "@farcaster/auth-kit": "^0.8.2",
     "@farcaster/hub-nodejs": "^0.16.0",

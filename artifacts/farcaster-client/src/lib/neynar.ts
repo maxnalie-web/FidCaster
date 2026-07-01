@@ -3,15 +3,12 @@ export const NEYNAR_BASE = "https://api.neynar.com/v2";
 const PROXY_BASE = "/api/fc";
 // Hub proxy base — direct Hub reads (free, no rate limit)
 export const HUB_PROXY_BASE = "/api/hub";
-// Baked-in build-time key (set via NEYNAR_API_KEY secret → VITE_NEYNAR_API_KEY at build)
-const _BAKED_KEY: string = (() => {
-  try { return (import.meta.env.VITE_NEYNAR_API_KEY as string | undefined) ?? ""; } catch { return ""; }
-})();
-// Runtime key — only needed for write operations (signers, etc.)
+// User-supplied Neynar key (stored in localStorage). Only needed for legacy
+// managed-signer write paths. All reads go through the server proxy which uses
+// the server-side NEYNAR_API_KEY env var — never exposed in the client bundle.
 export const DEFAULT_API_KEY: string = (() => {
-  try {
-    return localStorage.getItem("fc_neynar_key") || _BAKED_KEY || "NEYNAR_API_DOCS";
-  } catch { return _BAKED_KEY || "NEYNAR_API_DOCS"; }
+  try { return localStorage.getItem("fc_neynar_key") || "NEYNAR_API_DOCS"; }
+  catch { return "NEYNAR_API_DOCS"; }
 })();
 
 export type NeynarUser = {
@@ -102,43 +99,28 @@ async function neynar<T>(
   key: string,
   body?: unknown
 ): Promise<T> {
-  // Reads ALWAYS go through our Express proxy (/api/fc): the server holds the
-  // registered 300-RPM key and caches responses. The browser must never call
-  // api.neynar.com directly for reads — the client's fallback key is the public
-  // demo key (NEYNAR_API_DOCS = 6 req/60s = PUBLIC_TRIAL), which is the sole
-  // source of the rate-limit errors. Routing through the server eliminates them.
+  // ── GET: always through the server proxy (cached, rate-limited, key stays server-side)
   if (method === "GET") {
-    let proxied: Response | null = null;
-    try {
-      proxied = await fetch(`${PROXY_BASE}${path}`, {
-        method: "GET",
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(20000),
-      });
-    } catch {
-      proxied = null; // network error — server unreachable → fall through
+    const res = await fetch(`${PROXY_BASE}${path}`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(20000),
+    });
+    const ct = res.headers.get("content-type") ?? "";
+    if (!ct.includes("application/json")) {
+      // Non-JSON means the proxy/server is not running (e.g. a CDN 404 page).
+      throw new Error("API server unavailable. Please check your connection.");
     }
-    if (proxied) {
-      const ct = proxied.headers.get("content-type") ?? "";
-      if (!ct.includes("application/json")) {
-        // Static hosting returns index.html (text/html) for unknown paths.
-        // Treat any non-JSON response as "proxy unavailable" and fall through.
-        proxied = null;
-      } else if (proxied.ok) {
-        return proxied.json() as Promise<T>;
-      } else {
-        const err = await proxied.json().catch(() => ({}));
-        throw new Error(
-          (err as { error?: string; message?: string }).error ??
-          (err as { message?: string }).message ?? `HTTP ${proxied.status}`
-        );
-      }
-    }
+    if (res.ok) return res.json() as Promise<T>;
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      (err as { error?: string; message?: string }).error ??
+      (err as { message?: string }).message ?? `HTTP ${res.status}`
+    );
   }
 
-  // Direct Neynar call with 429 retry (exponential backoff + jitter).
-  // All users share one baked-in key; under heavy load the API may rate-limit.
-  // Three attempts give ~7s total headroom before propagating the error.
+  // ── POST / DELETE: legacy managed-signer write path — goes directly to Neynar
+  // with the user's own key (stored in localStorage). Retries on 429.
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(`${NEYNAR_BASE}${path}`, {
       method,
@@ -147,7 +129,6 @@ async function neynar<T>(
       signal: AbortSignal.timeout(15000),
     });
     if (res.status === 429 && attempt < 2) {
-      // Respect Retry-After header if present, else use exponential backoff
       const retryAfter = res.headers.get("Retry-After");
       const waitMs = retryAfter
         ? Math.min(parseInt(retryAfter, 10) * 1000, 10_000)
@@ -157,9 +138,7 @@ async function neynar<T>(
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(
-        (err as { message?: string }).message ?? `HTTP ${res.status}`
-      );
+      throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
     }
     return res.json() as Promise<T>;
   }
