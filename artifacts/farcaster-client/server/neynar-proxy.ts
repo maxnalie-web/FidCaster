@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { cacheGet, cacheSet } from "./cache.js";
 import { neynarThrottle, singleFlight, penalize429 } from "./neynar-limit.js";
+import { getCachedProfiles, setCachedProfiles } from "./profile-db.js";
 
 const NEYNAR_V2 = "https://api.neynar.com/v2";
 const HUB_BASE  = "https://hub.pinata.cloud/v1";
@@ -214,6 +215,76 @@ async function followListHandler(mode: "followers" | "following", req: Request, 
   }
 }
 
+// ── Bulk user lookup with SQLite profile cache ────────────────────────────────
+// /api/fc/farcaster/user/bulk?fids=1,2,3&viewer_fid=...
+// Checks SQLite first; only fetches missing FIDs from Neynar.
+// SQLite cache is shared across ALL users and survives server restarts (12h TTL).
+async function bulkUserHandler(req: Request, res: Response): Promise<void> {
+  const rawFids = String(req.query.fids ?? "");
+  const fids = rawFids
+    .split(",")
+    .map(s => Number(s.trim()))
+    .filter(n => Number.isFinite(n) && n > 0)
+    .slice(0, 100);
+
+  if (fids.length === 0) { res.status(400).json({ error: "fids required" }); return; }
+
+  const qs = new URLSearchParams(req.query as Record<string, string>).toString();
+  const { hits, misses } = getCachedProfiles(fids);
+
+  // All served from SQLite cache — no Neynar call needed
+  if (misses.length === 0) {
+    const users = fids.map(f => hits.get(f)).filter(Boolean);
+    res.setHeader("X-Cache", "DB-HIT");
+    res.json({ users });
+    return;
+  }
+
+  // Fetch only the missing FIDs from Neynar
+  const missQs = new URLSearchParams(req.query as Record<string, string>);
+  missQs.set("fids", misses.join(","));
+  const cacheKey = `neynar:/farcaster/user/bulk?${qs}`;
+  const upstream = `${NEYNAR_V2}/farcaster/user/bulk?${missQs}`;
+
+  try {
+    const freshData = await singleFlight(cacheKey, async () => {
+      const selectedKey = await neynarThrottle();
+      const r = await fetch(upstream, {
+        headers: { accept: "application/json", api_key: selectedKey },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!r.ok) {
+        if (r.status === 429) penalize429(selectedKey);
+        const b = await r.json().catch(() => ({}));
+        const err = new Error(`HTTP ${r.status}`) as Error & { status?: number; body?: unknown };
+        err.status = r.status; err.body = b; throw err;
+      }
+      const d = await r.json() as { users?: Array<{ fid: number; [k: string]: unknown }> };
+      // Persist fresh profiles in SQLite for future requests (any user)
+      if (d.users?.length) setCachedProfiles(d.users);
+      return d;
+    });
+
+    // Merge SQLite hits + fresh Neynar data
+    const freshUsers = (freshData as { users?: unknown[] }).users ?? [];
+    const cachedUsers = fids
+      .filter(f => hits.has(f))
+      .map(f => hits.get(f))
+      .filter(Boolean);
+
+    res.setHeader("X-Cache", hits.size > 0 ? "DB-PARTIAL" : "MISS");
+    res.json({ users: [...cachedUsers, ...freshUsers] });
+  } catch (e: unknown) {
+    const err = e as Error & { status?: number; body?: unknown };
+    if (err.status === 429) {
+      res.status(503).set("Retry-After", "5").json({ error: "Rate limit — retry in 5s" });
+      return;
+    }
+    if (err.status) { res.status(err.status).json(err.body ?? { error: err.message }); return; }
+    res.status(502).json({ error: e instanceof Error ? e.message : "Upstream error" });
+  }
+}
+
 // ── Register ──────────────────────────────────────────────────────────────────
 export function registerProxyRoutes(app: Express): void {
   // ── Cached notifications endpoint ─────────────────────────────────────────
@@ -242,7 +313,7 @@ export function registerProxyRoutes(app: Express): void {
           throw err;
         }
         const d = await r.json();
-        cacheSet(cacheKey, d, 60_000); // cache 60s per fid+cursor
+        cacheSet(cacheKey, d, 300_000); // 5 min — matches ttlFor("/notifications")
         return d;
       });
       res.setHeader("X-Cache", "MISS");
@@ -269,6 +340,11 @@ export function registerProxyRoutes(app: Express): void {
   app.use("/api/hub", (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") { next(); return; }
     void hubGenericProxy(req, res);
+  });
+
+  // ── Bulk user lookup — SQLite profile cache (cross-user, persistent 12h) ──
+  app.get("/api/fc/farcaster/user/bulk", (req: Request, res: Response) => {
+    void bulkUserHandler(req, res);
   });
 
   // ── General Neynar read proxy ──────────────────────────────────────────────

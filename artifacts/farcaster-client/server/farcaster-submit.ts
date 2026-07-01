@@ -12,11 +12,18 @@ import {
   Message,
 } from "@farcaster/hub-nodejs";
 
-// Only Neynar hub — our signer key is indexed there.
-// Pinata is NOT included: it doesn't index our key, so it always rejects signed messages.
-const HUB_URLS = [
-  "https://hub-api.neynar.com",
+// Hub submission order:
+//  1. Public Farcaster hubs (free, no credits consumed) — tried first.
+//     Any properly-synced hub accepts messages from on-chain-registered signers.
+//  2. Neynar hub (costs API credits) — fallback only when public hubs fail.
+//
+// Public hubs sync KeyRegistry from Optimism like everyone else;
+// "unknown signer" on a public hub = signer not yet on-chain, not a hub limitation.
+const PUBLIC_HUB_URLS = [
+  "https://hoyt.farcaster.xyz:2281",
+  "https://hub.farcaster.standardcrypto.vc:2281",
 ];
+const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
 
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;
 
@@ -183,41 +190,47 @@ export async function submitFarcasterAction(
   console.log(`[farcaster-submit] action=${action.type} fid=${fid} msgBytes=${msgBytes.length}`);
 
   const errs: string[] = [];
+  const msgHash = Buffer.from(message.hash).toString("hex");
 
-  for (const hubUrl of HUB_URLS) {
+  /** Try a single hub URL. Returns the hash on success, null on failure. */
+  async function tryHub(hubUrl: string, apiKey?: string): Promise<string | null> {
     try {
       const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
-      if (hubUrl.includes("neynar")) {
-        const neynarKey = process.env.NEYNAR_API_KEY;
-        if (!neynarKey) {
-          errs.push(`${hubUrl}: skipped (NEYNAR_API_KEY not configured)`);
-          continue;
-        }
-        headers["api_key"] = neynarKey;
-      }
+      if (apiKey) headers["api_key"] = apiKey;
       const res = await fetch(`${hubUrl}/v1/submitMessage`, {
         method: "POST",
         headers,
         body: msgBytes,
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(12_000),
       });
       console.log(`[farcaster-submit] ${hubUrl}: HTTP ${res.status}`);
-      if (res.ok) {
-        const hash = Buffer.from(message.hash).toString("hex");
-        return { hash };
-      }
+      if (res.ok) return msgHash;
       const txt = await res.text().catch(() => "");
-      // "already exists" / duplicate — treat as success, no retry needed
       if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) {
-        const hash = Buffer.from(message.hash).toString("hex");
-        console.log(`[farcaster-submit] duplicate detected — treating as success`);
-        return { hash };
+        console.log(`[farcaster-submit] duplicate on ${hubUrl} — treating as success`);
+        return msgHash;
       }
       errs.push(`${hubUrl}: HTTP ${res.status} — ${txt.slice(0, 200)}`);
+      return null;
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errs.push(`${hubUrl}: ${msg}`);
+      errs.push(`${hubUrl}: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
+      return null;
     }
+  }
+
+  // ── 1. Try public hubs first (no Neynar credits) ────────────────────────
+  for (const url of PUBLIC_HUB_URLS) {
+    const hash = await tryHub(url);
+    if (hash) return { hash };
+  }
+
+  // ── 2. Fall back to Neynar hub (costs credits, but most reliable) ───────
+  const neynarKey = process.env.NEYNAR_API_KEY;
+  if (neynarKey) {
+    const hash = await tryHub(NEYNAR_HUB_URL, neynarKey);
+    if (hash) return { hash };
+  } else {
+    errs.push(`${NEYNAR_HUB_URL}: skipped (NEYNAR_API_KEY not configured)`);
   }
 
   const allSignerErrors = errs.every(
