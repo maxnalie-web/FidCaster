@@ -2,15 +2,15 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useRoute, useLocation } from "wouter";
 import {
-  ArrowLeft, User, Loader2, UserPlus, UserCheck,
+  ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
-  AlignLeft, MessageSquare, Heart, Repeat2,
+  AlignLeft, MessageSquare, Heart, Repeat2, X, Zap,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
-  hasPowerBadge, type NeynarUser, type NeynarCast,
+  hasPowerBadge, getFollowing, type NeynarUser, type NeynarCast,
 } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { hubFollow, neynarAction } from "@/lib/hub-submit";
@@ -46,13 +46,17 @@ type ProfilePageProps = {
 export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: ProfilePageProps = {}) {
   const [, params] = useRoute("/profile/:fid");
   const [, navigate] = useLocation();
-  const { fid: myFid, localSigner, signerUuid, signerApproved, neynarKey } = useWallet();
+  const { fid: myFid, localSigner, signerUuid, signerApproved, neynarKey, profile: myProfile } = useWallet();
   const targetFid = fidProp ?? (params?.fid ? parseInt(params.fid, 10) : 0);
   const myFidNum = myFid ? Number(myFid) : 0;
   const isOwnProfile = targetFid === myFidNum;
   const isPro = useIsPro(targetFid);
 
   const [user, setUser] = useState<NeynarUser | null>(null);
+  const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
+  const [batchUnfollowProgress, setBatchUnfollowProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
+  const batchUnfollowCancelRef = useRef(false);
+  const canBatchOps = isOwnProfile && myProfile?.username === "polycaster" && signerApproved && Boolean(localSigner);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
@@ -80,6 +84,35 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   }, [showMoreMenu]);
 
   const canWrite = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(myFid);
+
+  async function startBatchUnfollow() {
+    if (!myFidNum || !localSigner || batchUnfollowProgress) return;
+    batchUnfollowCancelRef.current = false;
+    const total = user?.following_count || 0;
+    setBatchUnfollowProgress({ done: 0, total, errors: 0 });
+    let cursor: string | undefined;
+    let done = 0;
+    let errors = 0;
+    try {
+      do {
+        if (batchUnfollowCancelRef.current) break;
+        const res = await getFollowing(targetFid, myFidNum, neynarKey, cursor);
+        const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean) as NeynarUser[];
+        cursor = res.next?.cursor;
+        for (const fu of batch) {
+          if (batchUnfollowCancelRef.current) break;
+          try {
+            await hubFollow(myFidNum, localSigner, fu.fid, { unfollow: true });
+            done++;
+          } catch { errors++; }
+          setBatchUnfollowProgress({ done, total: Math.max(total, done + errors), errors });
+          await new Promise(r => setTimeout(r, 650));
+        }
+      } while (cursor && !batchUnfollowCancelRef.current);
+    } catch { /* ok */ }
+    setBatchUnfollowProgress(null);
+    toast.success(batchUnfollowCancelRef.current ? `Cancelled after ${done} unfollows` : `Unfollowed ${done} users`);
+  }
 
   const loadTab = useCallback(async (tab: ProfileTab, cursor?: string) => {
     const gen = profileGenRef.current;
@@ -270,7 +303,13 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
               <div className="flex items-start justify-between mb-3">
                 {/* Avatar */}
                 <div className="relative w-[82px] h-[82px] shrink-0">
-                  <div className="w-full h-full rounded-full avatar-ring p-[3px] shadow-xl bg-background">
+                  <button
+                    onClick={() => user.pfp_url && setShowAvatarLightbox(true)}
+                    className={cn(
+                      "w-full h-full rounded-full avatar-ring p-[3px] shadow-xl bg-background",
+                      user.pfp_url && "cursor-pointer hover:opacity-90 active:scale-95 transition-all"
+                    )}
+                  >
                     <div className="w-full h-full rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-violet-500/20">
                       {user.pfp_url ? (
                         <img
@@ -286,7 +325,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                         </div>
                       )}
                     </div>
-                  </div>
+                  </button>
                   {isPro && (
                     <span className="absolute bottom-0.5 right-0.5 drop-shadow-sm">
                       <ProBadge size={24} />
@@ -428,6 +467,19 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   </span>
                   <span className="text-muted-foreground text-xs">following</span>
                 </button>
+                {canBatchOps && (
+                  <button
+                    onClick={startBatchUnfollow}
+                    disabled={!!batchUnfollowProgress}
+                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-rose-500/8 text-rose-500 border border-rose-500/20 hover:bg-rose-500/15 transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    {batchUnfollowProgress ? (
+                      <><Loader2 className="w-3 h-3 animate-spin" /> {batchUnfollowProgress.done}/{batchUnfollowProgress.total || "?"}</>
+                    ) : (
+                      <><Zap className="w-3 h-3" /> Batch Unfollow</>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -486,6 +538,55 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           onClose={() => setFollowSheet(null)}
           zIndex="z-50"
         />
+      )}
+
+      {/* ── Avatar Lightbox ── */}
+      {showAvatarLightbox && user?.pfp_url && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/92 backdrop-blur-md"
+          onClick={() => setShowAvatarLightbox(false)}
+        >
+          <button className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10">
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={user.pfp_url}
+            alt={user.display_name || user.username}
+            className="max-w-[88vw] max-h-[88vh] rounded-2xl object-contain shadow-2xl ring-2 ring-white/10"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* ── Batch Unfollow Progress Modal ── */}
+      {batchUnfollowProgress && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-2xl p-6 shadow-2xl max-w-xs w-full mx-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Zap className="w-4 h-4 text-rose-500" />
+              <h3 className="font-bold text-base">Batch Unfollow</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">~1.5/sec — respecting rate limits</p>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-rose-500 rounded-full transition-all duration-300"
+                  style={{ width: `${batchUnfollowProgress.total > 0 ? (batchUnfollowProgress.done / batchUnfollowProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="text-sm font-mono shrink-0">{batchUnfollowProgress.done}/{batchUnfollowProgress.total || "?"}</span>
+            </div>
+            {batchUnfollowProgress.errors > 0 && (
+              <p className="text-xs text-rose-400 mb-2">{batchUnfollowProgress.errors} failed</p>
+            )}
+            <button
+              onClick={() => { batchUnfollowCancelRef.current = true; }}
+              className="w-full py-2.5 rounded-xl bg-muted text-foreground text-sm font-semibold hover:bg-muted/70 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

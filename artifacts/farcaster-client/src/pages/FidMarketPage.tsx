@@ -110,7 +110,7 @@ export default function FidMarketPage() {
   const [tab,            setTab]            = useState<"listings" | "activity">("listings");
   const [search,         setSearch]         = useState("");
   const [sortBy,         setSortBy]         = useState<SortKey>("price-asc");
-  const [showSort,       setShowSort]       = useState(false);
+  // sort is now inline chips, no dropdown state needed
   const ethUsd = useEthPrice();
   const [listingsVisible, setListingsVisible] = useState(PAGE_SIZE);
   const [activityVisible, setActivityVisible] = useState(PAGE_SIZE);
@@ -551,9 +551,9 @@ export default function FidMarketPage() {
           </div>
         </div>
 
-        {/* ── Tabs + Search row ── */}
+        {/* ── Tabs row ── */}
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 p-1 rounded-xl bg-muted/40 border border-border/40">
+          <div className="flex gap-0.5 p-1 rounded-xl bg-muted/40 border border-border/40">
             {(["listings", "activity"] as const).map(t => (
               <button
                 key={t}
@@ -573,55 +573,43 @@ export default function FidMarketPage() {
           </div>
 
           {tab === "listings" && (
-            <>
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search FID, username…"
-                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
-                />
-                {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-
-              <div className="relative">
-                <button
-                  onClick={() => setShowSort(v => !v)}
-                  className="h-8 px-2.5 rounded-xl border border-border/60 bg-background text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs transition-colors"
-                >
-                  <ArrowUpDown className="w-3 h-3" />
-                  <ChevronDown className="w-2.5 h-2.5" />
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search FID, username…"
+                className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3 h-3" />
                 </button>
-                {showSort && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowSort(false)} />
-                    <div className="absolute right-0 top-10 z-50 w-48 bg-popover border border-border rounded-xl shadow-2xl py-1 overflow-hidden">
-                      {SORT_OPTIONS.map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => { setSortBy(opt.value); setShowSort(false); }}
-                          className={cn(
-                            "w-full text-left px-3.5 py-2 text-xs transition-colors",
-                            sortBy === opt.value
-                              ? "bg-violet-500/10 text-violet-500 font-semibold"
-                              : "text-foreground hover:bg-accent/50"
-                          )}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </>
+              )}
+            </div>
           )}
         </div>
+
+        {/* ── Sort chips (listings only) ── */}
+        {tab === "listings" && (
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mt-1">
+            {SORT_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSortBy(opt.value)}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border whitespace-nowrap",
+                  sortBy === opt.value
+                    ? "bg-violet-500 text-white border-violet-500 shadow-sm shadow-violet-500/25"
+                    : "bg-card text-muted-foreground border-border/60 hover:border-violet-400/40 hover:text-foreground hover:bg-violet-500/5"
+                )}
+              >
+                {sortBy === opt.value && <Check className="w-3 h-3" />}
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── Listings ── */}
         {tab === "listings" && (
@@ -754,7 +742,11 @@ export default function FidMarketPage() {
               const hasPrice = ev.type !== "cancelled" && parseFloat(ev.priceEth) > 0;
 
               return (
-                <div key={`${ev.transactionHash}-${i}`} className="flex items-center gap-3.5 p-4 rounded-2xl border border-border/50 bg-card">
+                <div key={`${ev.transactionHash}-${i}`} className="relative flex items-center gap-3.5 p-4 pl-5 rounded-2xl border border-border/50 bg-card overflow-hidden">
+                  <div className={cn(
+                    "absolute left-0 top-0 bottom-0 w-[3px]",
+                    ev.type === "listed" ? "bg-violet-500" : ev.type === "sold" ? "bg-emerald-500" : "bg-rose-400"
+                  )} />
                   <div className="relative shrink-0">
                     {info?.pfpUrl ? (
                       <img src={info.pfpUrl} alt="" className="w-10 h-10 rounded-full object-cover" />

@@ -120,21 +120,33 @@ export function MiniAppsPanel() {
             />
           </div>
           {/* Category tabs */}
-          <div className="flex gap-1 overflow-x-auto pb-0.5 no-scrollbar">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={cn(
-                  "shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors",
-                  activeCategory === cat
-                    ? "bg-primary text-white"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                )}
-              >
-                {cat}
-              </button>
-            ))}
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            {CATEGORIES.map((cat) => {
+              const count = cat === "All" ? apps.length : apps.filter(a => a.category === cat).length;
+              const isActive = activeCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={cn(
+                    "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap",
+                    isActive
+                      ? "bg-primary text-white shadow-sm shadow-primary/30"
+                      : "text-muted-foreground border border-border/60 hover:border-primary/30 hover:text-foreground hover:bg-primary/5"
+                  )}
+                >
+                  {cat}
+                  {count > 0 && (
+                    <span className={cn(
+                      "text-[10px] font-bold leading-none px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                      isActive ? "bg-white/25 text-white" : "bg-muted text-muted-foreground"
+                    )}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 

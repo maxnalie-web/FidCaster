@@ -5,6 +5,8 @@ import {
   makeLinkRemove,
   makeReactionAdd,
   makeReactionRemove,
+  makeUserDataAdd,
+  UserDataType,
   NobleEd25519Signer,
   FarcasterNetwork,
   Message,
@@ -18,14 +20,15 @@ const HUB_URLS = [
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;
 
 export type FarcasterAction =
-  | { type: "like";        castHash: string; castAuthorFid: number }
-  | { type: "unlike";      castHash: string; castAuthorFid: number }
-  | { type: "recast";      castHash: string; castAuthorFid: number }
-  | { type: "unrecast";    castHash: string; castAuthorFid: number }
-  | { type: "follow";      targetFid: number }
-  | { type: "unfollow";    targetFid: number }
-  | { type: "cast";        text: string; parentHash?: string; parentFid?: number; parentUrl?: string }
-  | { type: "delete-cast"; castHash: string };
+  | { type: "like";             castHash: string; castAuthorFid: number }
+  | { type: "unlike";           castHash: string; castAuthorFid: number }
+  | { type: "recast";           castHash: string; castAuthorFid: number }
+  | { type: "unrecast";         castHash: string; castAuthorFid: number }
+  | { type: "follow";           targetFid: number }
+  | { type: "unfollow";         targetFid: number }
+  | { type: "cast";             text: string; parentHash?: string; parentFid?: number; parentUrl?: string }
+  | { type: "delete-cast";      castHash: string }
+  | { type: "update-user-data"; dataType: "pfp" | "display" | "bio"; value: string };
 
 function validateAction(action: FarcasterAction): void {
   const FID_MAX = 1_000_000_000;
@@ -59,6 +62,16 @@ function validateAction(action: FarcasterAction): void {
       if (!action.parentUrl.startsWith("https://") && !action.parentUrl.startsWith("chain://")) {
         throw new Error("parentUrl must use https:// or chain:// scheme");
       }
+    }
+  }
+  if (action.type === "update-user-data") {
+    const validTypes = ["pfp", "display", "bio"];
+    if (!validTypes.includes(action.dataType)) throw new Error("Invalid dataType for update-user-data");
+    if (typeof action.value !== "string" || action.value.length === 0 || action.value.length > 256) {
+      throw new Error("User data value must be 1–256 characters");
+    }
+    if (action.dataType === "pfp" && !action.value.startsWith("https://")) {
+      throw new Error("Profile picture must be a https:// URL");
     }
   }
 }
@@ -120,6 +133,16 @@ async function buildMessage(
     const hash = hexToBytes(action.castHash);
     result = await makeCastRemove(
       { targetHash: hash },
+      dataOptions, signer,
+    );
+  } else if (action.type === "update-user-data") {
+    const typeMap: Record<string, UserDataType> = {
+      pfp: UserDataType.PFP,
+      display: UserDataType.DISPLAY,
+      bio: UserDataType.BIO,
+    };
+    result = await makeUserDataAdd(
+      { type: typeMap[action.dataType], value: action.value },
       dataOptions, signer,
     );
   } else {

@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useWallet } from "@/hooks/useWallet";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 import { UsernameChange } from "@/components/UsernameChange";
+import { hubUpdateUserData } from "@/lib/hub-submit";
 import { FeedPanel } from "@/components/FeedPanel";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { SearchPanel } from "@/components/SearchPanel";
@@ -18,7 +19,7 @@ import {
   FileText, MessageSquare, Settings, Wallet,
   Plus, X, Loader2, CheckCircle2, Clock, UserCircle,
   Sun, Moon, AlertCircle, PenSquare, Copy,
-  MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers,
+  MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers, Camera,
 } from "lucide-react";
 import { createWalletClient, custom } from "viem";
 import { optimism } from "viem/chains";
@@ -27,7 +28,7 @@ import { toast } from "sonner";
 
 type MainTab = "feed" | "notifications" | "search" | "wallet" | "profile" | "miniapps";
 type ProfileSection = "posts" | "settings";
-type SettingsTab = "username" | "signer";
+type SettingsTab = "username" | "signer" | "profile";
 
 const SIDEBAR_ITEMS: { id: MainTab; label: string; icon: typeof Home }[] = [
   { id: "feed",          label: "Home",          icon: Home },
@@ -43,13 +44,13 @@ const BOTTOM_NAV: { id: MainTab; icon: typeof Home }[] = [
   { id: "search",        icon: Search },
   { id: "miniapps",      icon: Layers },
   { id: "notifications", icon: Bell },
-  { id: "profile",       icon: User },
 ];
 
 
 const SETTINGS_TABS: { id: SettingsTab; label: string; icon: typeof Home }[] = [
   { id: "username", label: "Username", icon: AtSign },
   { id: "signer",   label: "Signer",   icon: CheckCircle2 },
+  { id: "profile",  label: "Profile",  icon: User },
 ];
 
 /* ─── Signer Panel ───────────────────────────────────────────────────────── */
@@ -508,6 +509,184 @@ function AccountDropdownPanel({
   );
 }
 
+/* ─── ProfileEditPanel ───────────────────────────────────────────────────── */
+function ProfileEditPanel() {
+  const { fid, localSigner, signerApproved, profile } = useWallet();
+  const [displayName, setDisplayName] = useState(profile?.displayName || "");
+  const [bio, setBio] = useState("");
+  const [pfpUrl, setPfpUrl] = useState(profile?.pfpUrl || "");
+  const [saving, setSaving] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function saveField(field: "pfp" | "display" | "bio", value: string) {
+    if (!fid || !localSigner || !signerApproved) return;
+    if (!value.trim()) { toast.error("Value cannot be empty"); return; }
+    setSaving(field);
+    setError(null);
+    setSuccess(null);
+    try {
+      await hubUpdateUserData(Number(fid), localSigner, field, value.trim());
+      setSuccess(
+        field === "pfp" ? "Profile picture updated!" :
+        field === "display" ? "Display name updated!" : "Bio updated!"
+      );
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSaving("pfp-upload");
+    setError(null);
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/farcaster/upload-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl, type: file.type }),
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { url } = await res.json() as { url: string };
+      setPfpUrl(url);
+      await saveField("pfp", url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      if (saving === "pfp-upload") setSaving(null);
+    }
+  }
+
+  if (!signerApproved || !localSigner || !fid) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-10 text-center">
+        <AlertCircle className="w-8 h-8 text-amber-500 opacity-60" />
+        <p className="text-sm text-muted-foreground">Signer must be active to edit your Farcaster profile.</p>
+        <p className="text-xs text-muted-foreground/60">Go to the Signer tab and register your key first.</p>
+      </div>
+    );
+  }
+
+  const isSaving = !!saving;
+
+  return (
+    <div className="space-y-6">
+      {/* Profile Picture */}
+      <div className="space-y-3">
+        <label className="text-[10px] font-bold text-foreground uppercase tracking-widest">Profile Picture</label>
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-muted border border-border shrink-0">
+            {pfpUrl ? (
+              <img src={pfpUrl} alt="PFP preview" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <User className="w-7 h-7 text-muted-foreground/40" />
+              </div>
+            )}
+          </div>
+          <div className="flex-1 space-y-2">
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={handleFileUpload} />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={isSaving}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              {saving === "pfp-upload" ? "Uploading…" : "Upload Photo"}
+            </button>
+            <div className="flex gap-2">
+              <input
+                value={pfpUrl}
+                onChange={e => setPfpUrl(e.target.value)}
+                placeholder="Or paste image URL (https://…)"
+                className="flex-1 px-3 py-2 text-xs rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+              />
+              <button
+                onClick={() => saveField("pfp", pfpUrl)}
+                disabled={isSaving || !pfpUrl.startsWith("https://")}
+                className="px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 disabled:opacity-40 transition-colors shrink-0"
+              >
+                {saving === "pfp" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Display Name */}
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold text-foreground uppercase tracking-widest">Display Name</label>
+        <div className="flex gap-2">
+          <input
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+            maxLength={32}
+            placeholder={profile?.displayName || "Your display name…"}
+            className="flex-1 px-3 py-2.5 text-sm rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+          />
+          <button
+            onClick={() => saveField("display", displayName)}
+            disabled={isSaving || !displayName.trim()}
+            className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 disabled:opacity-40 transition-colors shrink-0"
+          >
+            {saving === "display" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+          </button>
+        </div>
+        <p className="text-[10px] text-muted-foreground">{displayName.length}/32</p>
+      </div>
+
+      {/* Bio */}
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold text-foreground uppercase tracking-widest">Bio</label>
+        <textarea
+          value={bio}
+          onChange={e => setBio(e.target.value)}
+          maxLength={256}
+          rows={3}
+          placeholder="Tell the world about yourself…"
+          className="w-full px-3 py-2.5 text-sm rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 resize-none leading-relaxed"
+        />
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-muted-foreground">{bio.length}/256</p>
+          <button
+            onClick={() => saveField("bio", bio)}
+            disabled={isSaving || !bio.trim()}
+            className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 disabled:opacity-40 transition-colors"
+          >
+            {saving === "bio" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Bio"}
+          </button>
+        </div>
+      </div>
+
+      {success && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20 text-emerald-600 text-xs font-semibold">
+          <CheckCircle2 className="w-4 h-4 shrink-0" /> {success}
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/8 border border-red-500/20 text-red-500 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+        </div>
+      )}
+
+      <div className="p-3 rounded-xl bg-muted/30 border border-border/50 text-[10px] text-muted-foreground/60 leading-relaxed">
+        Profile changes are submitted to the Farcaster hub and may take a few minutes to appear across apps.
+      </div>
+    </div>
+  );
+}
+
 /* ─── DashboardPage ──────────────────────────────────────────────────────── */
 export function DashboardPage() {
   const {
@@ -651,6 +830,7 @@ export function DashboardPage() {
                     onRetry={retrySignerSetup}
                   />
                 )}
+                {settingsTab === "profile" && <ProfileEditPanel />}
               </div>
             </div>
           );
@@ -868,12 +1048,22 @@ export function DashboardPage() {
               </button>
             );
           })}
-          {/* FID Market tab */}
+          {/* FID Market tab — before Profile */}
           <button
             onClick={() => navigate("/market")}
             className="flex-1 flex items-center justify-center transition-colors"
           >
             <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+          </button>
+          {/* Profile — always last */}
+          <button
+            onClick={() => setMainTab("profile")}
+            className="flex-1 flex items-center justify-center transition-colors"
+          >
+            <User
+              className={cn("w-6 h-6", mainTab === "profile" ? "text-primary" : "text-muted-foreground")}
+              strokeWidth={mainTab === "profile" ? 2.5 : 2}
+            />
           </button>
         </nav>
 

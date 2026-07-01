@@ -160,6 +160,7 @@ const VALID_HEX_64 = /^[0-9a-fA-F]{64}$/;
 const VALID_ACTIONS = new Set<string>([
   "like", "unlike", "recast", "unrecast",
   "follow", "unfollow", "cast", "delete-cast",
+  "update-user-data",
 ]);
 
 app.get("/api/farcaster/health", (_req, res) => {

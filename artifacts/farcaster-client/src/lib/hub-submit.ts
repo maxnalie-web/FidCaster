@@ -123,3 +123,17 @@ export async function hubDeleteCast(
     action: { type: "delete-cast", castHash },
   });
 }
+
+export async function hubUpdateUserData(
+  fid: number | bigint,
+  signer: LocalSigner,
+  dataType: "pfp" | "display" | "bio",
+  value: string,
+): Promise<void> {
+  const fidNum = normFid(fid);
+  await callServer({
+    signerPrivateKey: toHex(signer.privateKey),
+    fid: fidNum,
+    action: { type: "update-user-data", dataType, value },
+  });
+}
