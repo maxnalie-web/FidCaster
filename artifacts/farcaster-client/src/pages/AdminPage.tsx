@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
-  Settings, Type, Palette, Zap, Users, Key, Bell, Hash,
+  Settings, Type, Palette, Users, Key, Bell, Hash,
   Save, RotateCcw, ChevronRight, X, Plus, Trash2, Eye, EyeOff,
-  Code, Shield, Gauge, ToggleLeft, ToggleRight, ArrowLeft, Copy, Check,
+  Shield, ToggleLeft, ToggleRight, ArrowLeft, Copy, Check,
   AlertTriangle, Info, CheckCircle2, RefreshCw,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
@@ -21,8 +21,6 @@ type Section =
   | "api"
   | "announcements"
   | "channels"
-  | "ratelimits"
-  | "css"
   | "misc";
 
 const SECTIONS: { id: Section; label: string; icon: typeof Settings; description: string }[] = [
@@ -33,8 +31,6 @@ const SECTIONS: { id: Section; label: string; icon: typeof Settings; description
   { id: "api",           label: "API Settings",     icon: Key,        description: "Neynar key, Hub URL, RPC" },
   { id: "announcements", label: "Announcements",    icon: Bell,       description: "Global banner messages" },
   { id: "channels",      label: "Featured Channels",icon: Hash,       description: "Default featured channels" },
-  { id: "ratelimits",    label: "Rate Limits",      icon: Gauge,      description: "Server request limits" },
-  { id: "css",           label: "Custom CSS",       icon: Code,       description: "Inject custom styles" },
   { id: "misc",          label: "Misc",             icon: Settings,   description: "General settings" },
 ];
 
@@ -477,50 +473,6 @@ export function AdminPage() {
                   className="flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-primary/40 text-primary text-sm font-semibold hover:bg-primary/5 transition-colors w-full justify-center"
                 >
                   <Plus className="w-4 h-4" /> Add Channel
-                </button>
-              </div>
-            )}
-
-            {/* ── RATE LIMITS ── */}
-            {activeSection === "ratelimits" && (
-              <div>
-                <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 flex items-start gap-2 mb-5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-400">These are reference values. To apply them in production, update <code>server/index.ts</code>.</p>
-                </div>
-                <Field>
-                  <Label sub="Actions (follow/like/cast) per minute">Action Limiter (per min)</Label>
-                  <NumberInput value={cfg.rateLimits.actionPerMin} onChange={(v) => set("rateLimits", "actionPerMin", v)} min={1} max={1000} />
-                </Field>
-                <Field>
-                  <Label sub="Total requests per minute (global)">Global Limiter (per min)</Label>
-                  <NumberInput value={cfg.rateLimits.globalPerMin} onChange={(v) => set("rateLimits", "globalPerMin", v)} min={1} max={2000} />
-                </Field>
-              </div>
-            )}
-
-            {/* ── CUSTOM CSS ── */}
-            {activeSection === "css" && (
-              <div>
-                <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-2 mb-5">
-                  <Code className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">This CSS is injected directly into the DOM. Use site CSS variables: <code className="text-primary">var(--primary)</code></p>
-                </div>
-                <Field>
-                  <Label>Custom CSS</Label>
-                  <Textarea
-                    value={cfg.customCss}
-                    onChange={(v) => update(p => ({ ...p, customCss: v }))}
-                    rows={16}
-                    placeholder={`.cast-card { border-radius: 16px; }\n.btn-luxury { letter-spacing: 0.02em; }\n/* ... */`}
-                  />
-                </Field>
-                <button
-                  onClick={() => { applyAdminTheme(cfg); toast.success("CSS applied"); }}
-                  className="btn-luxury px-4 py-2 rounded-xl text-sm font-semibold text-primary-foreground"
-                >
-                  <Eye className="w-3.5 h-3.5 inline mr-1.5" />
-                  Preview CSS
                 </button>
               </div>
             )}
