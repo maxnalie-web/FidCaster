@@ -207,11 +207,18 @@ export function BatchFollowSheet({
   function selectPreset(p: PresetDef) {
     setActivePreset(p.id);
     if (p.id !== "custom") setFilters({ ...DEFAULT_FILTERS, ...p.filters });
+    setCustomLimit("");
   }
 
+  /** Change only the count — keeps the active strategy preset visually selected */
+  function setLimitOnly(n: number) {
+    setFilters(f => ({ ...f, limit: n }));
+  }
+
+  /** Change a real filter toggle — switches strategy to Custom */
   function updateFilter<K extends keyof BatchFilters>(key: K, val: BatchFilters[K]) {
     setFilters(f => ({ ...f, [key]: val }));
-    setActivePreset("custom");
+    if (key !== "limit") setActivePreset("custom");
   }
 
   const fetchUsers = useCallback(async () => {
@@ -221,6 +228,10 @@ export function BatchFollowSheet({
     const collected: NeynarUser[] = [];
     let cursor: string | undefined;
     const fetchFid = mode === "unfollow" ? myFid : sourceFid;
+    // For filtered modes (power badge, mutuals), we need to scan many more users
+    // because only a small % of followers typically match.
+    const needsDeepScan = filters.onlyPowerBadge || filters.onlyMutuals || filters.onlyNonFollowers;
+    const maxCollect = needsDeepScan ? Math.max(filters.limit * 40, 2000) : filters.limit * 10;
     try {
       do {
         if (cancelRef.current) break;
@@ -229,10 +240,11 @@ export function BatchFollowSheet({
         const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
         collected.push(...batch);
         cursor = res.next?.cursor;
-        setFetchPg({ pages: Math.ceil(collected.length / 50), found: collected.length });
+        setFetchPg({ pages: Math.ceil(collected.length / 100), found: collected.length });
         const filtered = applyFilters(collected, mode, filters);
-        if (filtered.length >= filters.limit && !filters.onlyNonFollowers && !filters.skipMutuals && !filters.onlyMutuals) break;
-      } while (cursor && collected.length < filters.limit * 8);
+        // Stop early once we have enough matching users
+        if (filtered.length >= filters.limit) break;
+      } while (cursor && collected.length < maxCollect);
     } catch (e) {
       toast.error("Failed to load: " + (e instanceof Error ? e.message : "error"));
       setPhase("setup");
@@ -361,7 +373,7 @@ export function BatchFollowSheet({
                     {LIMIT_PRESETS.map(n => (
                       <button
                         key={n}
-                        onClick={() => { updateFilter("limit", n); setCustomLimit(""); }}
+                        onClick={() => { setLimitOnly(n); setCustomLimit(""); }}
                         className={cn(
                           "px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-all",
                           filters.limit === n && !customLimit
@@ -373,12 +385,12 @@ export function BatchFollowSheet({
                       </button>
                     ))}
                     <input
-                      type="number" min={1} max={500} placeholder="Other"
+                      type="number" min={1} max={1000} placeholder="Other"
                       value={customLimit}
                       onChange={e => {
                         setCustomLimit(e.target.value);
                         const v = parseInt(e.target.value);
-                        if (!isNaN(v) && v > 0) updateFilter("limit", Math.min(500, v));
+                        if (!isNaN(v) && v > 0) setLimitOnly(Math.min(1000, v));
                       }}
                       className="w-20 px-3 py-1.5 rounded-full text-[13px] font-semibold border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50 text-center"
                     />
