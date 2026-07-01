@@ -8,7 +8,19 @@ import type { LocalSigner } from "@/lib/wallet";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
 
-const DELAY_MS = 2000;
+// ─── Timing knobs ─────────────────────────────────────────────────────────────
+// Normal gap between consecutive hub submissions (keeps us well under rate limit)
+const DELAY_MS = 1500;
+// How long to wait before retrying after a signer-not-yet-known error.
+// Hubs typically sync a new signer within 60–120s of the on-chain tx confirming.
+const SIGNER_RETRY_WAIT_MS = 90_000;
+// How many times we'll wait+retry a single FID before giving up on it.
+const MAX_SIGNER_RETRIES = 3;
+// If this many FIDs in a row produce hub errors (any kind), pause before continuing.
+const CONSECUTIVE_ERR_LIMIT = 4;
+// How long to pause when consecutive errors hit the limit.
+const CONSECUTIVE_ERR_PAUSE_MS = 60_000;
+
 const BATCH_PERSIST_KEY = "fc_batch_op_v1";
 
 // ─── Persistence helpers ───────────────────────────────────────────────────────
@@ -56,6 +68,8 @@ export interface BatchOp {
   skipped: number;
   prefiltered: number;
   label: string;
+  /** Set while the batch is waiting before a retry — shown to user in the pill */
+  waitMsg?: string;
 }
 
 export interface StartOpParams {
@@ -125,52 +139,105 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     const attempt = async (targetFid: number) =>
       hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
 
+    // Helper: update op state (with optional wait message shown in the pill)
+    const update = (waitMsg?: string) =>
+      setOp({ mode, phase: "running", done, total, errors, skipped, prefiltered: pf, label, waitMsg });
+
+    // Tracks runs of consecutive non-duplicate hub errors so we can auto-throttle
+    let consecutiveErrors = 0;
+
     for (let i = 0; i < fids.length; i++) {
       if (cancelRef.current) break;
       const targetFid = fids[i];
 
-      // Persist remaining work before each action
+      // Persist remaining work BEFORE each action so a page refresh can resume
       saveBatch({ mode, pendingFids: fids.slice(i), myFid, neynarKey, label, total, done, errors, skipped });
 
-      try {
-        await attempt(targetFid);
-        done++;
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        const lo = msg.toLowerCase();
+      // ── Inner retry loop for this single FID ──────────────────────────────
+      // We never cancel the whole batch for transient hub issues; we wait and retry.
+      let result: "done" | "skipped" | "error" = "error";
+      let signerRetries = 0;  // retries specifically for signer-sync errors
+      let genericRetries = 0; // retries for rate-limit / timeout
 
-        if (lo.includes("duplicate") || lo.includes("already follow")) {
-          // Hub rejected because link already exists — treat as skipped, not an error
-          skipped++;
-        } else if (lo.includes("signer_not_registered") || lo.includes("signer not recognized") || lo.includes("signer key is not yet recognized")) {
-          // Hub blocked our signer — all subsequent attempts will fail too.
-          // Stop the batch immediately and let the user know.
-          errors++;
-          toast.error(
-            "Batch paused: hub blocked this signer after too many rapid actions. Wait 5–10 minutes, then try again.",
-            { duration: 10_000 },
-          );
-          cancelRef.current = true;
-        } else if (msg.includes("429") || lo.includes("rate") || lo.includes("too many")) {
-          // Rate-limited: wait 62s then retry once
-          await new Promise(r => setTimeout(r, 62_000));
-          if (!cancelRef.current) {
-            try { await attempt(targetFid); done++; }
-            catch { errors++; }
+      while (!cancelRef.current) {
+        try {
+          await attempt(targetFid);
+          result = "done";
+          break;
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const lo = msg.toLowerCase();
+
+          const isDuplicate = lo.includes("duplicate") || lo.includes("already follow");
+          const isSignerError =
+            lo.includes("signer_not_registered") ||
+            lo.includes("signer not recognized") ||
+            lo.includes("signer key is not yet recognized") ||
+            lo.includes("fid cannot be 0") ||
+            lo.includes("unknown signer") ||
+            lo.includes("invalid signer");
+          const isRateLimit =
+            msg.includes("429") || lo.includes("rate limit") || lo.includes("too many requests");
+          const isTransient = lo.includes("timeout") || lo.includes("abort") || lo.includes("signal");
+
+          if (isDuplicate) {
+            result = "skipped";
+            break;
           }
-        } else if (lo.includes("timeout") || lo.includes("abort") || lo.includes("signal")) {
-          // Timeout: retry once immediately before counting as error
-          await new Promise(r => setTimeout(r, 3_000));
-          if (!cancelRef.current) {
-            try { await attempt(targetFid); done++; }
-            catch { errors++; }
+
+          if (isSignerError && signerRetries < MAX_SIGNER_RETRIES) {
+            // Hub hasn't synced the signer yet — this is a temporary condition.
+            // Wait for the hub to catch up, then retry the same FID silently.
+            signerRetries++;
+            const secsLeft = Math.round(SIGNER_RETRY_WAIT_MS / 1000);
+            update(`Hub syncing signer… retry ${signerRetries}/${MAX_SIGNER_RETRIES} in ${secsLeft}s`);
+            await new Promise(r => setTimeout(r, SIGNER_RETRY_WAIT_MS));
+            update(); // clear wait message before retrying
+            continue; // retry the same FID
           }
-        } else {
-          errors++;
+
+          if (isRateLimit && genericRetries < 3) {
+            genericRetries++;
+            update(`Rate limited — waiting 62s (retry ${genericRetries}/3)`);
+            await new Promise(r => setTimeout(r, 62_000));
+            update();
+            continue;
+          }
+
+          if (isTransient && genericRetries === 0) {
+            genericRetries++;
+            await new Promise(r => setTimeout(r, 3_000));
+            continue;
+          }
+
+          // Gave up on this FID
+          result = "error";
+          break;
         }
       }
 
-      setOp({ mode, phase: "running", done, total, errors, skipped, prefiltered: pf, label });
+      // Tally the result
+      if (result === "done") {
+        done++;
+        consecutiveErrors = 0;
+      } else if (result === "skipped") {
+        skipped++;
+        consecutiveErrors = 0;
+      } else {
+        errors++;
+        consecutiveErrors++;
+      }
+
+      // Auto-throttle: if the hub keeps rejecting in a row, give it a 60s breather.
+      // This handles undocumented per-FID or per-app rate windows transparently.
+      if (consecutiveErrors >= CONSECUTIVE_ERR_LIMIT && !cancelRef.current) {
+        update(`Hub is busy — cooling down for 60s…`);
+        await new Promise(r => setTimeout(r, CONSECUTIVE_ERR_PAUSE_MS));
+        consecutiveErrors = 0;
+        update();
+      }
+
+      update();
       if (i < fids.length - 1 && !cancelRef.current)
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
