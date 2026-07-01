@@ -178,6 +178,25 @@ async function buildMessage(
   return result.value;
 }
 
+/**
+ * Sign a Farcaster message and return the serialised protobuf bytes (base64).
+ * Does NOT submit to any hub — the caller (browser) does the submission directly,
+ * distributing hub traffic across each user's own IP instead of the server's IP.
+ */
+export async function signFarcasterAction(
+  signerPrivateKeyHex: string,
+  fid: number,
+  action: FarcasterAction,
+): Promise<{ bytes: string; hash: string }> {
+  validateAction(action);
+  const message = await buildMessage(signerPrivateKeyHex, fid, action);
+  const msgBytes = Message.encode(message).finish();
+  return {
+    bytes: Buffer.from(msgBytes).toString("base64"),
+    hash: Buffer.from(message.hash).toString("hex"),
+  };
+}
+
 export async function submitFarcasterAction(
   signerPrivateKeyHex: string,
   fid: number,

@@ -7,7 +7,7 @@ import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { mnemonicToAccount } from "viem/accounts";
-import { submitFarcasterAction, type FarcasterAction } from "./farcaster-submit.js";
+import { submitFarcasterAction, signFarcasterAction, type FarcasterAction } from "./farcaster-submit.js";
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { cacheStats } from "./cache.js";
@@ -426,6 +426,38 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] action error:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Browser-direct hub submission — sign only, no hub round-trip from server ──
+// The browser receives the signed protobuf bytes and submits directly to public hubs,
+// distributing traffic across each user's IP instead of funnelling through one server IP.
+// This endpoint is a pure signing service: validate → build → sign → return bytes.
+app.post("/api/farcaster/sign-message", actionLimiter, async (req, res) => {
+  try {
+    const { signerPrivateKey, fid, action } = req.body as {
+      signerPrivateKey: string;
+      fid: number;
+      action: FarcasterAction;
+    };
+    if (!signerPrivateKey || typeof signerPrivateKey !== "string") {
+      res.status(400).json({ error: "signerPrivateKey required" }); return;
+    }
+    const keyClean = signerPrivateKey.replace(/^0x/, "");
+    if (!VALID_HEX_64.test(keyClean)) {
+      res.status(400).json({ error: "signerPrivateKey must be a 64-character hex string" }); return;
+    }
+    if (typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0 || fid > 1_000_000_000) {
+      res.status(400).json({ error: "Invalid fid" }); return;
+    }
+    if (!action || typeof action.type !== "string" || !VALID_ACTIONS.has(action.type)) {
+      res.status(400).json({ error: `Invalid action type. Allowed: ${[...VALID_ACTIONS].join(", ")}` }); return;
+    }
+    const result = await signFarcasterAction(`0x${keyClean}`, fid, action);
+    res.json(result);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Internal error";
     res.status(500).json({ error: msg });
   }
 });

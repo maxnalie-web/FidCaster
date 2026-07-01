@@ -10,6 +10,11 @@
  * TTL:  12 hours.  Profile data (pfp, bio, follower counts) is stale-safe at this
  *       window because Farcaster social graphs change slowly and any write action
  *       (follow, update-profile) bypasses cache entirely.
+ *
+ * Perf: WAL journal mode — allows concurrent reads while a write is in progress,
+ *       preventing read starvation under high concurrency.
+ *       Write batching — buffers writes for 100 ms then flushes in one transaction,
+ *       turning N synchronous blocking writes into one async-friendly batch.
  */
 
 import { resolve, dirname } from "path";
@@ -35,7 +40,11 @@ function initDb(): Db | null {
     const dbPath = resolve(__dir, "../profile-cache.sqlite");
     const sqlite = new Database(dbPath) as import("better-sqlite3").Database;
 
+    // WAL mode: readers never block writers and writers never block readers.
+    // NORMAL sync is safe with WAL — SQLite guarantees durability on commit.
     sqlite.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous  = NORMAL;
       CREATE TABLE IF NOT EXISTS profiles (
         fid       INTEGER PRIMARY KEY,
         data      TEXT    NOT NULL,
@@ -47,7 +56,7 @@ function initDb(): Db | null {
     // Evict expired rows on startup (keep DB small)
     sqlite.prepare("DELETE FROM profiles WHERE cached_at < ?").run(Date.now() - TTL_MS);
 
-    const stmtGet   = sqlite.prepare<[number], { data: string; cached_at: number }>(
+    const stmtGet = sqlite.prepare<[number], { data: string; cached_at: number }>(
       "SELECT data, cached_at FROM profiles WHERE fid = ?"
     );
     const stmtUpsert = sqlite.prepare<[number, string, number], void>(
@@ -59,12 +68,35 @@ function initDb(): Db | null {
       }
     );
 
+    // ── Write queue (100 ms batching) ──────────────────────────────────────
+    // better-sqlite3 is synchronous; calling it per-request under high load
+    // blocks the Node.js event loop.  Instead, we buffer writes for 100 ms
+    // and flush them in a single transaction — one blocking call instead of N.
+    const pendingWrites = new Map<number, { data: string; now: number }>();
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function scheduleFlush(): void {
+      if (flushTimer !== null) return;
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        if (pendingWrites.size === 0) return;
+        const batch = [...pendingWrites.entries()].map(([fid, { data, now }]) => ({
+          fid,
+          data,
+          now,
+        }));
+        pendingWrites.clear();
+        try {
+          stmtBatchUpsert(batch);
+        } catch (e) {
+          console.warn("[profile-db] batch write failed:", (e as Error).message);
+        }
+      }, 100);
+    }
+
     return {
       get(fid) {
         return stmtGet.get(fid);
-      },
-      set(fid, data) {
-        stmtUpsert.run(fid, JSON.stringify(data), Date.now());
       },
       getMany(fids) {
         const result = new Map<number, unknown>();
@@ -81,9 +113,17 @@ function initDb(): Db | null {
         }
         return result;
       },
+      // Buffered writes — never block the event loop per-request
+      set(fid, data) {
+        pendingWrites.set(fid, { data: JSON.stringify(data), now: Date.now() });
+        scheduleFlush();
+      },
       setMany(users) {
         const now = Date.now();
-        stmtBatchUpsert(users.map(u => ({ fid: u.fid, data: JSON.stringify(u), now })));
+        for (const u of users) {
+          pendingWrites.set(u.fid, { data: JSON.stringify(u), now });
+        }
+        scheduleFlush();
       },
     };
   } catch (e) {

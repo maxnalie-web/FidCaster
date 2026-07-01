@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { cacheGet, cacheSet } from "./cache.js";
+import { cacheGet, cacheGetSWR, cacheSet } from "./cache.js";
 import { neynarThrottle, singleFlight, penalize429 } from "./neynar-limit.js";
 import { getCachedProfiles, setCachedProfiles } from "./profile-db.js";
 
@@ -36,36 +36,44 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
   const qs = new URLSearchParams(req.query as Record<string, string>).toString();
   const cacheKey = `neynar:${neynarPath}${qs ? "?" + qs : ""}`;
 
-  const hit = cacheGet(cacheKey);
-  if (hit !== undefined) {
-    console.log("[cache] hit ", cacheKey);
+  const ttlMs = ttlFor(neynarPath);
+  const upstream = `${NEYNAR_V2}${neynarPath}${qs ? "?" + qs : ""}`;
+
+  /** Fetch fresh data from Neynar and populate the cache. */
+  async function fetchAndCache(): Promise<unknown> {
+    const selectedKey = await neynarThrottle();
+    const r = await fetch(upstream, {
+      headers: { accept: "application/json", api_key: selectedKey },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) {
+      if (r.status === 429) penalize429(selectedKey);
+      const body = await r.json().catch(() => ({}));
+      const err = new Error(`HTTP ${r.status}`) as Error & { status?: number; body?: unknown };
+      err.status = r.status; err.body = body;
+      throw err;
+    }
+    const d = await r.json();
+    cacheSet(cacheKey, d, ttlMs);
+    return d;
+  }
+
+  // ── Stale-While-Revalidate: serve cached data (even near-expiry) immediately.
+  // When the entry enters its last 20% of TTL, a background refresh is triggered
+  // so callers never block on an expiring hot key.
+  const staleHit = cacheGetSWR(cacheKey, ttlMs, fetchAndCache);
+  if (staleHit !== undefined) {
     res.setHeader("X-Cache", "HIT");
-    res.json(hit);
+    res.json(staleHit);
     return;
   }
-  console.log("[cache] miss", cacheKey);
 
-  const upstream = `${NEYNAR_V2}${neynarPath}${qs ? "?" + qs : ""}`;
   try {
-    // single-flight: concurrent identical requests share one Neynar call
+    // Hard miss — single-flight: concurrent identical requests share one Neynar call
     const data = await singleFlight(cacheKey, async () => {
       const cached2 = cacheGet(cacheKey);
       if (cached2 !== undefined) return cached2;
-      const selectedKey = await neynarThrottle(); // picks key with most tokens
-      const r = await fetch(upstream, {
-        headers: { accept: "application/json", api_key: selectedKey },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!r.ok) {
-        if (r.status === 429) penalize429(selectedKey);
-        const body = await r.json().catch(() => ({}));
-        const err = new Error(`HTTP ${r.status}`) as Error & { status?: number; body?: unknown };
-        err.status = r.status; err.body = body;
-        throw err;
-      }
-      const d = await r.json();
-      cacheSet(cacheKey, d, ttlFor(neynarPath));
-      return d;
+      return fetchAndCache();
     });
     res.setHeader("X-Cache", "MISS");
     res.json(data);

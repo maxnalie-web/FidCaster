@@ -1,0 +1,77 @@
+Here’s a clean, production-grade recommendation you can paste directly into Replit:
+
+⸻
+
+Recommended Fix (Production Architecture for 10K concurrent users)
+
+We should NOT send hub writes through a single server IP. That will inevitably trigger rate limits and blocking on public Farcaster hubs.
+
+1. Fix Hub Write Architecture (Critical)
+
+Replace server-side hub proxy with a hybrid client-signed submission model:
+
+* Client signs messages locally (via Farcaster signer)
+* Client submits directly to public hubs:
+    * hoyt.farcaster.xyz
+    * hub.farcaster.standardcrypto.vc
+* Server role:
+    * only issues/validates signer context (if needed)
+    * fallback relay ONLY when client submission fails
+
+This removes single-IP bottleneck and distributes traffic naturally across user IPs.
+
+⸻
+
+2. Add Global Request Coalescing (Critical for Neynar)
+
+Implement a global single-flight cache layer:
+
+* Deduplicate identical FID/profile/feed requests across ALL users
+* If FID is already being fetched:
+    * wait for same promise instead of new API call
+* Add stale-while-revalidate:
+    * serve cached data immediately
+    * refresh in background
+
+This prevents cold-cache API explosion (200K+ calls during spike).
+
+⸻
+
+3. SQLite Optimization (High Priority)
+
+Current issue: synchronous blocking under load.
+
+Fix:
+
+* Enable WAL mode:
+
+PRAGMA journal_mode = WAL;
+
+* Introduce write queue:
+    * batch writes every 50–100ms instead of per request
+* Keep reads fast path only
+
+Optionally move heavy reads to worker thread if needed.
+
+⸻
+
+4. Process Scaling (Medium Priority)
+
+Node single-process limitation under 10K concurrency:
+
+* Run multi-core mode:
+    * pm2 -i max or Node cluster module
+* Reduce GC pressure by avoiding large object churn
+
+⸻
+
+Expected Result After Fix
+
+* Hub writes distributed → no IP blocking
+* Neynar cost reduced drastically after cache warm-up
+* No event loop blocking from SQLite writes
+* System becomes stable under 10K concurrent users
+
+⸻
+
+If you want, next step is ￼ upgrading this into a fully event-driven architecture (queue + edge submission + distributed cache layer) which will make it scale beyond 50K+ users safely.
