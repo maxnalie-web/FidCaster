@@ -8,6 +8,46 @@ import type { LocalSigner } from "@/lib/wallet";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
 
+// ─── Hub signer readiness check ───────────────────────────────────────────────
+// Before starting any batch, we verify that the hub has indexed our signer's
+// on-chain registration. Calling startOp right after a fresh registerSignerOnchain()
+// can cause every message to fail with SIGNER_NOT_REGISTERED until the hub syncs
+// (~60-120s). Checking first costs nothing for existing signers (instant pass) and
+// saves the entire retry budget for new ones.
+
+function hexToB64(hex: string): string {
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(h.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+  return btoa(String.fromCharCode(...bytes));
+}
+
+async function checkSignerOnHub(fid: number, publicKeyHex: string, neynarKey: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://hub-api.neynar.com/v1/onChainSignersByFid?fid=${fid}&pageSize=100`,
+      { headers: { api_key: neynarKey }, signal: AbortSignal.timeout(10_000) },
+    );
+    if (!res.ok) return false;
+    const data = await res.json() as {
+      events?: Array<{
+        onChainEventBody?: {
+          signerEventBody?: { key?: string; eventType?: string };
+        };
+      }>;
+    };
+    if (!data.events?.length) return false;
+    const b64 = hexToB64(publicKeyHex);
+    return data.events.some(e => {
+      const b = e.onChainEventBody?.signerEventBody;
+      return b?.eventType === "SIGNER_EVENT_TYPE_ADD" && b.key === b64;
+    });
+  } catch {
+    // If check errors, don't block — let retry loop handle any hub errors
+    return true;
+  }
+}
+
 // ─── Timing knobs ─────────────────────────────────────────────────────────────
 // Normal gap between consecutive hub submissions (keeps us well under rate limit)
 const DELAY_MS = 1500;
@@ -249,21 +289,49 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     );
   }, []);
 
-  // Fresh start — pre-filters already-followed/unfollowed users before running
+  // Fresh start — pre-filters already-followed/unfollowed users before running.
+  // Also verifies the signer is known to the hub BEFORE starting, so we never
+  // hit SIGNER_NOT_REGISTERED mid-batch on a freshly-registered key.
   const startOp = useCallback((params: StartOpParams) => {
     const { mode, users, myFid, localSigner, neynarKey, label } = params;
 
     (async () => {
-      // Step 1: split by whether viewer_context is available
-      const withCtx  = users.filter(u => u.viewer_context !== undefined);
-      const noCtx    = users.filter(u => u.viewer_context === undefined);
+      // ── Step 0: Hub signer readiness check (runs in parallel with filter step)
+      // For existing signers this resolves immediately with no toast shown.
+      // For freshly-registered keys it waits with a countdown until the hub syncs.
+      const HUB_CHECKS = 8;
+      const HUB_POLL_MS = 15_000;
 
-      // Filter users we already know about from viewer_context
+      const hubReadyPromise = (async (): Promise<void> => {
+        const immediate = await checkSignerOnHub(myFid, localSigner.publicKeyHex, neynarKey);
+        if (immediate) return; // signer already known — fast path, no toast
+
+        let toastId: string | number | undefined;
+        for (let i = 0; i < HUB_CHECKS; i++) {
+          const remaining = Math.round((HUB_CHECKS - i) * HUB_POLL_MS / 1000);
+          const msg = `Waiting for hub to sync your signer… (~${remaining}s remaining)`;
+          toastId = toastId
+            ? (toast.loading(msg, { id: toastId }), toastId)
+            : toast.loading(msg, { duration: (HUB_CHECKS + 1) * HUB_POLL_MS });
+          await new Promise(r => setTimeout(r, HUB_POLL_MS));
+          const ready = await checkSignerOnHub(myFid, localSigner.publicKeyHex, neynarKey);
+          if (ready) {
+            toast.dismiss(toastId);
+            return;
+          }
+        }
+        if (toastId != null) toast.dismiss(toastId);
+        // Timed out — proceed anyway; per-FID retry loop in runBatch will handle stragglers
+      })();
+
+      // ── Step 1: Filter already-followed/unfollowed users (parallel with hub check)
+      const withCtx = users.filter(u => u.viewer_context !== undefined);
+      const noCtx   = users.filter(u => u.viewer_context === undefined);
+
       let filtered = withCtx.filter(u =>
         mode === "follow" ? !u.viewer_context!.following : u.viewer_context!.following
       );
 
-      // Step 2: for users missing viewer_context do a bulk API check (batches of 100)
       if (noCtx.length > 0) {
         try {
           const followedSet = await checkFollowStatusBulk(myFid, noCtx.map(u => u.fid), neynarKey);
@@ -272,7 +340,6 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           );
           filtered = [...filtered, ...checkedOk];
         } catch {
-          // API check failed — include them all; duplicates handled at runtime
           filtered = [...filtered, ...noCtx];
         }
       }
@@ -285,6 +352,9 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         toast.success(`All ${users.length} users already ${mode === "follow" ? "followed" : "unfollowed"}! Nothing to do.`);
         return;
       }
+
+      // ── Step 2: Wait for hub readiness before submitting the first message
+      await hubReadyPromise;
 
       runBatch({ mode, fids: filtered.map(u => u.fid), myFid, signer: localSigner, neynarKey, label, total: filtered.length, prefiltered });
     })();

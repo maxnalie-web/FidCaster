@@ -145,6 +145,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const walletClientRef = useRef<WalletClient | null>(null);
   const localSignerRef = useRef<LocalSigner | null>(null);
 
+  // Guard: prevents two concurrent calls to _autoActivateSigner (e.g. rapid
+  // account switches, same user opening two tabs and logging in simultaneously).
+  const autoActivatingRef = useRef<Set<number>>(new Set());
+
   function _zeroAndLock() {
     if (localSignerRef.current) {
       localSignerRef.current.privateKey.fill(0);
@@ -171,82 +175,93 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     signer: LocalSigner,
   ) => {
     const fidNum = Number(fid);
-    const cached = loadSignerApproved(fidNum);
 
-    // Cache hit → unblock UI immediately; verify silently in background
-    if (cached) {
-      setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
-    } else {
-      setState((s) => ({ ...s, autoSignerLoading: true, signerError: null }));
-    }
+    // Prevent re-entrant calls for the same FID (e.g. two tabs logging in
+    // simultaneously, or rapid account switches within a single tab).
+    if (autoActivatingRef.current.has(fidNum)) return;
+    autoActivatingRef.current.add(fidNum);
 
-    let onChainState: number;
     try {
-      onChainState = await getSignerStateWithRetry(fid, signer.publicKeyHex);
-    } catch (rpcErr) {
+      const cached = loadSignerApproved(fidNum);
+
+      // Cache hit → unblock UI immediately; verify silently in background
       if (cached) {
-        // Background check failed · keep cached approval, don't disrupt the user
-        return;
+        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+      } else {
+        setState((s) => ({ ...s, autoSignerLoading: true, signerError: null }));
       }
-      const rpcMsg = rpcErr instanceof Error ? rpcErr.message : String(rpcErr);
-      console.error("All RPC attempts failed for signer check:", rpcMsg);
-      setState((s) => ({
-        ...s,
-        autoSignerLoading: false,
-        signerError: `Could not verify signer on Optimism (RPC error). Check your internet connection and tap Retry.\n\nYour signer key: ${signer.publicKeyHex}`,
-      }));
-      return;
-    }
 
-    if (onChainState === 1) {
-      if (!cached) markSignerApproved(fidNum);
-      setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
-      return;
-    }
-
-    // Signer was revoked/removed on-chain
-    if (cached) clearSignerApproved(fidNum);
-    // Revert the optimistic approval and show loading state for registration
-    if (cached) {
-      setState((s) => ({ ...s, signerApproved: false, autoSignerLoading: true }));
-    }
-
-    try {
-      const txHash = await registerSignerOnchain(wc, fid, address, signer.publicKeyHex);
-      setState((s) => ({
-        ...s,
-        signerError: `Registering signer on-chain... TX: ${txHash.slice(0, 12)}...`,
-      }));
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000 });
-      if (receipt.status !== "success") {
-        throw new Error(`Transaction reverted on-chain (status: ${receipt.status}). The signer could not be registered. TX: ${txHash}`);
-      }
-      const postState = await getSignerStateWithRetry(fid, signer.publicKeyHex).catch(() => 0);
-      if (postState !== 1) {
-        throw new Error(`Transaction confirmed but KeyRegistry still shows state=${postState}. Please retry.`);
-      }
-      markSignerApproved(fidNum);
-      setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
-    } catch (e: unknown) {
-      const raw = e instanceof Error ? e.message : String(e);
-      console.error("Signer registration failed");
-      let msg: string;
-      if (raw.toLowerCase().includes("insufficient") || raw.toLowerCase().includes("gas") || raw.toLowerCase().includes("funds")) {
-        msg = `Your signer key is not registered on Farcaster.\n\nTo fix this, you need a tiny amount of ETH on Optimism (< $0.01) for a one-time gas fee.\n\n• Go to the Wallet tab → Receive to get your address\n• Send ~0.001 ETH on Optimism to that address\n• Then come back here and tap Retry`;
-      } else if (raw.toLowerCase().includes("user rejected") || raw.toLowerCase().includes("denied")) {
-        msg = "Transaction cancelled. Tap Retry to try again.";
-      } else if (raw.toLowerCase().includes("already") || raw.toLowerCase().includes("invalid key state")) {
-        const recheckState = await getSignerStateWithRetry(fid, signer.publicKeyHex).catch(() => 0);
-        if (recheckState === 1) {
-          markSignerApproved(fidNum);
-          setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+      let onChainState: number;
+      try {
+        onChainState = await getSignerStateWithRetry(fid, signer.publicKeyHex);
+      } catch (rpcErr) {
+        if (cached) {
+          // Background check failed · keep cached approval, don't disrupt the user
           return;
         }
-        msg = `Your signer key is not registered on Farcaster.\n\nTo fix this, you need a tiny amount of ETH on Optimism (< $0.01) for a one-time gas fee.\n\n• Go to the Wallet tab → Receive to get your address\n• Send ~0.001 ETH on Optimism to that address\n• Then come back here and tap Retry`;
-      } else {
-        msg = `Signer registration failed. Tap Retry to try again.`;
+        const rpcMsg = rpcErr instanceof Error ? rpcErr.message : String(rpcErr);
+        console.error("All RPC attempts failed for signer check:", rpcMsg);
+        setState((s) => ({
+          ...s,
+          autoSignerLoading: false,
+          signerError: `Could not verify signer on Optimism (RPC error). Check your internet connection and tap Retry.\n\nYour signer key: ${signer.publicKeyHex}`,
+        }));
+        return;
       }
-      setState((s) => ({ ...s, autoSignerLoading: false, signerError: msg }));
+
+      if (onChainState === 1) {
+        if (!cached) markSignerApproved(fidNum);
+        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+        return;
+      }
+
+      // Signer was revoked/removed on-chain
+      if (cached) clearSignerApproved(fidNum);
+      // Revert the optimistic approval and show loading state for registration
+      if (cached) {
+        setState((s) => ({ ...s, signerApproved: false, autoSignerLoading: true }));
+      }
+
+      try {
+        const txHash = await registerSignerOnchain(wc, fid, address, signer.publicKeyHex);
+        setState((s) => ({
+          ...s,
+          signerError: `Registering signer on-chain... TX: ${txHash.slice(0, 12)}...`,
+        }));
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000 });
+        if (receipt.status !== "success") {
+          throw new Error(`Transaction reverted on-chain (status: ${receipt.status}). The signer could not be registered. TX: ${txHash}`);
+        }
+        const postState = await getSignerStateWithRetry(fid, signer.publicKeyHex).catch(() => 0);
+        if (postState !== 1) {
+          throw new Error(`Transaction confirmed but KeyRegistry still shows state=${postState}. Please retry.`);
+        }
+        markSignerApproved(fidNum);
+        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+      } catch (e: unknown) {
+        const raw = e instanceof Error ? e.message : String(e);
+        console.error("Signer registration failed");
+        let msg: string;
+        if (raw.toLowerCase().includes("insufficient") || raw.toLowerCase().includes("gas") || raw.toLowerCase().includes("funds")) {
+          msg = `Your signer key is not registered on Farcaster.\n\nTo fix this, you need a tiny amount of ETH on Optimism (< $0.01) for a one-time gas fee.\n\n• Go to the Wallet tab → Receive to get your address\n• Send ~0.001 ETH on Optimism to that address\n• Then come back here and tap Retry`;
+        } else if (raw.toLowerCase().includes("user rejected") || raw.toLowerCase().includes("denied")) {
+          msg = "Transaction cancelled. Tap Retry to try again.";
+        } else if (raw.toLowerCase().includes("already") || raw.toLowerCase().includes("invalid key state")) {
+          const recheckState = await getSignerStateWithRetry(fid, signer.publicKeyHex).catch(() => 0);
+          if (recheckState === 1) {
+            markSignerApproved(fidNum);
+            setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+            return;
+          }
+          msg = `Your signer key is not registered on Farcaster.\n\nTo fix this, you need a tiny amount of ETH on Optimism (< $0.01) for a one-time gas fee.\n\n• Go to the Wallet tab → Receive to get your address\n• Send ~0.001 ETH on Optimism to that address\n• Then come back here and tap Retry`;
+        } else {
+          msg = `Signer registration failed. Tap Retry to try again.`;
+        }
+        setState((s) => ({ ...s, autoSignerLoading: false, signerError: msg }));
+      }
+    } finally {
+      // Always release the guard so a retry (e.g. user taps Retry) can re-enter.
+      autoActivatingRef.current.delete(fidNum);
     }
   }, []);
 
@@ -784,6 +799,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     function onPageHide() { _zeroAndLock(); }
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
+  }, []);
+
+  // ── Multi-tab sync ─────────────────────────────────────────────────────────
+  // When the same user has the app open in two tabs and switches active account
+  // in one tab, sync the `accounts` list in the other tab so the switcher UI
+  // stays consistent. We only update the accounts list — we never force a full
+  // re-login in a background tab, since that would be disruptive.
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === "fc_accounts_v2" && e.newValue !== null) {
+        try {
+          const updated = JSON.parse(e.newValue);
+          if (Array.isArray(updated)) {
+            setState((s) => ({ ...s, accounts: updated }));
+          }
+        } catch { /* ignore malformed */ }
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
   }, []);
 
   // Keep a stable ref to authMethod so the accountsChanged listener below
