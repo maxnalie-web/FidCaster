@@ -186,6 +186,9 @@ importers:
       '@farcaster/auth-kit':
         specifier: ^0.8.2
         version: 0.8.2(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(typescript@5.9.3)(zod@3.25.76)
+      '@farcaster/core':
+        specifier: ^0.19.0
+        version: 0.19.0(typescript@5.9.3)(zod@3.25.76)
       '@farcaster/hub-nodejs':
         specifier: ^0.16.0
         version: 0.16.0(typescript@5.9.3)(zod@3.25.76)
