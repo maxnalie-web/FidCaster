@@ -11,6 +11,7 @@ import { submitFarcasterAction, signFarcasterAction, type FarcasterAction } from
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { cacheStats } from "./cache.js";
+import { metrics } from "./metrics.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -181,6 +182,13 @@ const VALID_ACTIONS = new Set<string>([
   "follow", "unfollow", "cast", "delete-cast",
   "update-user-data",
 ]);
+
+// ── Internal observability ─────────────────────────────────────────────────────
+// Not proxied to the public — only reachable directly on the server port.
+// Shows cache hit/miss ratio, SWR refreshes, hub success/fail, SQLite queue peak.
+app.get("/internal/metrics", (_req, res) => {
+  res.json({ ...metrics.snapshot(), cache_store: cacheStats() });
+});
 
 app.get("/api/farcaster/health", (_req, res) => {
   const isProd = process.env.NODE_ENV === "production";
@@ -422,10 +430,12 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
 
     console.log(`[server] POST /api/farcaster/action type=${action.type} fid=${fid}`);
     const result = await submitFarcasterAction(`0x${keyClean}`, fid, action);
+    metrics.incHubRelay();
     res.json({ ok: true, hash: result.hash });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] action error:", msg);
+    metrics.incHubFail();
     res.status(500).json({ error: msg });
   }
 });

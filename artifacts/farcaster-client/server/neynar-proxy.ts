@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { cacheGet, cacheGetSWR, cacheSet } from "./cache.js";
+import { metrics } from "./metrics.js";
 import { neynarThrottle, singleFlight, penalize429 } from "./neynar-limit.js";
 import { getCachedProfiles, setCachedProfiles } from "./profile-db.js";
 
@@ -63,6 +64,7 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
   // so callers never block on an expiring hot key.
   const staleHit = cacheGetSWR(cacheKey, ttlMs, fetchAndCache);
   if (staleHit !== undefined) {
+    metrics.incCacheHit();
     res.setHeader("X-Cache", "HIT");
     res.json(staleHit);
     return;
@@ -70,6 +72,7 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
 
   try {
     // Hard miss — single-flight: concurrent identical requests share one Neynar call
+    metrics.incCacheMiss();
     const data = await singleFlight(cacheKey, async () => {
       const cached2 = cacheGet(cacheKey);
       if (cached2 !== undefined) return cached2;

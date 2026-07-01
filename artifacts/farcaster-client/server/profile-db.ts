@@ -1,31 +1,26 @@
 /**
  * Persistent SQLite profile cache.
  *
- * Why:  The server in-memory cache (cache.ts) resets on every restart/deploy.
- *       With 1 000 users each having a unique FID, per-user lookups produce zero
- *       cross-user cache sharing.  Profiles change rarely (pfp, bio, display name);
- *       a 12-hour SQLite-backed cache survives restarts and is shared across all
- *       users — one lookup populates the DB for everyone who visits that FID next.
- *
- * TTL:  12 hours.  Profile data (pfp, bio, follower counts) is stale-safe at this
- *       window because Farcaster social graphs change slowly and any write action
- *       (follow, update-profile) bypasses cache entirely.
- *
- * Perf: WAL journal mode — allows concurrent reads while a write is in progress,
- *       preventing read starvation under high concurrency.
- *       Write batching — buffers writes for 100 ms then flushes in one transaction,
- *       turning N synchronous blocking writes into one async-friendly batch.
+ * Perf guarantees:
+ *  1. WAL journal mode — concurrent reads never block writers; writers never block readers.
+ *  2. Write batching — requests queue writes for up to 100 ms, then flush in ONE transaction.
+ *  3. Bounded queue — Map<FID, …> deduplicates by FID (later write wins per key);
+ *     if queue reaches MAX_QUEUE_SIZE, an immediate flush is triggered to cap memory use.
+ *  4. Single-flush guard — `isFlushing` prevents overlapping transactions even if an
+ *     early-flush and a timer-flush race (better-sqlite3 is sync, so this is belt-and-suspenders).
  */
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { metrics } from "./metrics.js";
 
-const TTL_MS = 12 * 60 * 60_000; // 12 hours
+const TTL_MS       = 12 * 60 * 60_000; // 12 hours
+const MAX_QUEUE    = 500;               // flush early if this many unique FIDs are pending
 
-// ── Lazy-init so import never crashes if SQLite is unavailable ──────────────
+// ── Lazy-init ────────────────────────────────────────────────────────────────
 type Db = {
-  get: (fid: number) => { data: string; cached_at: number } | undefined;
-  set: (fid: number, data: unknown) => void;
+  get    : (fid: number) => { data: string; cached_at: number } | undefined;
+  set    : (fid: number, data: unknown) => void;
   getMany: (fids: number[]) => Map<number, unknown>;
   setMany: (users: Array<{ fid: number; [k: string]: unknown }>) => void;
 };
@@ -36,12 +31,10 @@ function initDb(): Db | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Database = require("better-sqlite3");
-    const __dir = dirname(fileURLToPath(import.meta.url));
+    const __dir  = dirname(fileURLToPath(import.meta.url));
     const dbPath = resolve(__dir, "../profile-cache.sqlite");
     const sqlite = new Database(dbPath) as import("better-sqlite3").Database;
 
-    // WAL mode: readers never block writers and writers never block readers.
-    // NORMAL sync is safe with WAL — SQLite guarantees durability on commit.
     sqlite.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous  = NORMAL;
@@ -53,51 +46,56 @@ function initDb(): Db | null {
       CREATE INDEX IF NOT EXISTS profiles_cached_at ON profiles(cached_at);
     `);
 
-    // Evict expired rows on startup (keep DB small)
     sqlite.prepare("DELETE FROM profiles WHERE cached_at < ?").run(Date.now() - TTL_MS);
 
     const stmtGet = sqlite.prepare<[number], { data: string; cached_at: number }>(
-      "SELECT data, cached_at FROM profiles WHERE fid = ?"
+      "SELECT data, cached_at FROM profiles WHERE fid = ?",
     );
     const stmtUpsert = sqlite.prepare<[number, string, number], void>(
-      "INSERT OR REPLACE INTO profiles (fid, data, cached_at) VALUES (?, ?, ?)"
+      "INSERT OR REPLACE INTO profiles (fid, data, cached_at) VALUES (?, ?, ?)",
     );
     const stmtBatchUpsert = sqlite.transaction(
       (rows: Array<{ fid: number; data: string; now: number }>) => {
         for (const r of rows) stmtUpsert.run(r.fid, r.data, r.now);
-      }
+      },
     );
 
-    // ── Write queue (100 ms batching) ──────────────────────────────────────
-    // better-sqlite3 is synchronous; calling it per-request under high load
-    // blocks the Node.js event loop.  Instead, we buffer writes for 100 ms
-    // and flush them in a single transaction — one blocking call instead of N.
-    const pendingWrites = new Map<number, { data: string; now: number }>();
+    // ── Bounded write queue ───────────────────────────────────────────────────
+    // Map<FID, …> provides free deduplication: if the same FID is written multiple
+    // times within the 100 ms window, only the latest value reaches SQLite.
+    const pending   = new Map<number, { data: string; now: number }>();
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let isFlushing  = false;
 
-    function scheduleFlush(): void {
+    function doFlush(): void {
+      if (isFlushing || pending.size === 0) return;
+      isFlushing = true;
+      const batch = [...pending.entries()].map(([fid, { data, now }]) => ({ fid, data, now }));
+      pending.clear();
+      try {
+        stmtBatchUpsert(batch);
+      } catch (e) {
+        console.warn("[profile-db] batch write failed:", (e as Error).message);
+      } finally {
+        isFlushing = false;
+      }
+    }
+
+    function scheduleFlush(urgent = false): void {
+      metrics.updateSqliteQueue(pending.size);
+      if (urgent) {
+        // Cancel any pending timer and flush immediately
+        if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
+        doFlush();
+        return;
+      }
       if (flushTimer !== null) return;
-      flushTimer = setTimeout(() => {
-        flushTimer = null;
-        if (pendingWrites.size === 0) return;
-        const batch = [...pendingWrites.entries()].map(([fid, { data, now }]) => ({
-          fid,
-          data,
-          now,
-        }));
-        pendingWrites.clear();
-        try {
-          stmtBatchUpsert(batch);
-        } catch (e) {
-          console.warn("[profile-db] batch write failed:", (e as Error).message);
-        }
-      }, 100);
+      flushTimer = setTimeout(() => { flushTimer = null; doFlush(); }, 100);
     }
 
     return {
-      get(fid) {
-        return stmtGet.get(fid);
-      },
+      get(fid) { return stmtGet.get(fid); },
+
       getMany(fids) {
         const result = new Map<number, unknown>();
         if (!fids.length) return result;
@@ -105,7 +103,7 @@ function initDb(): Db | null {
         const placeholders = fids.map(() => "?").join(",");
         const rows = sqlite
           .prepare<number[], { fid: number; data: string; cached_at: number }>(
-            `SELECT fid, data, cached_at FROM profiles WHERE fid IN (${placeholders})`
+            `SELECT fid, data, cached_at FROM profiles WHERE fid IN (${placeholders})`,
           )
           .all(...fids);
         for (const row of rows) {
@@ -113,21 +111,20 @@ function initDb(): Db | null {
         }
         return result;
       },
-      // Buffered writes — never block the event loop per-request
+
       set(fid, data) {
-        pendingWrites.set(fid, { data: JSON.stringify(data), now: Date.now() });
-        scheduleFlush();
+        pending.set(fid, { data: JSON.stringify(data), now: Date.now() });
+        scheduleFlush(pending.size >= MAX_QUEUE);
       },
+
       setMany(users) {
         const now = Date.now();
-        for (const u of users) {
-          pendingWrites.set(u.fid, { data: JSON.stringify(u), now });
-        }
-        scheduleFlush();
+        for (const u of users) pending.set(u.fid, { data: JSON.stringify(u), now });
+        scheduleFlush(pending.size >= MAX_QUEUE);
       },
     };
   } catch (e) {
-    console.warn("[profile-db] SQLite unavailable, falling back to in-memory only:", (e as Error).message);
+    console.warn("[profile-db] SQLite unavailable:", (e as Error).message);
     return null;
   }
 }
@@ -152,15 +149,10 @@ export function setCachedProfile(fid: number, data: unknown): void {
   db()?.set(fid, data);
 }
 
-/**
- * Bulk lookup: returns {hits, misses}.
- * hits  = Map<fid, profileData> for FIDs found in SQLite within TTL
- * misses = FIDs that must be fetched from Neynar
- */
 export function getCachedProfiles(fids: number[]): { hits: Map<number, unknown>; misses: number[] } {
   const d = db();
   if (!d) return { hits: new Map(), misses: fids };
-  const hits = d.getMany(fids);
+  const hits   = d.getMany(fids);
   const misses = fids.filter(f => !hits.has(f));
   return { hits, misses };
 }

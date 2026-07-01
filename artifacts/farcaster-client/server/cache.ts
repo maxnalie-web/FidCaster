@@ -1,35 +1,45 @@
 /**
  * In-memory cache with Stale-While-Revalidate (SWR) support.
  *
- * SWR pattern: when a cache entry passes its soft-expiry (80% of TTL),
- * `cacheGetSWR` triggers a background revalidation while still serving the
- * (slightly stale) cached value immediately — eliminating the latency spike
- * that occurs when hot cache keys expire under high concurrency.
- *
- * Hard-expire (cacheGet) still clears entries at full TTL, used for paths
- * that always need fresh data or that manage their own singleFlight.
+ * SWR guarantees:
+ *  1. Only ONE background refresh per key at any time — `revalidating` Map holds
+ *     the in-flight Promise so concurrent requests share it, never duplicate it.
+ *  2. Hard-expired entries are served as stale while a refresh is in flight —
+ *     this prevents a stampede on the singleFlight below when the entry crosses
+ *     the hard TTL boundary mid-refresh.
+ *  3. Fresh hits (<80% TTL) are served immediately with no side effects.
  */
+
+import { metrics } from "./metrics.js";
 
 type Entry = { data: unknown; expiresAt: number; softExpiresAt: number };
 const store = new Map<string, Entry>();
-const revalidating = new Set<string>();
+
+// Maps key → in-flight revalidation Promise.
+// A Map (not Set) lets us share the same Promise across concurrent callers.
+const revalidating = new Map<string, Promise<void>>();
 
 export function cacheGet(key: string): unknown | undefined {
   const e = store.get(key);
   if (!e) return undefined;
-  if (Date.now() > e.expiresAt) { store.delete(key); return undefined; }
+  if (Date.now() > e.expiresAt) {
+    // Don't evict if a background refresh is already running —
+    // serve stale data to avoid a singleFlight stampede.
+    if (revalidating.has(key)) return e.data;
+    store.delete(key);
+    return undefined;
+  }
   return e.data;
 }
 
 /**
  * Stale-While-Revalidate get.
  *
- * - Fresh (< softExpiresAt):     return data immediately.
- * - Soft-expired (past 80% TTL): return stale data immediately AND kick off
- *   revalidateFn in the background (once per key, not per request).
- * - Hard-expired (past 100% TTL): purge and return undefined (cache miss).
- *
- * revalidateFn must return the fresh value to store; throw to abort revalidation.
+ * - Fresh  (< softExpiresAt):     return data immediately, no background work.
+ * - Stale  (>= softExpiresAt):    return data immediately AND start/join one
+ *                                  shared background refresh Promise per key.
+ * - Absent or hard-expired with
+ *   no refresh in flight:          return undefined → caller does singleFlight.
  */
 export function cacheGetSWR(
   key: string,
@@ -40,15 +50,23 @@ export function cacheGetSWR(
   if (!e) return undefined;
 
   const now = Date.now();
-  if (now > e.expiresAt) { store.delete(key); return undefined; }
+  const inFlight = revalidating.has(key);
 
-  // Soft-expired — serve stale data and refresh in background (once)
-  if (now > e.softExpiresAt && !revalidating.has(key)) {
-    revalidating.add(key);
-    revalidateFn()
+  // Hard-expired: serve stale ONLY while refresh is in flight (prevents stampede)
+  if (now > e.expiresAt) {
+    if (inFlight) return e.data;
+    store.delete(key);
+    return undefined;
+  }
+
+  // Soft-expired: kick off a single shared refresh if none is running
+  if (now > e.softExpiresAt && !inFlight) {
+    metrics.incSwrRefresh();
+    const p: Promise<void> = revalidateFn()
       .then(data => { if (data !== undefined && data !== null) cacheSet(key, data, ttlMs); })
-      .catch(() => { /* ignore refresh errors — stale data keeps serving */ })
+      .catch(() => { /* stale data continues serving until next success */ })
       .finally(() => revalidating.delete(key));
+    revalidating.set(key, p);
   }
 
   return e.data;
@@ -63,7 +81,7 @@ export function cacheSet(key: string, data: unknown, ttlMs: number): void {
   // Evict expired entries when store grows large
   if (store.size > 20_000) {
     const now = Date.now();
-    for (const [k, v] of store) if (now > v.expiresAt) store.delete(k);
+    for (const [k, v] of store) if (now > v.expiresAt && !revalidating.has(k)) store.delete(k);
   }
 }
 
@@ -72,5 +90,5 @@ export function cacheDelete(prefix: string): void {
 }
 
 export function cacheStats() {
-  return { size: store.size };
+  return { size: store.size, revalidating: revalidating.size };
 }
