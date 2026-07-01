@@ -45,6 +45,9 @@ export default defineConfig({
     "import.meta.env.VITE_WALLETCONNECT_PROJECT_ID": JSON.stringify(
       process.env.WALLETCONNECT_PROJECT_ID ?? ""
     ),
+    "import.meta.env.VITE_IMGUR_CLIENT_ID": JSON.stringify(
+      process.env.IMGUR_CLIENT_ID ?? ""
+    ),
   },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),

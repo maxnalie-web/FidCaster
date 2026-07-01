@@ -52,7 +52,13 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
-        throw new Error(e.error || `Request failed (${res.status})`);
+        throw new Error((e as { error?: string }).error || `Request failed (${res.status})`);
+      }
+      // Static deployment: /api/* returns index.html (text/html) — detect before calling .json()
+      // to avoid Safari throwing "The string did not match the expected pattern."
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        throw new Error("Sign In With Farcaster requires the backend server. Please use the seed phrase option instead.");
       }
       const data = await res.json() as { token: string; deeplinkUrl: string };
       setDeeplinkUrl(data.deeplinkUrl);

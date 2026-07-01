@@ -32,6 +32,12 @@ async function callServer(body: object): Promise<void> {
     try { msg = JSON.parse(txt).error ?? txt; } catch { /* ok */ }
     throw new Error(msg || `HTTP ${res.status}`);
   }
+  // In static deployment /api/* is served as index.html (text/html) instead of JSON.
+  // Detect this so actions fail loudly instead of silently doing nothing.
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) {
+    throw new Error("Hub server is not available in this deployment. Run the app locally for write actions (cast, like, follow).");
+  }
 }
 
 export async function hubPublishCast(
@@ -108,6 +114,10 @@ export async function neynarAction(signerUuid: string, action: { type: string; [
     let msg = txt;
     try { msg = JSON.parse(txt).error ?? txt; } catch { /* ok */ }
     throw new Error(msg || `HTTP ${res.status}`);
+  }
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) {
+    throw new Error("Hub server is not available in this deployment. Run the app locally for write actions.");
   }
 }
 
