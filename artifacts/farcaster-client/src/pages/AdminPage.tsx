@@ -26,16 +26,16 @@ type Section =
   | "misc";
 
 const SECTIONS: { id: Section; label: string; icon: typeof Settings; description: string }[] = [
-  { id: "copy",          label: "متن‌ها و Copy",    icon: Type,         description: "عناوین، دکمه‌ها، توضیحات" },
-  { id: "theme",         label: "تم و رنگ‌ها",      icon: Palette,      description: "رنگ primary، پس‌زمینه، فونت" },
-  { id: "features",      label: "Feature Flags",    icon: ToggleLeft,   description: "فعال/غیرفعال کردن قابلیت‌ها" },
-  { id: "users",         label: "کاربران مجاز",     icon: Users,        description: "دسترسی‌های خاص و batch follow" },
-  { id: "api",           label: "تنظیمات API",      icon: Key,          description: "کلید Neynar، Hub URL، RPC" },
-  { id: "announcements", label: "اعلانیه‌ها",        icon: Bell,         description: "بنرهای سراسری" },
-  { id: "channels",      label: "کانال‌های پیشفرض", icon: Hash,         description: "Featured channels" },
-  { id: "ratelimits",    label: "Rate Limits",      icon: Gauge,        description: "محدودیت درخواست سرور" },
-  { id: "css",           label: "Custom CSS",       icon: Code,         description: "استایل دلخواه" },
-  { id: "misc",          label: "متفرقه",            icon: Settings,     description: "تنظیمات عمومی" },
+  { id: "copy",          label: "Copy & Text",      icon: Type,       description: "Headlines, buttons, descriptions" },
+  { id: "theme",         label: "Theme & Colors",   icon: Palette,    description: "Primary color, background, font" },
+  { id: "features",      label: "Feature Flags",    icon: ToggleLeft, description: "Enable / disable features" },
+  { id: "users",         label: "Privileged Users", icon: Users,      description: "Batch follow & advanced access" },
+  { id: "api",           label: "API Settings",     icon: Key,        description: "Neynar key, Hub URL, RPC" },
+  { id: "announcements", label: "Announcements",    icon: Bell,       description: "Global banner messages" },
+  { id: "channels",      label: "Featured Channels",icon: Hash,       description: "Default featured channels" },
+  { id: "ratelimits",    label: "Rate Limits",      icon: Gauge,      description: "Server request limits" },
+  { id: "css",           label: "Custom CSS",       icon: Code,       description: "Inject custom styles" },
+  { id: "misc",          label: "Misc",             icon: Settings,   description: "General settings" },
 ];
 
 // ── Small utility components ───────────────────────────────────────────────────
@@ -132,14 +132,14 @@ export function AdminPage() {
   function save() {
     setSaved(true);
     applyAdminTheme(cfg);
-    toast.success("تنظیمات ذخیره شد ✓");
+    toast.success("Settings saved ✓");
     setTimeout(() => setSaved(false), 2000);
   }
 
   function reset() {
-    if (!confirm("تمام تنظیمات به حالت پیشفرض برگردد؟")) return;
+    if (!confirm("Reset all settings to defaults?")) return;
     resetAdminConfig();
-    toast.success("تنظیمات reset شد");
+    toast.success("Settings reset to defaults");
     window.location.reload();
   }
 
@@ -156,10 +156,10 @@ export function AdminPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4 p-8">
           <Shield className="w-12 h-12 text-destructive mx-auto opacity-60" />
-          <p className="text-xl font-bold text-foreground">دسترسی ممنوع</p>
-          <p className="text-sm text-muted-foreground">این صفحه فقط برای ادمین قابل دسترسی است.</p>
+          <p className="text-xl font-bold text-foreground">Access Denied</p>
+          <p className="text-sm text-muted-foreground">This page is only accessible to the admin.</p>
           <button onClick={() => navigate("/dashboard")} className="btn-luxury px-4 py-2 rounded-xl text-sm font-semibold text-primary-foreground">
-            بازگشت
+            Go Back
           </button>
         </div>
       </div>
@@ -188,7 +188,7 @@ export function AdminPage() {
             "flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all",
             saved ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "btn-luxury text-primary-foreground"
           )}>
-            {saved ? <><Check className="w-3 h-3" /> Saved</> : <><Save className="w-3 h-3" /> ذخیره</>}
+            {saved ? <><Check className="w-3 h-3" /> Saved</> : <><Save className="w-3 h-3" /> Save</>}
           </button>
         </div>
       </div>
@@ -238,27 +238,27 @@ export function AdminPage() {
             {activeSection === "copy" && (
               <div>
                 <Field>
-                  <Label sub="عنوان اصلی صفحه landing">Hero Title</Label>
+                  <Label sub="Main headline on the landing page">Hero Title</Label>
                   <Textarea value={cfg.copy.heroTitle} onChange={(v) => set("copy", "heroTitle", v)} rows={3} placeholder="Cast. Connect.\nTrade your\nFarcaster ID." />
                 </Field>
                 <Field>
-                  <Label sub="زیرعنوان اول">Hero Subtitle</Label>
+                  <Label sub="First subtitle line">Hero Subtitle</Label>
                   <Textarea value={cfg.copy.heroSubtitle} onChange={(v) => set("copy", "heroSubtitle", v)} rows={2} />
                 </Field>
                 <Field>
-                  <Label sub="زیرعنوان دوم">Hero Description</Label>
+                  <Label sub="Second subtitle / description line">Hero Description</Label>
                   <Input value={cfg.copy.heroDescription} onChange={(v) => set("copy", "heroDescription", v)} />
                 </Field>
                 <Field>
-                  <Label sub="دکمه اصلی CTA">Hero CTA Button</Label>
+                  <Label sub="Primary CTA button label">Hero CTA Button</Label>
                   <Input value={cfg.copy.heroCta} onChange={(v) => set("copy", "heroCta", v)} />
                 </Field>
                 <Field>
-                  <Label sub="دکمه دوم CTA">Hero Secondary Button</Label>
+                  <Label sub="Secondary CTA button label">Hero Secondary Button</Label>
                   <Input value={cfg.copy.heroSecondaryCta} onChange={(v) => set("copy", "heroSecondaryCta", v)} />
                 </Field>
                 <Field>
-                  <Label sub="تگ‌های زیر دکمه‌ها، با کاما جدا شده">Hero Tags</Label>
+                  <Label sub="Comma-separated tags below the CTA buttons">Hero Tags</Label>
                   <Input
                     value={cfg.copy.heroTags.join(", ")}
                     onChange={(v) => set("copy", "heroTags", v.split(",").map(s => s.trim()).filter(Boolean))}
@@ -266,11 +266,11 @@ export function AdminPage() {
                   />
                 </Field>
                 <Field>
-                  <Label sub="نام برند در nav">Nav Brand Name</Label>
+                  <Label sub="Brand name in the nav bar">Nav Brand Name</Label>
                   <Input value={cfg.copy.navBrand} onChange={(v) => set("copy", "navBrand", v)} />
                 </Field>
                 <Field>
-                  <Label sub="بج سبز بالای عنوان">App Badge Text</Label>
+                  <Label sub="Green pill badge above the hero title">App Badge Text</Label>
                   <Input value={cfg.copy.appBadge} onChange={(v) => set("copy", "appBadge", v)} />
                 </Field>
               </div>
@@ -281,51 +281,51 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 flex items-start gap-2 mb-5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-400">رنگ‌ها به فرمت HSL وارد شوند، مثال: <code>263 70% 50%</code></p>
+                  <p className="text-xs text-amber-400">Colors must be in HSL format, e.g. <code>263 70% 50%</code></p>
                 </div>
                 <Field>
-                  <Label sub="HSL — رنگ اصلی، حالت light">Primary Color (Light)</Label>
+                  <Label sub="HSL — primary color in light mode">Primary Color (Light)</Label>
                   <div className="flex gap-2">
                     <Input value={cfg.theme.primaryHsl} onChange={(v) => set("theme", "primaryHsl", v)} placeholder="263 70% 50%" />
                     <div className="w-10 h-10 rounded-lg shrink-0 border border-border" style={{ background: `hsl(${cfg.theme.primaryHsl})` }} />
                   </div>
                 </Field>
                 <Field>
-                  <Label sub="HSL — رنگ اصلی، حالت dark">Primary Color (Dark)</Label>
+                  <Label sub="HSL — primary color in dark mode">Primary Color (Dark)</Label>
                   <div className="flex gap-2">
                     <Input value={cfg.theme.primaryDarkHsl} onChange={(v) => set("theme", "primaryDarkHsl", v)} placeholder="263 78% 62%" />
                     <div className="w-10 h-10 rounded-lg shrink-0 border border-border" style={{ background: `hsl(${cfg.theme.primaryDarkHsl})` }} />
                   </div>
                 </Field>
                 <Field>
-                  <Label sub="رنگ متن روی primary button">Primary Foreground</Label>
+                  <Label sub="Text color on primary buttons">Primary Foreground</Label>
                   <div className="flex gap-2">
                     <Input value={cfg.theme.primaryForegroundHsl} onChange={(v) => set("theme", "primaryForegroundHsl", v)} placeholder="0 0% 100%" />
                     <div className="w-10 h-10 rounded-lg shrink-0 border border-border" style={{ background: `hsl(${cfg.theme.primaryForegroundHsl})` }} />
                   </div>
                 </Field>
                 <Field>
-                  <Label sub="HSL — پس‌زمینه، حالت light">Background (Light)</Label>
+                  <Label sub="HSL — page background in light mode">Background (Light)</Label>
                   <Input value={cfg.theme.backgroundHsl} onChange={(v) => set("theme", "backgroundHsl", v)} placeholder="0 0% 100%" />
                 </Field>
                 <Field>
-                  <Label sub="HSL — پس‌زمینه، حالت dark">Background (Dark)</Label>
+                  <Label sub="HSL — page background in dark mode">Background (Dark)</Label>
                   <Input value={cfg.theme.darkBackgroundHsl} onChange={(v) => set("theme", "darkBackgroundHsl", v)} placeholder="224 32% 8%" />
                 </Field>
                 <Field>
-                  <Label sub="border-radius پایه، مثال: 0.75rem">Border Radius</Label>
+                  <Label sub="Base border-radius, e.g. 0.75rem">Border Radius</Label>
                   <Input value={cfg.theme.borderRadius} onChange={(v) => set("theme", "borderRadius", v)} placeholder="0.75rem" />
                 </Field>
                 <Field>
-                  <Label sub="نام فونت از Google Fonts (خالی = پیشفرض)">Font Family</Label>
+                  <Label sub="Google Fonts family name (empty = default)">Font Family</Label>
                   <Input value={cfg.theme.fontFamily} onChange={(v) => set("theme", "fontFamily", v)} placeholder="Inter" />
                 </Field>
                 <button
-                  onClick={() => { applyAdminTheme(cfg); toast.success("تم اعمال شد"); }}
+                  onClick={() => { applyAdminTheme(cfg); toast.success("Theme applied"); }}
                   className="btn-luxury px-4 py-2 rounded-xl text-sm font-semibold text-primary-foreground"
                 >
                   <RefreshCw className="w-3.5 h-3.5 inline mr-1.5" />
-                  پیش‌نمایش تم
+                  Preview Theme
                 </button>
               </div>
             )}
@@ -349,7 +349,7 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-2 mb-5">
                   <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">کاربران این لیست به batch follow، قابلیت‌های خاص و ابزارهای پیشرفته دسترسی دارند.</p>
+                  <p className="text-xs text-muted-foreground">Users on this list get access to batch follow, advanced tools, and privileged features.</p>
                 </div>
                 <div className="space-y-2 mb-4">
                   {cfg.privilegedUsers.map((u, i) => (
@@ -381,22 +381,22 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 flex items-start gap-2 mb-5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-400">این مقادیر فقط در localStorage ذخیره می‌شوند و در کد ارسال نمی‌شوند. خالی = استفاده از env variable پیشفرض.</p>
+                  <p className="text-xs text-amber-400">These values are stored only in localStorage and never sent to any server. Empty = use default env variable.</p>
                 </div>
                 <Field>
-                  <Label sub="جایگزین NEYNAR_API_KEY env — خالی = پیشفرض">Neynar API Key Override</Label>
+                  <Label sub="Overrides NEYNAR_API_KEY env var — empty = default">Neynar API Key Override</Label>
                   <Input type="password" value={cfg.api.neynarApiKey} onChange={(v) => set("api", "neynarApiKey", v)} placeholder="neynar_..." />
                 </Field>
                 <Field>
-                  <Label sub="Hub URL سفارشی (خالی = hub-api.neynar.com)">Hub URL</Label>
+                  <Label sub="Custom hub URL (empty = hub-api.neynar.com)">Hub URL</Label>
                   <Input value={cfg.api.hubUrl} onChange={(v) => set("api", "hubUrl", v)} placeholder="https://hub-api.neynar.com" />
                 </Field>
                 <Field>
-                  <Label sub="Optimism RPC URL سفارشی">Optimism RPC URL</Label>
+                  <Label sub="Custom Optimism RPC URL">Optimism RPC URL</Label>
                   <Input value={cfg.api.rpcUrl} onChange={(v) => set("api", "rpcUrl", v)} placeholder="https://mainnet.optimism.io" />
                 </Field>
                 <Field>
-                  <Label sub="Imgur Client ID برای آپلود تصویر">Imgur Client ID Override</Label>
+                  <Label sub="Imgur Client ID for image uploads">Imgur Client ID Override</Label>
                   <Input type="password" value={cfg.api.imgurClientId} onChange={(v) => set("api", "imgurClientId", v)} placeholder="..." />
                 </Field>
               </div>
@@ -407,11 +407,11 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-2 mb-5">
                   <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">بنرهای سراسری که بالای فید نمایش داده می‌شوند. می‌توانی چندتا داشته باشی.</p>
+                  <p className="text-xs text-muted-foreground">Global banners shown above the feed. You can have multiple active at once.</p>
                 </div>
                 <div className="space-y-3 mb-4">
                   {cfg.announcements.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-8">هیچ اعلانیه‌ای وجود ندارد.</p>
+                    <p className="text-sm text-muted-foreground text-center py-8">No announcements yet.</p>
                   )}
                   {cfg.announcements.map((a, i) => (
                     <AnnouncementEditor
@@ -438,7 +438,7 @@ export function AdminPage() {
                   }))}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-primary/40 text-primary text-sm font-semibold hover:bg-primary/5 transition-colors w-full justify-center"
                 >
-                  <Plus className="w-4 h-4" /> اعلانیه جدید
+                  <Plus className="w-4 h-4" /> New Announcement
                 </button>
               </div>
             )}
@@ -448,23 +448,23 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-2 mb-5">
                   <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">کانال‌هایی که در sidebar و feed پیشفرض نشان داده می‌شوند.</p>
+                  <p className="text-xs text-muted-foreground">Channels shown by default in the sidebar and feed.</p>
                 </div>
                 <div className="space-y-2 mb-4">
-                  {cfg.featuredChannels.map((ch, i) => (
+                  {cfg.featuredChannels.map((ch: FeaturedChannel, i: number) => (
                     <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-border">
                       <Hash className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       <Input
                         value={ch.id}
                         onChange={(v) => update(p => ({
                           ...p,
-                          featuredChannels: p.featuredChannels.map((c, j) => j === i ? { ...c, id: v } : c),
+                          featuredChannels: p.featuredChannels.map((c: FeaturedChannel, j: number) => j === i ? { ...c, id: v } : c),
                         }))}
                         placeholder="channel-id"
                         className="border-0 p-0 h-auto bg-transparent shadow-none"
                       />
                       <button
-                        onClick={() => update(p => ({ ...p, featuredChannels: p.featuredChannels.filter((_, j) => j !== i) }))}
+                        onClick={() => update(p => ({ ...p, featuredChannels: p.featuredChannels.filter((_: FeaturedChannel, j: number) => j !== i) }))}
                         className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -476,7 +476,7 @@ export function AdminPage() {
                   onClick={() => update(p => ({ ...p, featuredChannels: [...p.featuredChannels, { id: "" }] }))}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl border border-dashed border-primary/40 text-primary text-sm font-semibold hover:bg-primary/5 transition-colors w-full justify-center"
                 >
-                  <Plus className="w-4 h-4" /> کانال جدید
+                  <Plus className="w-4 h-4" /> Add Channel
                 </button>
               </div>
             )}
@@ -486,14 +486,14 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 flex items-start gap-2 mb-5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-400">این مقادیر برای reference هستند. برای اعمال واقعی باید server/index.ts مقداردهی شود.</p>
+                  <p className="text-xs text-amber-400">These are reference values. To apply them in production, update <code>server/index.ts</code>.</p>
                 </div>
                 <Field>
-                  <Label sub="تعداد action (follow/like/cast) در دقیقه">Action Limiter (per min)</Label>
+                  <Label sub="Actions (follow/like/cast) per minute">Action Limiter (per min)</Label>
                   <NumberInput value={cfg.rateLimits.actionPerMin} onChange={(v) => set("rateLimits", "actionPerMin", v)} min={1} max={1000} />
                 </Field>
                 <Field>
-                  <Label sub="تعداد درخواست کلی در دقیقه">Global Limiter (per min)</Label>
+                  <Label sub="Total requests per minute (global)">Global Limiter (per min)</Label>
                   <NumberInput value={cfg.rateLimits.globalPerMin} onChange={(v) => set("rateLimits", "globalPerMin", v)} min={1} max={2000} />
                 </Field>
               </div>
@@ -504,7 +504,7 @@ export function AdminPage() {
               <div>
                 <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-2 mb-5">
                   <Code className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">این CSS مستقیم به DOM تزریق می‌شود. از CSS variables سایت استفاده کن: <code className="text-primary">var(--primary)</code></p>
+                  <p className="text-xs text-muted-foreground">This CSS is injected directly into the DOM. Use site CSS variables: <code className="text-primary">var(--primary)</code></p>
                 </div>
                 <Field>
                   <Label>Custom CSS</Label>
@@ -516,11 +516,11 @@ export function AdminPage() {
                   />
                 </Field>
                 <button
-                  onClick={() => { applyAdminTheme(cfg); toast.success("CSS اعمال شد"); }}
+                  onClick={() => { applyAdminTheme(cfg); toast.success("CSS applied"); }}
                   className="btn-luxury px-4 py-2 rounded-xl text-sm font-semibold text-primary-foreground"
                 >
                   <Eye className="w-3.5 h-3.5 inline mr-1.5" />
-                  پیش‌نمایش CSS
+                  Preview CSS
                 </button>
               </div>
             )}
@@ -529,24 +529,24 @@ export function AdminPage() {
             {activeSection === "misc" && (
               <div>
                 <Field>
-                  <Label sub="متن footer سایت (خالی = نشان داده نشود)">Footer Text</Label>
+                  <Label sub="Site footer text (empty = hidden)">Footer Text</Label>
                   <Input value={cfg.misc.footerText} onChange={(v) => set("misc", "footerText", v)} placeholder="© 2025 FidCaster" />
                 </Field>
                 <div className="bg-card/40 rounded-2xl border border-border/60 p-3 mb-5 space-y-1">
                   <Toggle
                     enabled={cfg.misc.maintenanceMode}
                     onChange={(v) => set("misc", "maintenanceMode", v)}
-                    label="Maintenance Mode (سایت برای بقیه غیرفعال)"
+                    label="Maintenance Mode (disables site for all users)"
                   />
                 </div>
                 {cfg.misc.maintenanceMode && (
                   <Field>
-                    <Label sub="پیام نمایش داده‌شده در حالت maintenance">Maintenance Message</Label>
+                    <Label sub="Message shown during maintenance">Maintenance Message</Label>
                     <Textarea value={cfg.misc.maintenanceMessage} onChange={(v) => set("misc", "maintenanceMessage", v)} rows={2} />
                   </Field>
                 )}
                 <Field>
-                  <Label sub="تب پیشفرض بعد از ورود">Default Tab After Login</Label>
+                  <Label sub="Default tab shown after login">Default Tab After Login</Label>
                   <select
                     value={cfg.misc.defaultTab}
                     onChange={(e) => set("misc", "defaultTab", e.target.value)}
@@ -558,11 +558,11 @@ export function AdminPage() {
                   </select>
                 </Field>
                 <Field>
-                  <Label sub="تأخیر بین هر follow در batch (میلی‌ثانیه)">Batch Follow Delay (ms)</Label>
+                  <Label sub="Delay between each follow in batch mode (ms)">Batch Follow Delay (ms)</Label>
                   <NumberInput value={cfg.misc.batchFollowDelay} onChange={(v) => set("misc", "batchFollowDelay", v)} min={500} max={10000} step={100} />
                 </Field>
                 <Field>
-                  <Label sub="زمان بی‌فعالی تا قفل شدن session (ms) — پیشفرض: 30 دقیقه">Session Inactivity Lock (ms)</Label>
+                  <Label sub="Inactivity duration before session locks (ms) — default: 30 minutes">Session Inactivity Lock (ms)</Label>
                   <NumberInput value={cfg.misc.sessionInactivityMs} onChange={(v) => set("misc", "sessionInactivityMs", v)} min={60000} max={86400000} step={60000} />
                 </Field>
 
@@ -579,12 +579,12 @@ export function AdminPage() {
 
             {/* Save button at bottom */}
             <div className="mt-8 pt-6 border-t border-border/60 flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">تغییرات فوری اعمال نمی‌شوند تا ذخیره کنی.</p>
+              <p className="text-xs text-muted-foreground">Changes are not applied until you save.</p>
               <button onClick={save} className={cn(
                 "flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold transition-all",
                 saved ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "btn-luxury text-primary-foreground"
               )}>
-                {saved ? <><Check className="w-3.5 h-3.5" /> ذخیره شد</> : <><Save className="w-3.5 h-3.5" /> ذخیره تنظیمات</>}
+                {saved ? <><Check className="w-3.5 h-3.5" /> Saved</> : <><Save className="w-3.5 h-3.5" /> Save Settings</>}
               </button>
             </div>
           </div>
@@ -669,7 +669,7 @@ function AnnouncementEditor({
           <button
             onClick={() => onChange({ ...a, enabled: !a.enabled })}
             className="p-1 rounded-lg hover:bg-background/60 transition-colors"
-            title={a.enabled ? "غیرفعال کردن" : "فعال کردن"}
+            title={a.enabled ? "Disable" : "Enable"}
           >
             {a.enabled ? <Eye className="w-3.5 h-3.5 text-primary" /> : <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />}
           </button>
@@ -681,7 +681,7 @@ function AnnouncementEditor({
       <textarea
         value={a.text}
         onChange={(e) => onChange({ ...a, text: e.target.value })}
-        placeholder="متن اعلانیه..."
+        placeholder="Announcement text..."
         rows={2}
         className="input-luxury w-full px-3 py-2 text-sm resize-none"
       />
@@ -689,19 +689,19 @@ function AnnouncementEditor({
         <input
           value={a.url ?? ""}
           onChange={(e) => onChange({ ...a, url: e.target.value || undefined })}
-          placeholder="لینک (اختیاری)"
+          placeholder="Link URL (optional)"
           className="input-luxury flex-1 px-3 py-1.5 text-xs"
         />
         <input
           value={a.urlLabel ?? ""}
           onChange={(e) => onChange({ ...a, urlLabel: e.target.value || undefined })}
-          placeholder="متن لینک"
+          placeholder="Link label"
           className="input-luxury w-28 px-3 py-1.5 text-xs"
         />
       </div>
       <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
         <input type="checkbox" checked={a.dismissible} onChange={(e) => onChange({ ...a, dismissible: e.target.checked })} className="rounded" />
-        قابل بستن توسط کاربر
+        Dismissible by user
       </label>
     </div>
   );
