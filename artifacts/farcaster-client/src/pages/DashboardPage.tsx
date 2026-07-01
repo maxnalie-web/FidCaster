@@ -900,13 +900,13 @@ export function DashboardPage() {
             );
           })}
 
-          {/* Follow & Unfollow link */}
+          {/* Follow Tools link */}
           <button
             onClick={() => navigate("/follow")}
             className="sidebar-item"
           >
             <UserPlus className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">Manage Follows</span>
+            <span className="text-[1.0625rem] text-foreground/85">Grow</span>
           </button>
 
           {/* FID Market link */}
@@ -1115,13 +1115,6 @@ export function DashboardPage() {
             className="flex-1 flex items-center justify-center transition-colors"
           >
             <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-          </button>
-          {/* Manage Follows tab */}
-          <button
-            onClick={() => navigate("/follow")}
-            className="flex-1 flex items-center justify-center transition-colors"
-          >
-            <UserPlus className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
           </button>
           {/* Profile · always last */}
           <button

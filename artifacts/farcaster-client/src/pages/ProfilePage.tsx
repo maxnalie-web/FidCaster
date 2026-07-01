@@ -4,12 +4,11 @@ import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
-  AlignLeft, MessageSquare, Heart, Repeat2, X, Zap,
+  AlignLeft, MessageSquare, Heart, Repeat2, X,
   Camera, CheckCircle2, AlertCircle, ChevronRight,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
-import { useAdminConfig } from "@/hooks/useAdminConfig";
 
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
@@ -20,7 +19,6 @@ import { hubFollow, neynarAction, hubUpdateUserData } from "@/lib/hub-submit";
 import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
-import { BatchFollowSheet } from "@/components/BatchFollowSheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -263,14 +261,8 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const myFidNum = myFid ? Number(myFid) : 0;
   const isOwnProfile = targetFid === myFidNum;
   const isPro = useIsPro(targetFid);
-  const [adminCfg] = useAdminConfig();
-  const canBatchOps = isOwnProfile && signerApproved && Boolean(localSigner) &&
-    (adminCfg.privilegedUsers.some(u => u.toLowerCase() === myProfile?.username?.toLowerCase()) ||
-     adminCfg.privilegedUsers.some(u => u === String(myFidNum)));
-
   const [user, setUser] = useState<NeynarUser | null>(null);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
-  const [showBatchSheet, setShowBatchSheet] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
@@ -697,19 +689,38 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
 
             </div>
 
-            {canBatchOps && (
+            {isOwnProfile && myFidNum > 0 && (
               <div className="px-4 mt-3">
                 <button
-                  onClick={() => setShowBatchSheet(true)}
+                  onClick={() => navigate("/follow?mode=cleanup")}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center">
+                      <UserMinus className="w-4 h-4 text-rose-500" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-medium text-foreground">Clean Up Following</p>
+                      <p className="text-xs text-muted-foreground">Remove people you no longer follow</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            )}
+            {!isOwnProfile && myFidNum > 0 && user && (
+              <div className="px-4 mt-3">
+                <button
+                  onClick={() => navigate(`/follow?fid=${user.fid}`)}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 transition-colors"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Zap className="w-4 h-4 text-primary" />
+                      <UserPlus className="w-4 h-4 text-primary" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium text-foreground">Batch Unfollow</p>
-                      <p className="text-xs text-muted-foreground">Smart cleanup tools</p>
+                      <p className="text-sm font-medium text-foreground">Follow from this profile</p>
+                      <p className="text-xs text-muted-foreground">Browse &amp; follow their community</p>
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -812,17 +823,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         </div>
       )}
 
-      {showBatchSheet && localSigner && (
-        <BatchFollowSheet
-          mode="unfollow"
-          sourceFid={myFidNum}
-          myFid={myFidNum}
-          localSigner={localSigner}
-          neynarKey={neynarKey ?? ""}
-          onClose={() => setShowBatchSheet(false)}
-          zIndex="z-[200]"
-        />
-      )}
 
     </div>
   );
