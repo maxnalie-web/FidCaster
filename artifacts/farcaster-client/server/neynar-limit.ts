@@ -19,10 +19,14 @@ function collectKeys(): string[] {
   const primary = process.env.NEYNAR_API_KEY;
   if (primary) keys.push(primary);
 
-  // NEYNAR_API_KEY_2, NEYNAR_API_KEY_3 … NEYNAR_API_KEY_100
-  for (let i = 2; i <= 200; i++) {
-    const k = process.env[`NEYNAR_API_KEY_${i}`];
-    if (k) keys.push(k); else break;
+  // Both formats are supported:
+  //   NEYNAR_API_KEY_2, NEYNAR_API_KEY_3  (with underscore before number)
+  //   NEYNAR_API_KEY2,  NEYNAR_API_KEY3   (no underscore — common mistake)
+  for (let i = 2; i <= 20; i++) {
+    const k = process.env[`NEYNAR_API_KEY_${i}`] ?? process.env[`NEYNAR_API_KEY${i}`];
+    if (k && !keys.includes(k)) keys.push(k);
+    // stop scanning as soon as both variants are absent for this index
+    if (!process.env[`NEYNAR_API_KEY_${i}`] && !process.env[`NEYNAR_API_KEY${i}`]) break;
   }
 
   // NEYNAR_API_KEYS=key1,key2,key3

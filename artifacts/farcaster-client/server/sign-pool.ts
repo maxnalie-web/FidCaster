@@ -51,7 +51,8 @@ function makeWorker(scriptPath: string): Worker {
   });
 
   w.on("error", err => {
-    console.error("[sign-pool] worker error:", err.message);
+    console.warn("[sign-pool] worker error — disabling pool, falling back to main thread:", err.message);
+    available = false; // any worker crash → whole pool marked unavailable
   });
 
   return w;

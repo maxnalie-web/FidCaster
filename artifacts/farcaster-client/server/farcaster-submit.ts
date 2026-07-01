@@ -23,6 +23,9 @@ const PUBLIC_HUB_URLS = [
   "https://hoyt.farcaster.xyz:2281",
   "https://hub.farcaster.standardcrypto.vc:2281",
 ];
+// Neynar hub: used ONLY as last resort when all public hubs fail server-side.
+// Each server-side submission costs Neynar credits. The primary path is
+// browser-direct (hub-submit.ts) which bypasses this entirely.
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
 
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;
@@ -259,13 +262,13 @@ export async function submitFarcasterAction(
     if (hash) return { hash };
   }
 
-  // ── 2. Fall back to Neynar hub (costs credits, but most reliable) ───────
+  // ── 2. Neynar hub — last resort when public hubs unreachable server-side ─
+  // Note: costs credits. Primary path (browser-direct via hub-submit.ts)
+  // never reaches here — credits only consumed when browser falls back to relay.
   const neynarKey = process.env.NEYNAR_API_KEY;
   if (neynarKey) {
     const hash = await tryHub(NEYNAR_HUB_URL, neynarKey);
     if (hash) return { hash };
-  } else {
-    errs.push(`${NEYNAR_HUB_URL}: skipped (NEYNAR_API_KEY not configured)`);
   }
 
   const allSignerErrors = errs.every(

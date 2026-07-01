@@ -56,10 +56,19 @@ const optimismClient = createPublicClient({
   ),
 });
 
-// Dedicated lightweight client for contract reads (avoids rank-probe overhead during scans)
+// Dedicated lightweight client for contract reads — uses same fallback pool as optimismClient
+// but without rank probing (avoids extra RPC calls during batch scans)
 const readClient = createPublicClient({
   chain: optimism,
-  transport: http("https://mainnet.optimism.io", { timeout: 10000, retryCount: 3 }),
+  transport: fallback(
+    [
+      "https://optimism.llamarpc.com",
+      "https://mainnet.optimism.io",
+      "https://optimism-rpc.publicnode.com",
+      "https://optimism.drpc.org",
+    ].map((url) => http(url, { timeout: 10000, retryCount: 1 })),
+    { rank: false }
+  ),
 });
 
 const idRegistryAbi = [
