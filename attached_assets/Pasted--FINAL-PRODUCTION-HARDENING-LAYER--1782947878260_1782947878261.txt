@@ -1,0 +1,159 @@
+/**
+ * ================================
+ * FINAL PRODUCTION HARDENING LAYER
+ * ================================
+ * هدف: 10K–100K concurrent safe system
+ * شامل: SWR safety + hub balancing + sqlite hardening + health guard
+ */
+
+/* =========================
+   1. SWR + SINGLEFLIGHT SAFE
+========================= */
+
+const revalidating = new Map<string, Promise<any>>();
+const REVALIDATE_TIMEOUT_MS = 10000;
+
+export async function safeRevalidate(
+  key: string,
+  fetcher: () => Promise<any>
+) {
+  if (revalidating.has(key)) {
+    return revalidating.get(key);
+  }
+
+  const promise = (async () => {
+    let timeout: NodeJS.Timeout | undefined;
+
+    try {
+      const p = fetcher();
+
+      const timeoutPromise = new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error("revalidate timeout"));
+        }, REVALIDATE_TIMEOUT_MS);
+      });
+
+      const result = await Promise.race([p, timeoutPromise]);
+
+      if (timeout) clearTimeout(timeout);
+
+      return result;
+    } finally {
+      revalidating.delete(key); // ALWAYS RELEASE LOCK
+    }
+  })();
+
+  revalidating.set(key, promise);
+  return promise;
+}
+
+/* =========================
+   2. HUB LOAD BALANCING
+========================= */
+
+const hubs = [
+  { url: "https://hoyt.farcaster.xyz", weight: 70 },
+  { url: "https://hub.farcaster.standardcrypto.vc", weight: 25 },
+  { url: "relay", weight: 5 }
+];
+
+export function pickHub() {
+  const r = Math.random() * 100;
+  let acc = 0;
+
+  for (const h of hubs) {
+    acc += h.weight;
+    if (r <= acc) return h;
+  }
+
+  return hubs[0];
+}
+
+/* =========================
+   3. SQLITE WRITE QUEUE
+========================= */
+
+const MAX_QUEUE = 500;
+const FLUSH_INTERVAL = 100;
+
+const queue = new Map<string, any>(); // FID → latest state
+let flushing = false;
+
+export function enqueue(fid: string, data: any) {
+  queue.set(fid, data); // dedupe by overwrite
+
+  if (queue.size >= MAX_QUEUE) {
+    flushNow();
+  }
+}
+
+export async function flushNow() {
+  if (flushing) return;
+  flushing = true;
+
+  try {
+    const batch = Array.from(queue.entries());
+    queue.clear();
+
+    await db.transaction(async () => {
+      for (const [fid, data] of batch) {
+        await db
+          .prepare("INSERT OR REPLACE INTO cache VALUES (?, ?)")
+          .run(fid, JSON.stringify(data));
+      }
+    });
+  } finally {
+    flushing = false;
+  }
+}
+
+setInterval(flushNow, FLUSH_INTERVAL);
+
+/* =========================
+   4. SYSTEM HEALTH GUARD
+========================= */
+
+const health = {
+  lastHubFailureRate: 0,
+  lastCacheHitRatio: 1,
+  lastQueuePeak: 0
+};
+
+export function isDegraded() {
+  return (
+    health.lastHubFailureRate > 0.2 ||
+    health.lastCacheHitRatio < 0.7 ||
+    health.lastQueuePeak > 400
+  );
+}
+
+/* =========================
+   5. SAFE MODE CONTROL
+========================= */
+
+let safeMode = false;
+
+export function evaluateSafeMode() {
+  if (isDegraded()) {
+    safeMode = true;
+  } else {
+    safeMode = false;
+  }
+}
+
+export function getSafeMode() {
+  return safeMode;
+}
+
+export function applySafeModeConfig() {
+  if (!safeMode) return;
+
+  // Example adaptive behavior hooks:
+  // - increase SWR TTL
+  // - disable background refresh
+  // - reduce hub retries
+}
+
+/* =========================
+   END OF SYSTEM LAYER
+========================= */

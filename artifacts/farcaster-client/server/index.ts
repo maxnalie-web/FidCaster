@@ -12,6 +12,8 @@ import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
+import { initSignPool } from "./sign-pool.js";
+import { healthSnapshot } from "./health.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -187,7 +189,8 @@ const VALID_ACTIONS = new Set<string>([
 // Not proxied to the public — only reachable directly on the server port.
 // Shows cache hit/miss ratio, SWR refreshes, hub success/fail, SQLite queue peak.
 app.get("/internal/metrics", (_req, res) => {
-  res.json({ ...metrics.snapshot(), cache_store: cacheStats() });
+  const health = healthSnapshot();
+  res.json({ ...metrics.snapshot(), cache_store: cacheStats(), health });
 });
 
 app.get("/api/farcaster/health", (_req, res) => {
@@ -588,6 +591,9 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
 const server = app.listen(PORT, host, () => {
   console.log(`[farcaster-server] listening on ${host}:${PORT} (${process.env.NODE_ENV ?? "development"})`);
+  // Spin up worker thread pool for ed25519 signing — offloads CPU from main loop.
+  // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
+  initSignPool();
 });
 
 function shutdown(signal: string) {

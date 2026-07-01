@@ -182,6 +182,10 @@ async function buildMessage(
  * Sign a Farcaster message and return the serialised protobuf bytes (base64).
  * Does NOT submit to any hub — the caller (browser) does the submission directly,
  * distributing hub traffic across each user's own IP instead of the server's IP.
+ *
+ * Strategy:
+ *  1. Try Worker Thread pool (non-blocking, N-way parallel CPU throughput).
+ *  2. Fall back to main-thread signing if pool is unavailable or times out.
  */
 export async function signFarcasterAction(
   signerPrivateKeyHex: string,
@@ -189,6 +193,18 @@ export async function signFarcasterAction(
   action: FarcasterAction,
 ): Promise<{ bytes: string; hash: string }> {
   validateAction(action);
+
+  // ── 1. Try worker pool (offloads CPU-bound ed25519 from main event loop) ──
+  try {
+    const { poolAvailable, signInPool } = await import("./sign-pool.js");
+    if (poolAvailable()) {
+      return await signInPool(signerPrivateKeyHex, fid, action);
+    }
+  } catch {
+    // pool not ready — fall through to main-thread signing
+  }
+
+  // ── 2. Main-thread fallback ───────────────────────────────────────────────
   const message = await buildMessage(signerPrivateKeyHex, fid, action);
   const msgBytes = Message.encode(message).finish();
   return {

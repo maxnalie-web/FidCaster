@@ -59,10 +59,20 @@ export function cacheGetSWR(
     return undefined;
   }
 
-  // Soft-expired: kick off a single shared refresh if none is running
+  // Soft-expired: kick off a single shared refresh if none is running.
+  // Wrapped in a 10s race-timeout so a hung Neynar call never holds the
+  // revalidating lock indefinitely — the key simply stays stale until
+  // the next SWR window fires a fresh attempt. (ChatGPT-suggested hardening)
   if (now > e.softExpiresAt && !inFlight) {
     metrics.incSwrRefresh();
-    const p: Promise<void> = revalidateFn()
+    const SWR_TIMEOUT_MS = 10_000;
+    const raceResult = Promise.race([
+      revalidateFn(),
+      new Promise<undefined>((_, reject) =>
+        setTimeout(() => reject(new Error("SWR timeout")), SWR_TIMEOUT_MS),
+      ),
+    ]);
+    const p: Promise<void> = raceResult
       .then(data => { if (data !== undefined && data !== null) cacheSet(key, data, ttlMs); })
       .catch(() => { /* stale data continues serving until next success */ })
       .finally(() => revalidating.delete(key));
