@@ -3,9 +3,15 @@ export const NEYNAR_BASE = "https://api.neynar.com/v2";
 const PROXY_BASE = "/api/fc";
 // Hub proxy base — direct Hub reads (free, no rate limit)
 export const HUB_PROXY_BASE = "/api/hub";
+// Baked-in build-time key (set via NEYNAR_API_KEY secret → VITE_NEYNAR_API_KEY at build)
+const _BAKED_KEY: string = (() => {
+  try { return (import.meta.env.VITE_NEYNAR_API_KEY as string | undefined) ?? ""; } catch { return ""; }
+})();
 // Runtime key — only needed for write operations (signers, etc.)
 export const DEFAULT_API_KEY: string = (() => {
-  try { return localStorage.getItem("fc_neynar_key") || "NEYNAR_API_DOCS"; } catch { return "NEYNAR_API_DOCS"; }
+  try {
+    return localStorage.getItem("fc_neynar_key") || _BAKED_KEY || "NEYNAR_API_DOCS";
+  } catch { return _BAKED_KEY || "NEYNAR_API_DOCS"; }
 })();
 
 export type NeynarUser = {
@@ -110,15 +116,23 @@ async function neynar<T>(
         signal: AbortSignal.timeout(20000),
       });
     } catch {
-      proxied = null; // server unreachable → fall through to direct as last resort
+      proxied = null; // network error — server unreachable → fall through
     }
     if (proxied) {
-      if (proxied.ok) return proxied.json() as Promise<T>;
-      const err = await proxied.json().catch(() => ({}));
-      throw new Error(
-        (err as { error?: string; message?: string }).error ??
-        (err as { message?: string }).message ?? `HTTP ${proxied.status}`
-      );
+      const ct = proxied.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        // Static hosting returns index.html (text/html) for unknown paths.
+        // Treat any non-JSON response as "proxy unavailable" and fall through.
+        proxied = null;
+      } else if (proxied.ok) {
+        return proxied.json() as Promise<T>;
+      } else {
+        const err = await proxied.json().catch(() => ({}));
+        throw new Error(
+          (err as { error?: string; message?: string }).error ??
+          (err as { message?: string }).message ?? `HTTP ${proxied.status}`
+        );
+      }
     }
   }
 
@@ -270,7 +284,8 @@ export async function getNotifications(
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(10000),
     });
-    if (res.ok) return res.json();
+    const ct = res.headers.get("content-type") ?? "";
+    if (res.ok && ct.includes("application/json")) return res.json();
   } catch { /* fall through */ }
   return neynar(`/farcaster/notifications?${q}`, "GET", key);
 }
@@ -410,7 +425,8 @@ export async function getFollowers(
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(20000),
     });
-    if (res.ok) return res.json();
+    const ct = res.headers.get("content-type") ?? "";
+    if (res.ok && ct.includes("application/json")) return res.json();
   } catch { /* fall through */ }
   // Fallback: direct Neynar (only if server unavailable)
   const qd = new URLSearchParams({ fid: String(fid), limit: "50", viewer_fid: String(viewerFid) });
@@ -457,7 +473,8 @@ export async function getFollowing(
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(20000),
     });
-    if (res.ok) return res.json();
+    const ct = res.headers.get("content-type") ?? "";
+    if (res.ok && ct.includes("application/json")) return res.json();
   } catch { /* fall through */ }
   // Fallback: direct Neynar (only if server unavailable)
   const qd = new URLSearchParams({ fid: String(fid), limit: "50", viewer_fid: String(viewerFid) });

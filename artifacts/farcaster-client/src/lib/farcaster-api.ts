@@ -448,7 +448,8 @@ export async function fetchMiniApps(): Promise<MiniApp[]> {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(5000),
       });
-      if (!res.ok) continue;
+      const ct2 = res.headers.get("content-type") ?? "";
+      if (!res.ok || !ct2.includes("application/json")) continue;
 
       const data = await res.json();
       // Farcaster returns frames/apps in various shapes; normalise the common ones
