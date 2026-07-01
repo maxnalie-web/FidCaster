@@ -297,10 +297,22 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           </div>
         ) : (
           <>
+            {/* ── Banner ── */}
+            <div className="relative w-full h-32 overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">
+              {user.pfp_url && (
+                <img
+                  src={user.pfp_url}
+                  aria-hidden
+                  className="absolute inset-0 w-full h-full object-cover blur-3xl scale-150 opacity-50"
+                />
+              )}
+              <div className="absolute inset-0 bg-background/25" />
+            </div>
+
             {/* ── Profile card ── */}
-            <div className="px-5 pt-4">
+            <div className="px-4">
               {/* Avatar + actions row */}
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-end justify-between -mt-10 mb-3">
                 {/* Avatar */}
                 <div className="relative w-[82px] h-[82px] shrink-0">
                   <button
@@ -338,87 +350,94 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   )}
                 </div>
 
-                {/* Follow + more menu */}
-                <div className="flex items-center gap-2 mt-1">
-                  {!isOwnProfile && canWrite && (
-                    <button
-                      onClick={handleFollow}
-                      disabled={followLoading}
-                      className={cn(
-                        "flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all border",
-                        following
-                          ? "bg-muted text-foreground border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-                          : "btn-luxury text-white border-transparent"
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 pb-1">
+                  {isOwnProfile ? (
+                    <>
+                      <button
+                        onClick={() => onOpenSettings ? onOpenSettings() : navigate("/dashboard")}
+                        className="px-4 py-2 rounded-full text-sm font-semibold bg-muted text-foreground border border-border/60 hover:bg-accent transition-colors"
+                      >
+                        Edit profile
+                      </button>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied"))}
+                        className="px-4 py-2 rounded-full text-sm font-semibold bg-muted text-foreground border border-border/60 hover:bg-accent transition-colors"
+                      >
+                        Share profile
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {canWrite && (
+                        <button
+                          onClick={handleFollow}
+                          disabled={followLoading}
+                          className={cn(
+                            "flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all border",
+                            following
+                              ? "bg-muted text-foreground border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                              : "btn-luxury text-white border-transparent"
+                          )}
+                        >
+                          {followLoading
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : following
+                              ? <><UserCheck className="w-4 h-4" />Following</>
+                              : <><UserPlus className="w-4 h-4" />Follow</>
+                          }
+                        </button>
                       )}
-                    >
-                      {followLoading
-                        ? <Loader2 className="w-4 h-4 animate-spin" />
-                        : following
-                          ? <><UserCheck className="w-4 h-4" />Following</>
-                          : <><UserPlus className="w-4 h-4" />Follow</>
-                      }
-                    </button>
-                  )}
-                  <div className="relative" ref={moreMenuRef}>
-                    <button
-                      onClick={() => setShowMoreMenu(v => !v)}
-                      className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-border/60"
-                    >
-                      <MoreHorizontal className="w-5 h-5" />
-                    </button>
-                    {showMoreMenu && (
-                      <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-2xl shadow-2xl z-50 min-w-[220px] py-1 overflow-hidden">
+                      <div className="relative" ref={moreMenuRef}>
                         <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(String(targetFid)).then(() => toast.success("FID copied"));
-                            setShowMoreMenu(false);
-                          }}
-                          className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                          onClick={() => setShowMoreMenu(v => !v)}
+                          className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-border/60"
                         >
-                          <span className="text-muted-foreground">FID</span>
-                          <span className="font-mono font-semibold">{targetFid}</span>
+                          <MoreHorizontal className="w-5 h-5" />
                         </button>
-                        {extUser.verified_addresses?.eth_addresses?.[0] && (
-                          <button
-                            onClick={() => {
-                              const addr = extUser.verified_addresses!.eth_addresses![0];
-                              navigator.clipboard.writeText(addr).then(() => toast.success("Address copied"));
-                              setShowMoreMenu(false);
-                            }}
-                            className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
-                          >
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {extUser.verified_addresses.eth_addresses[0].slice(0, 6)}…{extUser.verified_addresses.eth_addresses[0].slice(-4)}
-                            </span>
-                            <Copy className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                          </button>
-                        )}
-                        <div className="my-1 border-t border-border" />
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied"));
-                            setShowMoreMenu(false);
-                          }}
-                          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
-                        >
-                          <Copy className="w-4 h-4 text-muted-foreground" />
-                          Copy link
-                        </button>
-                        {embedded && isOwnProfile && onOpenSettings && (
-                          <>
+                        {showMoreMenu && (
+                          <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-2xl shadow-2xl z-50 min-w-[220px] py-1 overflow-hidden">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(String(targetFid)).then(() => toast.success("FID copied"));
+                                setShowMoreMenu(false);
+                              }}
+                              className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                            >
+                              <span className="text-muted-foreground">FID</span>
+                              <span className="font-mono font-semibold">{targetFid}</span>
+                            </button>
+                            {extUser.verified_addresses?.eth_addresses?.[0] && (
+                              <button
+                                onClick={() => {
+                                  const addr = extUser.verified_addresses!.eth_addresses![0];
+                                  navigator.clipboard.writeText(addr).then(() => toast.success("Address copied"));
+                                  setShowMoreMenu(false);
+                                }}
+                                className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                              >
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  {extUser.verified_addresses.eth_addresses[0].slice(0, 6)}…{extUser.verified_addresses.eth_addresses[0].slice(-4)}
+                                </span>
+                                <Copy className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                              </button>
+                            )}
                             <div className="my-1 border-t border-border" />
                             <button
-                              onClick={() => { setShowMoreMenu(false); onOpenSettings(); }}
+                              onClick={() => {
+                                navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied"));
+                                setShowMoreMenu(false);
+                              }}
                               className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
                             >
-                              <Settings className="w-4 h-4 text-muted-foreground" />
-                              Settings
+                              <Copy className="w-4 h-4 text-muted-foreground" />
+                              Copy link
                             </button>
-                          </>
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -540,21 +559,25 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         />
       )}
 
-      {/* ── Avatar Lightbox ── */}
+      {/* ── Avatar Lightbox (popup) ── */}
       {showAvatarLightbox && user?.pfp_url && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/92 backdrop-blur-md"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => setShowAvatarLightbox(false)}
         >
-          <button className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10">
-            <X className="w-5 h-5" />
-          </button>
-          <img
-            src={user.pfp_url}
-            alt={user.display_name || user.username}
-            className="max-w-[88vw] max-h-[88vh] rounded-2xl object-contain shadow-2xl ring-2 ring-white/10"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={user.pfp_url}
+              alt={user.display_name || user.username}
+              className="w-[min(320px,80vw)] h-[min(320px,80vw)] rounded-full object-cover shadow-2xl ring-4 ring-white/20"
+            />
+            <button
+              onClick={() => setShowAvatarLightbox(false)}
+              className="absolute -top-2 -right-2 p-1.5 rounded-full bg-background border border-border text-foreground hover:bg-muted shadow-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 

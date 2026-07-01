@@ -513,7 +513,7 @@ function AccountDropdownPanel({
 function ProfileEditPanel() {
   const { fid, localSigner, signerApproved, profile } = useWallet();
   const [displayName, setDisplayName] = useState(profile?.displayName || "");
-  const [bio, setBio] = useState("");
+  const [bio, setBio] = useState(profile?.bio || "");
   const [pfpUrl, setPfpUrl] = useState(profile?.pfpUrl || "");
   const [saving, setSaving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
