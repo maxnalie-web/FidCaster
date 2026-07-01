@@ -17,9 +17,10 @@ const SIGNER_RETRY_WAIT_MS = 90_000;
 // How many times we'll wait+retry a single FID before giving up on it.
 const MAX_SIGNER_RETRIES = 3;
 // If this many FIDs in a row produce hub errors (any kind), pause before continuing.
-const CONSECUTIVE_ERR_LIMIT = 4;
+// Raised from 4 → 10: transient server restarts / blips should not trigger this.
+const CONSECUTIVE_ERR_LIMIT = 10;
 // How long to pause when consecutive errors hit the limit.
-const CONSECUTIVE_ERR_PAUSE_MS = 60_000;
+const CONSECUTIVE_ERR_PAUSE_MS = 30_000;
 
 const BATCH_PERSIST_KEY = "fc_batch_op_v1";
 

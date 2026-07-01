@@ -179,17 +179,27 @@ async function serverRelay(body: object): Promise<void> {
     body:    JSON.stringify(body),
     signal:  AbortSignal.timeout(32_000),
   });
+
   if (!res.ok) {
+    // 429 → throw message with "429" so batch can detect rate-limit and wait
+    if (res.status === 429) {
+      throw new Error(`HTTP 429 — server relayed a hub rate limit`);
+    }
+    // 5xx / 502 proxy error → server or Vite proxy temporarily down → mark as transient
+    // "signal" keyword makes BatchOperationContext treat this as a retryable error
+    if (res.status >= 500) {
+      throw new Error(`signal — server temporarily unavailable (${res.status}), will retry`);
+    }
     const txt = await res.text().catch(() => "");
     let msg = txt;
     try { msg = (JSON.parse(txt) as { error?: string }).error ?? txt; } catch { /* ok */ }
     throw new Error(msg || `HTTP ${res.status}`);
   }
+
   const ct = res.headers.get("content-type") ?? "";
   if (!ct.includes("application/json")) {
-    throw new Error(
-      "Hub server is not available in this deployment. Run the app locally for write actions.",
-    );
+    // Proxy returned HTML (server restarting) → mark transient so batch retries once
+    throw new Error(`signal — hub relay returned unexpected response (server may be restarting)`);
   }
 }
 
