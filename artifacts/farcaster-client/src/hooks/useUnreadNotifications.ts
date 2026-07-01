@@ -51,11 +51,26 @@ export function useUnreadNotifications(fid: number, neynarKey: string) {
     } catch { /* keep last known count */ }
   }, [fid, neynarKey]);
 
+  // Track last successful fetch time to avoid hammering the API on tab switches.
+  const lastFetchAt = useRef<number>(0);
+
   useEffect(() => {
     if (!fid) return;
     void refresh();
-    const id = setInterval(() => void refresh(), 60_000);
-    const onVis = () => { if (document.visibilityState === "visible") void refresh(); };
+    lastFetchAt.current = Date.now();
+    // Poll every 5 min — matches the 5-min server-side cache TTL.
+    // No point polling faster than the cache expires.
+    const id = setInterval(() => {
+      void refresh();
+      lastFetchAt.current = Date.now();
+    }, 300_000);
+    // On tab focus: only re-fetch if the last fetch was > 4 min ago.
+    const onVis = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastFetchAt.current > 240_000) {
+        void refresh();
+        lastFetchAt.current = Date.now();
+      }
+    };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
   }, [fid, refresh]);

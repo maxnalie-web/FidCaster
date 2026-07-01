@@ -12,9 +12,10 @@ import {
   Message,
 } from "@farcaster/hub-nodejs";
 
+// Only Neynar hub — our signer key is indexed there.
+// Pinata is NOT included: it doesn't index our key, so it always rejects signed messages.
 const HUB_URLS = [
-  "https://hub-api.neynar.com",   // has our key indexed ✓
-  "https://hub.pinata.cloud",
+  "https://hub-api.neynar.com",
 ];
 
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;
@@ -206,6 +207,12 @@ export async function submitFarcasterAction(
         return { hash };
       }
       const txt = await res.text().catch(() => "");
+      // "already exists" / duplicate — treat as success, no retry needed
+      if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) {
+        const hash = Buffer.from(message.hash).toString("hex");
+        console.log(`[farcaster-submit] duplicate detected — treating as success`);
+        return { hash };
+      }
       errs.push(`${hubUrl}: HTTP ${res.status} — ${txt.slice(0, 200)}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

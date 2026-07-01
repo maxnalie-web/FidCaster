@@ -8,19 +8,19 @@ const HUB_BASE  = "https://hub.pinata.cloud/v1";
 // ── TTL rules (ms) ────────────────────────────────────────────────────────────
 // req.path here is ALREADY stripped of the mount prefix by Express app.use()
 function ttlFor(path: string): number {
-  if (path.includes("/notifications"))     return   60_000; // 1 min  per user
-  if (path.includes("/feed/trending"))     return  180_000; // 3 min  global
-  if (path.includes("/feed"))              return   90_000; // 90 s   personalized
-  if (path.includes("/user/bulk"))         return  300_000; // 5 min  profiles
-  if (path.includes("/user/search"))       return   30_000; // 30 s   search
-  if (path.includes("/cast/search"))       return   30_000;
-  if (path.includes("/cast/conversation")) return  120_000; // 2 min  thread
-  if (path.includes("/followers"))         return  180_000; // 3 min
-  if (path.includes("/following"))         return  180_000;
-  if (path.includes("/reactions"))         return  120_000; // 2 min
-  if (path.includes("/frame/catalog"))     return  300_000; // 5 min
-  if (path.includes("/feed/user"))         return   90_000;
-  return 90_000;
+  if (path.includes("/notifications"))     return  300_000; // 5 min  — was 1 min (5× saving)
+  if (path.includes("/feed/trending"))     return  300_000; // 5 min  global
+  if (path.includes("/feed"))              return  120_000; // 2 min  personalized
+  if (path.includes("/user/bulk"))         return  600_000; // 10 min profiles
+  if (path.includes("/user/search"))       return   60_000; // 1 min  search
+  if (path.includes("/cast/search"))       return   60_000;
+  if (path.includes("/cast/conversation")) return  180_000; // 3 min  thread
+  if (path.includes("/followers"))         return  900_000; // 15 min — was 3 min (5× saving)
+  if (path.includes("/following"))         return  900_000; // 15 min — was 3 min
+  if (path.includes("/reactions"))         return  180_000; // 3 min
+  if (path.includes("/frame/catalog"))     return  600_000; // 10 min
+  if (path.includes("/feed/user"))         return  120_000; // 2 min
+  return 120_000;
 }
 
 // ── Neynar read proxy ─────────────────────────────────────────────────────────

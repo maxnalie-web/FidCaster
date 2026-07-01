@@ -76,7 +76,7 @@ export const UNFOLLOW_PRESETS: PresetDef[] = [
 
 export const LIMIT_PRESETS = [100, 250, 500, 1000, 2000, 5000];
 
-export const MAX_SCAN = 10_000;
+export const MAX_SCAN = 2_000; // 20 pages max — was 10,000 (5× API cost reduction)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
