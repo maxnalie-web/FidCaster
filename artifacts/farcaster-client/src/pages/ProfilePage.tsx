@@ -5,6 +5,7 @@ import {
   ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
   AlignLeft, MessageSquare, Heart, Repeat2, X, Zap,
+  Camera, CheckCircle2, AlertCircle, ChevronRight,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
@@ -13,7 +14,8 @@ import {
   hasPowerBadge, getFollowing, type NeynarUser, type NeynarCast,
 } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
-import { hubFollow, neynarAction } from "@/lib/hub-submit";
+import { hubFollow, neynarAction, hubUpdateUserData } from "@/lib/hub-submit";
+import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
 import { cn } from "@/lib/utils";
@@ -40,8 +42,215 @@ const TAB_META: { id: ProfileTab; label: string; icon: React.ReactNode }[] = [
 type ProfilePageProps = {
   fid?: number;
   embedded?: boolean;
-  onOpenSettings?: () => void;
+  onOpenSettings?: (tab?: "username" | "signer" | "profile") => void;
 };
+
+/* ─── Inline Edit Sheet ──────────────────────────────────────────────────── */
+function EditSheet({
+  profile,
+  fid,
+  localSigner,
+  signerApproved,
+  onClose,
+  onChangeUsername,
+}: {
+  profile: { pfpUrl?: string; displayName?: string; bio?: string; username?: string } | null;
+  fid: bigint | null;
+  localSigner: LocalSigner | null;
+  signerApproved: boolean;
+  onClose: () => void;
+  onChangeUsername: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(profile?.displayName || "");
+  const [bio, setBio] = useState(profile?.bio || "");
+  const [pfpUrl, setPfpUrl] = useState(profile?.pfpUrl || "");
+  const [saving, setSaving] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function saveField(field: "pfp" | "display" | "bio", value: string) {
+    if (!fid || !localSigner || !signerApproved) return;
+    if (!value.trim()) { toast.error("Cannot be empty"); return; }
+    setSaving(field);
+    setError(null);
+    setSuccess(null);
+    try {
+      await hubUpdateUserData(Number(fid), localSigner, field, value.trim());
+      setSuccess(field === "pfp" ? "Profile picture updated!" : field === "display" ? "Display name updated!" : "Bio updated!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSaving("pfp-upload");
+    setError(null);
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/farcaster/upload-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl, type: file.type }),
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { url } = await res.json() as { url: string };
+      setPfpUrl(url);
+      await saveField("pfp", url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const isSaving = !!saving;
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-background flex flex-col">
+      <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border bg-background/95 backdrop-blur-sm">
+        <button
+          onClick={onClose}
+          className="p-2 -ml-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <span className="text-base font-bold">Edit profile</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {!signerApproved || !localSigner ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center px-6">
+            <AlertCircle className="w-8 h-8 text-amber-500 opacity-60" />
+            <p className="text-sm text-muted-foreground">Signer must be active to edit your profile.</p>
+          </div>
+        ) : (
+          <div className="p-5 space-y-6 max-w-lg mx-auto">
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-foreground">Profile Picture</label>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-muted border border-border shrink-0">
+                  {pfpUrl ? (
+                    <img src={pfpUrl} alt="pfp" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User className="w-7 h-7 text-muted-foreground/40" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={handleFileUpload} />
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    disabled={isSaving}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    {saving === "pfp-upload" ? "Uploading…" : "Upload Photo"}
+                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      value={pfpUrl}
+                      onChange={e => setPfpUrl(e.target.value)}
+                      placeholder="Or paste image URL…"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <button
+                      onClick={() => saveField("pfp", pfpUrl)}
+                      disabled={isSaving || !pfpUrl.startsWith("https://")}
+                      className="px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-40 hover:bg-primary/90 shrink-0"
+                    >
+                      {saving === "pfp" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-foreground">Display Name</label>
+              <div className="flex gap-2">
+                <input
+                  value={displayName}
+                  onChange={e => setDisplayName(e.target.value)}
+                  maxLength={32}
+                  placeholder="Your display name…"
+                  className="flex-1 px-3 py-2.5 text-sm rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  onClick={() => saveField("display", displayName)}
+                  disabled={isSaving || !displayName.trim()}
+                  className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-40 hover:bg-primary/90 shrink-0"
+                >
+                  {saving === "display" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">{displayName.length}/32</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-foreground">Bio</label>
+              <textarea
+                value={bio}
+                onChange={e => setBio(e.target.value)}
+                maxLength={256}
+                rows={3}
+                placeholder="Tell the world about yourself…"
+                className="w-full px-3 py-2.5 text-sm rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none leading-relaxed"
+              />
+              <div className="flex justify-between items-center">
+                <p className="text-[10px] text-muted-foreground">{bio.length}/256</p>
+                <button
+                  onClick={() => saveField("bio", bio)}
+                  disabled={isSaving || !bio.trim()}
+                  className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-40 hover:bg-primary/90"
+                >
+                  {saving === "bio" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Bio"}
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={onChangeUsername}
+              className="w-full flex items-center justify-between py-3.5 px-4 rounded-xl bg-muted/40 border border-border/60 hover:bg-accent transition-colors group"
+            >
+              <div className="text-left">
+                <p className="text-xs font-bold text-foreground uppercase tracking-wide">Username</p>
+                <p className="text-sm text-muted-foreground mt-0.5">@{profile?.username || "—"}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+            </button>
+
+            {success && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20 text-emerald-600 text-xs font-semibold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" /> {success}
+              </div>
+            )}
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/8 border border-red-500/20 text-red-500 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+              </div>
+            )}
+
+            <p className="text-[10px] text-muted-foreground/60 text-center pb-4">
+              Profile changes are submitted to the Farcaster hub and may take a few minutes to appear.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: ProfilePageProps = {}) {
   const [, params] = useRoute("/profile/:fid");
@@ -63,6 +272,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const [followLoading, setFollowLoading] = useState(false);
   const [followSheet, setFollowSheet] = useState<"followers" | "following" | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showEditSheet, setShowEditSheet] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("casts");
@@ -355,17 +565,38 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   {isOwnProfile ? (
                     <>
                       <button
-                        onClick={() => onOpenSettings ? onOpenSettings() : navigate("/dashboard")}
+                        onClick={() => setShowEditSheet(true)}
                         className="px-4 py-2 rounded-full text-sm font-semibold bg-muted text-foreground border border-border/60 hover:bg-accent transition-colors"
                       >
                         Edit profile
                       </button>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied"))}
-                        className="px-4 py-2 rounded-full text-sm font-semibold bg-muted text-foreground border border-border/60 hover:bg-accent transition-colors"
-                      >
-                        Share profile
-                      </button>
+                      <div className="relative" ref={moreMenuRef}>
+                        <button
+                          onClick={() => setShowMoreMenu(v => !v)}
+                          className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-border/60"
+                        >
+                          <MoreHorizontal className="w-5 h-5" />
+                        </button>
+                        {showMoreMenu && (
+                          <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-2xl shadow-2xl z-50 min-w-[200px] py-1 overflow-hidden">
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(String(targetFid)).then(() => toast.success("FID copied")); setShowMoreMenu(false); }}
+                              className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                            >
+                              <span className="text-muted-foreground">FID</span>
+                              <span className="font-mono font-semibold">{targetFid}</span>
+                            </button>
+                            <div className="my-1 border-t border-border" />
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied")); setShowMoreMenu(false); }}
+                              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                            >
+                              <Copy className="w-4 h-4 text-muted-foreground" />
+                              Copy link
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <>
@@ -556,6 +787,22 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           count={followSheet === "followers" ? user.follower_count : user.following_count}
           onClose={() => setFollowSheet(null)}
           zIndex="z-50"
+        />
+      )}
+
+      {/* ── Edit Profile Sheet ── */}
+      {showEditSheet && (
+        <EditSheet
+          profile={myProfile}
+          fid={myFid}
+          localSigner={localSigner}
+          signerApproved={signerApproved}
+          onClose={() => setShowEditSheet(false)}
+          onChangeUsername={() => {
+            setShowEditSheet(false);
+            if (onOpenSettings) onOpenSettings("username");
+            else navigate("/dashboard?tab=profile");
+          }}
         />
       )}
 

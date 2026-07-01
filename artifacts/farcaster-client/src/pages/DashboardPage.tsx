@@ -767,9 +767,10 @@ export function DashboardPage() {
   if (fidSold) return <FidSoldScreen />;
   const fidNum = Number(fid);
 
-  function openSettings() {
+  function openSettings(tab?: SettingsTab) {
     setMainTab("profile");
     setProfileSection("settings");
+    if (tab) setSettingsTab(tab);
   }
 
   const showFab = mainTab === "feed" || mainTab === "notifications";
@@ -839,7 +840,7 @@ export function DashboardPage() {
           <ProfilePage
             embedded
             fid={fidNum}
-            onOpenSettings={() => setProfileSection("settings")}
+            onOpenSettings={(tab) => { setProfileSection("settings"); if (tab) setSettingsTab(tab); }}
           />
         );
     }
