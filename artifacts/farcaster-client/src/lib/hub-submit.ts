@@ -24,7 +24,7 @@ async function callServer(body: object): Promise<void> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(32000),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
@@ -101,7 +101,7 @@ export async function neynarAction(signerUuid: string, action: { type: string; [
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ signerUuid, action }),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(32000),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");

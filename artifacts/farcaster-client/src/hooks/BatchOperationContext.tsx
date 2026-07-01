@@ -22,6 +22,7 @@ interface PersistedBatch {
   total: number;
   done: number;
   errors: number;
+  skipped: number;
 }
 
 function saveBatch(s: PersistedBatch) {
@@ -52,6 +53,7 @@ export interface BatchOp {
   done: number;
   total: number;
   errors: number;
+  skipped: number;
   label: string;
 }
 
@@ -74,6 +76,7 @@ interface RunBatchParams {
   total: number;
   initialDone?: number;
   initialErrors?: number;
+  initialSkipped?: number;
 }
 
 interface BatchOperationCtx {
@@ -108,46 +111,61 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
   // Captures signer in closure so account switches in the UI don't affect it.
   const runBatch = useCallback(async ({
     mode, fids, myFid, signer, neynarKey, label, total,
-    initialDone = 0, initialErrors = 0,
+    initialDone = 0, initialErrors = 0, initialSkipped = 0,
   }: RunBatchParams) => {
     cancelRef.current = false;
     let done = initialDone;
     let errors = initialErrors;
-    setOp({ mode, phase: "running", done, total, errors, label });
+    let skipped = initialSkipped;
+    setOp({ mode, phase: "running", done, total, errors, skipped, label });
+
+    const attempt = async (targetFid: number) =>
+      hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
 
     for (let i = 0; i < fids.length; i++) {
       if (cancelRef.current) break;
+      const targetFid = fids[i];
 
       // Persist remaining work before each action
-      saveBatch({ mode, pendingFids: fids.slice(i), myFid, neynarKey, label, total, done, errors });
+      saveBatch({ mode, pendingFids: fids.slice(i), myFid, neynarKey, label, total, done, errors, skipped });
 
       try {
-        await hubFollow(myFid, signer, fids[i], { unfollow: mode === "unfollow", neynarKey });
+        await attempt(targetFid);
         done++;
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "";
-        if (msg.includes("429") || msg.toLowerCase().includes("rate")) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const lo = msg.toLowerCase();
+
+        if (lo.includes("duplicate") || lo.includes("already follow")) {
+          // Hub rejected because link already exists — treat as skipped, not an error
+          skipped++;
+        } else if (msg.includes("429") || lo.includes("rate") || lo.includes("too many")) {
           // Rate-limited: wait 62s then retry once
           await new Promise(r => setTimeout(r, 62_000));
           if (!cancelRef.current) {
-            try {
-              await hubFollow(myFid, signer, fids[i], { unfollow: mode === "unfollow", neynarKey });
-              done++;
-            } catch { errors++; }
+            try { await attempt(targetFid); done++; }
+            catch { errors++; }
+          }
+        } else if (lo.includes("timeout") || lo.includes("abort") || lo.includes("signal")) {
+          // Timeout: retry once immediately before counting as error
+          await new Promise(r => setTimeout(r, 3_000));
+          if (!cancelRef.current) {
+            try { await attempt(targetFid); done++; }
+            catch { errors++; }
           }
         } else {
           errors++;
         }
       }
 
-      setOp({ mode, phase: "running", done, total, errors, label });
+      setOp({ mode, phase: "running", done, total, errors, skipped, label });
       if (i < fids.length - 1 && !cancelRef.current)
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
 
     clearBatch();
     setOp(prev => prev
-      ? { ...prev, done, errors, phase: cancelRef.current ? "cancelled" : "done" }
+      ? { ...prev, done, errors, skipped, phase: cancelRef.current ? "cancelled" : "done" }
       : null
     );
   }, []);
@@ -176,6 +194,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       total: saved.total,
       initialDone: saved.done,
       initialErrors: saved.errors,
+      initialSkipped: saved.skipped ?? 0,
     });
   }, [fid, localSigner, runBatch, walletNeynarKey]);
 
@@ -300,13 +319,11 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
                 </div>
 
                 {/* Stats grid */}
-                <div className="grid grid-cols-3 gap-2 px-4 py-3">
+                <div className="grid grid-cols-4 gap-2 px-4 py-3">
                   <StatBox label="Done" value={op.done} color="text-foreground" />
-                  <StatBox label="Left" value={Math.max(0, op.total - op.done - op.errors)} color="text-muted-foreground" />
-                  {op.errors > 0
-                    ? <StatBox label="Errors" value={op.errors} color="text-rose-500" />
-                    : <StatBox label="Total" value={op.total} color="text-muted-foreground" />
-                  }
+                  <StatBox label="Left" value={Math.max(0, op.total - op.done - op.errors - op.skipped)} color="text-muted-foreground" />
+                  <StatBox label="Skipped" value={op.skipped} color="text-amber-500" />
+                  <StatBox label="Errors" value={op.errors} color={op.errors > 0 ? "text-rose-500" : "text-muted-foreground"} />
                 </div>
 
                 {/* ETA + rate info */}
