@@ -49,6 +49,8 @@ export interface BatchFollowSheetProps {
   neynarKey: string;
   onClose: () => void;
   zIndex?: string;
+  /** Which list to scan: followers or following of sourceFid (defaults by mode) */
+  fetchList?: "followers" | "following";
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -170,7 +172,8 @@ const UNFOLLOW_PRESETS: PresetDef[] = [
   },
 ];
 
-const LIMIT_PRESETS = [10, 25, 50, 100, 250];
+const LIMIT_PRESETS = [100, 250, 500, 1000, 2000];
+const MAX_SCAN = 10_000; // absolute ceiling — scan all followers up to this
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -254,7 +257,7 @@ function etaStr(count: number): string {
 type Phase = "setup" | "fetching" | "confirm" | "running" | "done";
 
 export function BatchFollowSheet({
-  mode, sourceFid, myFid, localSigner, neynarKey, onClose, zIndex = "z-[70]",
+  mode, sourceFid, myFid, localSigner, neynarKey, onClose, zIndex = "z-[70]", fetchList,
 }: BatchFollowSheetProps) {
   const presets = mode === "follow" ? FOLLOW_PRESETS : UNFOLLOW_PRESETS;
   const [activePreset, setActivePreset] = useState<Preset>(presets[0].id);
@@ -267,6 +270,7 @@ export function BatchFollowSheet({
   const [excludeOpen, setExcludeOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("setup");
   const [fetchedUsers, setFetchedUsers] = useState<NeynarUser[]>([]);
+  const [rawMatchCount, setRawMatchCount] = useState(0); // total matches before limit slice
   const [progress, setProgress] = useState({ done: 0, total: 0, errors: 0 });
   const [fetchPg, setFetchPg] = useState({ pages: 0, found: 0 });
   const cancelRef = useRef(false);
@@ -297,32 +301,33 @@ export function BatchFollowSheet({
     cancelRef.current = false;
     const collected: NeynarUser[] = [];
     let cursor: string | undefined;
+    // Determine which list to scan and whose list it is
+    const resolvedFetchList = fetchList ?? (mode === "unfollow" ? "following" : "followers");
     const fetchFid = mode === "unfollow" ? myFid : sourceFid;
-    // For filtered modes (power badge, mutuals), we need to scan many more users
-    // because only a small % of followers typically match.
-    const needsDeepScan = filters.onlyPowerBadge || filters.onlyMutuals || filters.onlyNonFollowers;
-    const maxCollect = needsDeepScan ? Math.max(filters.limit * 40, 2000) : filters.limit * 10;
+    const fn = resolvedFetchList === "following" ? getFollowing : getFollowers;
     try {
       do {
         if (cancelRef.current) break;
-        const fn = mode === "unfollow" ? getFollowing : getFollowers;
         const res = await fn(fetchFid, myFid, neynarKey, cursor);
         const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
         collected.push(...batch);
         cursor = res.next?.cursor;
         setFetchPg({ pages: Math.ceil(collected.length / 100), found: collected.length });
-        const filtered = applyFilters(collected, mode, filters);
-        // Stop early once we have enough matching users
-        if (filtered.length >= filters.limit) break;
-      } while (cursor && collected.length < maxCollect);
+        // Stop as soon as we've found enough matching users (no need to scan the rest)
+        const matched = applyFilters(collected, mode, { ...filters, limit: MAX_SCAN });
+        if (matched.length >= filters.limit) break;
+      } while (cursor && collected.length < MAX_SCAN);
     } catch (e) {
       toast.error("Failed to load: " + (e instanceof Error ? e.message : "error"));
       setPhase("setup");
       return;
     }
-    setFetchedUsers(applyFilters(collected, mode, filters, exclusions));
+    // Count all matches (no limit) so we can show "found X of Y"
+    const allMatched = applyFilters(collected, mode, { ...filters, limit: MAX_SCAN }, exclusions);
+    setRawMatchCount(allMatched.length);
+    setFetchedUsers(allMatched.slice(0, filters.limit));
     setPhase("confirm");
-  }, [mode, sourceFid, myFid, neynarKey, filters]);
+  }, [mode, fetchList, sourceFid, myFid, neynarKey, filters]);
 
   async function startOperation() {
     if (fetchedUsers.length === 0) { toast.info("No users match your filters"); return; }
@@ -355,6 +360,7 @@ export function BatchFollowSheet({
   function reset() {
     setPhase("setup");
     setFetchedUsers([]);
+    setRawMatchCount(0);
     setProgress({ done: 0, total: 0, errors: 0 });
     cancelRef.current = false;
     setExcludeOpen(false);
@@ -455,12 +461,12 @@ export function BatchFollowSheet({
                       </button>
                     ))}
                     <input
-                      type="number" min={1} max={1000} placeholder="Other"
+                      type="number" min={1} max={10000} placeholder="Other"
                       value={customLimit}
                       onChange={e => {
                         setCustomLimit(e.target.value);
                         const v = parseInt(e.target.value);
-                        if (!isNaN(v) && v > 0) setLimitOnly(Math.min(1000, v));
+                        if (!isNaN(v) && v > 0) setLimitOnly(Math.min(10_000, v));
                       }}
                       className="w-20 px-3 py-1.5 rounded-full text-[13px] font-semibold border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50 text-center"
                     />
@@ -643,8 +649,37 @@ export function BatchFollowSheet({
                   {filters.maxFollowers > 0 && <Chip label={`≤ ${filters.maxFollowers} followers`} />}
                 </div>
 
+                {/* Partial-results warning */}
+                {rawMatchCount < filters.limit && rawMatchCount > 0 && (
+                  <div className="flex items-start gap-3 px-3 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                    <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-[12px] leading-snug">
+                      <p className="font-semibold text-amber-600 dark:text-amber-400">
+                        Only {rawMatchCount.toLocaleString()} found (wanted {filters.limit.toLocaleString()})
+                      </p>
+                      <p className="text-muted-foreground mt-0.5">
+                        Scanned {fetchPg.found.toLocaleString()} users — no more match your filters. You can continue with these {rawMatchCount} or go back and change the filters.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {rawMatchCount === 0 && (
+                  <div className="flex flex-col items-center gap-3 py-4 text-muted-foreground">
+                    <Users className="w-8 h-8 opacity-25" />
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-foreground">0 matches found</p>
+                      <p className="text-[12px] mt-1">
+                        Scanned {fetchPg.found.toLocaleString()} users — none matched your filters.
+                      </p>
+                    </div>
+                    <button onClick={() => setPhase("setup")} className="text-sm text-primary underline underline-offset-2">
+                      Adjust filters
+                    </button>
+                  </div>
+                )}
+
                 {/* Preview */}
-                {fetchedUsers.length > 0 ? (
+                {fetchedUsers.length > 0 && (
                   <div>
                     <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Preview (first 5)</p>
                     {fetchedUsers.slice(0, 5).map(u => (
@@ -666,14 +701,6 @@ export function BatchFollowSheet({
                     {fetchedUsers.length > 5 && (
                       <p className="text-[12px] text-muted-foreground pt-1 pl-11">+{fetchedUsers.length - 5} more</p>
                     )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 py-6 text-muted-foreground">
-                    <Users className="w-8 h-8 opacity-25" />
-                    <p className="text-sm">No users match your filters.</p>
-                    <button onClick={() => setPhase("setup")} className="text-sm text-primary underline underline-offset-2">
-                      Adjust filters
-                    </button>
                   </div>
                 )}
               </div>

@@ -232,7 +232,8 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
       {/* BatchFollowSheet */}
       {showBatchSheet && myFid && localSigner && (
         <BatchFollowSheet
-          mode={activeTab === "followers" ? "follow" : "unfollow"}
+          mode="follow"
+          fetchList={activeTab === "followers" ? "followers" : "following"}
           sourceFid={fid}
           myFid={Number(myFid)}
           localSigner={localSigner}
