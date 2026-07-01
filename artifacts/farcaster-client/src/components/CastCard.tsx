@@ -131,6 +131,35 @@ function CastBody({
   );
 }
 
+function QuoteCastPreview({ quotedCast, onClick }: { quotedCast: NeynarCast; onClick: () => void }) {
+  return (
+    <div
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="cursor-pointer rounded-xl border border-border bg-muted/20 p-3 hover:bg-muted/30 transition-colors"
+    >
+      <div className="flex items-center gap-1.5 mb-1">
+        <div className="w-4 h-4 rounded-full overflow-hidden bg-muted shrink-0">
+          {quotedCast.author.pfp_url
+            ? <img src={quotedCast.author.pfp_url} alt="" className="w-full h-full object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            : <User className="w-2.5 h-2.5 text-muted-foreground" />
+          }
+        </div>
+        <span className="text-[11px] font-semibold text-foreground truncate">{quotedCast.author.display_name || quotedCast.author.username}</span>
+        <span className="text-[11px] text-muted-foreground truncate shrink-0">@{quotedCast.author.username}</span>
+      </div>
+      {quotedCast.text ? (
+        <p className="text-[12px] text-muted-foreground leading-relaxed line-clamp-3 whitespace-pre-wrap break-words">{quotedCast.text}</p>
+      ) : (
+        (() => {
+          const firstUrl = quotedCast.embeds.find(e => e.url)?.url;
+          return firstUrl ? <p className="text-[11px] text-primary/70 truncate">{firstUrl}</p> : null;
+        })()
+      )}
+    </div>
+  );
+}
+
 type Props = {
   cast: NeynarCast;
   viewerFid: number;
@@ -322,6 +351,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const imageEmbeds = cast.embeds.filter(isImageEmbed);
   const imageUrls = imageEmbeds.flatMap((e) => (e.url ? [e.url] : []));
   const linkEmbeds = cast.embeds.filter((e) => e.url && !isImageEmbed(e) && !e.url.endsWith(".m3u8"));
+  const castEmbeds = cast.embeds.filter((e) => !!e.cast);
   const noWriteTitle = !canWrite ? signerTooltip() : undefined;
 
   const replyCount = cast.replies.count;
@@ -415,6 +445,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">{e.url}</span>
                 </a>
+              ))}
+            </div>
+          )}
+
+          {/* Quote casts (embedded cast previews) */}
+          {castEmbeds.length > 0 && (
+            <div className="mb-3">
+              {castEmbeds.slice(0, 1).map((e, i) => (
+                e.cast && <QuoteCastPreview key={i} quotedCast={e.cast} onClick={() => navigate(`/cast/${e.cast!.hash}`)} />
               ))}
             </div>
           )}
@@ -665,6 +704,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                     <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">{e.url}</span>
                   </a>
+                ))}
+              </div>
+            )}
+
+            {/* Quote casts (embedded cast previews) */}
+            {castEmbeds.length > 0 && (
+              <div className="mb-2.5">
+                {castEmbeds.slice(0, 1).map((e, i) => (
+                  e.cast && <QuoteCastPreview key={i} quotedCast={e.cast} onClick={() => navigate(`/cast/${e.cast!.hash}`)} />
                 ))}
               </div>
             )}

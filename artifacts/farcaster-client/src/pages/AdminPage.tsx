@@ -941,7 +941,11 @@ export function AdminPage() {
             {/* ── USERS ──────────────────────────────────────────── */}
             {activeSection === "users" && (
               <>
-                <InfoBox>Users on this list get batch follow, advanced tools, and privileged features.</InfoBox>
+                <Card title="Grow Tools Access">
+                  <InfoBox>When enabled, ALL signed-in users get access to Grow (batch follow/unfollow) tools — no need to add them individually below.</InfoBox>
+                  <ToggleRow enabled={cfg.features.growToolsForAll} onChange={v => set("features", "growToolsForAll", v)} label="Grow tools for everyone" sub="If off, only users in the privileged list below can use batch tools" />
+                </Card>
+                <InfoBox>Users on this list get batch follow, advanced tools, and privileged features (when Grow tools for everyone is off).</InfoBox>
                 <Card>
                   <div className="space-y-2 mb-3">
                     {cfg.privilegedUsers.map((u, i) => (

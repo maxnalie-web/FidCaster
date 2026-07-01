@@ -650,6 +650,14 @@ export function FollowPage() {
                     </button>
                   ))}
                 </div>
+                {activePreset !== "custom" && (() => {
+                  const active = presets.find(p => p.id === activePreset);
+                  return active ? (
+                    <p className="text-[11px] text-muted-foreground mt-1.5 px-0.5 leading-relaxed">
+                      {active.desc}
+                    </p>
+                  ) : null;
+                })()}
               </div>
 
               {/* Filter toggle (mobile) */}
@@ -729,10 +737,13 @@ export function FollowPage() {
                   ) : (
                     <>
                       <div className="px-3">
-                        <Toggle label="Non-followers only" sub="Skip people who follow me back" checked={filters.onlyNonFollowers} onChange={v => updateFilter("onlyNonFollowers", v)} icon={<UserMinus className="w-3.5 h-3.5" />} />
-                      </div>
-                      <div className="px-3">
-                        <Toggle label="Keep mutuals" sub="Skip anyone who follows me back" checked={filters.skipMutuals} onChange={v => updateFilter("skipMutuals", v)} icon={<Heart className="w-3.5 h-3.5" />} />
+                        <Toggle
+                          label="Skip mutuals"
+                          sub="Don't unfollow people who follow me back"
+                          checked={filters.skipMutuals || filters.onlyNonFollowers}
+                          onChange={v => { updateFilter("skipMutuals", v); updateFilter("onlyNonFollowers", v); }}
+                          icon={<Heart className="w-3.5 h-3.5" />}
+                        />
                       </div>
                     </>
                   )}

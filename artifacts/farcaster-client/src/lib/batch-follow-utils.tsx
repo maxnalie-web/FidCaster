@@ -68,10 +68,10 @@ export const FOLLOW_PRESETS: PresetDef[] = [
 ];
 
 export const UNFOLLOW_PRESETS: PresetDef[] = [
-  { id: "cleanup",    label: "Ghost Clean", desc: "Unfollow non-followers only",   icon: <RefreshCw         className="w-4 h-4" />, color: "text-rose-500 border-rose-500/30 bg-rose-500/8",       filters: { limit: 50, onlyNonFollowers: true, skipMutuals: true } },
-  { id: "quality",    label: "Safe",        desc: "Keep mutuals & Power Badge",    icon: <Shield            className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",    filters: { limit: 50, skipMutuals: true } },
-  { id: "aggressive", label: "Mass",        desc: "Unfollow everyone (no filter)", icon: <UserMinus         className="w-4 h-4" />, color: "text-orange-500 border-orange-500/30 bg-orange-500/8", filters: { limit: 200 } },
-  { id: "custom",     label: "Custom",      desc: "Set your own filters",          icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",      filters: {} },
+  { id: "cleanup",    label: "Ghost Clean", desc: "Unfollow people who don't follow you back — mutuals are safe",        icon: <RefreshCw         className="w-4 h-4" />, color: "text-rose-500 border-rose-500/30 bg-rose-500/8",       filters: { limit: 50, skipMutuals: true } },
+  { id: "quality",    label: "Safe",        desc: "Keep mutuals safe, unfollow only those who never followed you back",  icon: <Shield            className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",    filters: { limit: 50, skipMutuals: true, onlyPowerBadge: false } },
+  { id: "aggressive", label: "Mass",        desc: "Unfollow everyone regardless of mutual status (no safety filter)",   icon: <UserMinus         className="w-4 h-4" />, color: "text-orange-500 border-orange-500/30 bg-orange-500/8", filters: { limit: 200 } },
+  { id: "custom",     label: "Custom",      desc: "Set your own filters manually",                                        icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",      filters: {} },
 ];
 
 export const LIMIT_PRESETS = [100, 250, 500, 1000, 2000, 5000];

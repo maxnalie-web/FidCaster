@@ -28,6 +28,7 @@ export function hasPowerBadge(user: NeynarUser): boolean {
 export type NeynarEmbed = {
   url?: string;
   cast_id?: { hash: string; fid: number };
+  cast?: NeynarCast;
   metadata?: { content_type?: string; image?: { width: number; height: number; url?: string } };
 };
 

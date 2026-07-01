@@ -48,6 +48,12 @@ export default defineConfig({
     "import.meta.env.VITE_IMGUR_CLIENT_ID": JSON.stringify(
       process.env.IMGUR_CLIENT_ID ?? ""
     ),
+    "import.meta.env.VITE_APP_FID": JSON.stringify(
+      process.env.APP_FID ?? ""
+    ),
+    "import.meta.env.VITE_APP_MNEMONIC": JSON.stringify(
+      process.env.APP_MNEMONIC ?? ""
+    ),
   },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),

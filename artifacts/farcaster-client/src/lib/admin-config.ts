@@ -119,6 +119,7 @@ export interface AdminConfig {
     darkModeToggleEnabled: boolean;
     landingPageEnabled: boolean;
     growEnabled: boolean;
+    growToolsForAll: boolean;
   };
 
   // ── Privileged users
@@ -238,6 +239,7 @@ export const DEFAULT_CONFIG: AdminConfig = {
     darkModeToggleEnabled: true,
     landingPageEnabled: true,
     growEnabled: true,
+    growToolsForAll: false,
   },
   privilegedUsers: ["polycaster", "m--"],
   api: {
