@@ -14,7 +14,7 @@ type Phase =
   | "idle"
   | "creating"        // generating key + asking Warpcast for a deeplink
   | "awaiting"        // showing QR, polling until the user approves in Warpcast
-  | "finishing"       // approved — fetching profile + logging in
+  | "finishing"       // approved · fetching profile + logging in
   | "done"
   | { error: string };
 
@@ -40,7 +40,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
     setPhase("creating");
 
     // Generate a fresh Ed25519 posting key in the browser. The private key never
-    // leaves the device — only the public key is sent to be registered.
+    // leaves the device · only the public key is sent to be registered.
     const localSigner = randomSigner();
     signerRef.current = localSigner;
 
@@ -108,7 +108,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
         </div>
         <div>
           <h2 className="text-foreground font-bold text-base">Sign In With Farcaster</h2>
-          <p className="text-muted-foreground text-xs">Full read &amp; write access — no seed phrase needed</p>
+          <p className="text-muted-foreground text-xs">Full read &amp; write access · no seed phrase needed</p>
         </div>
       </div>
 
@@ -118,7 +118,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
           <div className="flex items-start gap-3 p-3.5 rounded-xl text-xs text-muted-foreground leading-relaxed bg-accent/10 border border-accent/20">
             <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
             <span>
-              Scan one QR code with Farcaster and approve — that single approval signs you in
+              Scan one QR code with Farcaster and approve · that single approval signs you in
               and grants posting access (cast, like, follow). No seed phrase required.
             </span>
           </div>
@@ -138,11 +138,11 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
         </div>
       )}
 
-      {/* AWAITING — single step: scan + approve in Warpcast */}
+      {/* AWAITING · single step: scan + approve in Warpcast */}
       {phase === "awaiting" && deeplinkUrl && (
         <div className="space-y-4">
           <p className="text-xs text-muted-foreground text-center px-2">
-            Scan with <strong className="text-foreground">Farcaster</strong> — then approve
+            Scan with <strong className="text-foreground">Farcaster</strong> · then approve
             <span className="text-foreground"> Cast as you</span> &amp;
             <span className="text-foreground"> Read</span> to finish.
           </p>

@@ -46,7 +46,7 @@ const CLIENT_FEATURES = [
   {
     icon: <MessageCircle className="w-5 h-5" />,
     title: "Cast & Compose",
-    desc: "Write casts, reply to threads, embed images — signed directly via Farcaster Hub with your keys.",
+    desc: "Write casts, reply to threads, embed images · signed directly via Farcaster Hub with your keys.",
     color: "#7c3aed",
   },
   {
@@ -58,7 +58,7 @@ const CLIENT_FEATURES = [
   {
     icon: <Globe className="w-5 h-5" />,
     title: "Open Protocol",
-    desc: "Built on Farcaster — a public social protocol. Your social graph belongs to you, not a platform.",
+    desc: "Built on Farcaster · a public social protocol. Your social graph belongs to you, not a platform.",
     color: "#0ea5e9",
   },
   {
@@ -70,13 +70,13 @@ const CLIENT_FEATURES = [
   {
     icon: <Shield className="w-5 h-5" />,
     title: "Your Data, Your Rules",
-    desc: "No registration, no email, no central server. Your account is yours — sign in from any browser, anytime.",
+    desc: "No registration, no email, no central server. Your account is yours · sign in from any browser, anytime.",
     color: "#10b981",
   },
   {
     icon: <BarChart2 className="w-5 h-5" />,
     title: "On-Chain Actions",
-    desc: "Register signers, transfer recovery, username ops — all on Optimism, straight from the client.",
+    desc: "Register signers, transfer recovery, username ops · all on Optimism, straight from the client.",
     color: "#f59e0b",
   },
 ];
@@ -333,7 +333,7 @@ function ActivityTicker({ activity, listings }: { activity: MarketActivity[]; li
     return () => clearInterval(t);
   }, [items.length]);
 
-  if (items.length === 0) return null; // nothing on-chain yet — hide the strip
+  if (items.length === 0) return null; // nothing on-chain yet · hide the strip
 
   const visible = items.concat(items); // duplicate for a seamless loop
 
@@ -635,7 +635,7 @@ export function LoginPage() {
             className="text-sm mb-8 max-w-sm mx-auto lg:mx-0"
             style={{ color: "rgba(255,255,255,0.22)" }}
           >
-            No registration. No email. Just your Farcaster identity — ready in seconds.
+            No registration. No email. Just your Farcaster identity · ready in seconds.
           </motion.p>
 
           <motion.div
@@ -718,10 +718,10 @@ export function LoginPage() {
             title={<>Trade Farcaster IDs.<br /><span className="lp-gradient-text" style={{
               backgroundImage: "linear-gradient(135deg, #e879f9 0%, #a855f7 50%, #818cf8 100%)",
             }}>On-chain. Peer-to-peer.</span></>}
-            sub="The first FID marketplace built into a Farcaster client. List your FID, set a price, let the market decide. Zero intermediaries — everything settles on Optimism."
+            sub="The first FID marketplace built into a Farcaster client. List your FID, set a price, let the market decide. Zero intermediaries · everything settles on Optimism."
           />
 
-          {/* Stats bar — live from on-chain indexer */}
+          {/* Stats bar · live from on-chain indexer */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
             {[
               { label: "Total Volume", value: mktVolume,   icon: <BarChart2 className="w-4 h-4" />, color: "#c026d3" },
@@ -809,7 +809,7 @@ export function LoginPage() {
           <SectionHeading
             tag="Client Features"
             title={<>Everything you need<br /><span className="lp-gradient-text">to live on Farcaster</span></>}
-            sub="FidCaster is a full-featured Farcaster client — cast, reply, follow, browse channels, manage your identity, and trade your FID. All in one place."
+            sub="FidCaster is a full-featured Farcaster client · cast, reply, follow, browse channels, manage your identity, and trade your FID. All in one place."
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {CLIENT_FEATURES.map((feat, i) => (
@@ -832,7 +832,7 @@ export function LoginPage() {
               {
                 step: "01",
                 title: "Sign in",
-                desc: "Open FidCaster and sign in with your Farcaster account. Everything runs locally — nothing is sent anywhere.",
+                desc: "Open FidCaster and sign in with your Farcaster account. Everything runs locally · nothing is sent anywhere.",
                 color: "#7c3aed",
               },
               {

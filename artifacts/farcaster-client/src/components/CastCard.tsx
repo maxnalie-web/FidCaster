@@ -59,7 +59,7 @@ function formatCountFull(n: number): string {
 const MENTION_URL_RE = /(\bhttps?:\/\/[^\s<]+|@[a-zA-Z0-9_][a-zA-Z0-9_.-]*)/g;
 
 /** Renders cast text with clickable @mentions (→ profile) and URLs.
- *  `onOpen` (if given) fires when the body text itself is clicked — used to open
+ *  `onOpen` (if given) fires when the body text itself is clicked · used to open
  *  the cast's thread. Mention/URL clicks stop propagation so they don't trigger it. */
 function CastBody({
   cast,
@@ -202,7 +202,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
   function signerTooltip(): string {
     if (autoSignerLoading) return "Registering your signer on-chain…";
-    if (signerError) return "Signer setup failed — open Wallet to retry";
+    if (signerError) return "Signer setup failed · open Wallet to retry";
     if (!signerApproved) return "Open Wallet to set up your signer";
     return "";
   }
@@ -227,7 +227,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
     if (expanded) return;
     const target = e.target as HTMLElement;
     if (target.closest("button") || target.closest("a")) return;
-    // Always open THIS cast's own thread — so clicking a comment opens the
+    // Always open THIS cast's own thread · so clicking a comment opens the
     // comment itself (its replies + mentions), not the parent it replied to.
     navigate(`/cast/${cast.hash}`);
   }
@@ -247,7 +247,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   async function handleLike() {
     if (!fid || likeLoading) return;
     if (!canWrite) {
-      toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer.");
+      toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer.");
       return;
     }
     const wasLiked = liked;
@@ -262,7 +262,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
     } catch (e) {
       setLiked(wasLiked); setLikeCount((c) => c + (wasLiked ? 1 : -1)); setLikeError(true);
       const msg = e instanceof Error ? e.message : "Like failed";
-      toast.error(msg.includes("SIGNER_NOT_REGISTERED") ? "Signer not registered — go to Profile → Settings → Signer." : msg.slice(0, 120));
+      toast.error(msg.includes("SIGNER_NOT_REGISTERED") ? "Signer not registered · go to Profile → Settings → Signer." : msg.slice(0, 120));
       setTimeout(() => setLikeError(false), 2000);
     } finally { setLikeLoading(false); }
   }
@@ -270,7 +270,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   async function handleRecast() {
     if (!fid || recastLoading) return;
     if (!canWrite) {
-      toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer.");
+      toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer.");
       return;
     }
     const wasRecasted = recasted;
@@ -293,7 +293,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   async function handleDelete() {
     if (!fid || deleteLoading) return;
     if (!signerApproved || (!localSigner && !signerUuid)) {
-      toast.error("Signer not active — wait for signer approval or reconnect with your recovery phrase.");
+      toast.error("Signer not active · wait for signer approval or reconnect with your recovery phrase.");
       return;
     }
     setShowMenu(false); setDeleteLoading(true);
@@ -463,7 +463,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
           {/* Reactions bar */}
           <div className="flex items-center gap-1 py-1 border-t border-border/60 -mx-1" onClick={(e) => e.stopPropagation()}>
             <button
-              onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer."); return; } setShowReplyComposer(true); }}
+              onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer."); return; } setShowReplyComposer(true); }}
               className="flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-[hsl(210,100%,50%)] hover:bg-[hsl(210,100%,50%)]/10 transition-colors"
               title="Reply"
             >
@@ -471,7 +471,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             </button>
             <div className="relative" ref={recastMenuRef}>
               <button
-                onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
+                onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
                 disabled={recastLoading}
                 title={noWriteTitle}
                 className={cn(
@@ -598,7 +598,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 </div>
               </div>
 
-              {/* More menu — always visible for all casts */}
+              {/* More menu · always visible for all casts */}
               <div className="relative shrink-0 ml-1" ref={menuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v); }}
@@ -682,7 +682,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
               <div className="relative" ref={recastMenuRef}>
                 <button
-                  onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered — go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
+                  onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
                   disabled={recastLoading}
                   title={noWriteTitle}
                   className={cn(

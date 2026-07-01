@@ -72,7 +72,7 @@ export function MiniAppsPanel() {
   }, []);
 
   // Native (Capacitor APK/iOS) opens the app in a native WebView. On web there is
-  // no in-app mini-app browser — apps run only in the native/PWA build — so a tap
+  // no in-app mini-app browser · apps run only in the native/PWA build · so a tap
   // just opens the app in a new tab.
   const openApp = useCallback(async (app: MiniApp) => {
     if (isNativeRuntime()) {

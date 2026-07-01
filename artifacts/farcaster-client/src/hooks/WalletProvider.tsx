@@ -73,11 +73,11 @@ function saveCachedFid(addr: string, fid: bigint): void {
   try { localStorage.setItem(fidCacheKey(addr), fid.toString()); } catch {}
 }
 
-// Wallet auth session — persists in sessionStorage so page refresh keeps the user logged in
+// Wallet auth session · persists in sessionStorage so page refresh keeps the user logged in
 // without requiring a new signMessage. Clears when the browser tab is closed.
 const WALLET_SESSION_KEY = "fc_wlt_v1";
 
-// SIWF (Sign In With Farcaster) session — persists in localStorage so refresh keeps user in.
+// SIWF (Sign In With Farcaster) session · persists in localStorage so refresh keeps user in.
 // Contains only public profile data (no keys/secrets).
 const SIWF_SESSION_KEY = "fc_siwf_v1";
 function saveSiwfSession(fid: number, profile: FarcasterProfile | null): void {
@@ -108,7 +108,7 @@ function clearPwdFromSession() {
   try { sessionStorage.removeItem(SESSION_PWD_KEY); } catch {}
 }
 
-/** Retry getSignerState up to 3 times with 1s backoff — Optimism RPC can be flaky. */
+/** Retry getSignerState up to 3 times with 1s backoff · Optimism RPC can be flaky. */
 async function getSignerStateWithRetry(fid: bigint, pubKey: `0x${string}`): Promise<number> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -161,7 +161,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   /**
    * Check on-chain signer state and register if needed.
    * If the signer was previously approved (localStorage cache), unblocks the UI
-   * immediately and verifies in the background — so like/follow/cast work instantly
+   * immediately and verifies in the background · so like/follow/cast work instantly
    * on return visits without waiting for RPC.
    */
   const _autoActivateSigner = useCallback(async (
@@ -185,7 +185,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       onChainState = await getSignerStateWithRetry(fid, signer.publicKeyHex);
     } catch (rpcErr) {
       if (cached) {
-        // Background check failed — keep cached approval, don't disrupt the user
+        // Background check failed · keep cached approval, don't disrupt the user
         return;
       }
       const rpcMsg = rpcErr instanceof Error ? rpcErr.message : String(rpcErr);
@@ -447,14 +447,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       });
       // Bridge WC / injected wallet account changes back into WalletProvider.
       // Only update walletClient when the SAME address reconnects (e.g. after page refresh).
-      // Do NOT trigger a full re-login for a different address — that address is likely
+      // Do NOT trigger a full re-login for a different address · that address is likely
       // the market wallet (MetaMask/Rainbow for buying FIDs) and must not cause sign prompts.
       setWalletAccountChangeCallback((newWc, newAddr) => {
         if (newAddr.toLowerCase() === (addressRef.current ?? "").toLowerCase()) {
           walletClientRef.current = newWc;
           setState((s) => ({ ...s, walletClient: newWc }));
         }
-        // Different address = market wallet connecting — ignore silently.
+        // Different address = market wallet connecting · ignore silently.
       });
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : "Wallet login failed.";
@@ -467,7 +467,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   /**
    * Flow 3: Sign In With Farcaster (Warpcast relay / SIWF).
-   * Read-only by default — no seed phrase, no signer registration.
+   * Read-only by default · no seed phrase, no signer registration.
    * Posting and market operations require connecting a wallet afterward.
    */
   const loginWithFarcaster = useCallback(async (
@@ -598,7 +598,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                   if (match) {
                     wc = createWalletClient({ account: match as `0x${string}`, chain: optimism, transport: custom(ethereum) });
                   }
-                } catch { /* MetaMask locked — wc stays null, read-only mode */ }
+                } catch { /* MetaMask locked · wc stays null, read-only mode */ }
               }
               fidRef.current = BigInt(light.fid);
               addressRef.current = light.address as `0x${string}`;
@@ -619,7 +619,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             } catch { /* fall through to MetaMask sign */ }
           }
 
-          // No cached key — try MetaMask sign (first login or key cleared).
+          // No cached key · try MetaMask sign (first login or key cleared).
           if (!autoReconnected && ethereum?.request) {
             try {
               const accounts: string[] = await ethereum.request({ method: "eth_accounts" });
@@ -638,10 +638,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                   if (!cancelled) setState((s) => ({ ...s, isCheckingSession: false }));
                 }
               }
-            } catch { /* silent — fall through to partial restore */ }
+            } catch { /* silent · fall through to partial restore */ }
           }
 
-          // MetaMask locked / wrong account / signing failed — restore partial
+          // MetaMask locked / wrong account / signing failed · restore partial
           // session so the user stays on their feed with a reconnect cue.
           if (!autoReconnected && !cancelled) {
             const restoredProfile: FarcasterProfile = {
@@ -678,7 +678,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         if (light.authMethod === "mnemonic" && !cancelled) {
           // CryptoKey was lost (private browsing / browser cleared IndexedDB) but light session persists.
-          // Restore the profile in locked mode — feed is visible, posting requires re-adding the account.
+          // Restore the profile in locked mode · feed is visible, posting requires re-adding the account.
           const restoredProfile: FarcasterProfile = {
             fid: light.fid,
             username: light.username,
@@ -724,7 +724,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     function doLock() {
       _zeroAndLock();
-      // Do NOT clearLightSession() here — keep the profile metadata so that on the
+      // Do NOT clearLightSession() here · keep the profile metadata so that on the
       // next page load the user sees their feed in read-only mode instead of being
       // bounced to the marketing landing. The session can still be restored via
       // the stored CryptoKey or by re-entering the seed password.
@@ -800,7 +800,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const handleAccountsChanged = (accounts: string[]) => {
       if (authMethodRef.current !== "wallet") return;
       if (accounts.length === 0) {
-        // Wallet disconnected — clear session but stay on the page
+        // Wallet disconnected · clear session but stay on the page
         fidRef.current = null;
         addressRef.current = null;
         walletClientRef.current = null;
@@ -818,7 +818,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         // Same address as the active account. If we switched to this account while
         // the wallet wasn't connected yet (walletClient == null) and the user has
         // now connected it, wire the client up and clear the "Connect your wallet"
-        // hint — otherwise the prompt would keep reappearing after connecting.
+        // hint · otherwise the prompt would keep reappearing after connecting.
         if (!walletClientRef.current) {
           const wc = createWalletClient({ account: newAddr, chain: optimism, transport: custom(ethereum) });
           walletClientRef.current = wc;
@@ -908,7 +908,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const target = accounts.find((a) => a.fid === fid);
       const targetAuth = target?.authMethod;
 
-      // Farcaster account — restore from per-account stored signer key
+      // Farcaster account · restore from per-account stored signer key
       if (targetAuth === "farcaster") {
         const privKeyHex = await loadSignerPrivKey(fid);
         const signer = privKeyHex ? signerFromPrivateKeyHex(privKeyHex) : null;
@@ -923,7 +923,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       // Wallet-auth accounts: restore session silently (same pattern as session-restore useEffect).
-      // No signing required — the Ed25519 signer key was stored on first login.
+      // No signing required · the Ed25519 signer key was stored on first login.
       if (targetAuth === "wallet") {
         const privKeyHex = await loadSignerPrivKey(fid);
         const signer = privKeyHex ? signerFromPrivateKeyHex(privKeyHex) : null;
@@ -934,7 +934,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             pfpUrl: target.pfpUrl, bio: "", followerCount: 0, followingCount: 0, custodyAddress: target.address ?? "" };
         }
 
-        // Attempt silent MetaMask reconnect (no popup — eth_accounts never prompts)
+        // Attempt silent MetaMask reconnect (no popup · eth_accounts never prompts)
         let wc: WalletClient | null = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ethereum = (window as any)?.ethereum;
@@ -987,7 +987,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Mnemonic account (or unknown authMethod = legacy mnemonic) — try key-based auto-decrypt first, then fall back to password
+      // Mnemonic account (or unknown authMethod = legacy mnemonic) · try key-based auto-decrypt first, then fall back to password
       let mnemonic: string | null = await loadAccountMnemonicAuto(fid);
 
       if (!mnemonic) {
@@ -1071,10 +1071,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (remaining.length > 0) {
-      // Only wallet accounts remain — do a full logout and let user reconnect
+      // Only wallet accounts remain · do a full logout and let user reconnect
     }
 
-    // No accounts left (or only wallet accounts) — full logout
+    // No accounts left (or only wallet accounts) · full logout
     _zeroAndLock();
     clearStoredSession();
     clearLightSession();

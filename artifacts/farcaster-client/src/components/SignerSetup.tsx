@@ -157,7 +157,7 @@ export function SignerSetup() {
           </p>
           <p className="text-muted-foreground text-xs">
             Sign with your custody wallet to register this signer key on Farcaster.
-            No ETH is required — Neynar pays for gas.
+            No ETH is required · Neynar pays for gas.
           </p>
           <div className="pt-1 p-2.5 rounded-lg bg-muted/30 border border-border/50">
             <p className="text-[10px] text-muted-foreground mb-1 font-medium uppercase tracking-wide">
@@ -192,7 +192,7 @@ export function SignerSetup() {
           Activate Signer
         </p>
         <p>
-          A signer lets you publish casts, react to casts, and follow people — all via this
+          A signer lets you publish casts, react to casts, and follow people · all via this
           client. No ETH required; Neynar handles onchain registration.
         </p>
         <a

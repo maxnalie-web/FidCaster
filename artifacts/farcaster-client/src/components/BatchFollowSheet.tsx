@@ -355,7 +355,7 @@ export function BatchFollowSheet({
                 {/* Count */}
                 <div>
                   <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                    How many — <span className="text-foreground font-bold normal-case">{filters.limit} users</span>
+                    How many · <span className="text-foreground font-bold normal-case">{filters.limit} users</span>
                   </p>
                   <div className="flex gap-2 flex-wrap items-center">
                     {LIMIT_PRESETS.map(n => (

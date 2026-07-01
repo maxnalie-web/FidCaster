@@ -120,7 +120,7 @@ export function FidSoldScreen() {
           )}
           <p className="text-sm text-muted-foreground leading-relaxed mt-1">
             Your Farcaster account has been transferred to a new owner via FID Market.
-            Your wallet is still active — you can withdraw any remaining ETH.
+            Your wallet is still active · you can withdraw any remaining ETH.
           </p>
         </div>
 

@@ -7,7 +7,7 @@ import type { NeynarCast } from "@/lib/neynar";
 
 const MAX_CHARS = 320;
 
-/** Read a file as a raw base64 data URL — works for ANY file, never decode-fails. */
+/** Read a file as a raw base64 data URL · works for ANY file, never decode-fails. */
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -55,7 +55,7 @@ async function fileToUploadPayload(file: File): Promise<{ base64: string; mime: 
     });
     return { base64: dataUrl.split(",")[1], mime: dataUrl.split(";")[0].split(":")[1] };
   } catch {
-    // Canvas path failed — send the original bytes untouched.
+    // Canvas path failed · send the original bytes untouched.
     return { base64: rawBase64, mime: file.type || "image/jpeg" };
   }
 }
@@ -80,7 +80,7 @@ async function uploadImage(file: File): Promise<string> {
     // fall through to server proxy on Imgur failure
   }
 
-  // Server-proxy fallback — server uploads to freeimage.host (free, no key needed)
+  // Server-proxy fallback · server uploads to freeimage.host (free, no key needed)
   const res = await fetch("/api/farcaster/upload-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -143,7 +143,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
     } catch (err: unknown) {
       // Show the embed URL input so the user can paste an image URL as a fallback
       setShowEmbedInput(true);
-      setError(err instanceof Error ? err.message : "Image upload failed — paste a URL in the link field below");
+      setError(err instanceof Error ? err.message : "Image upload failed · paste a URL in the link field below");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -180,7 +180,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
       } else {
         throw new Error("Signer not ready");
       }
-      // Optimistic update — create a synthetic cast for immediate UI feedback
+      // Optimistic update · create a synthetic cast for immediate UI feedback
       const fake: NeynarCast = {
         hash: `0xlocal${Date.now().toString(16)}`,
         author: {
@@ -221,7 +221,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
       <div className="p-4 text-xs text-muted-foreground text-center border-b border-border/40">
         {autoSignerLoading
           ? "Registering your signer on Optimism…"
-          : "Signer setup required — check the Signer tab in Settings."}
+          : "Signer setup required · check the Signer tab in Settings."}
       </div>
     );
   }
@@ -308,7 +308,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
         </div>
       </div>
 
-      {/* Toolbar — full width, aligned to left edge */}
+      {/* Toolbar · full width, aligned to left edge */}
       <div className="flex items-center justify-between mt-3">
         <div className="flex items-center gap-1">
           <input

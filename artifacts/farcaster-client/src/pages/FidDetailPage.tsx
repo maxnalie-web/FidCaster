@@ -106,7 +106,7 @@ const fidMarketAbi = [
     outputs: [],
   },
   {
-    // cancel(uint256 fid) — removes the listing
+    // cancel(uint256 fid) · removes the listing
     name: "cancel",
     type: "function",
     stateMutability: "nonpayable",
@@ -393,7 +393,7 @@ export default function FidDetailPage() {
         : listAddr as Address;
 
       // Sign Transfer: seller authorises FID Market to receive the FID via IdRegistry.transferFor()
-      // The sig is stored in the listing and used at buy() time — NOT verified at list() time.
+      // The sig is stored in the listing and used at buy() time · NOT verified at list() time.
       const fromSig = await listWC.signTypedData({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         account: sigAccount as any,
@@ -422,7 +422,7 @@ export default function FidDetailPage() {
       }
 
       // For wallet-auth (MetaMask injected): explicitly switch to Optimism before sendTransaction.
-      // mnemonic accounts use a LocalAccount with a public RPC — no chain switch needed.
+      // mnemonic accounts use a LocalAccount with a public RPC · no chain switch needed.
       if (authMethod === "wallet") {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const _eth = (window as any)?.ethereum;
@@ -534,7 +534,7 @@ export default function FidDetailPage() {
     const receiveUsd = ethUsd ? ` ($${Math.round(receiveEth * ethUsd)})` : "";
     askConfirm({
       action: "list",
-      label: `List FID ${fid} — buyer pays ${buyerEth.toFixed(4)} ETH${buyerUsd}`,
+      label: `List FID ${fid} · buyer pays ${buyerEth.toFixed(4)} ETH${buyerUsd}`,
       detail: `You will receive ${receiveEth.toFixed(4)} ETH${receiveUsd} after the 9% platform fee. Listed for ${durationDays} days.`,
       onConfirm: executeList,
     });
@@ -916,7 +916,7 @@ export default function FidDetailPage() {
                   </button>
                 </div>
 
-                {/* Price breakdown — sellPriceEth = buyer pays total */}
+                {/* Price breakdown · sellPriceEth = buyer pays total */}
                 {sellPriceEth && parseFloat(sellPriceEth) > 0 ? (() => {
                   const buyerPays = parseFloat(sellPriceEth);          // what user typed
                   const receiveEth = buyerPays / 1.09;                  // seller gets
@@ -1037,10 +1037,10 @@ export default function FidDetailPage() {
               </div>
             )
           ) : data.buyable ? (
-            /* Buy — wallet-auth uses WalletContext; others need an external wallet */
+            /* Buy · wallet-auth uses WalletContext; others need an external wallet */
             <div className="space-y-3">
               {authMethod === "wallet" && myAddress ? (
-                /* wallet-auth — buyer wallet already in WalletContext */
+                /* wallet-auth · buyer wallet already in WalletContext */
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20 text-xs">
                     <div className="flex items-center gap-2 text-muted-foreground">
@@ -1075,7 +1075,7 @@ export default function FidDetailPage() {
                   )}
                 </div>
               ) : !extWallet ? (
-                /* No connected wallet — prompt to connect */
+                /* No connected wallet · prompt to connect */
                 <div className="space-y-3">
                   <p className="text-xs text-muted-foreground leading-snug">
                     Connect an external wallet (MetaMask, Rainbow, etc.) to buy this FID on Optimism.
@@ -1097,7 +1097,7 @@ export default function FidDetailPage() {
                   )}
                 </div>
               ) : (
-                /* extWallet connected — buy with it */
+                /* extWallet connected · buy with it */
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-xs">
                     <div className="flex items-center gap-2 text-muted-foreground">

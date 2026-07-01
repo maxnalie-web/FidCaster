@@ -321,7 +321,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         items = r.reactions.map(x => x.cast); next = r.next?.cursor;
       }
 
-      if (gen !== profileGenRef.current) return; // stale — profile was reset during this request
+      if (gen !== profileGenRef.current) return; // stale · profile was reset during this request
       setTabs(prev => ({
         ...prev,
         [tab]: {
@@ -367,7 +367,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
               setFollowing(u?.viewer_context?.following ?? false);
             })
             .catch((e2: unknown) => {
-              setProfileError((e2 instanceof Error ? e2.message : msg) + " — try refreshing.");
+              setProfileError((e2 instanceof Error ? e2.message : msg) + " · try refreshing.");
             })
             .finally(() => setLoading(false));
         }, 1500);
@@ -400,7 +400,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
       setFollowing(wasFollowing);
       const msg = e instanceof Error ? e.message : wasFollowing ? "Unfollow failed" : "Follow failed";
       if (msg.includes("SIGNER_NOT_REGISTERED")) {
-        toast.error("Signer not registered — go to Profile → Settings → Signer tab to register your key.");
+        toast.error("Signer not registered · go to Profile → Settings → Signer tab to register your key.");
       } else {
         toast.error(msg.slice(0, 120));
       }
@@ -694,7 +694,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                 </button>
               </div>
 
-              {/* Batch tools card — own profile only */}
+              {/* Batch tools card · own profile only */}
               {canBatchOps && (
                 <button
                   onClick={() => setShowBatchSheet(true)}

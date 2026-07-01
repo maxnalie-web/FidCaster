@@ -527,7 +527,7 @@ export default function FidMarketPage() {
                 style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)", color: "rgb(167,139,250)" }}
               >
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400" />
-                FID #{detectedExtFid} detected — List for sale →
+                FID #{detectedExtFid} detected · List for sale →
               </button>
             )}
             {extWallet ? (

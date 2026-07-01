@@ -62,7 +62,7 @@ export function useIsPro(fid: number | undefined): boolean {
 }
 
 /**
- * The official Farcaster Pro badge — a violet scalloped "seal" with a white
+ * The official Farcaster Pro badge · a violet scalloped "seal" with a white
  * check, matching the badge shown in the Farcaster client exactly.
  */
 export function ProBadge({ size = 16, className }: { size?: number; className?: string }) {

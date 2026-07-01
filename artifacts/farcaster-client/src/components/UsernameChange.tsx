@@ -15,10 +15,10 @@ import { Loader2, CheckCircle2, XCircle, Info, AlertTriangle, Link, ExternalLink
 
 /**
  * Farcaster has two separate name systems:
- *  1. On-chain NameRegistry (Optimism) — `changeName` on 0x...NameRegistry.
+ *  1. On-chain NameRegistry (Optimism) · `changeName` on 0x...NameRegistry.
  *     Writes the name permanently to the chain; required for ENS/on-chain resolution.
  *     Costs a tiny amount of ETH gas (~$0.001 on Optimism).
- *  2. Off-chain fname server (fnames.farcaster.xyz) — EIP-712 signed HTTP transfer.
+ *  2. Off-chain fname server (fnames.farcaster.xyz) · EIP-712 signed HTTP transfer.
  *     Updates the social-graph display name shown in Farcaster/etc. No gas.
  *
  * This component surfaces BOTH paths clearly:
@@ -34,7 +34,7 @@ type OnchainPhase =
 
 type FnamePhase =
   | { id: "idle" }
-  | { id: "wallet-mismatch"; ownerAddr: string } // fname owned by a different wallet — warn but allow
+  | { id: "wallet-mismatch"; ownerAddr: string } // fname owned by a different wallet · warn but allow
   | { id: "signing-release" }
   | { id: "releasing" }
   | { id: "signing-claim" }
@@ -57,7 +57,7 @@ export function UsernameChange() {
   const effectiveAddress = authMethod === "farcaster" ? (extWallet?.address ?? null) : address;
 
   // The fname proof is an EIP-712 signature whose domain pins chainId=1 (Ethereum mainnet).
-  // - Local accounts (mnemonic): sign purely in-memory on a mainnet-scoped client — no RPC, no popup.
+  // - Local accounts (mnemonic): sign purely in-memory on a mainnet-scoped client · no RPC, no popup.
   // - JSON-RPC wallets (MetaMask/WalletConnect): most wallets REJECT eth_signTypedData_v4 when
   //   their active network (here: Optimism) differs from the domain's chainId. So we temporarily
   //   switch the wallet to Ethereum mainnet, sign, then switch it back to Optimism.
@@ -78,13 +78,13 @@ export function UsernameChange() {
         message,
       });
 
-    // Local (mnemonic) account — sign offline against a mainnet client.
+    // Local (mnemonic) account · sign offline against a mainnet client.
     if ((account as { type?: string }).type === "local") {
       const local = createWalletClient({ account, chain: mainnet, transport: http() });
       return sign(local);
     }
 
-    // JSON-RPC wallet — ensure the active network is Ethereum mainnet before signing.
+    // JSON-RPC wallet · ensure the active network is Ethereum mainnet before signing.
     // switchChain to a chain the wallet is already on is a no-op (no popup), so calling it
     // before every signature is cheap.
     try {
@@ -156,16 +156,16 @@ export function UsernameChange() {
       if (hasCurrentFname && profile?.username) {
         // Pre-check: the fname server validates the signature against the FID's CURRENT
         // on-chain custody address (IdRegistry.custodyOf). The connected signing wallet must
-        // equal that custody — the transfer-history "owner" can be stale and is NOT what the
+        // equal that custody · the transfer-history "owner" can be stale and is NOT what the
         // server checks, so we compare against the live on-chain custody instead.
         try {
           const custody = await getCustodyAddress(BigInt(fidNum));
           if (custody && custody.toLowerCase() !== effectiveAddress.toLowerCase()) {
-            // Connected wallet is genuinely not the custody — signing would fail. Warn & pause.
+            // Connected wallet is genuinely not the custody · signing would fail. Warn & pause.
             setFnamePhase({ id: "wallet-mismatch", ownerAddr: custody });
             return;
           }
-        } catch { /* skip pre-check on RPC error — let the server be the source of truth */ }
+        } catch { /* skip pre-check on RPC error · let the server be the source of truth */ }
 
         setFnamePhase({ id: "signing-release" });
         const releaseTs = now - 1;
@@ -195,7 +195,7 @@ export function UsernameChange() {
       const claimTs = now;
       const claimSig = await signFnameProof(newName, claimTs, effectiveAddress);
 
-      // Show success popup immediately after the second (claim) signature — before the HTTP call.
+      // Show success popup immediately after the second (claim) signature · before the HTTP call.
       setSuccessPopup({ type: "fname", name: newName });
 
       setFnamePhase({ id: "claiming" });
@@ -235,7 +235,7 @@ export function UsernameChange() {
         setFnamePhase({ id: "releasing" });
         const releaseRes = await transferFname({ name: profile.username, from: fidNum, to: 0, fid: fidNum, owner: effectiveAddress, timestamp: releaseTs, signature: releaseSig });
         if (!releaseRes.success) {
-          setFnamePhase({ id: "error", msg: releaseRes.error ?? "Release failed — the fname server rejected the signature. You may need to connect the original custody wallet." });
+          setFnamePhase({ id: "error", msg: releaseRes.error ?? "Release failed · the fname server rejected the signature. You may need to connect the original custody wallet." });
           return;
         }
         await new Promise((r) => setTimeout(r, 500));
@@ -277,7 +277,7 @@ export function UsernameChange() {
             <p className="text-sm font-bold text-foreground">Connect a wallet to continue</p>
             <p className="text-xs text-muted-foreground leading-relaxed">
               You are signed in via Farcaster (read-only). To change your username on-chain, connect
-              your custody wallet below — no need to sign out.
+              your custody wallet below · no need to sign out.
             </p>
           </div>
         </div>
@@ -312,11 +312,11 @@ export function UsernameChange() {
         <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
           <p className="text-foreground/80 font-medium">Two name systems</p>
           <p>
-            <span className="text-foreground/70">On-chain</span> — writes to the Farcaster NameRegistry
+            <span className="text-foreground/70">On-chain</span> · writes to the Farcaster NameRegistry
             on Optimism via a signed viem tx. Requires gas (~$0.001). Enables on-chain / ENS resolution.
           </p>
           <p>
-            <span className="text-foreground/70">Social (fname)</span> — updates your display name in
+            <span className="text-foreground/70">Social (fname)</span> · updates your display name in
             Farcaster and other clients via EIP-712 signed transfer. No gas required.
           </p>
         </div>
@@ -326,7 +326,7 @@ export function UsernameChange() {
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
         <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
         <p className="text-[11px] text-amber-400/90 leading-tight">
-          You can change your username only <strong>once every 7 days</strong> — choose carefully.
+          You can change your username only <strong>once every 7 days</strong> · choose carefully.
         </p>
       </div>
 
@@ -429,7 +429,7 @@ export function UsernameChange() {
           {fnamePhase.id === "done" && (
             <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-400 flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              @{newName || profile?.username} social name updated — no gas paid
+              @{newName || profile?.username} social name updated · no gas paid
             </div>
           )}
 
@@ -439,7 +439,7 @@ export function UsernameChange() {
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
                   This FID's custody wallet is <strong>{fnamePhase.ownerAddr.slice(0, 6)}…{fnamePhase.ownerAddr.slice(-4)}</strong>, but you're connected with a different wallet.
-                  Farcaster only accepts the username change if it's signed by the custody wallet — connect <strong>{fnamePhase.ownerAddr.slice(0, 6)}…{fnamePhase.ownerAddr.slice(-4)}</strong> and try again.
+                  Farcaster only accepts the username change if it's signed by the custody wallet · connect <strong>{fnamePhase.ownerAddr.slice(0, 6)}…{fnamePhase.ownerAddr.slice(-4)}</strong> and try again.
                 </span>
               </div>
               <div className="flex gap-2 pt-1">
@@ -482,7 +482,7 @@ export function UsernameChange() {
       </div>
     </div>
 
-      {/* Success popup — shown after final sign */}
+      {/* Success popup · shown after final sign */}
 
       {successPopup && (
         <div className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-4 pointer-events-none">

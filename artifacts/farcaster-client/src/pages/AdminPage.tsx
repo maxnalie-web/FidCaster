@@ -226,7 +226,7 @@ export function AdminPage() {
                 {SECTIONS.find(s => s.id === activeSection)?.label}
               </h2>
               <span className="text-xs text-muted-foreground">
-                — {SECTIONS.find(s => s.id === activeSection)?.description}
+                · {SECTIONS.find(s => s.id === activeSection)?.description}
               </span>
             </div>
 
@@ -280,14 +280,14 @@ export function AdminPage() {
                   <p className="text-xs text-amber-400">Colors must be in HSL format, e.g. <code>263 70% 50%</code></p>
                 </div>
                 <Field>
-                  <Label sub="HSL — primary color in light mode">Primary Color (Light)</Label>
+                  <Label sub="HSL · primary color in light mode">Primary Color (Light)</Label>
                   <div className="flex gap-2">
                     <Input value={cfg.theme.primaryHsl} onChange={(v) => set("theme", "primaryHsl", v)} placeholder="263 70% 50%" />
                     <div className="w-10 h-10 rounded-lg shrink-0 border border-border" style={{ background: `hsl(${cfg.theme.primaryHsl})` }} />
                   </div>
                 </Field>
                 <Field>
-                  <Label sub="HSL — primary color in dark mode">Primary Color (Dark)</Label>
+                  <Label sub="HSL · primary color in dark mode">Primary Color (Dark)</Label>
                   <div className="flex gap-2">
                     <Input value={cfg.theme.primaryDarkHsl} onChange={(v) => set("theme", "primaryDarkHsl", v)} placeholder="263 78% 62%" />
                     <div className="w-10 h-10 rounded-lg shrink-0 border border-border" style={{ background: `hsl(${cfg.theme.primaryDarkHsl})` }} />
@@ -301,11 +301,11 @@ export function AdminPage() {
                   </div>
                 </Field>
                 <Field>
-                  <Label sub="HSL — page background in light mode">Background (Light)</Label>
+                  <Label sub="HSL · page background in light mode">Background (Light)</Label>
                   <Input value={cfg.theme.backgroundHsl} onChange={(v) => set("theme", "backgroundHsl", v)} placeholder="0 0% 100%" />
                 </Field>
                 <Field>
-                  <Label sub="HSL — page background in dark mode">Background (Dark)</Label>
+                  <Label sub="HSL · page background in dark mode">Background (Dark)</Label>
                   <Input value={cfg.theme.darkBackgroundHsl} onChange={(v) => set("theme", "darkBackgroundHsl", v)} placeholder="224 32% 8%" />
                 </Field>
                 <Field>
@@ -380,7 +380,7 @@ export function AdminPage() {
                   <p className="text-xs text-amber-400">These values are stored only in localStorage and never sent to any server. Empty = use default env variable.</p>
                 </div>
                 <Field>
-                  <Label sub="Overrides NEYNAR_API_KEY env var — empty = default">Neynar API Key Override</Label>
+                  <Label sub="Overrides NEYNAR_API_KEY env var · empty = default">Neynar API Key Override</Label>
                   <Input type="password" value={cfg.api.neynarApiKey} onChange={(v) => set("api", "neynarApiKey", v)} placeholder="neynar_..." />
                 </Field>
                 <Field>
@@ -514,7 +514,7 @@ export function AdminPage() {
                   <NumberInput value={cfg.misc.batchFollowDelay} onChange={(v) => set("misc", "batchFollowDelay", v)} min={500} max={10000} step={100} />
                 </Field>
                 <Field>
-                  <Label sub="Inactivity duration before session locks (ms) — default: 30 minutes">Session Inactivity Lock (ms)</Label>
+                  <Label sub="Inactivity duration before session locks (ms) · default: 30 minutes">Session Inactivity Lock (ms)</Label>
                   <NumberInput value={cfg.misc.sessionInactivityMs} onChange={(v) => set("misc", "sessionInactivityMs", v)} min={60000} max={86400000} step={60000} />
                 </Field>
 

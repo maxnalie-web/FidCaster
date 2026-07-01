@@ -23,7 +23,7 @@ export function FeedPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Generation counter — increments on every fresh load so stale in-flight
+  // Generation counter · increments on every fresh load so stale in-flight
   // responses from previous renders can be ignored before they overwrite state.
   const genRef = useRef(0);
 

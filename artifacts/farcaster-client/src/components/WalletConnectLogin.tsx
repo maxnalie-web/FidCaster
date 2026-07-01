@@ -72,7 +72,7 @@ export function WalletConnectLogin({ onBack }: { onBack: () => void }) {
   }, [isLoading, autoSignerLoading, fid, phase]);
 
   // When loginWithWallet catches an error internally (e.g. user rejected signMessage),
-  // it sets state.error but doesn't throw — transition to error phase so the retry button appears.
+  // it sets state.error but doesn't throw · transition to error phase so the retry button appears.
   useEffect(() => {
     if (walletError && (phase === "detecting_fid" || phase === "signing" || phase === "connecting")) {
       setPhase({ error: walletError });
@@ -122,7 +122,7 @@ export function WalletConnectLogin({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      {/* IDLE — Choose MetaMask or WalletConnect */}
+      {/* IDLE · Choose MetaMask or WalletConnect */}
       {phase === "idle" && (
         <div className="space-y-3">
           {/* MetaMask */}
@@ -195,7 +195,7 @@ export function WalletConnectLogin({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* Working — progress steps */}
+      {/* Working · progress steps */}
       {isWorking && (
         <div className="space-y-3">
           {STEPS.filter((s) => s.id !== "done").map((step, i) => {

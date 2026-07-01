@@ -37,7 +37,7 @@ export function ThreadPage() {
     getCastConversation(hash, viewerFid, neynarKey)
       .then((res) => {
         setCast(res.conversation.cast);
-        // Show only direct (top-level) replies — nested replies are accessible by clicking each reply
+        // Show only direct (top-level) replies · nested replies are accessible by clicking each reply
         setReplies(res.conversation.cast.direct_replies ?? []);
         setRepliesCursor(res.next?.cursor);
       })
@@ -119,12 +119,12 @@ export function ThreadPage() {
           </div>
         ) : cast ? (
           <>
-            {/* Main cast — expanded view */}
+            {/* Main cast · expanded view */}
             <div className="border-b border-border">
               <CastCard cast={cast} viewerFid={viewerFid} onViewProfile={goToProfile} expanded />
             </div>
 
-            {/* Reply composer — inline below main cast */}
+            {/* Reply composer · inline below main cast */}
             <div className="border-b border-border px-4 py-3">
               <div className="flex items-center gap-3">
                 {/* Viewer avatar */}

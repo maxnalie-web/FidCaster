@@ -230,7 +230,7 @@ function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd: (m: s
             {[
               { id: "mnemonic" as AddMethod, icon: KeyRound, label: "Seed phrase", desc: "12 or 24-word recovery phrase" },
               { id: "wallet"   as AddMethod, icon: Wallet,   label: "Wallet",      desc: "MetaMask or WalletConnect" },
-              { id: "farcaster" as AddMethod, icon: QrCode,  label: "Farcaster",   desc: "Scan QR — full read & write" },
+              { id: "farcaster" as AddMethod, icon: QrCode,  label: "Farcaster",   desc: "Scan QR · full read & write" },
             ].map(({ id, icon: Icon, label, desc }) => (
               <button key={id} onClick={() => setMethod(id)}
                 className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-primary/40 hover:bg-accent transition-all text-left">
@@ -755,7 +755,7 @@ export function DashboardPage() {
   }, [mainTab, markNotifsSeen]);
 
   useEffect(() => {
-    // Auto-lock zeroes the session but keeps the encrypted vault — send the user
+    // Auto-lock zeroes the session but keeps the encrypted vault · send the user
     // to the unlock screen, not the marketing landing.
     if (!isCheckingSession && !isLoading && !fid) navigate(isLocked ? "/login" : "/");
   }, [fid, isLoading, isCheckingSession, isLocked, navigate]);
@@ -909,7 +909,7 @@ export function DashboardPage() {
             <span className="text-[1.0625rem] text-foreground/85">FID Market</span>
           </button>
 
-          {/* Admin panel link — only for @m-- */}
+          {/* Admin panel link · only for @m-- */}
           {isAdmin && (
             <button
               onClick={() => navigate("/admin")}
@@ -962,7 +962,7 @@ export function DashboardPage() {
                   )}
                 </div>
                 {/* Signer status dot */}
-                <div title={autoSignerLoading ? "Registering signer…" : signerApproved ? "Signer active" : "Signer not registered — click Profile → Settings → Signer"} className={cn(
+                <div title={autoSignerLoading ? "Registering signer…" : signerApproved ? "Signer active" : "Signer not registered · click Profile → Settings → Signer"} className={cn(
                   "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background",
                   autoSignerLoading ? "bg-amber-400 animate-pulse" : signerApproved ? "bg-emerald-500" : "bg-red-500"
                 )} />
@@ -1039,14 +1039,14 @@ export function DashboardPage() {
 
         {/* ── CONTENT ────────────────────────────────────────── */}
         <div className="flex-1 max-w-[600px] w-full mx-auto pb-24 md:pb-0">
-          {/* Locked-session banner — shown when feed is visible but posting is disabled */}
+          {/* Locked-session banner · shown when feed is visible but posting is disabled */}
           {isLocked && fid && authMethod === "mnemonic" && (
             <button
               onClick={() => navigate("/login")}
               className="w-full flex items-center justify-center gap-2 py-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/8 border-b border-amber-500/20 hover:bg-amber-500/12 transition-colors"
             >
               <KeyRound className="w-3.5 h-3.5 shrink-0" />
-              <span>Posting locked — tap to re-enter password</span>
+              <span>Posting locked · tap to re-enter password</span>
             </button>
           )}
           {/* Announcements */}
@@ -1100,14 +1100,14 @@ export function DashboardPage() {
               </button>
             );
           })}
-          {/* FID Market tab — before Profile */}
+          {/* FID Market tab · before Profile */}
           <button
             onClick={() => navigate("/market")}
             className="flex-1 flex items-center justify-center transition-colors"
           >
             <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
           </button>
-          {/* Profile — always last */}
+          {/* Profile · always last */}
           <button
             onClick={() => setMainTab("profile")}
             className="flex-1 flex items-center justify-center transition-colors"

@@ -24,7 +24,7 @@ export function FidCasterLogo({ size = 96, showName = false, className = "" }: F
   return (
     <div className={`flex flex-col items-center gap-3 select-none ${className}`}>
       <div className="relative" style={{ width: size, height: size }}>
-        {/* Sparkles — framer-motion only on small decorative dots (no stacking context issue) */}
+        {/* Sparkles · framer-motion only on small decorative dots (no stacking context issue) */}
         {SPARKLES.map((s, i) => (
           <motion.div
             key={i}
@@ -61,7 +61,7 @@ export function FidCasterLogo({ size = 96, showName = false, className = "" }: F
         />
 
         {/*
-          Logo image uses PURE CSS animation (logo-animated class) — no framer-motion.
+          Logo image uses PURE CSS animation (logo-animated class) · no framer-motion.
           This avoids the `will-change: transform` stacking context that breaks
           mix-blend-mode. The logo-blend class uses mix-blend-mode:multiply to
           erase the white PNG background against the page background.

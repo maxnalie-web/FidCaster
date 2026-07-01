@@ -79,7 +79,7 @@ function FollowRow({
         )}
       </button>
 
-      {/* Follow button — Warpcast style */}
+      {/* Follow button · Warpcast style */}
       {!isOwn && (
         <button
           onClick={toggle}

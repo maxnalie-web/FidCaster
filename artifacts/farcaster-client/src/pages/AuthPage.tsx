@@ -249,7 +249,7 @@ export function AuthPage() {
         <Particles />
       </div>
 
-      {/* Back button — goes to landing page (or to chooser from sub-flows) */}
+      {/* Back button · goes to landing page (or to chooser from sub-flows) */}
       {!isSubFlow && (
         <motion.button
           initial={{ opacity: 0, x: -20 }}
@@ -499,7 +499,7 @@ export function AuthPage() {
                   </div>
                   <div>
                     <h2 className="text-white font-bold text-base">Protect Your Session</h2>
-                    <p className="text-white/35 text-xs">Set a password — one click to get back in next time</p>
+                    <p className="text-white/35 text-xs">Set a password · one click to get back in next time</p>
                   </div>
                 </div>
                 <form onSubmit={handleSetPasswordSubmit} className="space-y-4">
