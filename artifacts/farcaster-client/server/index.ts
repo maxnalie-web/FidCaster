@@ -99,10 +99,11 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Strict limiter for endpoints that handle private keys — 20 per minute per IP
+// Action limiter — covers follow/unfollow/like/recast/cast per IP
+// Raised to 200/min to support batch follow without hitting 429 after 20 actions.
 const actionLimiter = rateLimit({
   windowMs: 60_000,
-  max: 20,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many actions, please try again later." },

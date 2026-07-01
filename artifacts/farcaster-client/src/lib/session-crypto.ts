@@ -220,7 +220,14 @@ export async function decryptStoredAuto(): Promise<string | null> {
 export async function hasStoredSession(): Promise<boolean> {
   try {
     const stored = await getRecord(SESSION_KEY);
-    return !!stored && stored.expiresAt > Date.now();
+    if (stored && stored.expiresAt > Date.now()) return true;
+    // Also check the per-account key used by storeAccountMnemonic (new format)
+    const activeFidStr = localStorage.getItem("fc_active_fid");
+    if (activeFidStr) {
+      const acct = await getRecord(`account_${activeFidStr}`);
+      if (acct && acct.expiresAt > Date.now()) return true;
+    }
+    return false;
   } catch {
     return false;
   }

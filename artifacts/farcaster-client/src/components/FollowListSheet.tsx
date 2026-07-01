@@ -126,7 +126,9 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
 
   async function startBatchFollow() {
     if (!canBatch || !myFid || !localSigner) return;
-    const toFollow = users.filter(u => !u.viewer_context?.following && u.fid !== viewerFid);
+    // Only follow users we are definitely not following yet (viewer_context.following === false).
+    // Skip users where viewer_context is missing or already true.
+    const toFollow = users.filter(u => u.viewer_context?.following === false && u.fid !== viewerFid);
     if (toFollow.length === 0) { toast.info("No new users to follow in current list — scroll to load more"); return; }
     batchCancelRef.current = false;
     setBatchProgress({ done: 0, total: toFollow.length, errors: 0 });
@@ -137,9 +139,22 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
       try {
         await hubFollow(Number(myFid), localSigner, toFollow[i].fid);
         done++;
-      } catch { errors++; }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg.includes("429") || msg.toLowerCase().includes("rate")) {
+          // Hit rate limit — pause 60 s and retry this one
+          await new Promise(r => setTimeout(r, 62_000));
+          try {
+            await hubFollow(Number(myFid), localSigner, toFollow[i].fid);
+            done++;
+          } catch { errors++; }
+        } else {
+          errors++;
+        }
+      }
       setBatchProgress({ done: done + errors, total: toFollow.length, errors });
-      if (i < toFollow.length - 1) await new Promise(r => setTimeout(r, 650));
+      // ~2 s delay between follows stays comfortably under server limit (200/min).
+      if (i < toFollow.length - 1) await new Promise(r => setTimeout(r, 2_000));
     }
     setBatchProgress(null);
     toast.success(batchCancelRef.current ? `Cancelled (${done} followed)` : `Followed ${done} users`);

@@ -723,7 +723,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     function doLock() {
       _zeroAndLock();
-      clearLightSession();
+      // Do NOT clearLightSession() here — keep the profile metadata so that on the
+      // next page load the user sees their feed in read-only mode instead of being
+      // bounced to the marketing landing. The session can still be restored via
+      // the stored CryptoKey or by re-entering the seed password.
       setState((s) => ({
         ...s,
         address: null, fid: null, profile: null, walletClient: null, localSigner: null,
@@ -731,8 +734,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
         isLocked: true,
       }));
-      // The encrypted vault survives a lock — re-check so the unlock screen shows
-      // (vs the marketing landing) for accounts that can be unlocked with a password.
       hasStoredSession().then((found) => setState((s) => ({ ...s, hasStoredSession: found })));
     }
 
@@ -761,7 +762,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } else {
         if (hiddenSince !== null && Date.now() - hiddenSince >= HIDDEN_LOCK_MS) {
           _zeroAndLock();
-          clearLightSession();
           setState((s) => ({
             ...s,
             address: null, fid: null, profile: null, walletClient: null, localSigner: null,
