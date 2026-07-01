@@ -68,12 +68,26 @@ export function neynarThrottle(): Promise<void> {
 }
 
 // ── Single-flight ─────────────────────────────────────────────────────────────
+// If N concurrent requests all miss the cache for the same key, only ONE upstream
+// fetch is started; the rest await the same Promise and receive the same result.
+//
+// Metrics emitted to stdout (grep "[sf]"):
+//   sf:join   key   — saved an upstream call (N-1 callers join the in-flight promise)
+//   sf:fetch  key   — first caller; a real upstream request is about to start
+//   sf:done   key   — upstream finished (success or error); waiters unblock
 const inflight = new Map<string, Promise<unknown>>();
 
 export function singleFlight<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const existing = inflight.get(key);
-  if (existing) return existing as Promise<T>;
-  const p = fn().finally(() => inflight.delete(key));
+  if (existing) {
+    console.log("[sf] join ", key);
+    return existing as Promise<T>;
+  }
+  console.log("[sf] fetch", key);
+  const p = fn().finally(() => {
+    console.log("[sf] done ", key);
+    inflight.delete(key);
+  });
   inflight.set(key, p);
   return p;
 }

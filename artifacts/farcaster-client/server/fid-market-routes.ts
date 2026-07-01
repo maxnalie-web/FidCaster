@@ -7,6 +7,7 @@ import {
   type Address,
 } from "viem";
 import { optimism } from "viem/chains";
+import { singleFlight } from "./neynar-limit.js";
 
 const VALID_ETH_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const VALID_HEX_STRING = /^0x[0-9a-fA-F]+$/;
@@ -548,16 +549,20 @@ async function getFidInfo(fid: number): Promise<FidInfo | null> {
   const key = String(fid);
   const cached = fidInfoCache.get(key) as FidInfo | undefined;
   if (cached) return cached;
-  try {
-    const res = await neynarFetch(`/v2/farcaster/user/bulk?fids=${fid}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const user = data.users?.[0];
-    if (!user) return null;
-    const info: FidInfo = { username: user.username || null, displayName: user.display_name || null, pfpUrl: user.pfp_url || null };
-    fidInfoCache.set(key, info);
-    return info;
-  } catch { return null; }
+  // Single-flight: dedupe concurrent lookups for the same FID so a burst of
+  // requests for an uncached profile only calls Neynar once.
+  return singleFlight(`fidinfo:${fid}`, async () => {
+    try {
+      const res = await neynarFetch(`/v2/farcaster/user/bulk?fids=${fid}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const user = data.users?.[0];
+      if (!user) return null;
+      const info: FidInfo = { username: user.username || null, displayName: user.display_name || null, pfpUrl: user.pfp_url || null };
+      fidInfoCache.set(key, info);
+      return info;
+    } catch { return null; }
+  });
 }
 
 async function getFidsInfoBulk(fids: number[]) {
@@ -656,36 +661,36 @@ export function registerFidMarketRoutes(app: Express) {
     if (cached) return res.json(cached);
 
     try {
-      const [listing, ownerResult] = await Promise.allSettled([
-        readFidListing(fid),
-        optimismClient.readContract({
-          address: ID_REGISTRY_ADDRESS,
-          abi: idRegistryAbi,
-          functionName: "custodyOf",
-          args: [BigInt(fid)],
-        }),
-      ]);
-
-      const listingData = listing.status === "fulfilled" ? listing.value : null;
-      const owner = ownerResult.status === "fulfilled" ? (ownerResult.value as string).toLowerCase() : "0x0000000000000000000000000000000000000000";
-
-      let paused = false;
-      try {
-        paused = await optimismClient.readContract({ address: FID_MARKET_ADDRESS, abi: fidMarketAbi, functionName: "paused" }) as boolean;
-      } catch {}
-
-      const payload = {
-        fid,
-        owner,
-        listing: listingData || { active: false },
-        buyable: listingData?.buyable ?? false,
-        sigExpired: listingData?.sigExpired ?? false,
-        listingExpired: listingData?.listingExpired ?? false,
-        paused,
-        feeBps: FEE_BPS,
-        marketAddress: FID_MARKET_ADDRESS,
-      };
-      fidDataCache.set(String(fid), payload);
+      const payload = await singleFlight(`fiddata:${fid}`, async () => {
+        const [listing, ownerResult] = await Promise.allSettled([
+          readFidListing(fid),
+          optimismClient.readContract({
+            address: ID_REGISTRY_ADDRESS,
+            abi: idRegistryAbi,
+            functionName: "custodyOf",
+            args: [BigInt(fid)],
+          }),
+        ]);
+        const listingData = listing.status === "fulfilled" ? listing.value : null;
+        const owner = ownerResult.status === "fulfilled" ? (ownerResult.value as string).toLowerCase() : "0x0000000000000000000000000000000000000000";
+        let paused = false;
+        try {
+          paused = await optimismClient.readContract({ address: FID_MARKET_ADDRESS, abi: fidMarketAbi, functionName: "paused" }) as boolean;
+        } catch {}
+        const data = {
+          fid,
+          owner,
+          listing: listingData || { active: false },
+          buyable: listingData?.buyable ?? false,
+          sigExpired: listingData?.sigExpired ?? false,
+          listingExpired: listingData?.listingExpired ?? false,
+          paused,
+          feeBps: FEE_BPS,
+          marketAddress: FID_MARKET_ADDRESS,
+        };
+        fidDataCache.set(String(fid), data);
+        return data;
+      });
       res.json(payload);
     } catch (err) {
       console.error("[FidMarket] fid-data error:", err);
@@ -706,18 +711,21 @@ export function registerFidMarketRoutes(app: Express) {
     }
 
     try {
-      const fid = await optimismClient.readContract({
-        address: ID_REGISTRY_ADDRESS,
-        abi: idRegistryAbi,
-        functionName: "idOf",
-        args: [normalizedAddress],
-      }) as bigint;
-      const fidNum = Number(fid);
-      walletFidCache.set(normalizedAddress, fidNum);
-      if (fidNum === 0) return res.json({ fid: 0, found: false });
-      const info = await getFidInfo(fidNum);
-      fidInfoCache.set(String(fidNum), info);
-      res.json({ fid: fidNum, found: true, ...info });
+      const result = await singleFlight(`walletfid:${normalizedAddress}`, async () => {
+        const fid = await optimismClient.readContract({
+          address: ID_REGISTRY_ADDRESS,
+          abi: idRegistryAbi,
+          functionName: "idOf",
+          args: [normalizedAddress],
+        }) as bigint;
+        const fidNum = Number(fid);
+        walletFidCache.set(normalizedAddress, fidNum);
+        if (fidNum === 0) return { fid: 0, found: false };
+        const info = await getFidInfo(fidNum);
+        fidInfoCache.set(String(fidNum), info);
+        return { fid: fidNum, found: true, ...info };
+      });
+      res.json(result);
     } catch (err) {
       res.status(500).json({ error: "FID lookup failed" });
     }

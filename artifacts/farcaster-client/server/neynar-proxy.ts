@@ -36,10 +36,12 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
 
   const hit = cacheGet(cacheKey);
   if (hit !== undefined) {
+    console.log("[cache] hit ", cacheKey);
     res.setHeader("X-Cache", "HIT");
     res.json(hit);
     return;
   }
+  console.log("[cache] miss", cacheKey);
 
   const upstream = `${NEYNAR_V2}${neynarPath}${qs ? "?" + qs : ""}`;
   try {
