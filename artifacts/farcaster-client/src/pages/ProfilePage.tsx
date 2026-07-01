@@ -692,15 +692,24 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   </span>
                   <span className="text-muted-foreground text-xs">following</span>
                 </button>
-                {canBatchOps && (
-                  <button
-                    onClick={() => setShowBatchSheet(true)}
-                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-rose-500/8 text-rose-500 border border-rose-500/20 hover:bg-rose-500/15 transition-colors shrink-0"
-                  >
-                    <Zap className="w-3 h-3" /> Batch Unfollow
-                  </button>
-                )}
               </div>
+
+              {/* Batch tools card — own profile only */}
+              {canBatchOps && (
+                <button
+                  onClick={() => setShowBatchSheet(true)}
+                  className="w-full mt-3 group flex items-center gap-3 px-4 py-3 rounded-2xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/12 flex items-center justify-center shrink-0 group-hover:bg-rose-500/20 transition-colors">
+                    <Zap className="w-4 h-4 text-rose-500" />
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="text-[13px] font-bold text-rose-500 leading-tight">Batch Unfollow</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Smart cleanup · skip mutuals · filter by type</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-rose-500/50 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+                </button>
+              )}
             </div>
 
             {/* ── Tabs ── */}

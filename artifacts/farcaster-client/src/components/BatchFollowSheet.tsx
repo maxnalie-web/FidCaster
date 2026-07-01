@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Zap, UserPlus, UserMinus, ChevronRight,
   Loader2, CheckCircle2, XCircle, Users, Shield,
-  TrendingUp, Heart, Clock, SlidersHorizontal, RefreshCw,
+  TrendingUp, Heart, Clock, SlidersHorizontal, RefreshCw, Ban, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
@@ -134,7 +134,24 @@ const LIMIT_PRESETS = [10, 25, 50, 100, 250];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function applyFilters(users: NeynarUser[], mode: BatchMode, filters: BatchFilters): NeynarUser[] {
+/** Parse raw exclusion text (usernames or FIDs, comma/newline separated) into sets */
+function parseExclusions(raw: string): { fidSet: Set<number>; usernameSet: Set<string> } {
+  const fidSet = new Set<number>();
+  const usernameSet = new Set<string>();
+  raw.split(/[\n,]+/).map(s => s.trim().replace(/^@/, "")).filter(Boolean).forEach(token => {
+    const n = Number(token);
+    if (!isNaN(n) && n > 0 && Number.isInteger(n)) fidSet.add(n);
+    else usernameSet.add(token.toLowerCase());
+  });
+  return { fidSet, usernameSet };
+}
+
+function applyFilters(
+  users: NeynarUser[],
+  mode: BatchMode,
+  filters: BatchFilters,
+  exclusions?: { fidSet: Set<number>; usernameSet: Set<string> },
+): NeynarUser[] {
   let list = [...users];
   if (mode === "follow") {
     list = list.filter(u => u.viewer_context?.following !== true);
@@ -147,6 +164,12 @@ function applyFilters(users: NeynarUser[], mode: BatchMode, filters: BatchFilter
   }
   if (filters.minFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) >= filters.minFollowers);
   if (filters.maxFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) <= filters.maxFollowers);
+  if (exclusions) {
+    list = list.filter(u =>
+      !exclusions.fidSet.has(u.fid) &&
+      !exclusions.usernameSet.has((u.username ?? "").toLowerCase())
+    );
+  }
   return list.slice(0, filters.limit);
 }
 
@@ -170,11 +193,16 @@ export function BatchFollowSheet({
     ...presets[0].filters,
   });
   const [customLimit, setCustomLimit] = useState("");
+  const [excludeRaw, setExcludeRaw] = useState("");
+  const [excludeOpen, setExcludeOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("setup");
   const [fetchedUsers, setFetchedUsers] = useState<NeynarUser[]>([]);
   const [progress, setProgress] = useState({ done: 0, total: 0, errors: 0 });
   const [fetchPg, setFetchPg] = useState({ pages: 0, found: 0 });
   const cancelRef = useRef(false);
+
+  const exclusions = excludeRaw.trim() ? parseExclusions(excludeRaw) : undefined;
+  const excludeCount = (exclusions?.fidSet.size ?? 0) + (exclusions?.usernameSet.size ?? 0);
 
   function selectPreset(p: PresetDef) {
     setActivePreset(p.id);
@@ -210,7 +238,7 @@ export function BatchFollowSheet({
       setPhase("setup");
       return;
     }
-    setFetchedUsers(applyFilters(collected, mode, filters));
+    setFetchedUsers(applyFilters(collected, mode, filters, exclusions));
     setPhase("confirm");
   }, [mode, sourceFid, myFid, neynarKey, filters]);
 
@@ -247,6 +275,7 @@ export function BatchFollowSheet({
     setFetchedUsers([]);
     setProgress({ done: 0, total: 0, errors: 0 });
     cancelRef.current = false;
+    setExcludeOpen(false);
   }
 
   const pct = progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
@@ -384,6 +413,42 @@ export function BatchFollowSheet({
                         className="w-20 px-2.5 py-1 rounded-lg text-[13px] border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50 text-right" />
                     </div>
                   </div>
+                </div>
+
+                {/* Exclusion list */}
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <button
+                    onClick={() => setExcludeOpen(v => !v)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors text-left"
+                  >
+                    <Ban className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <span className="text-[13px] font-medium text-foreground flex-1">Skip these users</span>
+                    {excludeCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                        {excludeCount}
+                      </span>
+                    )}
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", excludeOpen && "rotate-180")} />
+                  </button>
+                  {excludeOpen && (
+                    <div className="px-4 pb-4 border-t border-border/60">
+                      <p className="text-[11px] text-muted-foreground mt-3 mb-2">
+                        Enter FIDs or usernames (one per line or comma-separated). These accounts will never be touched.
+                      </p>
+                      <textarea
+                        value={excludeRaw}
+                        onChange={e => setExcludeRaw(e.target.value)}
+                        placeholder={"@dwr.eth\nvitalik.eth\n12345, 67890"}
+                        rows={4}
+                        className="w-full px-3 py-2.5 rounded-xl text-[12px] font-mono border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/50 resize-none leading-relaxed"
+                      />
+                      {excludeCount > 0 && (
+                        <p className="text-[11px] text-emerald-500 mt-1.5 font-medium">
+                          {excludeCount} account{excludeCount !== 1 ? "s" : ""} will be skipped
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Rate info */}
