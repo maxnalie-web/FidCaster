@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
-import type { NeynarUser } from "@/lib/neynar";
+import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
 import type { LocalSigner } from "@/lib/wallet";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
@@ -27,19 +27,19 @@ interface PersistedBatch {
 
 function saveBatch(s: PersistedBatch) {
   if (s.pendingFids.length === 0) {
-    sessionStorage.removeItem(BATCH_PERSIST_KEY);
+    localStorage.removeItem(BATCH_PERSIST_KEY);
   } else {
-    try { sessionStorage.setItem(BATCH_PERSIST_KEY, JSON.stringify(s)); } catch { /* quota */ }
+    try { localStorage.setItem(BATCH_PERSIST_KEY, JSON.stringify(s)); } catch { /* quota */ }
   }
 }
 
 function clearBatch() {
-  sessionStorage.removeItem(BATCH_PERSIST_KEY);
+  localStorage.removeItem(BATCH_PERSIST_KEY);
 }
 
 function loadBatch(): PersistedBatch | null {
   try {
-    const raw = sessionStorage.getItem(BATCH_PERSIST_KEY);
+    const raw = localStorage.getItem(BATCH_PERSIST_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as PersistedBatch;
   } catch { return null; }
@@ -54,6 +54,7 @@ export interface BatchOp {
   total: number;
   errors: number;
   skipped: number;
+  prefiltered: number;
   label: string;
 }
 
@@ -74,6 +75,7 @@ interface RunBatchParams {
   neynarKey: string;
   label: string;
   total: number;
+  prefiltered?: number;
   initialDone?: number;
   initialErrors?: number;
   initialSkipped?: number;
@@ -111,13 +113,14 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
   // Captures signer in closure so account switches in the UI don't affect it.
   const runBatch = useCallback(async ({
     mode, fids, myFid, signer, neynarKey, label, total,
-    initialDone = 0, initialErrors = 0, initialSkipped = 0,
+    prefiltered = 0, initialDone = 0, initialErrors = 0, initialSkipped = 0,
   }: RunBatchParams) => {
     cancelRef.current = false;
     let done = initialDone;
     let errors = initialErrors;
     let skipped = initialSkipped;
-    setOp({ mode, phase: "running", done, total, errors, skipped, label });
+    const pf = prefiltered;
+    setOp({ mode, phase: "running", done, total, errors, skipped, prefiltered: pf, label });
 
     const attempt = async (targetFid: number) =>
       hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
@@ -158,7 +161,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         }
       }
 
-      setOp({ mode, phase: "running", done, total, errors, skipped, label });
+      setOp({ mode, phase: "running", done, total, errors, skipped, prefiltered: pf, label });
       if (i < fids.length - 1 && !cancelRef.current)
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
@@ -170,10 +173,45 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     );
   }, []);
 
-  // Fresh start (called from BatchFollowSheet)
+  // Fresh start — pre-filters already-followed/unfollowed users before running
   const startOp = useCallback((params: StartOpParams) => {
     const { mode, users, myFid, localSigner, neynarKey, label } = params;
-    runBatch({ mode, fids: users.map(u => u.fid), myFid, signer: localSigner, neynarKey, label, total: users.length });
+
+    (async () => {
+      // Step 1: split by whether viewer_context is available
+      const withCtx  = users.filter(u => u.viewer_context !== undefined);
+      const noCtx    = users.filter(u => u.viewer_context === undefined);
+
+      // Filter users we already know about from viewer_context
+      let filtered = withCtx.filter(u =>
+        mode === "follow" ? !u.viewer_context!.following : u.viewer_context!.following
+      );
+
+      // Step 2: for users missing viewer_context do a bulk API check (batches of 100)
+      if (noCtx.length > 0) {
+        try {
+          const followedSet = await checkFollowStatusBulk(myFid, noCtx.map(u => u.fid), neynarKey);
+          const checkedOk = noCtx.filter(u =>
+            mode === "follow" ? !followedSet.has(u.fid) : followedSet.has(u.fid)
+          );
+          filtered = [...filtered, ...checkedOk];
+        } catch {
+          // API check failed — include them all; duplicates handled at runtime
+          filtered = [...filtered, ...noCtx];
+        }
+      }
+
+      const prefiltered = users.length - filtered.length;
+      if (prefiltered > 0) {
+        toast.info(`Filtered ${prefiltered} already-${mode === "follow" ? "followed" : "unfollowed"} users`, { duration: 3000 });
+      }
+      if (filtered.length === 0) {
+        toast.success(`All ${users.length} users already ${mode === "follow" ? "followed" : "unfollowed"}! Nothing to do.`);
+        return;
+      }
+
+      runBatch({ mode, fids: filtered.map(u => u.fid), myFid, signer: localSigner, neynarKey, label, total: filtered.length, prefiltered });
+    })();
   }, [runBatch]);
 
   // Auto-resume on page reload — fires when wallet session is restored
@@ -216,6 +254,7 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
   onCancel: () => void;
   onDismiss: () => void;
 }) {
+  const { isLocked } = useWallet();
   const [expanded, setExpanded] = useState(false);
 
   // Auto-dismiss after 6s once finished
@@ -264,7 +303,7 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
 
   return (
     <AnimatePresence>
-      {op && (
+      {op && !isLocked && (
         <motion.div
           key="batch-pill"
           initial={{ y: 96, opacity: 0, scale: 0.95 }}
@@ -332,6 +371,16 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
                     <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <p className="text-[11px] text-muted-foreground">
                       {etaStr} · 2s per action · won't stop on refresh
+                    </p>
+                  </div>
+                )}
+
+                {/* Pre-filtered note */}
+                {op.prefiltered > 0 && (
+                  <div className="flex items-center gap-2 mx-4 mb-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      {op.prefiltered} already-{op.mode === "follow" ? "followed" : "unfollowed"} users skipped before start
                     </p>
                   </div>
                 )}

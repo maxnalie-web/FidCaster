@@ -417,6 +417,31 @@ export async function getFollowers(
   return neynar(`/farcaster/followers?${qd}`, "GET", key);
 }
 
+/**
+ * Bulk-check which of the given target FIDs the viewer currently follows.
+ * Uses Neynar /farcaster/user/bulk with viewer_fid — up to 100 FIDs per call.
+ * Returns a Set of FIDs that the viewer follows.
+ */
+export async function checkFollowStatusBulk(
+  viewerFid: number,
+  targetFids: number[],
+  key: string,
+): Promise<Set<number>> {
+  const followed = new Set<number>();
+  for (let i = 0; i < targetFids.length; i += 100) {
+    const batch = targetFids.slice(i, i + 100);
+    try {
+      const params = new URLSearchParams({ fids: batch.join(","), viewer_fid: String(viewerFid) });
+      const data = await neynar(`/farcaster/user/bulk?${params}`, "GET", key) as { users?: NeynarUser[] };
+      for (const u of data.users ?? []) {
+        if (u.viewer_context?.following) followed.add(u.fid);
+      }
+    } catch { /* skip batch on error — will be handled by DUPLICATE detection at runtime */ }
+    if (i + 100 < targetFids.length) await new Promise(r => setTimeout(r, 150));
+  }
+  return followed;
+}
+
 export async function getFollowing(
   fid: number,
   viewerFid: number,
