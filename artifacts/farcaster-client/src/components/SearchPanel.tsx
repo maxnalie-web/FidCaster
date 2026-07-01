@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { searchUsers, searchCasts, hasPowerBadge, type NeynarUser, type NeynarCast } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
+import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hubFollow } from "@/lib/hub-submit";
 import { CastCard } from "./CastCard";
 
@@ -77,8 +78,9 @@ function UserRow({ user, viewerFid, onViewProfile }: {
         )}
       </button>
       <button className="flex-1 min-w-0 text-left" onClick={() => onViewProfile(user)}>
-        <p className="text-sm font-semibold text-foreground truncate hover:text-primary transition-colors">
-          {user.display_name || user.username}
+        <p className="text-sm font-semibold text-foreground truncate hover:text-primary transition-colors flex items-center gap-1">
+          <span className="truncate">{user.display_name || user.username}</span>
+          {useIsPro(user.fid) && <ProBadge size={14} />}
         </p>
         <div className="flex items-center gap-1">
           <p className="text-xs text-muted-foreground">@{user.username}</p>

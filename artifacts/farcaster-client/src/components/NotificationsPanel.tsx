@@ -1,10 +1,20 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Heart, Repeat2, MessageCircle, UserPlus, Bell, User } from "lucide-react";
+import { Loader2, Heart, Repeat2, MessageCircle, UserPlus, Bell, User, Quote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { getNotifications, type NeynarNotification, type NeynarUser } from "@/lib/neynar";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useProStatus, ProBadge } from "./ProBadge";
+
+type SortMode = "newest" | "oldest" | "pro";
+
+/** The primary actor fid for a notification — used for sorting + Pro lookup. */
+function notifPrimaryFid(n: FlatNotif): number {
+  if (n.kind === "follow-group") return n.users[0]?.fid ?? 0;
+  if (n.kind === "like" || n.kind === "recast") return n.reactor.fid;
+  return n.author.fid; // reply | mention | quote
+}
 
 function timeAgo(ts: string): string {
   const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -19,7 +29,8 @@ type FlatNotif =
   | { kind: "like"; id: string; ts: string; reactor: NeynarUser; castText: string; castHash?: string }
   | { kind: "recast"; id: string; ts: string; reactor: NeynarUser; castText: string; castHash?: string }
   | { kind: "reply"; id: string; ts: string; author: NeynarUser; text: string; castHash: string }
-  | { kind: "mention"; id: string; ts: string; author: NeynarUser; text: string; castHash: string };
+  | { kind: "mention"; id: string; ts: string; author: NeynarUser; text: string; castHash: string }
+  | { kind: "quote"; id: string; ts: string; author: NeynarUser; text: string; castHash: string };
 
 function flattenNotifications(notifs: NeynarNotification[]): FlatNotif[] {
   const result: FlatNotif[] = [];
@@ -50,7 +61,7 @@ function flattenNotifications(notifs: NeynarNotification[]): FlatNotif[] {
       }
     } else if ((n.type === "reply" || n.type === "mention" || n.type === "quote") && n.cast) {
       result.push({
-        kind: n.type === "reply" ? "reply" : "mention",
+        kind: n.type === "reply" ? "reply" : n.type === "quote" ? "quote" : "mention",
         id: `${n.type}-${n.cast.hash}`,
         ts,
         author: n.cast.author,
@@ -101,7 +112,7 @@ function Avatar({
 /** Up to MAX_SHOWN avatars side by side with slight overlap */
 const MAX_SHOWN = 5;
 
-function FollowGroupRow({ n, navigate }: { n: Extract<FlatNotif, { kind: "follow-group" }>; navigate: (p: string) => void }) {
+function FollowGroupRow({ n, navigate, proMap }: { n: Extract<FlatNotif, { kind: "follow-group" }>; navigate: (p: string) => void; proMap: Record<number, boolean> }) {
   const shown = n.users.slice(0, MAX_SHOWN);
   const extra = n.users.length - shown.length;
 
@@ -117,7 +128,9 @@ function FollowGroupRow({ n, navigate }: { n: Extract<FlatNotif, { kind: "follow
 
   return (
     <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border/40 hover:bg-accent/15 transition-colors">
-      <UserPlus className="w-4 h-4 text-emerald-500 shrink-0" />
+      <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-sky-500/10">
+        <UserPlus className="w-4 h-4 text-sky-500" />
+      </span>
 
       {/* Stacked avatars */}
       <div className="flex shrink-0">
@@ -150,6 +163,7 @@ function FollowGroupRow({ n, navigate }: { n: Extract<FlatNotif, { kind: "follow
                   >
                     {u.display_name}
                   </button>
+                  {proMap[u.fid] && <ProBadge size={12} className="ml-0.5" />}
                 </span>
               ))}
               <span className="text-muted-foreground"> followed you</span>
@@ -162,6 +176,7 @@ function FollowGroupRow({ n, navigate }: { n: Extract<FlatNotif, { kind: "follow
               >
                 {n.users[0].display_name}
               </button>
+              {proMap[n.users[0].fid] && <ProBadge size={12} className="ml-0.5" />}
               <span className="text-muted-foreground">
                 {" "}and {n.users.length - 1} others followed you
               </span>
@@ -174,9 +189,9 @@ function FollowGroupRow({ n, navigate }: { n: Extract<FlatNotif, { kind: "follow
   );
 }
 
-function NotifRow({ n, navigate }: { n: FlatNotif; navigate: (p: string) => void }) {
+function NotifRow({ n, navigate, proMap }: { n: FlatNotif; navigate: (p: string) => void; proMap: Record<number, boolean> }) {
   if (n.kind === "follow-group") {
-    return <FollowGroupRow n={n} navigate={navigate} />;
+    return <FollowGroupRow n={n} navigate={navigate} proMap={proMap} />;
   }
 
   if (n.kind === "like" || n.kind === "recast") {
@@ -190,9 +205,11 @@ function NotifRow({ n, navigate }: { n: FlatNotif; navigate: (p: string) => void
           n.castHash && "cursor-pointer"
         )}
       >
-        {isLike
-          ? <Heart className="w-4 h-4 text-rose-500 shrink-0 fill-current" />
-          : <Repeat2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+        <span className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", isLike ? "bg-rose-500/10" : "bg-emerald-500/10")}>
+          {isLike
+            ? <Heart className="w-4 h-4 text-rose-500 fill-current" />
+            : <Repeat2 className="w-4 h-4 text-emerald-500" />}
+        </span>
         <Avatar user={n.reactor} onClick={() => navigate(`/profile/${n.reactor.fid}`)} />
         <div className="flex-1 min-w-0">
           <p className="text-sm text-foreground">
@@ -202,6 +219,7 @@ function NotifRow({ n, navigate }: { n: FlatNotif; navigate: (p: string) => void
             >
               {n.reactor.display_name}
             </button>
+            {proMap[n.reactor.fid] && <ProBadge size={13} className="ml-0.5" />}
             <span className="text-muted-foreground">{isLike ? " liked your cast" : " recasted your cast"}</span>
           </p>
           {n.castText && (
@@ -213,13 +231,18 @@ function NotifRow({ n, navigate }: { n: FlatNotif; navigate: (p: string) => void
     );
   }
 
-  if (n.kind === "reply" || n.kind === "mention") {
+  if (n.kind === "reply" || n.kind === "mention" || n.kind === "quote") {
+    const isQuote = n.kind === "quote";
+    const Icon = isQuote ? Quote : MessageCircle;
+    const label = n.kind === "reply" ? "replied to you" : isQuote ? "quoted your cast" : "mentioned you";
     return (
       <div
         onClick={() => navigate(`/cast/${n.castHash}`)}
         className="flex items-center gap-3 px-5 py-3.5 border-b border-border/40 hover:bg-accent/15 transition-colors cursor-pointer"
       >
-        <MessageCircle className="w-4 h-4 text-primary shrink-0" />
+        <span className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", isQuote ? "bg-violet-500/10" : "bg-primary/10")}>
+          <Icon className={cn("w-4 h-4", isQuote ? "text-violet-500" : "text-primary")} />
+        </span>
         <Avatar user={n.author} onClick={() => navigate(`/profile/${n.author.fid}`)} />
         <div className="flex-1 min-w-0">
           <p className="text-sm text-foreground">
@@ -229,9 +252,8 @@ function NotifRow({ n, navigate }: { n: FlatNotif; navigate: (p: string) => void
             >
               {n.author.display_name}
             </button>
-            <span className="text-muted-foreground">
-              {" "}{n.kind === "mention" ? "mentioned you" : "replied to you"}
-            </span>
+            {proMap[n.author.fid] && <ProBadge size={13} className="ml-0.5" />}
+            <span className="text-muted-foreground">{" "}{label}</span>
           </p>
           {n.text && (
             <p className="text-xs text-muted-foreground truncate mt-0.5">{n.text.slice(0, 80)}</p>
@@ -265,6 +287,7 @@ export function NotificationsPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>("all");
+  const [sort, setSort] = useState<SortMode>("newest");
   // Guards against double-fetching the same cursor (StrictMode / rapid re-fires)
   const lastCursorRef = useRef<string | undefined>(undefined);
   // Cooldown: minimum 5s between calls — server caches for 60s so we won't hit Neynar directly
@@ -312,9 +335,23 @@ export function NotificationsPanel() {
   const filtered = allFlat.filter((n) => {
     if (filter === "all") return true;
     if (filter === "reactions") return n.kind === "like" || n.kind === "recast";
-    if (filter === "replies") return n.kind === "reply" || n.kind === "mention";
+    if (filter === "replies") return n.kind === "reply" || n.kind === "mention" || n.kind === "quote";
     if (filter === "follows") return n.kind === "follow-group";
     return true;
+  });
+
+  // Pro status for every actor in view — drives both the badges and "Pro first" sort.
+  const proMap = useProStatus(filtered.map(notifPrimaryFid));
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === "pro") {
+      const ap = proMap[notifPrimaryFid(a)] ? 1 : 0;
+      const bp = proMap[notifPrimaryFid(b)] ? 1 : 0;
+      if (ap !== bp) return bp - ap; // Pro accounts first
+    }
+    const at = Date.parse(a.ts) || 0;
+    const bt = Date.parse(b.ts) || 0;
+    return sort === "oldest" ? at - bt : bt - at;
   });
 
   // Auto-load one more page when filter shows too few items — but only if cooldown allows.
@@ -333,19 +370,31 @@ export function NotificationsPanel() {
 
   return (
     <div>
-      <div className="flex gap-1 px-4 py-3 border-b border-border/40">
-        {FILTER_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setFilter(t.id)}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all tab-pill",
-              filter === t.id ? "active" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/40">
+        <div className="flex gap-1 overflow-x-auto no-scrollbar">
+          {FILTER_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setFilter(t.id)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all tab-pill shrink-0",
+                filter === t.id ? "active" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortMode)}
+          className="shrink-0 text-xs font-semibold bg-muted/40 border border-border rounded-lg px-2 py-1.5 text-foreground outline-none focus:border-primary/50 cursor-pointer"
+          aria-label="Sort notifications"
+        >
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="pro">Pro first</option>
+        </select>
       </div>
 
       {loading ? (
@@ -362,8 +411,8 @@ export function NotificationsPanel() {
         </div>
       ) : (
         <>
-          {filtered.map((n) => (
-            <NotifRow key={n.id} n={n} navigate={navigate} />
+          {sorted.map((n) => (
+            <NotifRow key={n.id} n={n} navigate={navigate} proMap={proMap} />
           ))}
 
           {hasMoreApi && (

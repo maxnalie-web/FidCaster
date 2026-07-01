@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { useLocation } from "wouter";
 import { hubReact, hubDeleteCast, neynarAction } from "@/lib/hub-submit";
+import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hasPowerBadge, getCastReactions, type NeynarCast, type NeynarUser, type NeynarEmbed } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { CastComposer } from "@/components/CastComposer";
@@ -168,6 +169,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
   const canWrite = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(fid);
   const isOwnCast = viewerFid > 0 && cast.author.fid === viewerFid;
+  const authorIsPro = useIsPro(cast.author.fid);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -343,8 +345,9 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 </div>
               </button>
               <button onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }} className="text-left hover:opacity-80 transition-opacity">
-                <p className="font-bold text-[0.9375rem] text-foreground leading-tight">
-                  {cast.author.display_name || cast.author.username}
+                <p className="font-bold text-[0.9375rem] text-foreground leading-tight flex items-center gap-1">
+                  <span className="truncate">{cast.author.display_name || cast.author.username}</span>
+                  {authorIsPro && <ProBadge size={15} />}
                 </p>
                 <div className="flex items-center gap-1">
                   <p className="text-[0.8125rem] text-muted-foreground">@{cast.author.username}</p>
@@ -583,6 +586,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 >
                   {cast.author.display_name || cast.author.username}
                 </button>
+                {authorIsPro && <ProBadge size={14} />}
                 <span className="text-[0.875rem] text-muted-foreground truncate hidden sm:inline">@{cast.author.username}</span>
                 {hasPowerBadge(cast.author) && (
                   <span title="Power Badge" className="shrink-0 inline-flex">

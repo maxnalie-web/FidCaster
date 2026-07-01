@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { X, Loader2, UserPlus, UserMinus, Users, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWallet } from "@/hooks/useWallet";
@@ -100,13 +101,20 @@ export function UserProfileSheet({ user, onClose, onViewProfile, zIndex = "z-50"
           {profile && (
             <div className="p-5 border-b border-border space-y-4">
               <div className="flex items-start gap-4">
-                <div className="w-16 h-16 rounded-full overflow-hidden bg-primary/10 ring-2 ring-border shrink-0">
-                  {profile.pfp_url ? (
-                    <img src={profile.pfp_url} alt={profile.display_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Users className="w-7 h-7 text-primary/50" />
-                    </div>
+                <div className="relative w-16 h-16 shrink-0">
+                  <div className="w-16 h-16 rounded-full overflow-hidden bg-primary/10 ring-2 ring-border">
+                    {profile.pfp_url ? (
+                      <img src={profile.pfp_url} alt={profile.display_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Users className="w-7 h-7 text-primary/50" />
+                      </div>
+                    )}
+                  </div>
+                  {useIsPro(profile.fid) && (
+                    <span className="absolute bottom-0 right-0 drop-shadow-sm">
+                      <ProBadge size={20} />
+                    </span>
                   )}
                 </div>
 

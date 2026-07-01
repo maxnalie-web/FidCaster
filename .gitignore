@@ -53,3 +53,6 @@ Thumbs.db
 .env.local
 .env.*.local
 *.env
+
+# FidMarket indexer persisted state
+artifacts/farcaster-client/server/.fidmarket-tracked.json

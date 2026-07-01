@@ -70,7 +70,8 @@ export default defineConfig({
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data: https:",
         "connect-src 'self' https: wss: ws:",
-        "frame-src https://verify.walletconnect.com https://verify.walletconnect.org",
+        // Mini apps run inside iframes — allow any https origin to be framed.
+        "frame-src 'self' https: https://verify.walletconnect.com https://verify.walletconnect.org",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
@@ -79,8 +80,12 @@ export default defineConfig({
     proxy: {
       "/api/farcaster": { target: "http://localhost:3001", changeOrigin: true },
       "/api/fid-market": { target: "http://localhost:3001", changeOrigin: true },
-      "/api/fc":  { target: "http://localhost:3001", changeOrigin: true },
-      "/api/hub": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/fc":        { target: "http://localhost:3001", changeOrigin: true },
+      "/api/hub":       { target: "http://localhost:3001", changeOrigin: true },
+      "/api/mini-apps": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/warpcast":  { target: "http://localhost:3001", changeOrigin: true },
+      "/api/pro-status": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/miniapp-embed": { target: "http://localhost:3001", changeOrigin: true },
     },
   },
   preview: {
@@ -99,7 +104,8 @@ export default defineConfig({
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data: https:",
         "connect-src 'self' https: wss:",
-        "frame-src 'none'",
+        // Mini apps run inside iframes — allow any https origin to be framed.
+        "frame-src 'self' https:",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",

@@ -7,6 +7,7 @@ import {
   AlignLeft, MessageSquare, Heart, Repeat2,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
+import { useIsPro, ProBadge } from "@/components/ProBadge";
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
   hasPowerBadge, type NeynarUser, type NeynarCast,
@@ -49,6 +50,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const targetFid = fidProp ?? (params?.fid ? parseInt(params.fid, 10) : 0);
   const myFidNum = myFid ? Number(myFid) : 0;
   const isOwnProfile = targetFid === myFidNum;
+  const isPro = useIsPro(targetFid);
 
   const [user, setUser] = useState<NeynarUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -285,7 +287,12 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                       )}
                     </div>
                   </div>
-                  {hasPowerBadge(user) && (
+                  {isPro && (
+                    <span className="absolute bottom-0.5 right-0.5 drop-shadow-sm">
+                      <ProBadge size={24} />
+                    </span>
+                  )}
+                  {!isPro && hasPowerBadge(user) && (
                     <span className="absolute bottom-0.5 right-0.5 drop-shadow-sm">
                       <PowerBadgeIcon size={22} />
                     </span>

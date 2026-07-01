@@ -21,6 +21,9 @@ export type WalletState = {
   sessionPassword: string | null;
   hasStoredSession: boolean;
   isCheckingSession: boolean;
+  /** True after an auto-lock (inactivity / tab hidden) — session keys zeroed but
+   *  the encrypted vault remains, so the user sees the unlock screen, not landing. */
+  isLocked: boolean;
   /** True when the user's FID has been transferred away (sold via FID Market) */
   fidSold: boolean;
   /** How the user authenticated: mnemonic phrase, external wallet, or Farcaster sign-in */

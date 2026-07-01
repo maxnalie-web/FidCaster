@@ -129,6 +129,7 @@ function buildInitial(): WalletState {
     neynarKey: loadNeynarKey(), isLoading: false, error: null,
     accounts: loadAccountsMeta(), sessionPassword: null,
     hasStoredSession: false, isCheckingSession: true,
+    isLocked: false,
     fidSold: false, authMethod: null,
   };
 }
@@ -338,7 +339,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       ...s,
       address, fid, profile, walletClient, localSigner,
       signerUuid: null, signerApproved: false,
-      isLoading: false, error: null,
+      isLoading: false, error: null, isLocked: false,
       accounts: loadAccountsMeta(),
       neynarKey, fidSold: false, authMethod: "mnemonic",
     }));
@@ -436,7 +437,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         address: extAddress, fid, profile,
         walletClient: extWalletClient, localSigner,
         signerUuid: null, signerApproved: false,
-        isLoading: false, error: null, authMethod: "wallet",
+        isLoading: false, error: null, isLocked: false, authMethod: "wallet",
         accounts: loadAccountsMeta(), neynarKey: neynarKeyRef.current, fidSold: false,
         autoSignerLoading: false, signerError: null,
       }));
@@ -510,7 +511,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       walletClient: null, localSigner,
       signerUuid: uuid,
       signerApproved: localSigner !== null || uuid !== null,
-      isLoading: false, error: null, authMethod: "farcaster",
+      isLoading: false, error: null, isLocked: false, authMethod: "farcaster",
       accounts: loadAccountsMeta(), neynarKey: neynarKeyRef.current, fidSold: false,
       autoSignerLoading: false, signerError: null,
     }));
@@ -728,7 +729,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         address: null, fid: null, profile: null, walletClient: null, localSigner: null,
         signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
         sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
+        isLocked: true,
       }));
+      // The encrypted vault survives a lock — re-check so the unlock screen shows
+      // (vs the marketing landing) for accounts that can be unlocked with a password.
+      hasStoredSession().then((found) => setState((s) => ({ ...s, hasStoredSession: found })));
     }
 
     function resetTimer() {
@@ -756,12 +761,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } else {
         if (hiddenSince !== null && Date.now() - hiddenSince >= HIDDEN_LOCK_MS) {
           _zeroAndLock();
+          clearLightSession();
           setState((s) => ({
             ...s,
             address: null, fid: null, profile: null, walletClient: null, localSigner: null,
             signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
             sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
+            isLocked: true,
           }));
+          hasStoredSession().then((found) => setState((s) => ({ ...s, hasStoredSession: found })));
         }
         hiddenSince = null;
       }
@@ -805,7 +813,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return;
       }
       const newAddr = accounts[0] as `0x${string}`;
-      if (newAddr.toLowerCase() === (addressRef.current ?? "").toLowerCase()) return;
+      if (newAddr.toLowerCase() === (addressRef.current ?? "").toLowerCase()) {
+        // Same address as the active account. If we switched to this account while
+        // the wallet wasn't connected yet (walletClient == null) and the user has
+        // now connected it, wire the client up and clear the "Connect your wallet"
+        // hint — otherwise the prompt would keep reappearing after connecting.
+        if (!walletClientRef.current) {
+          const wc = createWalletClient({ account: newAddr, chain: optimism, transport: custom(ethereum) });
+          walletClientRef.current = wc;
+          setState((s) => ({
+            ...s,
+            walletClient: wc,
+            error: s.error?.startsWith("Connect your wallet") ? null : s.error,
+          }));
+        }
+        return;
+      }
 
       // Re-derive: create a fresh wallet client for the new account and re-login
       const newWc = createWalletClient({
@@ -956,7 +979,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           address: (target?.address ?? null) as `0x${string}` | null,
           profile, walletClient: wc, localSigner: signer,
           signerApproved: loadSignerApproved(fid), authMethod: "wallet",
-          isLoading: false, error: walletHint,
+          isLoading: false, error: walletHint, isLocked: false,
           accounts: loadAccountsMeta(), neynarKey: neynarKeyRef.current,
           fidSold: false, autoSignerLoading: false, signerError: null,
         }));

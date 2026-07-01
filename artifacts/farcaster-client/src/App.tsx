@@ -36,11 +36,13 @@ export function useTheme(): [Theme, (t: Theme) => void] {
 }
 
 function AuthRedirect() {
-  const { fid } = useWallet();
+  const { fid, isLocked } = useWallet();
   const [location, navigate] = useLocation();
   useEffect(() => {
     if (fid && (location === "/" || location === "/login")) navigate("/dashboard");
-  }, [fid, location, navigate]);
+    // Auto-locked from anywhere in the app → unlock screen, never the landing page.
+    else if (!fid && isLocked && location !== "/login") navigate("/login");
+  }, [fid, isLocked, location, navigate]);
   return null;
 }
 

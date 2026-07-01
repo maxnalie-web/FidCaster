@@ -239,6 +239,9 @@ export type MiniApp = {
   iconUrl: string;
   url: string;
   category: string;
+  author?: string;
+  authorPfp?: string;
+  shortId?: string;
 };
 
 // Real Farcaster Mini Apps (built with the Farcaster Mini Apps SDK).
@@ -409,7 +412,32 @@ function categoryFromUrl(url: string): string {
  *  4. Curated static list — always-available offline fallback
  */
 export async function fetchMiniApps(): Promise<MiniApp[]> {
-  // ── 1: Server-proxied Warpcast discovery (avoids browser CORS) ──────────
+  // ── 1: Official Farcaster ranked catalog (server proxies the SAME public
+  //      endpoint the Farcaster/Base app uses: api.farcaster.xyz/v1/top-frameapps).
+  //      Already ranked #1..#N — preserve the order exactly. ──────────────────
+  try {
+    const res = await fetch("/api/mini-apps", {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (res.ok) {
+      const data = await res.json() as { apps: Array<{ name: string; description: string; iconUrl: string; url: string; category?: string; author: string; authorPfp: string; shortId?: string }> };
+      const apps: MiniApp[] = (data.apps ?? []).map((a) => ({
+        id: a.shortId || a.url,
+        name: a.name,
+        description: a.description,
+        iconUrl: a.iconUrl,
+        url: a.url,
+        category: a.category || categoryFromUrl(a.url.toLowerCase()),
+        author: a.author,
+        authorPfp: a.authorPfp,
+        shortId: a.shortId,
+      }));
+      if (apps.length >= 5) return apps;
+    }
+  } catch { /* fall through */ }
+
+  // ── 2: Server-proxied Warpcast discovery (avoids browser CORS) ──────────
   const warpcastEndpoints = [
     "/api/warpcast/discover-frames",
   ];

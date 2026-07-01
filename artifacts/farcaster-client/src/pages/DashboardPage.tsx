@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useWallet } from "@/hooks/useWallet";
+import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 import { UsernameChange } from "@/components/UsernameChange";
 import { FeedPanel } from "@/components/FeedPanel";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
@@ -298,17 +299,16 @@ function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd: (m: s
 /* ─── Compose Modal ──────────────────────────────────────────────────────── */
 function ComposeModal({ onClose, onPublished }: { onClose: () => void; onPublished: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm md:block" />
-      {/* Mobile: full-screen; Desktop: centered card */}
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      {/* Centered popup card on every screen size (mobile, tablet, desktop) */}
       <div
-        className="relative w-full sm:max-w-lg bg-background sm:rounded-2xl sm:shadow-2xl sm:border sm:border-border flex flex-col max-h-screen sm:max-h-[80vh]"
+        className="relative w-full max-w-lg bg-background rounded-2xl shadow-2xl border border-border flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <button onClick={onClose} className="text-sm font-medium text-muted-foreground sm:hidden">Cancel</button>
           <span className="text-sm font-bold text-foreground">New Cast</span>
-          <button onClick={onClose} className="hidden sm:flex p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors">
+          <button onClick={onClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -513,7 +513,7 @@ export function DashboardPage() {
   const {
     fid, profile, signerApproved, autoSignerLoading, signerError,
     retrySignerSetup, accounts, logout, isLoading, addAccount, switchAccount, removeAccount,
-    fidSold, authMethod, isCheckingSession, error: walletError,
+    fidSold, authMethod, isCheckingSession, isLocked, error: walletError, neynarKey,
   } = useWallet();
   const [, navigate] = useLocation();
   const [theme, setTheme] = useTheme();
@@ -521,11 +521,13 @@ export function DashboardPage() {
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!walletError) return;
-    if (walletError.startsWith("Connect your wallet") || walletError.startsWith("Session locked")) {
+    if (walletError && (walletError.startsWith("Connect your wallet") || walletError.startsWith("Session locked"))) {
       setWalletNotice(walletError);
     } else {
-      toast.error(walletError);
+      // Error cleared (e.g. wallet now connected) or it's a different error —
+      // dismiss the sticky notice so it doesn't linger after the issue resolves.
+      setWalletNotice(null);
+      if (walletError) toast.error(walletError);
     }
   }, [walletError]);
 
@@ -559,9 +561,18 @@ export function DashboardPage() {
     ? BOTTOM_NAV
     : BOTTOM_NAV.filter((i) => i.id !== "wallet");
 
+  const { unread: unreadNotifs, markSeen: markNotifsSeen } = useUnreadNotifications(Number(fid), neynarKey);
+
+  // Clear the bell badge whenever the user is viewing the Notifications tab.
   useEffect(() => {
-    if (!isCheckingSession && !isLoading && !fid) navigate("/");
-  }, [fid, isLoading, isCheckingSession, navigate]);
+    if (mainTab === "notifications") markNotifsSeen();
+  }, [mainTab, markNotifsSeen]);
+
+  useEffect(() => {
+    // Auto-lock zeroes the session but keeps the encrypted vault — send the user
+    // to the unlock screen, not the marketing landing.
+    if (!isCheckingSession && !isLoading && !fid) navigate(isLocked ? "/login" : "/");
+  }, [fid, isLoading, isCheckingSession, isLocked, navigate]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -683,10 +694,17 @@ export function DashboardPage() {
                 onClick={() => setMainTab(item.id)}
                 className={cn("sidebar-item", active && "active")}
               >
-                <Icon
-                  className={cn("w-[26px] h-[26px] shrink-0", active ? "text-foreground" : "text-foreground/75")}
-                  strokeWidth={active ? 2.5 : 2}
-                />
+                <span className="relative shrink-0">
+                  <Icon
+                    className={cn("w-[26px] h-[26px]", active ? "text-foreground" : "text-foreground/75")}
+                    strokeWidth={active ? 2.5 : 2}
+                  />
+                  {item.id === "notifications" && unreadNotifs > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[17px] h-[17px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none flex items-center justify-center ring-2 ring-background">
+                      {unreadNotifs > 9 ? "9+" : unreadNotifs}
+                    </span>
+                  )}
+                </span>
                 <span className={cn("text-[1.0625rem]", active ? "text-foreground" : "text-foreground/85")}>
                   {item.label}
                 </span>
@@ -836,10 +854,17 @@ export function DashboardPage() {
                 onClick={() => setMainTab(item.id)}
                 className="flex-1 flex items-center justify-center transition-colors"
               >
-                <Icon
-                  className={cn("w-6 h-6", active ? "text-primary" : "text-muted-foreground")}
-                  strokeWidth={active ? 2.5 : 2}
-                />
+                <span className="relative">
+                  <Icon
+                    className={cn("w-6 h-6", active ? "text-primary" : "text-muted-foreground")}
+                    strokeWidth={active ? 2.5 : 2}
+                  />
+                  {item.id === "notifications" && unreadNotifs > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold leading-none flex items-center justify-center ring-2 ring-background">
+                      {unreadNotifs > 9 ? "9+" : unreadNotifs}
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })}

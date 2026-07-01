@@ -25,10 +25,21 @@ export interface FarcasterNetworkStats {
   dailyCasts: number | null;
 }
 
+export interface MarketActivity {
+  type: "listed" | "sold" | "cancelled";
+  fid: number;
+  seller: string;
+  buyer?: string;
+  priceEth: string;
+  blockNumber: number;
+  transactionHash: string;
+}
+
 export interface LandingStats {
   market: MarketStats | null;
   network: FarcasterNetworkStats | null;
   listings: MarketListing[];
+  activity: MarketActivity[];
   loading: boolean;
   error: string | null;
 }
@@ -36,19 +47,19 @@ export interface LandingStats {
 function formatUserCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M+`;
   if (n >= 1_000) return `${Math.floor(n / 1_000)}K+`;
-  return n > 0 ? `${n}+` : "—";
+  return n > 0 ? `${n}+` : "·";
 }
 
 export function formatVolume(eth: string): string {
   const v = parseFloat(eth);
-  if (isNaN(v) || v === 0) return "—";
+  if (isNaN(v) || v === 0) return "·";
   if (v >= 1000) return `${(v / 1000).toFixed(1)}K ETH`;
   if (v >= 100) return `${Math.floor(v)} ETH`;
   return `${v.toFixed(2)} ETH`;
 }
 
 export function formatCount(n: number): string {
-  if (n === 0) return "—";
+  if (n === 0) return "·";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M+`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K+`;
   return `${n}+`;
@@ -61,6 +72,7 @@ export function useLandingStats(refreshIntervalMs = 60_000): LandingStats {
     market: null,
     network: null,
     listings: [],
+    activity: [],
     loading: true,
     error: null,
   });
@@ -68,16 +80,20 @@ export function useLandingStats(refreshIntervalMs = 60_000): LandingStats {
 
   async function fetchAll() {
     try {
-      const [marketRes, networkRes, listingsRes] = await Promise.allSettled([
+      const [marketRes, networkRes, listingsRes, activityRes] = await Promise.allSettled([
         fetch("/api/fid-market/stats").then(r => r.ok ? r.json() : null),
         fetch("/api/farcaster/network-stats").then(r => r.ok ? r.json() : null),
         fetch("/api/fid-market/cached-listings").then(r => r.ok ? r.json() : null),
+        fetch("/api/fid-market/activity").then(r => r.ok ? r.json() : null),
       ]);
 
       if (!mounted.current) return;
 
       const rawListings = listingsRes.status === "fulfilled" && listingsRes.value
         ? (listingsRes.value.listings as MarketListing[] ?? [])
+        : [];
+      const rawActivity = activityRes.status === "fulfilled" && activityRes.value
+        ? (activityRes.value.activity as MarketActivity[] ?? [])
         : [];
 
       setState(prev => ({
@@ -86,6 +102,7 @@ export function useLandingStats(refreshIntervalMs = 60_000): LandingStats {
         market: marketRes.status === "fulfilled" ? (marketRes.value as MarketStats | null) : prev.market,
         network: networkRes.status === "fulfilled" ? (networkRes.value as FarcasterNetworkStats | null) : prev.network,
         listings: rawListings.length > 0 ? rawListings : prev.listings,
+        activity: rawActivity.length > 0 ? rawActivity : prev.activity,
         error: null,
       }));
     } catch (e) {

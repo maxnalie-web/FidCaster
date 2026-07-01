@@ -4,6 +4,7 @@ import { X, Loader2, UserPlus, UserMinus, Users, ArrowLeft, Check } from "lucide
 import { useWallet } from "@/hooks/useWallet";
 import { getFollowers, getFollowing, hasPowerBadge, type NeynarUser } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
+import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hubFollow } from "@/lib/hub-submit";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -59,8 +60,9 @@ function FollowRow({
 
       {/* Info */}
       <button className="flex-1 min-w-0 text-left" onClick={() => onViewProfile(user)}>
-        <p className="text-[0.9375rem] font-semibold text-foreground truncate hover:underline">
-          {user.display_name || user.username}
+        <p className="text-[0.9375rem] font-semibold text-foreground truncate hover:underline flex items-center gap-1">
+          <span className="truncate">{user.display_name || user.username}</span>
+          {useIsPro(user.fid) && <ProBadge size={14} />}
         </p>
         <div className="flex items-center gap-1">
           <p className="text-sm text-muted-foreground truncate">@{user.username}</p>

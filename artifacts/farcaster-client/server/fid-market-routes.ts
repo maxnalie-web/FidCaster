@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import rateLimit from "express-rate-limit";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   createPublicClient, createWalletClient, http, fallback, formatEther, parseTransaction,
   type Address,
@@ -153,6 +155,9 @@ export interface CachedActivity {
   priceEth: string;
   blockNumber: number;
   transactionHash: string;
+  /** Unix seconds — unified sort key across real events (approx from block) and
+   *  synthetic listed entries (exact listedAt). Lets us interleave correctly. */
+  ts: number;
 }
 
 let listingsCache: CachedListing[] = [];
@@ -186,12 +191,46 @@ const fidDataCache  = new TtlCache<unknown>(30_000);         // per-FID listing 
 // Prune expired entries every 10 minutes
 setInterval(() => { fidInfoCache.prune(); walletFidCache.prune(); fidDataCache.prune(); }, 10 * 60_000);
 let initialScanDone = false;
+let tradesInitialDone = false;
 let lastScannedBlock = BigInt(0);
 
-const INITIAL_SCAN_RANGE = BigInt(50_000);
+// Listings stay valid for 7 days (~302k Optimism blocks @ 2s). The cold-start
+// discovery scan must cover that whole window, else still-active listings whose
+// Listed event has scrolled out get dropped. Incremental refreshes only need a
+// small recent window because trackedFids is persisted + accumulated.
+const INITIAL_SCAN_RANGE = BigInt(320_000);
 const EVENT_SCAN_RANGE = BigInt(50_000);
 const LOG_CHUNK_SIZE = BigInt(5_000);
 let isRefreshingListings = false;
+
+// ── Persist trackedFids across restarts ───────────────────────────────────────
+// trackedFids is the ONLY source of which FIDs get re-checked on-chain. Losing it
+// on restart is what made active listings disappear (5 → 1). Persist to disk so a
+// FID, once discovered, is always re-verified regardless of event-scan window.
+const TRACKED_FILE = join(import.meta.dirname, ".fidmarket-tracked.json");
+let lastPersistedSize = -1;
+
+function loadTrackedFids() {
+  try {
+    const arr = JSON.parse(readFileSync(TRACKED_FILE, "utf8"));
+    if (Array.isArray(arr)) {
+      for (const n of arr) {
+        const fid = Number(n);
+        if (Number.isInteger(fid) && fid > 0 && trackedFids.size < MAX_TRACKED_FIDS) trackedFids.add(fid);
+      }
+    }
+  } catch { /* no file yet — first run */ }
+}
+
+function persistTrackedFids() {
+  if (trackedFids.size === lastPersistedSize) return;
+  try {
+    writeFileSync(TRACKED_FILE, JSON.stringify(Array.from(trackedFids)));
+    lastPersistedSize = trackedFids.size;
+  } catch (err) {
+    console.error("[FidMarket] persist trackedFids failed:", err);
+  }
+}
 
 async function getLogsRaw(fromBlock: bigint, toBlock: bigint, chunkSize: bigint, topic: `0x${string}`) {
   const logs: any[] = [];
@@ -256,15 +295,48 @@ async function readFidListing(fid: number): Promise<CachedListing | null> {
   }
 }
 
-// Raw activity snapshots — merged into activityCache after both refreshes run
+// Raw activity snapshots — accumulated across scans so the feed stays complete.
+// Each refresh only scans a recent block window; replacing (not merging) these
+// would shrink the feed to the last ~27h after the wide initial scan. We merge +
+// dedup by txHash:type:fid and cap so activity grows and persists between scans.
 let _pendingListedActivity: CachedActivity[] = [];
 let _pendingCancelledActivity: CachedActivity[] = [];
 let _pendingSoldActivity: CachedActivity[] = [];
+
+const ACTIVITY_ACCUM_CAP = 400;
+function mergeActivity(existing: CachedActivity[], incoming: CachedActivity[]): CachedActivity[] {
+  const seen = new Set<string>();
+  const out: CachedActivity[] = [];
+  for (const e of [...incoming, ...existing]) {
+    const key = `${e.transactionHash}:${e.type}:${e.fid}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  out.sort((a, b) => b.ts - a.ts);
+  return out.slice(0, ACTIVITY_ACCUM_CAP);
+}
 
 function rebuildActivity() {
   // Keep only Listed events with a real price (priceWei > 0).
   // Listed events with priceWei=0 are internal state-reset side-effects of cancel().
   const realListings = _pendingListedActivity.filter(e => BigInt(e.priceWei) > 0n);
+
+  // Synthetic "listed" entries from the CURRENT on-chain listings. The public RPC
+  // can't reliably return getLogs for old/wide ranges, so a listing's original
+  // Listed event is often missing from the scan — but the listing itself is real
+  // (readFidListing). Synthesizing from listingsCache guarantees the activity feed
+  // reflects every active listing. We skip fids already covered by a real event.
+  const realListedFids = new Set(realListings.map(e => e.fid));
+  const synthListed: CachedActivity[] = listingsCache
+    .filter(l => l.active && BigInt(l.priceWei) > 0n && !realListedFids.has(l.fid))
+    .map(l => ({
+      type: "listed" as const,
+      fid: l.fid, seller: l.seller,
+      priceWei: l.priceWei, priceEth: l.priceEth,
+      blockNumber: 0, transactionHash: `listing-${l.fid}`,
+      ts: l.listedAt || Math.floor(Date.now() / 1000),
+    }));
 
   // Collect txHashes that produced a real listing.
   // list() first cancels any existing listing (emitting Cancelled) then emits Listed —
@@ -275,8 +347,8 @@ function rebuildActivity() {
     e => !relistTxHashes.has(e.transactionHash)
   );
 
-  const merged = [...realListings, ..._pendingSoldActivity, ...realCancels];
-  merged.sort((a, b) => b.blockNumber - a.blockNumber);
+  const merged = [...realListings, ...synthListed, ..._pendingSoldActivity, ...realCancels];
+  merged.sort((a, b) => b.ts - a.ts);
 
   // Deduplicate by transactionHash+type (guards against overlapping scan windows)
   const seen = new Set<string>();
@@ -295,6 +367,9 @@ async function refreshListings() {
     const currentBlock = await optimismClient.getBlockNumber();
     const range = initialScanDone ? EVENT_SCAN_RANGE : INITIAL_SCAN_RANGE;
     const scanFrom = currentBlock > range ? currentBlock - range : BigInt(0);
+    // Approx unix-seconds for a block (Optimism ~2s/block) for unified activity sorting.
+    const nowSec = Math.floor(Date.now() / 1000);
+    const tsOf = (bn: number) => nowSec - (Number(currentBlock) - bn) * 2;
 
     // Use verified raw topic hashes (event names in bytecode differ from ABI guesses)
     const [listedLogs, cancelledLogs] = await Promise.all([
@@ -315,6 +390,7 @@ async function refreshListings() {
         type: "listed", fid, seller,
         priceWei: priceWei.toString(), priceEth: formatEther(priceWei),
         blockNumber: Number(log.blockNumber), transactionHash: log.transactionHash || "",
+        ts: tsOf(Number(log.blockNumber)),
       });
     }
 
@@ -335,11 +411,12 @@ async function refreshListings() {
         type: "cancelled", fid, seller,
         priceWei: "0", priceEth: "0",
         blockNumber: Number(log.blockNumber), transactionHash: log.transactionHash || "",
+        ts: tsOf(Number(log.blockNumber)),
       });
     }
 
-    _pendingListedActivity = listedActivity;
-    _pendingCancelledActivity = cancelledActivity;
+    _pendingListedActivity = mergeActivity(_pendingListedActivity, listedActivity);
+    _pendingCancelledActivity = mergeActivity(_pendingCancelledActivity, cancelledActivity);
 
     // Check ALL tracked FIDs on-chain — readFidListing returns null for delisted ones
     const fidsToCheck = Array.from(trackedFids);
@@ -352,9 +429,17 @@ async function refreshListings() {
       }
     }
 
-    listingsCache = results;
-    listingsCacheTime = Date.now();
-    console.log(`[FidMarket] Listings: ${results.length} active`);
+    // Guard against transient RPC failures: readFidListing returns null both for a
+    // genuinely-delisted FID and for an RPC error. A scan returning 0 active while we
+    // track FIDs and previously had listings is almost always a mass RPC hiccup, not
+    // every listing vanishing at once — keep the previous cache instead of clearing it.
+    if (results.length === 0 && trackedFids.size > 0 && listingsCache.length > 0) {
+      console.warn(`[FidMarket] 0 active from ${trackedFids.size} tracked but cache had ${listingsCache.length} — keeping previous (likely RPC failure)`);
+    } else {
+      listingsCache = results;
+      listingsCacheTime = Date.now();
+    }
+    console.log(`[FidMarket] Listings: ${listingsCache.length} active`);
   } catch (err) {
     console.error("[FidMarket] Listings refresh error:", err);
   } finally {
@@ -365,7 +450,12 @@ async function refreshListings() {
 async function refreshTrades() {
   try {
     const currentBlock = await optimismClient.getBlockNumber();
-    const scanFrom = currentBlock > EVENT_SCAN_RANGE ? currentBlock - EVENT_SCAN_RANGE : BigInt(0);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const tsOf = (bn: number) => nowSec - (Number(currentBlock) - bn) * 2;
+    // Wide window on the first run so historical sales are complete; small window after.
+    const tradeRange = tradesInitialDone ? EVENT_SCAN_RANGE : INITIAL_SCAN_RANGE;
+    const scanFrom = currentBlock > tradeRange ? currentBlock - tradeRange : BigInt(0);
+    tradesInitialDone = true;
 
     // Scan all Bought topic candidates until one returns logs (auto-detects the real topic)
     let boughtLogs: any[] = [];
@@ -428,13 +518,15 @@ async function refreshTrades() {
     tradesCacheTime = Date.now();
     lastScannedBlock = currentBlock;
 
-    // Build sold activity entries
-    _pendingSoldActivity = allBought.map(t => ({
+    // Build sold activity entries (accumulated across scans)
+    const soldActivity: CachedActivity[] = allBought.map(t => ({
       type: "sold" as const,
       fid: t.fid, seller: t.seller, buyer: t.buyer,
       priceWei: t.priceWei, priceEth: t.priceEth,
       blockNumber: t.blockNumber, transactionHash: t.transactionHash,
+      ts: tsOf(t.blockNumber),
     }));
+    _pendingSoldActivity = mergeActivity(_pendingSoldActivity, soldActivity);
 
     console.log(`[FidMarket] Trades: ${allBought.length}, total: ${totalTradedEth} ETH`);
   } catch (err) {
@@ -660,6 +752,7 @@ export function registerFidMarketRoutes(app: Express) {
       return res.status(429).json({ error: "Tracked FID limit reached" });
     }
     trackedFids.add(fid);
+    persistTrackedFids();
     refreshListings().then(rebuildActivity);
     res.json({ tracked: true, fid });
   });
@@ -762,9 +855,20 @@ export function registerFidMarketRoutes(app: Express) {
 
 function startIndexer() {
   console.log("[FidMarket] Starting indexer...");
+  loadTrackedFids();
+  if (trackedFids.size > 0) {
+    console.log(`[FidMarket] Loaded ${trackedFids.size} tracked FIDs from disk`);
+  }
+  // NOTE: do NOT short-circuit the wide initial scan here. The first refreshListings
+  // must scan the full window to populate the ACTIVITY feed (Listed/Cancelled events),
+  // not just rediscover listings. Persisted trackedFids are an *additional* guarantee
+  // that listings older than the scan window still get re-checked on-chain.
   Promise.all([refreshListings(), refreshTrades()]).then(() => {
     rebuildActivity();
+    persistTrackedFids();
     console.log(`[FidMarket] Initial scan done. Tracked FIDs: ${trackedFids.size}`);
   });
-  setInterval(() => { Promise.all([refreshListings(), refreshTrades()]).then(rebuildActivity); }, 30_000);
+  setInterval(() => {
+    Promise.all([refreshListings(), refreshTrades()]).then(() => { rebuildActivity(); persistTrackedFids(); });
+  }, 30_000);
 }

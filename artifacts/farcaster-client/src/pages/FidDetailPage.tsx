@@ -22,7 +22,7 @@ const ID_REGISTRY_ADDRESS = "0x00000000Fc6c5F01Fc30151999387Bb99A9f489b" as cons
 const FEE_BPS = 900;
 
 function formatTimeAgo(unixSec: number): string {
-  if (!unixSec) return "—";
+  if (!unixSec) return "·";
   const diff = Math.floor(Date.now() / 1000) - unixSec;
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -31,7 +31,7 @@ function formatTimeAgo(unixSec: number): string {
 }
 
 function formatTimeLeft(unixSec: number): { text: string; expired: boolean } {
-  if (!unixSec) return { text: "—", expired: false };
+  if (!unixSec) return { text: "·", expired: false };
   const diff = unixSec - Math.floor(Date.now() / 1000);
   if (diff <= 0) return { text: "Expired", expired: true };
   if (diff < 3600) return { text: `${Math.floor(diff / 60)}m left`, expired: false };
@@ -731,7 +731,7 @@ export default function FidDetailPage() {
                       <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
                         <span className="text-muted-foreground">Listed</span>
                         <span className="font-medium text-foreground">
-                          {data.listing.listedAt ? formatTimeAgo(data.listing.listedAt) : "—"}
+                          {data.listing.listedAt ? formatTimeAgo(data.listing.listedAt) : "·"}
                         </span>
                       </div>
                       <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">
@@ -739,7 +739,7 @@ export default function FidDetailPage() {
                         <span className={cn("font-medium", deadline.expired ? "text-destructive" : "text-foreground")}>
                           {data.listing.fromDeadline
                             ? new Date(data.listing.fromDeadline * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) + ` (${deadline.text})`
-                            : "—"}
+                            : "·"}
                         </span>
                       </div>
                       <div className="flex items-center justify-between px-3.5 py-2.5 text-xs">

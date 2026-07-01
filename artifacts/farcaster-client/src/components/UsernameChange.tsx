@@ -329,6 +329,14 @@ export function UsernameChange() {
         </div>
       </div>
 
+      {/* 7-day cooldown warning */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
+        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <p className="text-[11px] text-amber-400/90 leading-tight">
+          You can change your username only <strong>once every 7 days</strong> — choose carefully.
+        </p>
+      </div>
+
       {/* Name input (shared) */}
       <div className="space-y-2">
         <div className="relative">

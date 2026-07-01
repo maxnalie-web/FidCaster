@@ -9,7 +9,7 @@ import {
   CheckCircle2, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useLandingStats, formatVolume, formatCount, formatUserCount, type MarketListing } from "@/hooks/useLandingStats";
+import { useLandingStats, formatVolume, formatCount, formatUserCount, type MarketListing, type MarketActivity } from "@/hooks/useLandingStats";
 
 /* ─── Mock data ─── */
 const MOCK_FEED = [
@@ -41,16 +41,6 @@ const MOCK_FEED = [
 ];
 
 
-const MOCK_ACTIVITY = [
-  { type: "sold" as const, fid: 234, price: "0.08 ETH", who: "0x1a2b…3c4d", time: "30s" },
-  { type: "listed" as const, fid: 42, price: "2.50 ETH", who: "0x9f8e…7d6c", time: "2m" },
-  { type: "sold" as const, fid: 567, price: "0.15 ETH", who: "0x5e4f…3a2b", time: "5m" },
-  { type: "listed" as const, fid: 1000, price: "0.30 ETH", who: "0x2c3d…4e5f", time: "7m" },
-  { type: "sold" as const, fid: 999, price: "0.22 ETH", who: "0x7a8b…9c0d", time: "18m" },
-  { type: "listed" as const, fid: 13, price: "8.00 ETH", who: "0xab12…f034", time: "25m" },
-  { type: "sold" as const, fid: 88, price: "0.33 ETH", who: "0x6c7d…8e9f", time: "34m" },
-  { type: "listed" as const, fid: 55, price: "0.60 ETH", who: "0x3d4e…5f60", time: "41m" },
-];
 
 const CLIENT_FEATURES = [
   {
@@ -318,14 +308,34 @@ function MockAppPreview() {
 }
 
 /* ─── Activity ticker ─── */
-function ActivityTicker() {
+function ActivityTicker({ activity, listings }: { activity: MarketActivity[]; listings: MarketListing[] }) {
   const [offset, setOffset] = useState(0);
+
+  // Real data only: prefer the on-chain activity feed; if it's empty, fall back
+  // to current listings rendered as "Listed" entries. Never mock data.
+  const items = activity.length > 0
+    ? activity.map((a) => ({
+        key: `${a.transactionHash}:${a.type}`,
+        type: a.type,
+        fid: a.fid,
+        price: a.type === "cancelled" ? "" : `${parseFloat(a.priceEth).toFixed(3)} ETH`,
+      }))
+    : listings.map((l) => ({
+        key: `l-${l.fid}`,
+        type: "listed" as const,
+        fid: l.fid,
+        price: `${parseFloat(l.priceEth).toFixed(3)} ETH`,
+      }));
+
   useEffect(() => {
+    if (items.length === 0) return;
     const t = setInterval(() => setOffset((v) => v + 1), 2800);
     return () => clearInterval(t);
-  }, []);
+  }, [items.length]);
 
-  const visible = MOCK_ACTIVITY.concat(MOCK_ACTIVITY);
+  if (items.length === 0) return null; // nothing on-chain yet — hide the strip
+
+  const visible = items.concat(items); // duplicate for a seamless loop
 
   return (
     <div className="relative overflow-hidden rounded-xl py-3"
@@ -343,7 +353,7 @@ function ActivityTicker() {
         style={{ width: "max-content" }}
       >
         {visible.map((act, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
+          <div key={`${act.key}-${i}`} className="flex items-center gap-2 text-xs">
             <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse",
               act.type === "sold" ? "bg-emerald-400" :
               act.type === "listed" ? "bg-violet-400" : "bg-orange-400"
@@ -352,8 +362,7 @@ function ActivityTicker() {
               {act.type === "sold" ? "Sold" : act.type === "listed" ? "Listed" : "Cancelled"}
             </span>
             <span className="text-white font-semibold">FID #{act.fid}</span>
-            <span style={{ color: "rgba(255,255,255,0.4)" }}>{act.price}</span>
-            <span style={{ color: "rgba(255,255,255,0.2)" }}>{act.time} ago</span>
+            {act.price && <span style={{ color: "rgba(255,255,255,0.4)" }}>{act.price}</span>}
           </div>
         ))}
       </motion.div>
@@ -502,15 +511,15 @@ function SectionHeading({ tag, title, sub }: { tag: string; title: React.ReactNo
 ════════════════════════════════════════ */
 export function LoginPage() {
   const [, navigate] = useLocation();
-  const { market, network, listings } = useLandingStats(90_000);
+  const { market, network, listings, activity } = useLandingStats(90_000);
   const displayListings = listings.filter(l => l.buyable).slice(0, 6);
 
-  /* ── Derived live values (fall back to placeholder "—" until loaded) ── */
-  const mktVolume   = market ? formatVolume(market.totalVolumeEth) : "—";
-  const mktListings = market ? formatCount(market.activeListings)   : "—";
-  const mktTrades   = market ? formatCount(market.totalTrades)      : "—";
-  const mktAvgPrice = market ? `${parseFloat(market.avgPriceEth).toFixed(3)} ETH` : "—";
-  const netUsers    = network?.userCount ? formatUserCount(network.userCount) : "—";
+  /* ── Derived live values (fall back to placeholder "·" until loaded) ── */
+  const mktVolume   = market ? formatVolume(market.totalVolumeEth) : "·";
+  const mktListings = market ? formatCount(market.activeListings)   : "·";
+  const mktTrades   = market ? formatCount(market.totalTrades)      : "·";
+  const mktAvgPrice = market ? `${parseFloat(market.avgPriceEth).toFixed(3)} ETH` : "·";
+  const netUsers    = network?.userCount ? formatUserCount(network.userCount) : "·";
 
   return (
     <div className="relative min-h-screen text-white overflow-x-hidden" style={{ background: "#040110" }}>
@@ -675,7 +684,7 @@ export function LoginPage() {
               <span style={{ color: "rgba(255,255,255,0.5)" }}>Farcaster users:</span>
               <span className={cn(
                 "font-bold transition-all duration-700",
-                netUsers === "—" ? "text-white/20" : "text-violet-300"
+                netUsers === "·" ? "text-white/20" : "text-violet-300"
               )}>{netUsers}</span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
@@ -684,7 +693,7 @@ export function LoginPage() {
               <span style={{ color: "rgba(255,255,255,0.5)" }}>FIDs on market:</span>
               <span className={cn(
                 "font-bold transition-all duration-700",
-                mktListings === "—" ? "text-white/20" : "text-fuchsia-300"
+                mktListings === "·" ? "text-white/20" : "text-fuchsia-300"
               )}>{mktListings}</span>
             </div>
           </motion.div>
@@ -732,7 +741,7 @@ export function LoginPage() {
                 <div className="flex justify-center mb-2" style={{ color: s.color }}>{s.icon}</div>
                 <div className={cn(
                   "font-black text-xl transition-all duration-500",
-                  s.value === "—" ? "text-white/20" : "text-white"
+                  s.value === "·" ? "text-white/20" : "text-white"
                 )} style={{ letterSpacing: "-0.02em" }}>{s.value}</div>
                 <div className="text-white/25 text-xs mt-0.5">{s.label}</div>
               </motion.div>
@@ -754,7 +763,7 @@ export function LoginPage() {
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-white/30 font-semibold uppercase tracking-widest">Live Activity</span>
             </div>
-            <ActivityTicker />
+            <ActivityTicker activity={activity} listings={listings} />
           </div>
 
           {/* Listing grid */}
