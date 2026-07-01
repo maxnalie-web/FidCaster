@@ -34,10 +34,13 @@ type FlatNotif =
 function flattenNotifications(notifs: NeynarNotification[]): FlatNotif[] {
   const result: FlatNotif[] = [];
   for (const n of notifs) {
-    // Prefer n.timestamp (original event time) over most_recent_timestamp (Neynar grouping time)
-    // most_recent_timestamp updates every time Neynar re-processes the group → causes old
-    // notifications to appear as "just now". Use it only as last resort.
-    const ts = n.timestamp ?? n.most_recent_timestamp ?? "";
+    // For reply/mention/quote: n.cast IS the event — use its timestamp (most accurate).
+    // For likes/recasts/follows: n.cast is the TARGET cast (not the event); use
+    // most_recent_timestamp which Neynar sets to the time of the most recent reaction.
+    const ts =
+      (n.type === "reply" || n.type === "mention" || n.type === "quote")
+        ? (n.cast?.timestamp ?? n.timestamp ?? n.most_recent_timestamp ?? "")
+        : (n.timestamp ?? n.most_recent_timestamp ?? "");
     if (n.type === "follows" && n.follows?.length) {
       result.push({
         kind: "follow-group",

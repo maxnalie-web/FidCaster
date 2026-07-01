@@ -294,7 +294,10 @@ export function FollowPage() {
     try {
       do {
         const res = await fetchFn(fetchFid, myFid, neynarKey ?? "", cursor);
-        const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
+        // Handle both Hub-proxy format { user: NeynarUser }[] and Neynar v2 flat NeynarUser[]
+        const batch = res.users.map((u: NeynarUser | { user: NeynarUser }) =>
+          ("user" in u && u.user) ? (u as { user: NeynarUser }).user : (u as NeynarUser)
+        ).filter(Boolean);
         collected.push(...batch);
         cursor = res.next?.cursor;
         setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
