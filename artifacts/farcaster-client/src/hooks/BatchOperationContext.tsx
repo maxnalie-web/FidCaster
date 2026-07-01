@@ -142,6 +142,15 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         if (lo.includes("duplicate") || lo.includes("already follow")) {
           // Hub rejected because link already exists — treat as skipped, not an error
           skipped++;
+        } else if (lo.includes("signer_not_registered") || lo.includes("signer not recognized") || lo.includes("signer key is not yet recognized")) {
+          // Hub blocked our signer — all subsequent attempts will fail too.
+          // Stop the batch immediately and let the user know.
+          errors++;
+          toast.error(
+            "Batch paused: hub blocked this signer after too many rapid actions. Wait 5–10 minutes, then try again.",
+            { duration: 10_000 },
+          );
+          cancelRef.current = true;
         } else if (msg.includes("429") || lo.includes("rate") || lo.includes("too many")) {
           // Rate-limited: wait 62s then retry once
           await new Promise(r => setTimeout(r, 62_000));
