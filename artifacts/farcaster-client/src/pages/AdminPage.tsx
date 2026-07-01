@@ -867,6 +867,7 @@ export function AdminPage() {
                   <ToggleRow enabled={cfg.features.castComposerEnabled} onChange={v => set("features", "castComposerEnabled", v)} label="Cast Composer" sub="Allow users to write and post casts" />
                   <ToggleRow enabled={cfg.features.darkModeToggleEnabled} onChange={v => set("features", "darkModeToggleEnabled", v)} label="Dark Mode Toggle" sub="Show theme switcher in app" />
                   <ToggleRow enabled={cfg.features.landingPageEnabled} onChange={v => set("features", "landingPageEnabled", v)} label="Landing Page" sub="Show / landing page; if off, redirect to /login" />
+                  <ToggleRow enabled={cfg.features.growEnabled} onChange={v => set("features", "growEnabled", v)} label="Grow" sub="Show Grow (follow tools) in sidebar and bottom nav" />
                 </div>
               </Card>
             )}

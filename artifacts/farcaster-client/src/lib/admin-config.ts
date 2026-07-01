@@ -118,6 +118,7 @@ export interface AdminConfig {
     castComposerEnabled: boolean;
     darkModeToggleEnabled: boolean;
     landingPageEnabled: boolean;
+    growEnabled: boolean;
   };
 
   // ── Privileged users
@@ -236,6 +237,7 @@ export const DEFAULT_CONFIG: AdminConfig = {
     castComposerEnabled: true,
     darkModeToggleEnabled: true,
     landingPageEnabled: true,
+    growEnabled: true,
   },
   privilegedUsers: ["polycaster", "m--"],
   api: {
