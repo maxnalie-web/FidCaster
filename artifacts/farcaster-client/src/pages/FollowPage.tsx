@@ -465,21 +465,31 @@ export function FollowPage() {
                   {mode === "unfollow" ? "Scan your" : "Scan their"}
                 </p>
                 <div className="flex gap-1.5">
-                  {(["followers", "following"] as const).map(lt => (
-                    <button
-                      key={lt}
-                      onClick={() => { setListType(lt); setAllUsers([]); setSelectedFids(new Set()); setPhase("idle"); }}
-                      className={cn(
-                        "flex-1 py-2 rounded-xl border text-[12px] font-semibold transition-all",
-                        listType === lt
-                          ? "bg-primary/10 border-primary/30 text-primary"
-                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/20",
-                      )}
-                    >
-                      <Users className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                      {lt === "followers" ? "Followers" : "Following"}
-                    </button>
-                  ))}
+                  {(["followers", "following"] as const).map(lt => {
+                    const count = lt === "followers"
+                      ? (targetUser?.follower_count ?? 0)
+                      : (targetUser?.following_count ?? 0);
+                    return (
+                      <button
+                        key={lt}
+                        onClick={() => { setListType(lt); setAllUsers([]); setSelectedFids(new Set()); setPhase("idle"); }}
+                        className={cn(
+                          "flex-1 flex flex-col items-center py-2 rounded-xl border text-[12px] font-semibold transition-all",
+                          listType === lt
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/20",
+                        )}
+                      >
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5" />
+                          {lt === "followers" ? "Followers" : "Following"}
+                        </span>
+                        <span className={cn("text-[10px] font-normal mt-0.5", listType === lt ? "text-primary/70" : "text-muted-foreground/60")}>
+                          {count.toLocaleString()}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -592,6 +602,36 @@ export function FollowPage() {
                           </div>
                         </>
                       )}
+                    </div>
+
+                    {/* Min / Max followers */}
+                    <div className="rounded-xl border border-border px-3 py-2.5 space-y-2">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Follower range</p>
+                      <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <label className="text-[10px] text-muted-foreground">Min</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={filters.minFollowers || ""}
+                            onChange={e => updateFilter("minFollowers", Number(e.target.value) || 0)}
+                            placeholder="0"
+                            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-border bg-muted/20 text-[12px] text-foreground outline-none focus:border-primary/40 transition-colors"
+                          />
+                        </div>
+                        <span className="text-muted-foreground text-sm pb-1.5">–</span>
+                        <div className="flex-1">
+                          <label className="text-[10px] text-muted-foreground">Max</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={filters.maxFollowers || ""}
+                            onChange={e => updateFilter("maxFollowers", Number(e.target.value) || 0)}
+                            placeholder="any"
+                            className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-border bg-muted/20 text-[12px] text-foreground outline-none focus:border-primary/40 transition-colors"
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     {/* Exclusion list */}
