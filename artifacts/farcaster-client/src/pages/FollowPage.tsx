@@ -4,8 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Search, UserPlus, UserMinus, Users, Loader2,
   SlidersHorizontal, X, ChevronDown, CheckSquare, Square,
-  Zap, Heart, Shield, TrendingUp, RefreshCw, History, Shuffle,
-  Sparkles, Clock, Ban, Filter, Check, AlertCircle,
+  Zap, Heart, Ban, Filter, Check, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -15,99 +14,11 @@ import {
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
 import { toast } from "sonner";
-
-// ─── Types (mirrors BatchFollowSheet) ─────────────────────────────────────────
-
-type SortOrder = "newest" | "oldest" | "random" | "smart";
-
-interface BatchFilters {
-  limit: number;
-  onlyPowerBadge: boolean;
-  onlyMutuals: boolean;
-  onlyNonFollowers: boolean;
-  skipMutuals: boolean;
-  minFollowers: number;
-  maxFollowers: number;
-  sortOrder: SortOrder;
-}
-
-type Preset = "balanced" | "quality" | "cleanup" | "aggressive" | "custom";
-
-const DEFAULT_FILTERS: BatchFilters = {
-  limit: 100,
-  onlyPowerBadge: false,
-  onlyMutuals: false,
-  onlyNonFollowers: false,
-  skipMutuals: false,
-  minFollowers: 0,
-  maxFollowers: 0,
-  sortOrder: "newest",
-};
-
-const MAX_SCAN = 10_000;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function smartScore(u: NeynarUser): number {
-  let s = 0;
-  if (hasPowerBadge(u)) s += 40;
-  if (u.viewer_context?.followed_by === true) s += 30;
-  const fc = u.follower_count ?? 0;
-  if (fc >= 200 && fc <= 20_000) s += 20;
-  else if (fc >= 50 && fc < 200) s += 10;
-  else if (fc > 20_000 && fc <= 100_000) s += 5;
-  s += Math.random() * 5;
-  return s;
-}
-
-function applyFilters(
-  users: NeynarUser[],
-  mode: "follow" | "unfollow",
-  filters: BatchFilters,
-  exclusions?: { fidSet: Set<number>; usernameSet: Set<string> },
-): NeynarUser[] {
-  let list = [...users];
-  if (mode === "follow") {
-    list = list.filter(u => u.viewer_context?.following !== true);
-    if (filters.onlyMutuals) list = list.filter(u => u.viewer_context?.followed_by === true);
-    if (filters.onlyPowerBadge) list = list.filter(u => hasPowerBadge(u));
-  } else {
-    if (filters.skipMutuals || filters.onlyNonFollowers)
-      list = list.filter(u => u.viewer_context?.followed_by !== true);
-    if (filters.onlyPowerBadge) list = list.filter(u => hasPowerBadge(u));
-  }
-  if (filters.minFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) >= filters.minFollowers);
-  if (filters.maxFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) <= filters.maxFollowers);
-  if (exclusions) {
-    list = list.filter(u =>
-      !exclusions.fidSet.has(u.fid) &&
-      !exclusions.usernameSet.has((u.username ?? "").toLowerCase())
-    );
-  }
-  switch (filters.sortOrder) {
-    case "oldest":   list = list.reverse(); break;
-    case "random":   for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; } break;
-    case "smart":    list = list.slice().sort((a, b) => smartScore(b) - smartScore(a)); break;
-  }
-  return list.slice(0, filters.limit);
-}
-
-function parseExclusions(raw: string): { fidSet: Set<number>; usernameSet: Set<string> } {
-  const fidSet = new Set<number>();
-  const usernameSet = new Set<string>();
-  raw.split(/[\n,]+/).map(s => s.trim().replace(/^@/, "")).filter(Boolean).forEach(token => {
-    const n = Number(token);
-    if (!isNaN(n) && n > 0 && Number.isInteger(n)) fidSet.add(n);
-    else usernameSet.add(token.toLowerCase());
-  });
-  return { fidSet, usernameSet };
-}
-
-function etaStr(count: number): string {
-  const secs = count * 2;
-  if (secs < 90) return `~${Math.round(secs)}s`;
-  return `~${Math.round(secs / 60)}m`;
-}
+import type { BatchFilters, SortOrder, Preset } from "@/lib/batch-follow-utils";
+import {
+  DEFAULT_FILTERS, FOLLOW_PRESETS, UNFOLLOW_PRESETS, SORT_OPTIONS,
+  LIMIT_PRESETS, MAX_SCAN, parseExclusions, applyFilters, etaStr,
+} from "@/lib/batch-follow-utils";
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
@@ -240,6 +151,8 @@ export function FollowPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showExclude, setShowExclude] = useState(false);
   const [activePreset, setActivePreset] = useState<Preset>("custom");
+  const [batchStarted, setBatchStarted] = useState(false);
+  const [lastBatchLabel, setLastBatchLabel] = useState("");
 
   const exclusions = excludeRaw.trim() ? parseExclusions(excludeRaw) : undefined;
   const excludeCount = (exclusions?.fidSet.size ?? 0) + (exclusions?.usernameSet.size ?? 0);
@@ -311,7 +224,7 @@ export function FollowPage() {
     setAllUsers([]);
     setSelectedFids(new Set());
 
-    const fetchFid = currentMode === "unfollow" ? myFid : target.fid;
+    const fetchFid = target.fid;
     const fetchFn = lt === "following" ? getFollowing : getFollowers;
     const collected: NeynarUser[] = [];
     let cursor: string | undefined;
@@ -364,15 +277,18 @@ export function FollowPage() {
     const selected = allUsers.filter(u => selectedFids.has(u.fid));
     if (selected.length === 0) { toast.error("Select at least one user"); return; }
     const verb = mode === "follow" ? "Following" : "Unfollowing";
+    const label = `${verb} ${selected.length} from @${targetUser?.username ?? "?"}`;
     batchOp.startOp({
       mode,
       users: selected,
       myFid,
       localSigner,
       neynarKey,
-      label: `${verb} ${selected.length} from @${targetUser?.username ?? "?"}`,
+      label,
     });
-    toast.success(`Started ${mode === "follow" ? "follow" : "unfollow"} batch for ${selected.length} users`);
+    setLastBatchLabel(label);
+    setBatchStarted(true);
+    setSelectedFids(new Set());
   }
 
   // ── Filter helpers ──────────────────────────────────────────────────────────
@@ -390,29 +306,7 @@ export function FollowPage() {
     setActivePreset(id);
   }
 
-  // Preset definitions
-  const followPresets: Array<{ id: Preset; label: string; icon: React.ReactNode; color: string; filters: Partial<BatchFilters> }> = [
-    { id: "balanced", label: "Mutuals only", icon: <Heart className="w-3.5 h-3.5" />, color: "text-primary border-primary/30 bg-primary/8", filters: { limit: 100, onlyMutuals: true } },
-    { id: "quality",  label: "Power Badge",  icon: <Shield className="w-3.5 h-3.5" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8", filters: { limit: 100, onlyPowerBadge: true } },
-    { id: "aggressive", label: "Growth max", icon: <TrendingUp className="w-3.5 h-3.5" />, color: "text-emerald-500 border-emerald-500/30 bg-emerald-500/8", filters: { limit: 500 } },
-    { id: "custom",   label: "Custom",       icon: <SlidersHorizontal className="w-3.5 h-3.5" />, color: "text-muted-foreground border-border bg-muted/30", filters: {} },
-  ];
-  const unfollowPresets: Array<{ id: Preset; label: string; icon: React.ReactNode; color: string; filters: Partial<BatchFilters> }> = [
-    { id: "cleanup",    label: "Ghost clean",  icon: <RefreshCw className="w-3.5 h-3.5" />, color: "text-rose-500 border-rose-500/30 bg-rose-500/8", filters: { limit: 100, onlyNonFollowers: true, skipMutuals: true } },
-    { id: "quality",    label: "Safe (keep mutuals)", icon: <Shield className="w-3.5 h-3.5" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8", filters: { limit: 100, skipMutuals: true } },
-    { id: "aggressive", label: "Mass unfollow", icon: <UserMinus className="w-3.5 h-3.5" />, color: "text-orange-500 border-orange-500/30 bg-orange-500/8", filters: { limit: 500 } },
-    { id: "custom",     label: "Custom",        icon: <SlidersHorizontal className="w-3.5 h-3.5" />, color: "text-muted-foreground border-border bg-muted/30", filters: {} },
-  ];
-  const presets = mode === "follow" ? followPresets : unfollowPresets;
-
-  const sortOptions = [
-    { id: "newest" as SortOrder, label: "Newest",  icon: <Clock className="w-3 h-3" /> },
-    { id: "oldest" as SortOrder, label: "Oldest",  icon: <History className="w-3 h-3" /> },
-    { id: "random" as SortOrder, label: "Random",  icon: <Shuffle className="w-3 h-3" /> },
-    { id: "smart"  as SortOrder, label: "Smart",   icon: <Sparkles className="w-3 h-3" /> },
-  ];
-
-  const limitPresets = [50, 100, 250, 500, 1000];
+  const presets = mode === "follow" ? FOLLOW_PRESETS : UNFOLLOW_PRESETS;
 
   const isLoading = phase === "loading" || phase === "searching";
   const isLoaded  = phase === "loaded";
@@ -635,7 +529,7 @@ export function FollowPage() {
                         Max users
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {limitPresets.map(n => (
+                        {LIMIT_PRESETS.map(n => (
                           <button
                             key={n}
                             onClick={() => setFilters(f => ({ ...f, limit: n }))}
@@ -653,12 +547,13 @@ export function FollowPage() {
                     </div>
 
                     {/* Sort order */}
+
                     <div>
                       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                         Sort order
                       </p>
                       <div className="grid grid-cols-4 gap-1">
-                        {sortOptions.map(opt => (
+                        {SORT_OPTIONS.map(opt => (
                           <button
                             key={opt.id}
                             onClick={() => updateFilter("sortOrder", opt.id)}
@@ -783,8 +678,51 @@ export function FollowPage() {
             </div>
           )}
 
+          {/* Batch started — post-op state */}
+          {batchStarted && (
+            <div className="flex flex-col items-center gap-5 py-16 px-6">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center ring-4 ring-emerald-500/10">
+                <Check className="w-8 h-8 text-emerald-500" strokeWidth={2.5} />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-bold text-foreground">Batch started!</p>
+                <p className="text-[13px] text-muted-foreground mt-1 max-w-[260px] mx-auto">
+                  {lastBatchLabel} — watch the pill at the bottom of the screen for live progress.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 w-full max-w-[240px]">
+                <button
+                  onClick={() => {
+                    setBatchStarted(false);
+                    setAllUsers([]);
+                    setSelectedFids(new Set());
+                    setPhase("idle");
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 text-[13px] font-semibold text-foreground transition-colors"
+                >
+                  <Users className="w-4 h-4" />
+                  Load another list
+                </button>
+                <button
+                  onClick={() => {
+                    setBatchStarted(false);
+                    setTargetUser(null);
+                    setSearchQuery("");
+                    setAllUsers([]);
+                    setSelectedFids(new Set());
+                    setPhase("idle");
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-[13px] font-semibold text-primary transition-colors"
+                >
+                  <Search className="w-4 h-4" />
+                  Search another user
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Empty state */}
-          {isEmpty && (
+          {isEmpty && !batchStarted && (
             <div className="flex flex-col items-center gap-4 py-16 text-muted-foreground">
               <AlertCircle className="w-10 h-10 opacity-25" />
               <div className="text-center">
@@ -805,7 +743,7 @@ export function FollowPage() {
           )}
 
           {/* User list */}
-          {isLoaded && allUsers.length > 0 && (
+          {isLoaded && allUsers.length > 0 && !batchStarted && (
             <div className="flex flex-col h-full">
               {/* List header */}
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/10 sticky top-[53px] z-10">

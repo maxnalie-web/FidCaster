@@ -20,6 +20,7 @@ import { hubFollow, neynarAction, hubUpdateUserData } from "@/lib/hub-submit";
 import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
+import { BatchFollowSheet } from "@/components/BatchFollowSheet";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -263,9 +264,13 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const isOwnProfile = targetFid === myFidNum;
   const isPro = useIsPro(targetFid);
   const [adminCfg] = useAdminConfig();
+  const canBatchOps = isOwnProfile && signerApproved && Boolean(localSigner) &&
+    (adminCfg.privilegedUsers.some(u => u.toLowerCase() === myProfile?.username?.toLowerCase()) ||
+     adminCfg.privilegedUsers.some(u => u === String(myFidNum)));
 
   const [user, setUser] = useState<NeynarUser | null>(null);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
+  const [showBatchSheet, setShowBatchSheet] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
@@ -692,6 +697,26 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
 
             </div>
 
+            {canBatchOps && (
+              <div className="px-4 mt-3">
+                <button
+                  onClick={() => setShowBatchSheet(true)}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Zap className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-medium text-foreground">Batch Unfollow</p>
+                      <p className="text-xs text-muted-foreground">Smart cleanup tools</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            )}
+
             {/* ── Tabs ── */}
             <div className="flex border-b border-border/40 sticky top-14 z-30 bg-background/95 backdrop-blur-sm">
               {TAB_META.map(t => (
@@ -785,6 +810,18 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
             </button>
           </div>
         </div>
+      )}
+
+      {showBatchSheet && localSigner && (
+        <BatchFollowSheet
+          mode="unfollow"
+          sourceFid={myFidNum}
+          myFid={myFidNum}
+          localSigner={localSigner}
+          neynarKey={neynarKey ?? ""}
+          onClose={() => setShowBatchSheet(false)}
+          zIndex="z-[200]"
+        />
       )}
 
     </div>

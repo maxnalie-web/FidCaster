@@ -1109,12 +1109,19 @@ export function DashboardPage() {
               </button>
             );
           })}
-          {/* FID Market tab · before Profile */}
+          {/* FID Market tab */}
           <button
             onClick={() => navigate("/market")}
             className="flex-1 flex items-center justify-center transition-colors"
           >
             <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+          </button>
+          {/* Manage Follows tab */}
+          <button
+            onClick={() => navigate("/follow")}
+            className="flex-1 flex items-center justify-center transition-colors"
+          >
+            <UserPlus className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
           </button>
           {/* Profile · always last */}
           <button
