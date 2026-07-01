@@ -4,6 +4,7 @@ import {
   X, Zap, UserPlus, UserMinus, ChevronRight,
   Loader2, CheckCircle2, XCircle, Users, Shield,
   TrendingUp, Heart, Clock, SlidersHorizontal, RefreshCw, Ban, ChevronDown,
+  Shuffle, Sparkles, History, ArrowUpNarrowWide,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
@@ -15,6 +16,9 @@ import { toast } from "sonner";
 
 export type BatchMode = "follow" | "unfollow";
 
+/** Order in which matched users are processed */
+export type SortOrder = "newest" | "oldest" | "random" | "smart";
+
 interface BatchFilters {
   limit: number;
   onlyPowerBadge: boolean;
@@ -23,6 +27,7 @@ interface BatchFilters {
   skipMutuals: boolean;
   minFollowers: number;
   maxFollowers: number;
+  sortOrder: SortOrder;
 }
 
 type Preset = "balanced" | "quality" | "cleanup" | "aggressive" | "custom";
@@ -58,7 +63,42 @@ const DEFAULT_FILTERS: BatchFilters = {
   skipMutuals: false,
   minFollowers: 0,
   maxFollowers: 0,
+  sortOrder: "newest",
 };
+
+interface SortOptionDef {
+  id: SortOrder;
+  label: string;
+  desc: string;
+  icon: React.ReactNode;
+}
+
+const SORT_OPTIONS: SortOptionDef[] = [
+  {
+    id: "newest",
+    label: "Newest",
+    desc: "Most recent followers first",
+    icon: <Clock className="w-3.5 h-3.5" />,
+  },
+  {
+    id: "oldest",
+    label: "Oldest",
+    desc: "Earliest followers first",
+    icon: <History className="w-3.5 h-3.5" />,
+  },
+  {
+    id: "random",
+    label: "Random",
+    desc: "Shuffled — less predictable",
+    icon: <Shuffle className="w-3.5 h-3.5" />,
+  },
+  {
+    id: "smart",
+    label: "Smart",
+    desc: "Best follow-back probability first",
+    icon: <Sparkles className="w-3.5 h-3.5" />,
+  },
+];
 
 const FOLLOW_PRESETS: PresetDef[] = [
   {
@@ -146,6 +186,20 @@ function parseExclusions(raw: string): { fidSet: Set<number>; usernameSet: Set<s
   return { fidSet, usernameSet };
 }
 
+/** Score a user for Smart ordering — higher = process first */
+function smartScore(u: NeynarUser): number {
+  let s = 0;
+  if (hasPowerBadge(u)) s += 40;                         // quality signal
+  if (u.viewer_context?.followed_by === true) s += 30;   // already follows me → high follow-back chance
+  const fc = u.follower_count ?? 0;
+  // Sweet spot 200–20k: active but not a mega-celebrity who won't notice
+  if (fc >= 200 && fc <= 20_000) s += 20;
+  else if (fc >= 50 && fc < 200) s += 10;
+  else if (fc > 20_000 && fc <= 100_000) s += 5;
+  s += Math.random() * 5; // small jitter so equal-score users aren't always identical
+  return s;
+}
+
 function applyFilters(
   users: NeynarUser[],
   mode: BatchMode,
@@ -169,6 +223,22 @@ function applyFilters(
       !exclusions.fidSet.has(u.fid) &&
       !exclusions.usernameSet.has((u.username ?? "").toLowerCase())
     );
+  }
+  // ── Sort before slicing ──────────────────────────────────────────────────────
+  switch (filters.sortOrder) {
+    case "oldest":
+      list = list.reverse();
+      break;
+    case "random":
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      break;
+    case "smart":
+      list = list.slice().sort((a, b) => smartScore(b) - smartScore(a));
+      break;
+    // "newest" = API order (desc_chron) — no change needed
   }
   return list.slice(0, filters.limit);
 }
@@ -425,6 +495,35 @@ export function BatchFollowSheet({
                         className="w-20 px-2.5 py-1 rounded-lg text-[13px] border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50 text-right" />
                     </div>
                   </div>
+                </div>
+
+                {/* Order */}
+                <div>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                    <ArrowUpNarrowWide className="w-3 h-3" />
+                    Order
+                  </p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {SORT_OPTIONS.map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => updateFilter("sortOrder", opt.id)}
+                        title={opt.desc}
+                        className={cn(
+                          "flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-xl border text-center transition-all",
+                          filters.sortOrder === opt.id
+                            ? accentCls + " border-transparent shadow-sm"
+                            : "border-border bg-muted/10 text-muted-foreground hover:bg-muted/30 hover:text-foreground"
+                        )}
+                      >
+                        <span className="shrink-0">{opt.icon}</span>
+                        <span className="text-[11px] font-semibold leading-none">{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1.5 pl-0.5">
+                    {SORT_OPTIONS.find(o => o.id === filters.sortOrder)?.desc}
+                  </p>
                 </div>
 
                 {/* Exclusion list */}
