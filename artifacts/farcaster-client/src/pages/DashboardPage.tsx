@@ -19,8 +19,11 @@ import {
   FileText, MessageSquare, Settings, Wallet,
   Plus, X, Loader2, CheckCircle2, Clock, UserCircle,
   Sun, Moon, AlertCircle, PenSquare, Copy,
-  MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers, Camera,
+  MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers, Camera, Shield,
+  Info, AlertTriangle,
 } from "lucide-react";
+import { useAdminConfig } from "@/hooks/useAdminConfig";
+import { ADMIN_FID } from "@/lib/admin-config";
 import { createWalletClient, custom } from "viem";
 import { optimism } from "viem/chains";
 import { cn } from "@/lib/utils";
@@ -695,6 +698,11 @@ export function DashboardPage() {
   } = useWallet();
   const [, navigate] = useLocation();
   const [theme, setTheme] = useTheme();
+  const [adminCfg] = useAdminConfig();
+  const isAdmin = fid !== null && Number(fid) === ADMIN_FID;
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("fc_dismissed_ann") || "[]"); } catch { return []; }
+  });
 
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
 
@@ -901,6 +909,17 @@ export function DashboardPage() {
             <span className="text-[1.0625rem] text-foreground/85">FID Market</span>
           </button>
 
+          {/* Admin panel link — only for @m-- */}
+          {isAdmin && (
+            <button
+              onClick={() => navigate("/admin")}
+              className="sidebar-item"
+            >
+              <Shield className="w-[26px] h-[26px] shrink-0 text-primary/80" strokeWidth={2} />
+              <span className="text-[1.0625rem] text-primary/90 font-semibold">Admin</span>
+            </button>
+          )}
+
           {/* Theme toggle */}
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -1020,6 +1039,29 @@ export function DashboardPage() {
 
         {/* ── CONTENT ────────────────────────────────────────── */}
         <div className="flex-1 max-w-[600px] w-full mx-auto pb-24 md:pb-0">
+          {/* Announcements */}
+          {adminCfg.announcements.filter(a => a.enabled && !dismissedAnnouncements.includes(a.id)).map((ann) => {
+            const bgMap = { info: "bg-primary/8 border-primary/25 text-primary", warning: "bg-amber-500/8 border-amber-500/25 text-amber-500", success: "bg-emerald-500/8 border-emerald-500/25 text-emerald-500" };
+            const IconMap = { info: Info, warning: AlertTriangle, success: CheckCircle2 };
+            const AnnIcon = IconMap[ann.type];
+            return (
+              <div key={ann.id} className={cn("flex items-start gap-2.5 mx-4 mt-3 px-3 py-2.5 rounded-xl border text-sm", bgMap[ann.type])}>
+                <AnnIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                <p className="flex-1 leading-snug">{ann.text}
+                  {ann.url && <a href={ann.url} target="_blank" rel="noopener noreferrer" className="ml-2 underline underline-offset-2 opacity-80 hover:opacity-100">{ann.urlLabel || "→"}</a>}
+                </p>
+                {ann.dismissible && (
+                  <button onClick={() => {
+                    const next = [...dismissedAnnouncements, ann.id];
+                    setDismissedAnnouncements(next);
+                    try { localStorage.setItem("fc_dismissed_ann", JSON.stringify(next)); } catch {}
+                  }} className="p-0.5 rounded opacity-60 hover:opacity-100 transition-opacity shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
           {renderContent()}
         </div>
 

@@ -9,6 +9,7 @@ import { hubFollow } from "@/lib/hub-submit";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useAdminConfig } from "@/hooks/useAdminConfig";
 
 function FollowRow({
   user,
@@ -113,9 +114,12 @@ type Props = {
 
 export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }: Props) {
   const { fid: myFid, neynarKey, profile, localSigner, signerApproved } = useWallet();
+  const [adminCfg] = useAdminConfig();
   const [, navigate] = useLocation();
   const viewerFid = myFid ? Number(myFid) : 0;
-  const canBatch = profile?.username === "polycaster" && signerApproved && Boolean(localSigner) && Boolean(myFid);
+  const canBatch = signerApproved && Boolean(localSigner) && Boolean(myFid) &&
+    (adminCfg.privilegedUsers.some(u => u.toLowerCase() === profile?.username?.toLowerCase()) ||
+     adminCfg.privilegedUsers.some(u => u === String(myFid)));
   const [activeTab, setActiveTab] = useState<"followers" | "following">(type);
   const [users, setUsers] = useState<NeynarUser[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();

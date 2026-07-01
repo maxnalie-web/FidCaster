@@ -9,7 +9,9 @@ import { ProfilePage } from "@/pages/ProfilePage";
 import { ThreadPage } from "@/pages/ThreadPage";
 import FidMarketPage from "@/pages/FidMarketPage";
 import FidDetailPage from "@/pages/FidDetailPage";
+import { AdminPage } from "@/pages/AdminPage";
 import { useEffect, useState } from "react";
+import { applyAdminTheme, loadAdminConfig } from "@/lib/admin-config";
 
 export type Theme = "light" | "dark";
 
@@ -58,6 +60,7 @@ function Router() {
         <Route path="/cast/:hash" component={ThreadPage} />
         <Route path="/market" component={FidMarketPage} />
         <Route path="/market/:id" component={FidDetailPage} />
+        <Route path="/admin" component={AdminPage} />
         <Route>
           <div className="min-h-screen bg-background flex items-center justify-center">
             <div className="text-center text-muted-foreground space-y-3">
@@ -78,6 +81,7 @@ function App() {
 
   useEffect(() => {
     applyTheme(getTheme());
+    applyAdminTheme(loadAdminConfig());
   }, []);
 
   return (

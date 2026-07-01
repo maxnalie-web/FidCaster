@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
+import { useAdminConfig } from "@/hooks/useAdminConfig";
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
   hasPowerBadge, getFollowing, type NeynarUser, type NeynarCast,
@@ -260,12 +261,15 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const myFidNum = myFid ? Number(myFid) : 0;
   const isOwnProfile = targetFid === myFidNum;
   const isPro = useIsPro(targetFid);
+  const [adminCfg] = useAdminConfig();
 
   const [user, setUser] = useState<NeynarUser | null>(null);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
   const [batchUnfollowProgress, setBatchUnfollowProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
   const batchUnfollowCancelRef = useRef(false);
-  const canBatchOps = isOwnProfile && myProfile?.username === "polycaster" && signerApproved && Boolean(localSigner);
+  const canBatchOps = isOwnProfile && signerApproved && Boolean(localSigner) &&
+    (adminCfg.privilegedUsers.some(u => u.toLowerCase() === myProfile?.username?.toLowerCase()) ||
+     adminCfg.privilegedUsers.some(u => u === String(myFid)));
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
