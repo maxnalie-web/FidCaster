@@ -1,6 +1,7 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { Toaster } from "sonner";
 import { WalletProvider } from "@/hooks/WalletProvider";
+import { BatchOperationProvider } from "@/hooks/BatchOperationContext";
 import { useWallet } from "@/hooks/useWallet";
 import { LoginPage } from "@/pages/LoginPage";
 import { AuthPage } from "@/pages/AuthPage";
@@ -86,10 +87,11 @@ function App() {
 
   return (
     <WalletProvider>
-      <WouterRouter base={base}>
-        <Router />
-      </WouterRouter>
-      <Toaster
+      <BatchOperationProvider>
+        <WouterRouter base={base}>
+          <Router />
+        </WouterRouter>
+        <Toaster
         position="bottom-right"
         theme={theme === "dark" ? "dark" : "light"}
         toastOptions={{
@@ -107,7 +109,8 @@ function App() {
             boxShadow: "0 8px 32px rgba(90,70,200,0.10)",
           },
         }}
-      />
+        />
+      </BatchOperationProvider>
     </WalletProvider>
   );
 }

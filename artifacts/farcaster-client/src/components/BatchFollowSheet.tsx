@@ -1,16 +1,16 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Zap, UserPlus, UserMinus, ChevronRight,
-  Loader2, CheckCircle2, XCircle, Users, Shield,
+  Loader2, Users, Shield,
   TrendingUp, Heart, Clock, SlidersHorizontal, RefreshCw, Ban, ChevronDown,
   Shuffle, Sparkles, History, ArrowUpNarrowWide,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { hubFollow } from "@/lib/hub-submit";
 import { getFollowers, getFollowing, hasPowerBadge, type NeynarUser } from "@/lib/neynar";
 import type { LocalSigner } from "@/lib/wallet";
 import { toast } from "sonner";
+import { useBatchOperation } from "@/hooks/BatchOperationContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -254,11 +254,12 @@ function etaStr(count: number): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Phase = "setup" | "fetching" | "confirm" | "running" | "done";
+type Phase = "setup" | "fetching" | "confirm";
 
 export function BatchFollowSheet({
   mode, sourceFid, myFid, localSigner, neynarKey, onClose, zIndex = "z-[70]", fetchList,
 }: BatchFollowSheetProps) {
+  const batchOp = useBatchOperation();
   const presets = mode === "follow" ? FOLLOW_PRESETS : UNFOLLOW_PRESETS;
   const [activePreset, setActivePreset] = useState<Preset>(presets[0].id);
   const [filters, setFilters] = useState<BatchFilters>({
@@ -271,9 +272,7 @@ export function BatchFollowSheet({
   const [phase, setPhase] = useState<Phase>("setup");
   const [fetchedUsers, setFetchedUsers] = useState<NeynarUser[]>([]);
   const [rawMatchCount, setRawMatchCount] = useState(0); // total matches before limit slice
-  const [progress, setProgress] = useState({ done: 0, total: 0, errors: 0 });
   const [fetchPg, setFetchPg] = useState({ pages: 0, found: 0 });
-  const cancelRef = useRef(false);
 
   const exclusions = excludeRaw.trim() ? parseExclusions(excludeRaw) : undefined;
   const excludeCount = (exclusions?.fidSet.size ?? 0) + (exclusions?.usernameSet.size ?? 0);
@@ -298,7 +297,6 @@ export function BatchFollowSheet({
   const fetchUsers = useCallback(async () => {
     setPhase("fetching");
     setFetchPg({ pages: 0, found: 0 });
-    cancelRef.current = false;
     const collected: NeynarUser[] = [];
     let cursor: string | undefined;
     // Determine which list to scan and whose list it is
@@ -307,7 +305,6 @@ export function BatchFollowSheet({
     const fn = resolvedFetchList === "following" ? getFollowing : getFollowers;
     try {
       do {
-        if (cancelRef.current) break;
         const res = await fn(fetchFid, myFid, neynarKey, cursor);
         const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
         collected.push(...batch);
@@ -329,45 +326,27 @@ export function BatchFollowSheet({
     setPhase("confirm");
   }, [mode, fetchList, sourceFid, myFid, neynarKey, filters]);
 
-  async function startOperation() {
+  function startOperation() {
     if (fetchedUsers.length === 0) { toast.info("No users match your filters"); return; }
-    cancelRef.current = false;
-    setProgress({ done: 0, total: fetchedUsers.length, errors: 0 });
-    setPhase("running");
-    let done = 0, errors = 0;
-    for (let i = 0; i < fetchedUsers.length; i++) {
-      if (cancelRef.current) break;
-      try {
-        await hubFollow(myFid, localSigner, fetchedUsers[i].fid, { unfollow: mode === "unfollow", neynarKey });
-        done++;
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "";
-        if (msg.includes("429") || msg.toLowerCase().includes("rate")) {
-          await new Promise(r => setTimeout(r, 62_000));
-          if (!cancelRef.current) {
-            try { await hubFollow(myFid, localSigner, fetchedUsers[i].fid, { unfollow: mode === "unfollow", neynarKey }); done++; }
-            catch { errors++; }
-          }
-        } else { errors++; }
-      }
-      setProgress({ done, total: fetchedUsers.length, errors });
-      if (i < fetchedUsers.length - 1 && !cancelRef.current)
-        await new Promise(r => setTimeout(r, DELAY_MS));
-    }
-    setPhase("done");
+    const verb = mode === "follow" ? "Following" : "Unfollowing";
+    batchOp.startOp({
+      mode,
+      users: fetchedUsers,
+      myFid,
+      localSigner,
+      neynarKey,
+      label: `${verb} ${fetchedUsers.length} users`,
+    });
+    onClose(); // sheet closes — operation continues in background pill
   }
 
   function reset() {
     setPhase("setup");
     setFetchedUsers([]);
     setRawMatchCount(0);
-    setProgress({ done: 0, total: 0, errors: 0 });
-    cancelRef.current = false;
     setExcludeOpen(false);
   }
 
-  const pct = progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
-  const remaining = Math.max(0, progress.total - progress.done - progress.errors);
   const accent = mode === "follow" ? "primary" : "rose-500";
   const accentCls = mode === "follow"
     ? "bg-primary text-white hover:bg-primary/90"
@@ -381,7 +360,7 @@ export function BatchFollowSheet({
     <div className={cn("fixed inset-0", zIndex)}>
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={phase === "running" ? undefined : onClose}
+        onClick={onClose}
       />
       <AnimatePresence mode="wait">
         <motion.div
@@ -604,7 +583,7 @@ export function BatchFollowSheet({
                   {fetchPg.found} users found · page {fetchPg.pages}
                 </p>
               </div>
-              <button onClick={() => { cancelRef.current = true; setPhase("setup"); }} className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
+              <button onClick={() => setPhase("setup")} className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
                 Cancel
               </button>
             </div>
@@ -719,84 +698,6 @@ export function BatchFollowSheet({
             </div>
           )}
 
-          {/* ── RUNNING ───────────────────────────────────────────── */}
-          {phase === "running" && (
-            <div className="px-5 py-6 min-h-[320px] flex flex-col">
-              <div className="flex items-center gap-3 mb-6">
-                <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", accentIcon)}>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-[15px] text-foreground">
-                    {cancelRef.current ? "Stopping…" : mode === "follow" ? "Following…" : "Unfollowing…"}
-                  </h2>
-                  <p className="text-[12px] text-muted-foreground">
-                    {etaStr(remaining)} remaining · 2s/action
-                  </p>
-                </div>
-              </div>
-
-              {/* Progress bar */}
-              <div className="mb-4">
-                <div className="flex justify-between text-[12px] text-muted-foreground mb-1.5">
-                  <span>{progress.done} {mode === "follow" ? "followed" : "unfollowed"}</span>
-                  <span className="font-mono font-bold text-foreground">{Math.round(pct)}%</span>
-                  <span>{progress.total} total</span>
-                </div>
-                <div className="h-3 rounded-full bg-muted overflow-hidden">
-                  <motion.div
-                    className={cn("h-full rounded-full", mode === "follow" ? "bg-primary" : "bg-rose-500")}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.5 }}
-                  />
-                </div>
-              </div>
-
-              {/* Stat cards */}
-              <div className="grid grid-cols-3 gap-2 mb-6">
-                <StatCard label={mode === "follow" ? "Followed" : "Unfollowed"} value={progress.done} color="text-emerald-500" />
-                <StatCard label="Errors" value={progress.errors} color="text-rose-400" />
-                <StatCard label="Left" value={remaining} color="text-muted-foreground" />
-              </div>
-
-              <div className="mt-auto">
-                <button
-                  onClick={() => { cancelRef.current = true; }}
-                  disabled={cancelRef.current}
-                  className="w-full py-3 rounded-2xl border border-border text-muted-foreground hover:text-rose-500 hover:border-rose-500/30 font-semibold text-sm transition-all disabled:opacity-40"
-                >
-                  Stop
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── DONE ──────────────────────────────────────────────── */}
-          {phase === "done" && (
-            <div className="px-5 py-10 flex flex-col items-center gap-4 min-h-[280px] justify-center">
-              {progress.done > 0
-                ? <CheckCircle2 className={cn("w-12 h-12", mode === "follow" ? "text-primary" : "text-rose-500")} />
-                : <XCircle className="w-12 h-12 text-rose-400" />
-              }
-              <div className="text-center">
-                <p className="font-bold text-lg text-foreground">
-                  {cancelRef.current ? `Stopped` : `Done!`}
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  <span className="text-foreground font-bold">{progress.done}</span> {mode === "follow" ? "followed" : "unfollowed"}
-                  {progress.errors > 0 && <> · <span className="text-rose-400">{progress.errors} failed</span></>}
-                </p>
-              </div>
-              <div className="flex gap-3 w-full mt-3">
-                <button onClick={reset} className="flex-1 py-3 rounded-2xl border border-border text-muted-foreground hover:text-foreground font-semibold text-sm transition-all">
-                  Run again
-                </button>
-                <button onClick={onClose} className="flex-[2] py-3 rounded-2xl bg-muted text-foreground font-bold text-sm hover:bg-muted/70 transition-all">
-                  Close
-                </button>
-              </div>
-            </div>
-          )}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -836,11 +737,3 @@ function Chip({ label }: { label: string }) {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className="flex flex-col items-center py-2.5 px-2 rounded-xl bg-muted/30 border border-border">
-      <span className={cn("text-xl font-black leading-none", color)}>{value}</span>
-      <span className="text-[10px] text-muted-foreground font-medium mt-1">{label}</span>
-    </div>
-  );
-}
