@@ -426,25 +426,28 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
 
     const imgurClientId = process.env.IMGUR_CLIENT_ID || process.env.VITE_IMGUR_CLIENT_ID;
     if (imgurClientId) {
-      const params = new URLSearchParams({ image: base64, type: "base64" });
-      const upstream = await fetch("https://api.imgur.com/3/image", {
-        method: "POST",
-        headers: {
-          Authorization: `Client-ID ${imgurClientId}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params.toString(),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!upstream.ok) {
-        const txt = await upstream.text().catch(() => "");
-        res.status(502).json({ error: `Imgur error: ${txt.slice(0, 200)}` });
-        return;
+      try {
+        const imgurParams = new URLSearchParams({ image: base64, type: "base64" });
+        const upstream = await fetch("https://api.imgur.com/3/image", {
+          method: "POST",
+          headers: {
+            Authorization: `Client-ID ${imgurClientId}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: imgurParams.toString(),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (upstream.ok) {
+          const data = await upstream.json() as { success: boolean; data: { link: string } };
+          if (data.success) {
+            res.json({ url: data.data.link });
+            return;
+          }
+        }
+        console.warn("[upload] Imgur failed, falling back to freeimage.host");
+      } catch {
+        console.warn("[upload] Imgur error, falling back to freeimage.host");
       }
-      const data = await upstream.json() as { success: boolean; data: { link: string } };
-      if (!data.success) { res.status(502).json({ error: "Imgur upload failed" }); return; }
-      res.json({ url: data.data.link });
-      return;
     }
 
     // Fallback: freeimage.host — free, permanent, no account required
