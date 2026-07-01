@@ -6,10 +6,11 @@ import {
   ArrowRight, TrendingUp, Zap, Shield, Globe, MessageCircle,
   Heart, Repeat2, Tag, Activity, Star, ChevronRight,
   BarChart2, Wallet, Users, Layers, Search, Bell,
-  CheckCircle2, ExternalLink,
+  CheckCircle2, ExternalLink, Twitter, Send, Github, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLandingStats, formatVolume, formatCount, formatUserCount, type MarketListing, type MarketActivity } from "@/hooks/useLandingStats";
+import { useAdminConfig } from "@/hooks/useAdminConfig";
 
 /* ─── Mock data ─── */
 const MOCK_FEED = [
@@ -42,43 +43,14 @@ const MOCK_FEED = [
 
 
 
-const CLIENT_FEATURES = [
-  {
-    icon: <MessageCircle className="w-5 h-5" />,
-    title: "Cast & Compose",
-    desc: "Write casts, reply to threads, embed images · signed directly via Farcaster Hub with your keys.",
-    color: "#7c3aed",
-  },
-  {
-    icon: <Users className="w-5 h-5" />,
-    title: "Follow & Discover",
-    desc: "Build your social graph. Follow anyone on Farcaster, see their casts in your personalized feed.",
-    color: "#6366f1",
-  },
-  {
-    icon: <Globe className="w-5 h-5" />,
-    title: "Open Protocol",
-    desc: "Built on Farcaster · a public social protocol. Your social graph belongs to you, not a platform.",
-    color: "#0ea5e9",
-  },
-  {
-    icon: <Tag className="w-5 h-5" />,
-    title: "FID Marketplace",
-    desc: "List, buy, and trade Farcaster IDs peer-to-peer on Optimism. The only client with an integrated market.",
-    color: "#c026d3",
-  },
-  {
-    icon: <Shield className="w-5 h-5" />,
-    title: "Your Data, Your Rules",
-    desc: "No registration, no email, no central server. Your account is yours · sign in from any browser, anytime.",
-    color: "#10b981",
-  },
-  {
-    icon: <BarChart2 className="w-5 h-5" />,
-    title: "On-Chain Actions",
-    desc: "Register signers, transfer recovery, username ops · all on Optimism, straight from the client.",
-    color: "#f59e0b",
-  },
+// Icons are fixed in order; titles/descs/colors come from admin config
+const FEATURE_ICONS = [
+  <MessageCircle className="w-5 h-5" />,
+  <Users className="w-5 h-5" />,
+  <Globe className="w-5 h-5" />,
+  <Tag className="w-5 h-5" />,
+  <Shield className="w-5 h-5" />,
+  <BarChart2 className="w-5 h-5" />,
 ];
 
 /* ─── Particle system ─── */
@@ -450,7 +422,7 @@ function ListingCard({ listing, index }: { listing: MarketListing; index: number
 }
 
 /* ─── Feature card ─── */
-function FeatureCard({ feat, index }: { feat: typeof CLIENT_FEATURES[0]; index: number }) {
+function FeatureCard({ feat, index }: { feat: { icon: React.ReactNode; title: string; desc: string; color: string }; index: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
   return (
@@ -462,7 +434,7 @@ function FeatureCard({ feat, index }: { feat: typeof CLIENT_FEATURES[0]; index: 
       className="group p-5 rounded-2xl transition-all duration-300 cursor-default"
       style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)" }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = `rgba(${feat.color.slice(1).match(/.{2}/g)?.map(h => parseInt(h, 16)).join(",") ?? "124,58,237"},0.07)`;
+        e.currentTarget.style.background = `rgba(${feat.color.slice(1).match(/.{2}/g)?.map((h: string) => parseInt(h, 16)).join(",") ?? "124,58,237"},0.07)`;
         e.currentTarget.style.transform = "translateY(-2px)";
       }}
       onMouseLeave={(e) => {
@@ -511,7 +483,16 @@ function SectionHeading({ tag, title, sub }: { tag: string; title: React.ReactNo
 ════════════════════════════════════════ */
 export function LoginPage() {
   const [, navigate] = useLocation();
+  const [cfg] = useAdminConfig();
   const { market, network, listings, activity } = useLandingStats(90_000);
+
+  // Merge config features with fixed icons
+  const clientFeatures = cfg.landingFeatures.map((f, i) => ({
+    icon: FEATURE_ICONS[i] ?? FEATURE_ICONS[0],
+    title: f.title,
+    desc: f.desc,
+    color: f.color,
+  }));
   const displayListings = listings.filter(l => l.buyable).slice(0, 6);
 
   /* ── Derived live values (fall back to placeholder "·" until loaded) ── */
@@ -812,7 +793,7 @@ export function LoginPage() {
             sub="FidCaster is a full-featured Farcaster client · cast, reply, follow, browse channels, manage your identity, and trade your FID. All in one place."
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {CLIENT_FEATURES.map((feat, i) => (
+            {clientFeatures.map((feat, i) => (
               <FeatureCard key={feat.title} feat={feat} index={i} />
             ))}
           </div>
@@ -925,14 +906,44 @@ export function LoginPage() {
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <FidCasterLogo size={22} showName={false} />
-            <span className="text-white/50 text-sm font-semibold">FidCaster</span>
-            <span className="text-white/20 text-xs">— Farcaster Client</span>
+            <span className="text-white/50 text-sm font-semibold">{cfg.branding.logoText || "FidCaster"}</span>
+            {cfg.landingFooter.brandTagline && (
+              <span className="text-white/20 text-xs">— {cfg.landingFooter.brandTagline}</span>
+            )}
           </div>
           <div className="flex items-center gap-6 text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
-            <a href="/market" className="hover:text-white/50 transition-colors">FID Market</a>
-            <a href="/login" className="hover:text-white/50 transition-colors">Sign In</a>
-            <span>Built on Farcaster · Powered by Optimism</span>
+            {cfg.landingFooter.links.map((lnk, i) => (
+              <a key={i} href={lnk.url} className="hover:text-white/50 transition-colors">{lnk.label}</a>
+            ))}
+            {cfg.landingFooter.copyright && (
+              <span>{cfg.landingFooter.copyright}</span>
+            )}
           </div>
+          {/* Social icons */}
+          {(cfg.social.twitter || cfg.social.telegram || cfg.social.github || cfg.social.discord) && (
+            <div className="flex items-center gap-3" style={{ color: "rgba(255,255,255,0.25)" }}>
+              {cfg.social.twitter && (
+                <a href={cfg.social.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
+                  <Twitter className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {cfg.social.telegram && (
+                <a href={cfg.social.telegram} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
+                  <Send className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {cfg.social.github && (
+                <a href={cfg.social.github} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
+                  <Github className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {cfg.social.discord && (
+                <a href={cfg.social.discord} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </footer>
     </div>

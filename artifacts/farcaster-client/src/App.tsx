@@ -12,7 +12,7 @@ import FidMarketPage from "@/pages/FidMarketPage";
 import FidDetailPage from "@/pages/FidDetailPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { useEffect, useState } from "react";
-import { applyAdminTheme, loadAdminConfig } from "@/lib/admin-config";
+import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-config";
 
 export type Theme = "light" | "dark";
 
@@ -82,7 +82,9 @@ function App() {
 
   useEffect(() => {
     applyTheme(getTheme());
-    applyAdminTheme(loadAdminConfig());
+    const cfg = loadAdminConfig();
+    applyAdminTheme(cfg);
+    applyAdminSeo(cfg);
   }, []);
 
   return (

@@ -19,33 +19,93 @@ export interface Announcement {
 }
 
 export interface FeaturedChannel {
-  id: string; // e.g. "farcaster"
+  id: string;
   label?: string;
 }
 
+export interface LandingFeature {
+  title: string;
+  desc: string;
+  color: string;
+}
+
+export interface FooterLink {
+  label: string;
+  url: string;
+}
+
 export interface AdminConfig {
-  // ── Copy / text
+  // ── Copy / landing hero
   copy: {
     heroTitle: string;
     heroSubtitle: string;
     heroDescription: string;
     heroCta: string;
     heroSecondaryCta: string;
-    heroTags: string[];   // e.g. ["No registration", "No email", ...]
+    heroTags: string[];
     navBrand: string;
     appBadge: string;
   };
 
+  // ── SEO
+  seo: {
+    pageTitle: string;
+    metaDescription: string;
+    ogImage: string;
+    ogUrl: string;
+  };
+
+  // ── Social links
+  social: {
+    twitter: string;
+    telegram: string;
+    github: string;
+    discord: string;
+    website: string;
+  };
+
+  // ── Branding
+  branding: {
+    logoText: string;
+    faviconEmoji: string;
+  };
+
+  // ── App UI texts
+  appTexts: {
+    sidebarHome: string;
+    sidebarMarket: string;
+    sidebarSearch: string;
+    sidebarNotifications: string;
+    sidebarProfile: string;
+    feedTabFollowing: string;
+    feedTabForYou: string;
+    feedTabChannels: string;
+    emptyFeedMessage: string;
+    errorGeneric: string;
+    loginWelcomeTitle: string;
+    loginWelcomeSub: string;
+  };
+
+  // ── Landing features section (icon order fixed, text editable)
+  landingFeatures: LandingFeature[];
+
+  // ── Landing footer
+  landingFooter: {
+    brandTagline: string;
+    copyright: string;
+    links: FooterLink[];
+  };
+
   // ── Theme
   theme: {
-    primaryHsl: string;          // e.g. "263 70% 50%"
-    primaryDarkHsl: string;      // e.g. "263 78% 62%"
+    primaryHsl: string;
+    primaryDarkHsl: string;
     primaryForegroundHsl: string;
-    backgroundHsl: string;       // light mode background
-    darkBackgroundHsl: string;   // dark mode background
-    backgroundImage: string;     // CSS background-image or ""
-    borderRadius: string;        // e.g. "0.75rem"
-    fontFamily: string;          // e.g. "" for default or a Google Fonts import name
+    backgroundHsl: string;
+    darkBackgroundHsl: string;
+    backgroundImage: string;
+    borderRadius: string;
+    fontFamily: string;
   };
 
   // ── Feature flags
@@ -57,33 +117,33 @@ export interface AdminConfig {
     proChannelEnabled: boolean;
     castComposerEnabled: boolean;
     darkModeToggleEnabled: boolean;
-    landingPageEnabled: boolean;  // if false, / redirects to /login immediately
+    landingPageEnabled: boolean;
   };
 
-  // ── Privileged users (batch follow + special features)
-  privilegedUsers: string[];     // list of usernames, e.g. ["polycaster", "m--"]
+  // ── Privileged users
+  privilegedUsers: string[];
 
   // ── API / endpoints
   api: {
-    neynarApiKey: string;        // overrides env key if non-empty
-    hubUrl: string;              // override hub URL
-    rpcUrl: string;              // override Optimism RPC
+    neynarApiKey: string;
+    hubUrl: string;
+    rpcUrl: string;
     imgurClientId: string;
   };
 
-  // ── Announcements (sitewide banners)
+  // ── Announcements
   announcements: Announcement[];
 
   // ── Featured channels
   featuredChannels: FeaturedChannel[];
 
-  // ── Rate limiting (passed to server via a special header — future use)
+  // ── Rate limiting
   rateLimits: {
-    actionPerMin: number;        // default 200
-    globalPerMin: number;        // default 120
+    actionPerMin: number;
+    globalPerMin: number;
   };
 
-  // ── Custom CSS (injected into <style>)
+  // ── Custom CSS
   customCss: string;
 
   // ── Misc
@@ -92,8 +152,8 @@ export interface AdminConfig {
     maintenanceMode: boolean;
     maintenanceMessage: string;
     defaultTab: "feed" | "market" | "notifications";
-    batchFollowDelay: number;    // ms between batch follows, default 2000
-    sessionInactivityMs: number; // default 1800000 (30 min)
+    batchFollowDelay: number;
+    sessionInactivityMs: number;
   };
 }
 
@@ -109,6 +169,53 @@ export const DEFAULT_CONFIG: AdminConfig = {
     heroTags: ["No registration", "No email", "Open source", "On Optimism"],
     navBrand: "FidCaster",
     appBadge: "Farcaster Client · Live on Optimism",
+  },
+  seo: {
+    pageTitle: "FidCaster",
+    metaDescription: "FidCaster — a luxury Farcaster client. Your keys, your identity.",
+    ogImage: "",
+    ogUrl: "",
+  },
+  social: {
+    twitter: "",
+    telegram: "",
+    github: "",
+    discord: "",
+    website: "",
+  },
+  branding: {
+    logoText: "FidCaster",
+    faviconEmoji: "",
+  },
+  appTexts: {
+    sidebarHome: "Home",
+    sidebarMarket: "FID Market",
+    sidebarSearch: "Search",
+    sidebarNotifications: "Notifications",
+    sidebarProfile: "Profile",
+    feedTabFollowing: "Following",
+    feedTabForYou: "For You",
+    feedTabChannels: "Channels",
+    emptyFeedMessage: "Nothing here yet. Follow more people to see their casts.",
+    errorGeneric: "Something went wrong. Please try again.",
+    loginWelcomeTitle: "Welcome back",
+    loginWelcomeSub: "Sign in to your Farcaster account to continue.",
+  },
+  landingFeatures: [
+    { title: "Cast & Compose", desc: "Write casts, reply to threads, embed images · signed directly via Farcaster Hub with your keys.", color: "#7c3aed" },
+    { title: "Follow & Discover", desc: "Build your social graph. Follow anyone on Farcaster, see their casts in your personalized feed.", color: "#6366f1" },
+    { title: "Open Protocol", desc: "Built on Farcaster · a public social protocol. Your social graph belongs to you, not a platform.", color: "#0ea5e9" },
+    { title: "FID Marketplace", desc: "List, buy, and trade Farcaster IDs peer-to-peer on Optimism. The only client with an integrated market.", color: "#c026d3" },
+    { title: "Your Data, Your Rules", desc: "No registration, no email, no central server. Your account is yours · sign in from any browser, anytime.", color: "#10b981" },
+    { title: "On-Chain Actions", desc: "Register signers, transfer recovery, username ops · all on Optimism, straight from the client.", color: "#f59e0b" },
+  ],
+  landingFooter: {
+    brandTagline: "Farcaster Client",
+    copyright: "Built on Farcaster · Powered by Optimism",
+    links: [
+      { label: "FID Market", url: "/market" },
+      { label: "Sign In", url: "/login" },
+    ],
   },
   theme: {
     primaryHsl: "263 70% 50%",
@@ -175,7 +282,6 @@ export function loadAdminConfig(): AdminConfig {
     if (!raw) return structuredClone(DEFAULT_CONFIG);
     const parsed: StoredConfig = JSON.parse(raw);
     if (parsed.version !== STORAGE_VERSION) return structuredClone(DEFAULT_CONFIG);
-    // Deep merge with defaults so new keys from code updates are always present
     return deepMerge(structuredClone(DEFAULT_CONFIG), parsed.data);
   } catch {
     return structuredClone(DEFAULT_CONFIG);
@@ -186,7 +292,6 @@ export function saveAdminConfig(cfg: AdminConfig): void {
   try {
     const stored: StoredConfig = { version: STORAGE_VERSION, data: cfg };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-    // Dispatch event so all hook instances react immediately
     window.dispatchEvent(new CustomEvent("fc_admin_cfg_change", { detail: cfg }));
   } catch {}
 }
@@ -225,18 +330,38 @@ export function applyAdminTheme(cfg: AdminConfig): void {
 
   if (t.primaryHsl) root.style.setProperty("--primary", t.primaryHsl);
   if (t.primaryDarkHsl) {
-    // Apply to dark mode by checking current class
     const isDark = root.classList.contains("dark");
     root.style.setProperty("--primary", isDark ? t.primaryDarkHsl : t.primaryHsl);
   }
   if (t.primaryForegroundHsl) root.style.setProperty("--primary-foreground", t.primaryForegroundHsl);
   if (t.borderRadius) root.style.setProperty("--radius", t.borderRadius);
 
-  // Custom CSS
   if (!_injectedStyleEl) {
     _injectedStyleEl = document.createElement("style");
     _injectedStyleEl.id = "fc-admin-custom-css";
     document.head.appendChild(_injectedStyleEl);
   }
   _injectedStyleEl.textContent = cfg.customCss || "";
+}
+
+export function applyAdminSeo(cfg: AdminConfig): void {
+  try {
+    if (cfg.seo.pageTitle) document.title = cfg.seo.pageTitle;
+    const setMeta = (sel: string, val: string) => {
+      if (!val) return;
+      const el = document.querySelector(sel);
+      if (el) el.setAttribute("content", val);
+    };
+    setMeta('meta[name="description"]', cfg.seo.metaDescription);
+    setMeta('meta[property="og:title"]', cfg.seo.pageTitle);
+    setMeta('meta[property="og:description"]', cfg.seo.metaDescription);
+    if (cfg.seo.ogImage) setMeta('meta[property="og:image"]', cfg.seo.ogImage);
+    if (cfg.seo.ogUrl) setMeta('meta[property="og:url"]', cfg.seo.ogUrl);
+    if (cfg.branding.faviconEmoji) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${cfg.branding.faviconEmoji}</text></svg>`;
+      const url = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+      const link = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
+      if (link) link.href = url;
+    }
+  } catch {}
 }
