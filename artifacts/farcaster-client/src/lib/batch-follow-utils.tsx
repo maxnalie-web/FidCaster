@@ -61,10 +61,10 @@ export const SORT_OPTIONS: SortOptionDef[] = [
 ];
 
 export const FOLLOW_PRESETS: PresetDef[] = [
-  { id: "balanced",   label: "Balanced", desc: "Only people who already follow you", icon: <Heart           className="w-4 h-4" />, color: "text-primary border-primary/30 bg-primary/8",             filters: { limit: 50, onlyMutuals: true } },
-  { id: "quality",    label: "Quality",  desc: "Power Badge holders only",           icon: <Shield          className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",       filters: { limit: 50, onlyPowerBadge: true } },
-  { id: "aggressive", label: "Growth",   desc: "Max follows, no filters",            icon: <TrendingUp      className="w-4 h-4" />, color: "text-emerald-500 border-emerald-500/30 bg-emerald-500/8", filters: { limit: 200 } },
-  { id: "custom",     label: "Custom",   desc: "Set your own filters",              icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",        filters: {} },
+  { id: "balanced",   label: "Mutuals",    desc: "People who already follow you — best bet",   icon: <Heart           className="w-4 h-4" />, color: "text-primary border-primary/30 bg-primary/8",             filters: { limit: 100, onlyMutuals: true, sortOrder: "smart" } },
+  { id: "quality",    label: "Quality",    desc: "Established accounts, 500+ followers",       icon: <Shield          className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",       filters: { limit: 100, minFollowers: 500, sortOrder: "smart" } },
+  { id: "aggressive", label: "Growth",     desc: "Smart-ranked, active accounts, wide net",    icon: <TrendingUp      className="w-4 h-4" />, color: "text-emerald-500 border-emerald-500/30 bg-emerald-500/8", filters: { limit: 500, sortOrder: "smart", minFollowers: 30, maxFollowers: 50000 } },
+  { id: "custom",     label: "Custom",     desc: "Set your own filters",                       icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",        filters: {} },
 ];
 
 export const UNFOLLOW_PRESETS: PresetDef[] = [
@@ -74,7 +74,7 @@ export const UNFOLLOW_PRESETS: PresetDef[] = [
   { id: "custom",     label: "Custom",      desc: "Set your own filters",          icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",      filters: {} },
 ];
 
-export const LIMIT_PRESETS = [100, 250, 500, 1000, 2000];
+export const LIMIT_PRESETS = [100, 250, 500, 1000, 2000, 5000];
 
 export const MAX_SCAN = 10_000;
 
@@ -93,13 +93,45 @@ export function parseExclusions(raw: string): { fidSet: Set<number>; usernameSet
 
 export function smartScore(u: NeynarUser): number {
   let s = 0;
-  if (hasPowerBadge(u)) s += 40;
-  if (u.viewer_context?.followed_by === true) s += 30;
+
+  // Strongest signal: already follows me → near-guaranteed reciprocal
+  if (u.viewer_context?.followed_by === true) s += 50;
+
+  // Power Badge = Warpcast-verified quality account
+  if (hasPowerBadge(u)) s += 28;
+
   const fc = u.follower_count ?? 0;
-  if (fc >= 200 && fc <= 20_000) s += 20;
-  else if (fc >= 50 && fc < 200) s += 10;
-  else if (fc > 20_000 && fc <= 100_000) s += 5;
-  s += Math.random() * 5;
+  const fing = u.following_count ?? 0;
+
+  // Follower count sweet spot: active but not mega-influencer
+  if (fc >= 500 && fc <= 10_000) s += 18;
+  else if (fc >= 100 && fc < 500) s += 14;
+  else if (fc > 10_000 && fc <= 50_000) s += 9;
+  else if (fc >= 30 && fc < 100) s += 6;
+  else if (fc > 50_000) s += 1; // mega-accounts rarely follow back
+
+  // Following/follower ratio: balanced = engaged account; very high = follow-backer
+  if (fc > 0 && fing > 0) {
+    const ratio = fing / fc;
+    if (ratio >= 0.3 && ratio <= 2) s += 14;   // balanced, quality
+    else if (ratio > 2 && ratio <= 5) s += 7;
+    else if (ratio > 5 && ratio <= 12) s += 3;
+    // ratio > 12 = aggressive follow-backer, no bonus
+  }
+
+  // Profile completeness signals
+  if (u.pfp_url) s += 3;
+  const bio = (u as NeynarUser & { profile?: { bio?: { text?: string } } }).profile?.bio?.text ?? "";
+  if (bio.trim().length > 5) s += 5;
+
+  // On-chain verified (real person)
+  const eth = (u as NeynarUser & { verified_addresses?: { eth_addresses?: string[] } })
+    .verified_addresses?.eth_addresses;
+  if (Array.isArray(eth) && eth.length > 0) s += 8;
+
+  // Tiny noise to break ties
+  s += Math.random() * 2;
+
   return s;
 }
 

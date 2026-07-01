@@ -197,15 +197,9 @@ export function FollowPage() {
     initRef.current = true;
     const { mode: initMode, preloadFid } = readUrlParams();
     setMode(initMode);
+    if (initMode === "cleanup") setListType("following");
 
-    if (initMode === "cleanup") {
-      setListType("following");
-      // Load own profile
-      getUserByFid(myFid, myFid, neynarKey ?? "").then(res => {
-        const u = res.users?.[0] ?? null;
-        setOwnProfile(u);
-      }).catch(() => { /* ignore */ });
-    } else if (preloadFid) {
+    if (preloadFid) {
       // Pre-load the target profile
       setPhase("searching");
       getUserByFid(preloadFid, myFid, neynarKey ?? "").then(res => {
@@ -219,6 +213,18 @@ export function FollowPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myFid]);
+
+  // ── Load own profile whenever cleanup mode is active ──────────────────────
+  // Separate from init so it also fires when user clicks "Clean Up" tab
+
+  useEffect(() => {
+    if (mode !== "cleanup" || !myFid) return;
+    getUserByFid(myFid, myFid, neynarKey ?? "").then(res => {
+      const u = res.users?.[0] ?? null;
+      if (u) setOwnProfile(u);
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, myFid, neynarKey]);
 
   // ── Search suggestions (follow mode) ─────────────────────────────────────
 
