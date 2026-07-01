@@ -1039,6 +1039,16 @@ export function DashboardPage() {
 
         {/* ── CONTENT ────────────────────────────────────────── */}
         <div className="flex-1 max-w-[600px] w-full mx-auto pb-24 md:pb-0">
+          {/* Locked-session banner — shown when feed is visible but posting is disabled */}
+          {isLocked && fid && authMethod === "mnemonic" && (
+            <button
+              onClick={() => navigate("/login")}
+              className="w-full flex items-center justify-center gap-2 py-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/8 border-b border-amber-500/20 hover:bg-amber-500/12 transition-colors"
+            >
+              <KeyRound className="w-3.5 h-3.5 shrink-0" />
+              <span>Posting locked — tap to re-enter password</span>
+            </button>
+          )}
           {/* Announcements */}
           {adminCfg.announcements.filter(a => a.enabled && !dismissedAnnouncements.includes(a.id)).map((ann) => {
             const bgMap = { info: "bg-primary/8 border-primary/25 text-primary", warning: "bg-amber-500/8 border-amber-500/25 text-amber-500", success: "bg-emerald-500/8 border-emerald-500/25 text-emerald-500" };
