@@ -37,7 +37,17 @@ export function useUnreadNotifications(fid: number, neynarKey: string) {
         if (t > seenRef.current) count++;
       }
       latestTsRef.current = latest;
-      setUnread(count);
+
+      // First-ever load on this device (no stored cursor) — auto-catch-up so
+      // notifications already seen on another device don't light up the badge.
+      // Only NEW notifications that arrive after this first load will count.
+      if (seenRef.current === 0 && latest > 0) {
+        seenRef.current = latest;
+        try { localStorage.setItem(SEEN_KEY(fid), String(latest)); } catch { /* ignore */ }
+        setUnread(0);
+      } else {
+        setUnread(count);
+      }
     } catch { /* keep last known count */ }
   }, [fid, neynarKey]);
 

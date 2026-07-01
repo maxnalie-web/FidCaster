@@ -108,6 +108,7 @@ export default function FidMarketPage() {
   const [activity,       setActivity]       = useState<ActivityItem[]>(_cachedActivity);
   const [fidInfoMap,     setFidInfoMap]     = useState<Record<number, FidInfo>>(_cachedFidInfoMap);
   const [loading,        setLoading]        = useState(_cachedListings.length === 0);
+  const [serverError,    setServerError]    = useState<string | null>(null);
   const [tab,            setTab]            = useState<"listings" | "activity">("listings");
   const [search,         setSearch]         = useState("");
   const [sortBy,         setSortBy]         = useState<SortKey>("price-asc");
@@ -160,14 +161,22 @@ export default function FidMarketPage() {
 
   const load = useCallback(async () => {
     if (_cachedListings.length === 0) setLoading(true);
+    setServerError(null);
     try {
       const [listRes, tradeRes, activityRes] = await Promise.all([
         fetch("/api/fid-market/cached-listings"),
         fetch("/api/fid-market/cached-trades"),
         fetch("/api/fid-market/activity"),
       ]);
+      // Guard: if server returns HTML (static deployment / server not running),
+      // parse would throw a cryptic error — surface a clear message instead.
+      const listCt = listRes.headers.get("content-type") ?? "";
+      if (!listRes.ok || !listCt.includes("application/json")) {
+        setServerError("Market server is not reachable. Please try again later.");
+        return;
+      }
       const listData     = await listRes.json();
-      const tradeData    = await tradeRes.json();
+      const tradeData    = tradeRes.ok ? await tradeRes.json() : { trades: [], totalTradedEth: "0" };
       const activityData = activityRes.ok ? await activityRes.json() : { activity: [] };
       _cachedListings = listData.listings || [];
       _cachedTrades = tradeData.trades || [];
@@ -615,7 +624,15 @@ export default function FidMarketPage() {
         {/* ── Listings ── */}
         {tab === "listings" && (
           <>
-            {loading ? (
+            {serverError ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
+                  <Tag className="w-5 h-5 text-destructive/60" />
+                </div>
+                <p className="text-sm text-muted-foreground text-center max-w-xs">{serverError}</p>
+                <button onClick={() => load()} className="text-xs text-primary underline underline-offset-2">Retry</button>
+              </div>
+            ) : loading ? (
               <div className="space-y-2">
                 {[...Array(4)].map((_, i) => (
                   <div key={i} className="h-[72px] rounded-2xl bg-muted/30 animate-pulse border border-border/30" />

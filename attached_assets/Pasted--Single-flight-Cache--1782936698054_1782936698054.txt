@@ -1,0 +1,97 @@
+بله، اگر هنوز Single-flight پیاده نشده باشد، این یک ریسک واقعی است. Cache به‌تنهایی کافی نیست؛ چون اگر Cache خالی باشد و ۱۰۰۰ درخواست هم‌زمان برسند، ممکن است هر ۱۰۰۰ درخواست قبل از پر شدن Cache، همگی به Neynar بروند (Cache Stampede).
+
+می‌توانی این پرامپت را به Replit بدهی:
+
+⸻
+
+Implement production-grade single-flight request deduplication to eliminate cache stampedes.
+
+Current architecture already has a shared server cache. However, concurrent cache misses for the same resource can still trigger multiple identical upstream Neynar requests before the cache is populated.
+
+Implement request coalescing (single-flight) for all GET endpoints.
+
+Requirements
+
+* Maintain an in-memory map:
+
+Map<string, Promise<any>>
+
+where the key uniquely identifies the upstream request, including:
+
+* endpoint
+* pathname
+* sorted query parameters
+* authenticated FID (if response is user-specific)
+
+Example key:
+
+GET:/v2/farcaster/feed?cursor=abc&limit=25:user:12345
+
+Algorithm
+
+1. Check cache.
+   If found → return immediately.
+2. Cache miss.
+3. Check inflight map.
+   If promise exists:
+       await existing promise
+       return its result
+4. Otherwise:
+   create upstream request promise
+   store promise in inflight map
+   await upstream
+   populate cache
+   delete inflight entry in finally{}
+   return result
+
+Use try/finally so the inflight entry is always removed, even if Neynar returns an error or times out.
+
+Error handling
+
+* Never cache failed responses.
+* Never leave stale promises inside the inflight map.
+* Waiting callers should receive the same success or failure as the original request.
+
+TTL
+
+Keep the existing cache TTLs unchanged.
+
+Metrics
+
+Add lightweight logging:
+
+cache hit
+cache miss
+single-flight join
+upstream fetch
+
+so we can verify behavior under load.
+
+Scope
+
+Apply this to every cacheable Neynar GET endpoint, including:
+
+* feed
+* notifications
+* followers
+* following
+* user lookups
+* casts
+* any future cached GET request
+
+Do not apply this to POST/PUT/DELETE or any mutating endpoint.
+
+Goal
+
+If 1000 users simultaneously request the exact same uncached resource:
+
+* exactly 1 request should be sent to Neynar,
+* the other 999 requests should wait for the same Promise,
+* after completion, all receive the identical response,
+* subsequent requests should come directly from cache until TTL expires.
+
+Use a reusable utility/helper so this behavior is automatic for every future cached endpoint.
+
+⸻
+
+اگر این را پیاده کند، از نظر مدیریت درخواست‌های هم‌زمان تقریباً به الگوی مورد استفاده در سرویس‌های بزرگ نزدیک می‌شوی و مشکل Cache Stampede هم برطرف می‌شود.

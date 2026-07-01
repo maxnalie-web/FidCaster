@@ -26,7 +26,8 @@ function flush() {
       const chunk = fids.slice(i, i + 100);
       try {
         const r = await fetch(`/api/pro-status?fids=${chunk.join(",")}`, { headers: { accept: "application/json" } });
-        const map: Record<string, boolean> = r.ok ? await r.json() : {};
+        const isJson = (r.headers.get("content-type") ?? "").includes("application/json");
+        const map: Record<string, boolean> = (r.ok && isJson) ? await r.json() : {};
         for (const f of chunk) proCache.set(f, !!map[f]);
       } catch {
         for (const f of chunk) if (!proCache.has(f)) proCache.set(f, false);
