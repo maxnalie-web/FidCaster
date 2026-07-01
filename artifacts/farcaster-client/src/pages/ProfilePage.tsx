@@ -689,25 +689,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
 
             </div>
 
-            {isOwnProfile && myFidNum > 0 && (
-              <div className="px-4 mt-3">
-                <button
-                  onClick={() => navigate("/follow?mode=cleanup")}
-                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/60 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center">
-                      <UserMinus className="w-4 h-4 text-rose-500" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-foreground">Clean Up Following</p>
-                      <p className="text-xs text-muted-foreground">Remove people you no longer follow</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </div>
-            )}
             {!isOwnProfile && myFidNum > 0 && user && (
               <div className="px-4 mt-3">
                 <button

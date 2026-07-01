@@ -20,7 +20,7 @@ import {
   Plus, X, Loader2, CheckCircle2, Clock, UserCircle,
   Sun, Moon, AlertCircle, PenSquare, Copy,
   MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers, Camera, Shield,
-  Info, AlertTriangle, UserPlus,
+  Info, AlertTriangle, UserPlus, Sprout,
 } from "lucide-react";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
 import { ADMIN_FID } from "@/lib/admin-config";
@@ -900,12 +900,12 @@ export function DashboardPage() {
             );
           })}
 
-          {/* Follow Tools link */}
+          {/* Grow link */}
           <button
             onClick={() => navigate("/follow")}
             className="sidebar-item"
           >
-            <UserPlus className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <Sprout className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
             <span className="text-[1.0625rem] text-foreground/85">Grow</span>
           </button>
 
@@ -1109,6 +1109,13 @@ export function DashboardPage() {
               </button>
             );
           })}
+          {/* Grow tab */}
+          <button
+            onClick={() => navigate("/follow")}
+            className="flex-1 flex items-center justify-center transition-colors"
+          >
+            <Sprout className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+          </button>
           {/* FID Market tab */}
           <button
             onClick={() => navigate("/market")}

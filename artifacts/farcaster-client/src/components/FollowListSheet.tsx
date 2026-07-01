@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Users, ArrowLeft, Zap } from "lucide-react";
+import { Loader2, Users, ArrowLeft } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { getFollowers, getFollowing, hasPowerBadge, type NeynarUser } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
@@ -9,8 +9,6 @@ import { hubFollow } from "@/lib/hub-submit";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { useAdminConfig } from "@/hooks/useAdminConfig";
-import { BatchFollowSheet } from "@/components/BatchFollowSheet";
 
 function FollowRow({
   user,
@@ -114,19 +112,14 @@ type Props = {
 };
 
 export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }: Props) {
-  const { fid: myFid, neynarKey, profile, localSigner, signerApproved } = useWallet();
-  const [adminCfg] = useAdminConfig();
+  const { fid: myFid, neynarKey } = useWallet();
   const [, navigate] = useLocation();
   const viewerFid = myFid ? Number(myFid) : 0;
-  const canBatch = signerApproved && Boolean(localSigner) && Boolean(myFid) &&
-    (adminCfg.privilegedUsers.some(u => u.toLowerCase() === profile?.username?.toLowerCase()) ||
-     adminCfg.privilegedUsers.some(u => u === String(myFid)));
   const [activeTab, setActiveTab] = useState<"followers" | "following">(type);
   const [users, setUsers] = useState<NeynarUser[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [showBatchSheet, setShowBatchSheet] = useState(false);
 
   function goToProfile(user: NeynarUser) {
     onClose();
@@ -146,7 +139,9 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
       try {
         const fn = tab === "followers" ? getFollowers : getFollowing;
         const res = await fn(fid, viewerFid, neynarKey, cur);
-        const newUsers = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
+        const newUsers = res.users.map((u: NeynarUser | { user: NeynarUser }) =>
+          ("user" in u && u.user) ? (u as { user: NeynarUser }).user : (u as NeynarUser)
+        ).filter(Boolean);
         setUsers((prev) => {
           if (isFirst) return newUsers;
           const seen = new Set(prev.map((u) => u.fid));
@@ -181,7 +176,7 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
           <span className="font-bold text-base text-foreground">{count.toLocaleString()} {activeTab === "followers" ? "Followers" : "Following"}</span>
         </div>
 
-        {/* Tabs + batch follow button */}
+        {/* Tabs */}
         <div className="flex items-center border-b border-border shrink-0">
           {(["followers", "following"] as const).map((tab) => (
             <button
@@ -192,15 +187,6 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
               {tab === "followers" ? "Followers" : "Following"}
             </button>
           ))}
-          {canBatch && (
-            <button
-              onClick={() => setShowBatchSheet(true)}
-              className="ml-auto mr-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-primary/8 text-primary border border-primary/20 hover:bg-primary/15 transition-colors shrink-0"
-            >
-              <Zap className="w-3 h-3" />
-              {activeTab === "followers" ? "Batch Follow" : "Batch Unfollow"}
-            </button>
-          )}
         </div>
 
         {/* List */}
@@ -229,19 +215,6 @@ export function FollowListSheet({ fid, type, count, onClose, zIndex = "z-[60]" }
         </div>
       </div>
 
-      {/* BatchFollowSheet */}
-      {showBatchSheet && myFid && localSigner && (
-        <BatchFollowSheet
-          mode="follow"
-          fetchList={activeTab === "followers" ? "followers" : "following"}
-          sourceFid={fid}
-          myFid={Number(myFid)}
-          localSigner={localSigner}
-          neynarKey={neynarKey}
-          onClose={() => setShowBatchSheet(false)}
-          zIndex="z-[80]"
-        />
-      )}
     </div>
   );
 }
