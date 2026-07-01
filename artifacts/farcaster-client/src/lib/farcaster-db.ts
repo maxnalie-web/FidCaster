@@ -9,13 +9,14 @@
  */
 
 const DB_NAME = "fidcaster_data";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORES = {
   FEED: "feed_cache",
   PROFILES: "profile_cache",
   NOTIFICATIONS: "notifications_cache",
   DRAFTS: "drafts",
+  FOLLOW_LIST: "follow_list_cache",
 } as const;
 
 function openDB(): Promise<IDBDatabase> {
@@ -46,6 +47,11 @@ function openDB(): Promise<IDBDatabase> {
         const ds = db.createObjectStore(STORES.DRAFTS, { keyPath: "id", autoIncrement: true });
         ds.createIndex("fid", "fid");
         ds.createIndex("createdAt", "createdAt");
+      }
+
+      // follow_list_cache: keyed by "mode:targetFid:viewerFid" (v2+)
+      if (!db.objectStoreNames.contains(STORES.FOLLOW_LIST)) {
+        db.createObjectStore(STORES.FOLLOW_LIST, { keyPath: "cacheKey" });
       }
     };
 
@@ -213,16 +219,59 @@ export async function deleteDraft(id: number): Promise<void> {
   await del(STORES.DRAFTS, id);
 }
 
+// ── Follow list cache ─────────────────────────────────────────────────────────
+// Caches the fully-loaded follow list per (mode, targetFid, viewerFid).
+// TTL 15 min — same window as server-side follow cache.
+// This eliminates repeat Neynar calls when the user revisits FollowPage
+// within the cache window (very common after running a batch operation).
+
+const FOLLOW_LIST_TTL_MS = 15 * 60 * 1000;
+
+type FollowListEntry = {
+  cacheKey: string;
+  users: unknown[];
+  cachedAt: number;
+};
+
+export async function getCachedFollowList(
+  mode: "followers" | "following",
+  targetFid: number,
+  viewerFid: number,
+): Promise<unknown[] | null> {
+  const key = `${mode}:${targetFid}:${viewerFid}`;
+  const entry = await get<FollowListEntry>(STORES.FOLLOW_LIST, key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > FOLLOW_LIST_TTL_MS) {
+    await del(STORES.FOLLOW_LIST, key);
+    return null;
+  }
+  return entry.users;
+}
+
+export async function setCachedFollowList(
+  mode: "followers" | "following",
+  targetFid: number,
+  viewerFid: number,
+  users: unknown[],
+): Promise<void> {
+  const key = `${mode}:${targetFid}:${viewerFid}`;
+  await put(STORES.FOLLOW_LIST, { cacheKey: key, users, cachedAt: Date.now() });
+}
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 export async function clearAllCaches(): Promise<void> {
   try {
     const db = await openDB();
     await new Promise<void>((resolve) => {
-      const tx = db.transaction([STORES.FEED, STORES.PROFILES, STORES.NOTIFICATIONS], "readwrite");
+      const tx = db.transaction(
+        [STORES.FEED, STORES.PROFILES, STORES.NOTIFICATIONS, STORES.FOLLOW_LIST],
+        "readwrite",
+      );
       tx.objectStore(STORES.FEED).clear();
       tx.objectStore(STORES.PROFILES).clear();
       tx.objectStore(STORES.NOTIFICATIONS).clear();
+      tx.objectStore(STORES.FOLLOW_LIST).clear();
       tx.oncomplete = () => resolve();
     });
   } catch {}

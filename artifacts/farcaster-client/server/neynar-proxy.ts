@@ -204,7 +204,7 @@ async function followListHandler(mode: "followers" | "following", req: Request, 
       const cached = cacheGet(cacheKey);
       if (cached !== undefined) return cached as FollowPage;
       const r = await fetchFollowList(mode, fid, viewerFid, cursor);
-      cacheSet(cacheKey, r, 180_000);
+      cacheSet(cacheKey, r, 900_000); // 15 min — matches ttlFor("/followers")
       return r;
     });
     res.setHeader("X-Cache", "MISS");

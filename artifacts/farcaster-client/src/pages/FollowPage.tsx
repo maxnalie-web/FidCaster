@@ -11,6 +11,7 @@ import {
   searchUsers, getUserByFid, getFollowers, getFollowing,
   hasPowerBadge, type NeynarUser,
 } from "@/lib/neynar";
+import { getCachedFollowList, setCachedFollowList } from "@/lib/farcaster-db";
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
 import { toast } from "sonner";
@@ -294,7 +295,24 @@ export function FollowPage() {
     const batchMode = currentMode === "follow" ? "follow" : "unfollow";
     const fetchFid = target.fid;
     const fetchFn = lt === "following" ? getFollowing : getFollowers;
-    const collected: NeynarUser[] = [];
+    let collected: NeynarUser[] = [];
+
+    // ── Browser-side cache (IndexedDB, 15 min TTL) ─────────────────────────
+    // Avoids hitting the server on repeat visits (e.g. after a batch run).
+    // With 1000 users each having a unique FID, the server cache can't help
+    // cross-user; this client cache eliminates per-user repeat calls entirely.
+    const cached = await getCachedFollowList(lt, fetchFid, myFid);
+    if (cached && cached.length > 0) {
+      collected = cached as NeynarUser[];
+      setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
+      const result = applyFilters(collected, batchMode, currentFilters, currentExclusions);
+      setAllUsers(result);
+      setSelectedFids(new Set(result.map(u => u.fid)));
+      setPhase(result.length === 0 ? "empty" : "loaded");
+      return;
+    }
+
+    // ── Fresh fetch from server ────────────────────────────────────────────
     let cursor: string | undefined;
 
     try {
@@ -310,6 +328,9 @@ export function FollowPage() {
         const interim = applyFilters(collected, batchMode, { ...currentFilters, limit: MAX_SCAN }, currentExclusions);
         if (interim.length >= currentFilters.limit) break;
       } while (cursor && collected.length < MAX_SCAN);
+
+      // Save full raw list to browser cache for next visit.
+      void setCachedFollowList(lt, fetchFid, myFid, collected);
     } catch (e) {
       toast.error("Failed to load: " + (e instanceof Error ? e.message : "error"));
       setPhase("idle");
