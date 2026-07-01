@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import {
   Settings, Type, Palette, Users, Key, Bell, Hash,
@@ -6,7 +6,7 @@ import {
   Shield, ToggleLeft, ToggleRight, ArrowLeft, Check,
   AlertTriangle, Info, RefreshCw, Globe, Search, Share2,
   Sparkles, Code, FileText, Link, Twitter, Send,
-  Github, MessageSquare, Eye, EyeOff,
+  Github, MessageSquare, Eye, EyeOff, Lock, KeyRound, LogIn,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
@@ -201,6 +201,180 @@ function AddField({ placeholder, onAdd, btnLabel = "Add" }: {
   );
 }
 
+// ── Admin PIN helpers ─────────────────────────────────────────────────────────
+
+const ADMIN_PIN_KEY       = "fc_admin_pin";      // SHA-256 hash of PIN
+const ADMIN_PIN_LOCK_KEY  = "fc_admin_pin_locked"; // locked-until timestamp
+const ADMIN_PIN_TRIES_KEY = "fc_admin_pin_tries";  // consecutive wrong attempts
+const PIN_UNLOCK_KEY      = "fc_admin_unlocked";   // sessionStorage: unlock flag
+const MAX_PIN_TRIES       = 5;
+const LOCKOUT_MS          = 5 * 60 * 1000;         // 5 minutes
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode("fidcaster_admin:" + text);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function getPinLockInfo(): { locked: boolean; secsLeft: number; tries: number } {
+  const lockedUntil = Number(localStorage.getItem(ADMIN_PIN_LOCK_KEY) ?? 0);
+  const tries = Number(localStorage.getItem(ADMIN_PIN_TRIES_KEY) ?? 0);
+  const secsLeft = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000));
+  return { locked: secsLeft > 0, secsLeft, tries };
+}
+
+// ── PIN Gate Component ────────────────────────────────────────────────────────
+
+function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
+  const storedHash = localStorage.getItem(ADMIN_PIN_KEY);
+  const [mode, setMode] = useState<"enter" | "set">(storedHash ? "enter" : "set");
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [lockInfo, setLockInfo] = useState(getPinLockInfo());
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    // Refresh lock countdown every second
+    const t = setInterval(() => setLockInfo(getPinLockInfo()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function handleEnter(e: React.FormEvent) {
+    e.preventDefault();
+    if (lockInfo.locked) return;
+    setLoading(true);
+    setError("");
+    const hash = await sha256Hex(pin);
+    if (hash === storedHash) {
+      localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
+      localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
+      sessionStorage.setItem(PIN_UNLOCK_KEY, "1");
+      onUnlocked();
+    } else {
+      const tries = lockInfo.tries + 1;
+      localStorage.setItem(ADMIN_PIN_TRIES_KEY, String(tries));
+      if (tries >= MAX_PIN_TRIES) {
+        localStorage.setItem(ADMIN_PIN_LOCK_KEY, String(Date.now() + LOCKOUT_MS));
+        localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
+        setError("Too many wrong attempts — locked for 5 minutes.");
+      } else {
+        setError(`Wrong PIN. ${MAX_PIN_TRIES - tries} attempt${MAX_PIN_TRIES - tries !== 1 ? "s" : ""} left.`);
+      }
+      setPin("");
+      setLockInfo(getPinLockInfo());
+    }
+    setLoading(false);
+  }
+
+  async function handleSet(e: React.FormEvent) {
+    e.preventDefault();
+    if (pin.length < 6) { setError("PIN must be at least 6 characters."); return; }
+    if (pin !== confirm) { setError("PINs don't match."); return; }
+    setLoading(true);
+    const hash = await sha256Hex(pin);
+    localStorage.setItem(ADMIN_PIN_KEY, hash);
+    localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
+    localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
+    sessionStorage.setItem(PIN_UNLOCK_KEY, "1");
+    onUnlocked();
+    setLoading(false);
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="w-full max-w-xs mx-auto p-6">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="font-bold text-xl text-foreground">
+            {mode === "set" ? "Set Admin PIN" : "Admin Access"}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1.5">
+            {mode === "set"
+              ? "Create a PIN to protect the admin panel. You'll need it every session."
+              : "Enter your admin PIN to continue."}
+          </p>
+        </div>
+
+        <form onSubmit={mode === "set" ? handleSet : handleEnter} className="space-y-3">
+          <input
+            ref={inputRef}
+            type="password"
+            value={pin}
+            onChange={e => { setPin(e.target.value); setError(""); }}
+            placeholder={mode === "set" ? "Create PIN (min 6 chars)" : "Enter PIN"}
+            disabled={lockInfo.locked || loading}
+            autoComplete="current-password"
+            className="w-full px-4 py-3 rounded-xl border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/60 text-center tracking-widest text-lg transition-colors disabled:opacity-50"
+          />
+          {mode === "set" && (
+            <input
+              type="password"
+              value={confirm}
+              onChange={e => { setConfirm(e.target.value); setError(""); }}
+              placeholder="Confirm PIN"
+              disabled={loading}
+              autoComplete="new-password"
+              className="w-full px-4 py-3 rounded-xl border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/60 text-center tracking-widest text-lg transition-colors"
+            />
+          )}
+
+          {lockInfo.locked && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-destructive/8 border border-destructive/20">
+              <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+              <p className="text-[12px] text-destructive">
+                Locked — wait {Math.floor(lockInfo.secsLeft / 60)}:{String(lockInfo.secsLeft % 60).padStart(2, "0")}
+              </p>
+            </div>
+          )}
+          {error && !lockInfo.locked && (
+            <p className="text-[12px] text-destructive text-center">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={lockInfo.locked || loading || pin.length === 0}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-white font-bold text-[15px] transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : mode === "set" ? (
+              <><KeyRound className="w-4 h-4" /> Set PIN & Enter</>
+            ) : (
+              <><LogIn className="w-4 h-4" /> Unlock</>
+            )}
+          </button>
+        </form>
+
+        {mode === "enter" && (
+          <p className="text-center text-[11px] text-muted-foreground mt-5">
+            Forgot your PIN?{" "}
+            <button
+              onClick={() => {
+                if (window.confirm("This will clear the stored PIN hash and require setting a new one. Continue?")) {
+                  localStorage.removeItem(ADMIN_PIN_KEY);
+                  localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
+                  localStorage.removeItem(ADMIN_PIN_TRIES_KEY);
+                  setMode("set");
+                  setPin("");
+                  setError("");
+                }
+              }}
+              className="underline underline-offset-2 hover:text-foreground transition-colors"
+            >
+              Reset PIN
+            </button>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main AdminPage ────────────────────────────────────────────────────────────
 
 export function AdminPage() {
@@ -209,6 +383,10 @@ export function AdminPage() {
   const [cfg, update] = useAdminConfig();
   const [activeSection, setActiveSection] = useState<Section>("branding");
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
+  // PIN gate — session-scoped; cleared on browser/tab close
+  const [pinUnlocked, setPinUnlocked] = useState(
+    () => sessionStorage.getItem(PIN_UNLOCK_KEY) === "1"
+  );
 
   const isAdmin = fid !== null && Number(fid) === ADMIN_FID;
 
@@ -240,7 +418,7 @@ export function AdminPage() {
 
   const activeDef = SECTIONS.find(s => s.id === activeSection);
 
-  // ── Guard ─────────────────────────────────────────────────────────────────
+  // ── Guards ────────────────────────────────────────────────────────────────
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -257,6 +435,11 @@ export function AdminPage() {
         </div>
       </div>
     );
+  }
+
+  // PIN gate — shown every new browser session even for the admin FID
+  if (!pinUnlocked) {
+    return <PinGate onUnlocked={() => setPinUnlocked(true)} />;
   }
 
   return (
@@ -865,6 +1048,9 @@ export function AdminPage() {
                     <Inp value={cfg.misc.footerText} onChange={v => set("misc", "footerText", v)} placeholder="Optional footer note" />
                   </Field>
                 </Card>
+                <Card title="Admin PIN">
+                  <ChangePinForm />
+                </Card>
               </>
             )}
 
@@ -872,6 +1058,75 @@ export function AdminPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+// ── Change PIN form ───────────────────────────────────────────────────────────
+
+function ChangePinForm() {
+  const [oldPin, setOldPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [cfmPin, setCfmPin] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const hasPin = !!localStorage.getItem(ADMIN_PIN_KEY);
+
+  async function handleChange(e: React.FormEvent) {
+    e.preventDefault();
+    setError(""); setOk(false); setLoading(true);
+    if (hasPin) {
+      const oldHash = await sha256Hex(oldPin);
+      if (oldHash !== localStorage.getItem(ADMIN_PIN_KEY)) {
+        setError("Current PIN is wrong."); setLoading(false); return;
+      }
+    }
+    if (newPin.length < 6) { setError("New PIN must be at least 6 characters."); setLoading(false); return; }
+    if (newPin !== cfmPin) { setError("New PINs don't match."); setLoading(false); return; }
+    const hash = await sha256Hex(newPin);
+    localStorage.setItem(ADMIN_PIN_KEY, hash);
+    localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
+    localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
+    setOldPin(""); setNewPin(""); setCfmPin("");
+    setOk(true); setLoading(false);
+  }
+
+  return (
+    <form onSubmit={handleChange} className="space-y-3">
+      <p className="text-[12px] text-muted-foreground leading-snug mb-2">
+        The admin PIN protects the panel from unauthorized access. Required every new browser session.
+      </p>
+      {hasPin && (
+        <div>
+          <Label>Current PIN</Label>
+          <input type="password" value={oldPin} onChange={e => { setOldPin(e.target.value); setError(""); setOk(false); }}
+            placeholder="Current PIN"
+            className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label>{hasPin ? "New PIN" : "Create PIN"}</Label>
+          <input type="password" value={newPin} onChange={e => { setNewPin(e.target.value); setError(""); setOk(false); }}
+            placeholder="Min 6 chars"
+            className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
+        </div>
+        <div>
+          <Label>Confirm</Label>
+          <input type="password" value={cfmPin} onChange={e => { setCfmPin(e.target.value); setError(""); setOk(false); }}
+            placeholder="Repeat PIN"
+            className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
+        </div>
+      </div>
+      {error && <p className="text-[12px] text-destructive">{error}</p>}
+      {ok && <p className="text-[12px] text-emerald-500 font-semibold">PIN changed successfully.</p>}
+      <button type="submit" disabled={loading}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-white font-bold text-[13px] hover:bg-primary/90 transition-all disabled:opacity-50">
+        {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+        {hasPin ? "Change PIN" : "Set PIN"}
+      </button>
+    </form>
   );
 }
 

@@ -272,7 +272,7 @@ export function BatchFollowSheet({
   const [phase, setPhase] = useState<Phase>("setup");
   const [fetchedUsers, setFetchedUsers] = useState<NeynarUser[]>([]);
   const [rawMatchCount, setRawMatchCount] = useState(0); // total matches before limit slice
-  const [fetchPg, setFetchPg] = useState({ pages: 0, found: 0 });
+  const [fetchPg, setFetchPg] = useState({ pages: 0, found: 0, pbFound: 0 });
 
   const exclusions = excludeRaw.trim() ? parseExclusions(excludeRaw) : undefined;
   const excludeCount = (exclusions?.fidSet.size ?? 0) + (exclusions?.usernameSet.size ?? 0);
@@ -296,9 +296,10 @@ export function BatchFollowSheet({
 
   const fetchUsers = useCallback(async () => {
     setPhase("fetching");
-    setFetchPg({ pages: 0, found: 0 });
+    setFetchPg({ pages: 0, found: 0, pbFound: 0 });
     const collected: NeynarUser[] = [];
     let cursor: string | undefined;
+    let pbCount = 0;
     // Determine which list to scan and whose list it is
     const resolvedFetchList = fetchList ?? (mode === "unfollow" ? "following" : "followers");
     const fetchFid = mode === "unfollow" ? myFid : sourceFid;
@@ -309,7 +310,11 @@ export function BatchFollowSheet({
         const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
         collected.push(...batch);
         cursor = res.next?.cursor;
-        setFetchPg({ pages: Math.ceil(collected.length / 100), found: collected.length });
+        // Track power badge count live during scan
+        if (filters.onlyPowerBadge) {
+          pbCount = collected.filter(u => hasPowerBadge(u)).length;
+        }
+        setFetchPg({ pages: Math.ceil(collected.length / 100), found: collected.length, pbFound: pbCount });
         // Stop as soon as we've found enough matching users (no need to scan the rest)
         const matched = applyFilters(collected, mode, { ...filters, limit: MAX_SCAN });
         if (matched.length >= filters.limit) break;
@@ -547,6 +552,16 @@ export function BatchFollowSheet({
                   )}
                 </div>
 
+                {/* Power Badge warning */}
+                {filters.onlyPowerBadge && (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
+                      Power Badge holders are rare (~5–10% of active users). The scanner may need to go through many pages before finding enough. If 0 are found, try removing this filter.
+                    </p>
+                  </div>
+                )}
+
                 {/* Rate info */}
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/20 border border-border">
                   <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -571,17 +586,27 @@ export function BatchFollowSheet({
 
           {/* ── FETCHING ──────────────────────────────────────────── */}
           {phase === "fetching" && (
-            <div className="px-5 py-12 flex flex-col items-center gap-5 min-h-[260px] justify-center">
+            <div className="px-5 py-12 flex flex-col items-center gap-5 min-h-[280px] justify-center">
               <div className="relative">
                 <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center", accentIcon)}>
                   <Loader2 className="w-6 h-6 animate-spin" />
                 </div>
               </div>
-              <div className="text-center">
-                <p className="font-bold text-foreground">Loading users…</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {fetchPg.found} users found · page {fetchPg.pages}
+              <div className="text-center space-y-1.5">
+                <p className="font-bold text-foreground">Scanning users…</p>
+                <p className="text-sm text-muted-foreground">
+                  {fetchPg.found.toLocaleString()} scanned · page {fetchPg.pages}
                 </p>
+                {filters.onlyPowerBadge && (
+                  <p className="text-[12px] font-semibold text-amber-500">
+                    ⚡ {fetchPg.pbFound} Power Badge found so far
+                  </p>
+                )}
+                {fetchPg.pages > 20 && filters.onlyPowerBadge && fetchPg.pbFound === 0 && (
+                  <p className="text-[11px] text-muted-foreground max-w-[220px] mx-auto leading-snug">
+                    Still scanning… Power Badge users are rare. This may take a while.
+                  </p>
+                )}
               </div>
               <button onClick={() => setPhase("setup")} className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
                 Cancel
@@ -645,11 +670,16 @@ export function BatchFollowSheet({
                 {rawMatchCount === 0 && (
                   <div className="flex flex-col items-center gap-3 py-4 text-muted-foreground">
                     <Users className="w-8 h-8 opacity-25" />
-                    <div className="text-center">
+                    <div className="text-center space-y-1">
                       <p className="text-sm font-semibold text-foreground">0 matches found</p>
-                      <p className="text-[12px] mt-1">
+                      <p className="text-[12px]">
                         Scanned {fetchPg.found.toLocaleString()} users — none matched your filters.
                       </p>
+                      {filters.onlyPowerBadge && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400 max-w-[240px] mx-auto leading-snug mt-1">
+                          Power Badge holders are rare. The source account may not have many in their list. Try removing the Power Badge filter.
+                        </p>
+                      )}
                     </div>
                     <button onClick={() => setPhase("setup")} className="text-sm text-primary underline underline-offset-2">
                       Adjust filters

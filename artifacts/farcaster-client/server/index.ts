@@ -90,20 +90,36 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: "20mb" })); // large limit for base64 image upload route (10MB file ≈ 13.3MB base64)
 
+// Global limiter — skip follow/following list endpoints (already protected by Neynar throttle)
+// and skip Neynar read proxy endpoints (caching + throttle handle them).
+// Batch follow scans can make 50–100 requests per minute for large lists; the global
+// cap must not block them. Each unique IP can still burst up to 600 requests/min total.
 const globalLimiter = rateLimit({
   windowMs: 60_000,
-  max: 120,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
+  skip: (req) => {
+    const p = req.path;
+    // Follow-list scans + Neynar read proxy are throttled at the Neynar layer already.
+    return (
+      p.startsWith("/api/farcaster/followers") ||
+      p.startsWith("/api/farcaster/following") ||
+      p.startsWith("/api/fc/") ||
+      p.startsWith("/api/hub/") ||
+      p.startsWith("/api/pro-status") ||
+      p.startsWith("/api/mini-apps")
+    );
+  },
 });
 app.use(globalLimiter);
 
-// Action limiter — covers follow/unfollow/like/recast/cast per IP
-// Raised to 200/min to support batch follow without hitting 429 after 20 actions.
+// Action limiter — covers follow/unfollow/like/recast/cast per IP.
+// 300/min allows up to 150 batch actions per 30s window without lockout.
 const actionLimiter = rateLimit({
   windowMs: 60_000,
-  max: 200,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many actions, please try again later." },
