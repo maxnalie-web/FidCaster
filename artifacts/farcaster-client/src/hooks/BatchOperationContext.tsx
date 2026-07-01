@@ -1,6 +1,6 @@
 import { createContext, useContext, useRef, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, Clock, AlertCircle } from "lucide-react";
+import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
@@ -441,12 +441,22 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
                   <StatBox label="Errors" value={op.errors} color={op.errors > 0 ? "text-rose-500" : "text-muted-foreground"} />
                 </div>
 
+                {/* Wait / retry status */}
+                {isRunning && op.waitMsg && (
+                  <div className="flex items-center gap-2 mx-4 mb-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/25">
+                    <Loader2 className="w-3.5 h-3.5 text-amber-500 shrink-0 animate-spin" />
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                      {op.waitMsg}
+                    </p>
+                  </div>
+                )}
+
                 {/* ETA + rate info */}
-                {isRunning && (
+                {isRunning && !op.waitMsg && (
                   <div className="flex items-center gap-2 mx-4 mb-3 px-3 py-2 rounded-xl bg-muted/30 border border-border">
                     <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <p className="text-[11px] text-muted-foreground">
-                      {etaStr} · 2s per action · won't stop on refresh
+                      {etaStr} · auto-retries on hub errors · won't stop on refresh
                     </p>
                   </div>
                 )}
@@ -539,16 +549,23 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
                           {op.done}/{op.total}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <motion.div
-                            className={cn("h-full rounded-full", barColor)}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 0.5 }}
-                          />
+                      {op.waitMsg ? (
+                        <div className="flex items-center gap-1.5">
+                          <Loader2 className="w-3 h-3 text-amber-500 animate-spin shrink-0" />
+                          <span className="text-[10px] text-amber-500 truncate">{op.waitMsg}</span>
                         </div>
-                        <span className="text-[10px] text-muted-foreground shrink-0">{etaStr}</span>
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <motion.div
+                              className={cn("h-full rounded-full", barColor)}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 0.5 }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground shrink-0">{etaStr}</span>
+                        </div>
+                      )}
                     </>
                   ) : isDone ? (
                     <p className="text-[13px] font-semibold text-foreground">
