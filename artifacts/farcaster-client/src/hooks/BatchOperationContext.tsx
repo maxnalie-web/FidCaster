@@ -1,12 +1,48 @@
 import { createContext, useContext, useRef, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserPlus, UserMinus, CheckCircle2, XCircle, X } from "lucide-react";
+import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import type { NeynarUser } from "@/lib/neynar";
 import type { LocalSigner } from "@/lib/wallet";
+import { useWallet } from "@/hooks/useWallet";
+import { toast } from "sonner";
 
 const DELAY_MS = 2000;
+const BATCH_PERSIST_KEY = "fc_batch_op_v1";
+
+// ─── Persistence helpers ───────────────────────────────────────────────────────
+
+interface PersistedBatch {
+  mode: "follow" | "unfollow";
+  pendingFids: number[];
+  myFid: number;
+  neynarKey: string;
+  label: string;
+  total: number;
+  done: number;
+  errors: number;
+}
+
+function saveBatch(s: PersistedBatch) {
+  if (s.pendingFids.length === 0) {
+    sessionStorage.removeItem(BATCH_PERSIST_KEY);
+  } else {
+    try { sessionStorage.setItem(BATCH_PERSIST_KEY, JSON.stringify(s)); } catch { /* quota */ }
+  }
+}
+
+function clearBatch() {
+  sessionStorage.removeItem(BATCH_PERSIST_KEY);
+}
+
+function loadBatch(): PersistedBatch | null {
+  try {
+    const raw = sessionStorage.getItem(BATCH_PERSIST_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedBatch;
+  } catch { return null; }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +62,18 @@ export interface StartOpParams {
   localSigner: LocalSigner;
   neynarKey: string;
   label: string;
+}
+
+interface RunBatchParams {
+  mode: "follow" | "unfollow";
+  fids: number[];
+  myFid: number;
+  signer: LocalSigner;
+  neynarKey: string;
+  label: string;
+  total: number;
+  initialDone?: number;
+  initialErrors?: number;
 }
 
 interface BatchOperationCtx {
@@ -51,19 +99,30 @@ export function useBatchOperation() {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function BatchOperationProvider({ children }: { children: React.ReactNode }) {
+  const { fid, localSigner, neynarKey: walletNeynarKey } = useWallet();
   const [op, setOp] = useState<BatchOp | null>(null);
   const cancelRef = useRef(false);
+  const resumedRef = useRef(false);
 
-  const startOp = useCallback(async (params: StartOpParams) => {
-    const { mode, users, myFid, localSigner, neynarKey, label } = params;
+  // Core runner — used for fresh starts AND resumes.
+  // Captures signer in closure so account switches in the UI don't affect it.
+  const runBatch = useCallback(async ({
+    mode, fids, myFid, signer, neynarKey, label, total,
+    initialDone = 0, initialErrors = 0,
+  }: RunBatchParams) => {
     cancelRef.current = false;
-    setOp({ mode, phase: "running", done: 0, total: users.length, errors: 0, label });
+    let done = initialDone;
+    let errors = initialErrors;
+    setOp({ mode, phase: "running", done, total, errors, label });
 
-    let done = 0, errors = 0;
-    for (let i = 0; i < users.length; i++) {
+    for (let i = 0; i < fids.length; i++) {
       if (cancelRef.current) break;
+
+      // Persist remaining work before each action
+      saveBatch({ mode, pendingFids: fids.slice(i), myFid, neynarKey, label, total, done, errors });
+
       try {
-        await hubFollow(myFid, localSigner, users[i].fid, { unfollow: mode === "unfollow", neynarKey });
+        await hubFollow(myFid, signer, fids[i], { unfollow: mode === "unfollow", neynarKey });
         done++;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "";
@@ -72,7 +131,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           await new Promise(r => setTimeout(r, 62_000));
           if (!cancelRef.current) {
             try {
-              await hubFollow(myFid, localSigner, users[i].fid, { unfollow: mode === "unfollow", neynarKey });
+              await hubFollow(myFid, signer, fids[i], { unfollow: mode === "unfollow", neynarKey });
               done++;
             } catch { errors++; }
           }
@@ -80,23 +139,48 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           errors++;
         }
       }
-      setOp({ mode, phase: "running", done, total: users.length, errors, label });
-      if (i < users.length - 1 && !cancelRef.current)
+
+      setOp({ mode, phase: "running", done, total, errors, label });
+      if (i < fids.length - 1 && !cancelRef.current)
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
+
+    clearBatch();
     setOp(prev => prev
       ? { ...prev, done, errors, phase: cancelRef.current ? "cancelled" : "done" }
       : null
     );
   }, []);
 
-  function cancelOp() {
-    cancelRef.current = true;
-  }
+  // Fresh start (called from BatchFollowSheet)
+  const startOp = useCallback((params: StartOpParams) => {
+    const { mode, users, myFid, localSigner, neynarKey, label } = params;
+    runBatch({ mode, fids: users.map(u => u.fid), myFid, signer: localSigner, neynarKey, label, total: users.length });
+  }, [runBatch]);
 
-  function clearOp() {
-    setOp(null);
-  }
+  // Auto-resume on page reload — fires when wallet session is restored
+  useEffect(() => {
+    if (!fid || !localSigner || resumedRef.current) return;
+    const saved = loadBatch();
+    if (!saved) return;
+    if (saved.myFid !== Number(fid) || !saved.pendingFids.length) { clearBatch(); return; }
+    resumedRef.current = true;
+    toast.info(`Resuming batch (${saved.pendingFids.length} left)…`, { duration: 3000 });
+    runBatch({
+      mode: saved.mode,
+      fids: saved.pendingFids,
+      myFid: saved.myFid,
+      signer: localSigner,
+      neynarKey: saved.neynarKey || walletNeynarKey,
+      label: saved.label,
+      total: saved.total,
+      initialDone: saved.done,
+      initialErrors: saved.errors,
+    });
+  }, [fid, localSigner, runBatch, walletNeynarKey]);
+
+  function cancelOp() { cancelRef.current = true; clearBatch(); }
+  function clearOp() { setOp(null); }
 
   return (
     <BatchOperationContext.Provider value={{ op, startOp, cancelOp, clearOp }}>
@@ -106,21 +190,29 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
   );
 }
 
-// ─── Floating progress pill ────────────────────────────────────────────────────
+// ─── Floating progress pill (expandable) ──────────────────────────────────────
 
 function BatchProgressPill({ op, onCancel, onDismiss }: {
   op: BatchOp | null;
   onCancel: () => void;
   onDismiss: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   // Auto-dismiss after 6s once finished
   useEffect(() => {
     if (op?.phase === "done" || op?.phase === "cancelled") {
+      setExpanded(false);
       const t = setTimeout(onDismiss, 6000);
       return () => clearTimeout(t);
     }
     return undefined;
   }, [op?.phase, onDismiss]);
+
+  // Collapse when operation is gone
+  useEffect(() => {
+    if (!op) setExpanded(false);
+  }, [op]);
 
   const pct = op && op.total > 0 ? (op.done / op.total) * 100 : 0;
   const remaining = op ? Math.max(0, op.total - op.done - op.errors) : 0;
@@ -128,6 +220,28 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
   const etaStr = etaSecs < 60
     ? `~${Math.round(etaSecs)}s left`
     : `~${Math.round(etaSecs / 60)}m left`;
+
+  const isRunning = op?.phase === "running";
+  const isDone = op?.phase === "done";
+  const isCanc = op?.phase === "cancelled";
+
+  const pillColor = isDone
+    ? "border-green-500/25 shadow-green-500/5"
+    : isCanc
+    ? "border-border"
+    : op?.mode === "follow"
+    ? "border-primary/25 shadow-primary/8"
+    : "border-rose-500/25 shadow-rose-500/8";
+
+  const iconBg = isDone
+    ? "bg-green-500/10 text-green-500"
+    : isCanc
+    ? "bg-muted text-muted-foreground"
+    : op?.mode === "follow"
+    ? "bg-primary/10 text-primary"
+    : "bg-rose-500/10 text-rose-500";
+
+  const barColor = op?.mode === "follow" ? "bg-primary" : "bg-rose-500";
 
   return (
     <AnimatePresence>
@@ -138,91 +252,213 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 96, opacity: 0, scale: 0.95 }}
           transition={{ type: "spring", damping: 26, stiffness: 300 }}
-          className="fixed bottom-[72px] md:bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[min(380px,calc(100vw-24px))]"
+          className="fixed bottom-[72px] md:bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[min(400px,calc(100vw-24px))]"
         >
-          <div className={cn(
-            "flex items-center gap-3 px-3.5 py-3 rounded-2xl shadow-2xl border",
-            "bg-background/96 backdrop-blur-xl",
-            op.phase === "running"
-              ? "border-primary/25 shadow-primary/10"
-              : op.phase === "done"
-              ? "border-green-500/25"
-              : "border-border",
-          )}>
-            {/* Icon */}
-            <div className={cn(
-              "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
-              op.phase === "done"
-                ? "bg-green-500/10 text-green-500"
-                : op.phase === "cancelled"
-                ? "bg-muted text-muted-foreground"
-                : op.mode === "follow"
-                ? "bg-primary/10 text-primary"
-                : "bg-rose-500/10 text-rose-500",
-            )}>
-              {op.phase === "done"
-                ? <CheckCircle2 className="w-4.5 h-4.5" />
-                : op.phase === "cancelled"
-                ? <XCircle className="w-4.5 h-4.5" />
-                : op.mode === "follow"
-                ? <UserPlus className="w-4.5 h-4.5" />
-                : <UserMinus className="w-4.5 h-4.5" />
-              }
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              {op.phase === "running" ? (
-                <>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <p className="text-[12px] font-semibold text-foreground truncate">{op.label}</p>
-                    <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
-                      {op.done}/{op.total}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                      <motion.div
-                        className={cn("h-full rounded-full", op.mode === "follow" ? "bg-primary" : "bg-rose-500")}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ duration: 0.5 }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{etaStr}</span>
-                  </div>
-                </>
-              ) : op.phase === "done" ? (
-                <p className="text-[13px] font-semibold text-foreground">
-                  Done{" "}
-                  <span className="text-green-500">{op.done} {op.mode === "follow" ? "followed" : "unfollowed"}</span>
-                  {op.errors > 0 && <span className="text-rose-400"> · {op.errors} failed</span>}
-                </p>
-              ) : (
-                <p className="text-[13px] font-semibold text-foreground">
-                  Stopped · <span className="text-muted-foreground">{op.done}/{op.total} done</span>
-                </p>
-              )}
-            </div>
-
-            {/* Action */}
-            {op.phase === "running" ? (
-              <button
-                onClick={onCancel}
-                className="shrink-0 text-[11px] font-semibold text-muted-foreground hover:text-rose-500 border border-border hover:border-rose-500/30 rounded-xl px-2.5 py-1.5 transition-all"
+          <AnimatePresence mode="wait">
+            {expanded ? (
+              /* ── EXPANDED PANEL ─────────────────────────────────── */
+              <motion.div
+                key="expanded"
+                initial={{ opacity: 0, scale: 0.97, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: 12 }}
+                transition={{ type: "spring", damping: 28, stiffness: 360 }}
+                className={cn(
+                  "rounded-2xl shadow-2xl border bg-background/98 backdrop-blur-xl overflow-hidden",
+                  pillColor,
+                )}
               >
-                Stop
-              </button>
+                {/* Header — tap to collapse */}
+                <button
+                  onClick={() => setExpanded(false)}
+                  className="w-full flex items-center gap-3 px-4 pt-4 pb-3 text-left hover:bg-muted/20 transition-colors"
+                >
+                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0", iconBg)}>
+                    {isDone ? <CheckCircle2 className="w-4.5 h-4.5" />
+                      : isCanc ? <XCircle className="w-4.5 h-4.5" />
+                      : op.mode === "follow" ? <UserPlus className="w-4.5 h-4.5" />
+                      : <UserMinus className="w-4.5 h-4.5" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-bold text-foreground truncate">{op.label}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {isRunning ? "Running…" : isDone ? "Completed" : "Stopped"}
+                    </p>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                </button>
+
+                {/* Progress bar */}
+                <div className="px-4 pb-1">
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <motion.div
+                      className={cn("h-full rounded-full", barColor)}
+                      animate={{ width: `${pct}%` }}
+                      transition={{ duration: 0.6 }}
+                    />
+                  </div>
+                </div>
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-3 gap-2 px-4 py-3">
+                  <StatBox label="Done" value={op.done} color="text-foreground" />
+                  <StatBox label="Left" value={Math.max(0, op.total - op.done - op.errors)} color="text-muted-foreground" />
+                  {op.errors > 0
+                    ? <StatBox label="Errors" value={op.errors} color="text-rose-500" />
+                    : <StatBox label="Total" value={op.total} color="text-muted-foreground" />
+                  }
+                </div>
+
+                {/* ETA + rate info */}
+                {isRunning && (
+                  <div className="flex items-center gap-2 mx-4 mb-3 px-3 py-2 rounded-xl bg-muted/30 border border-border">
+                    <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <p className="text-[11px] text-muted-foreground">
+                      {etaStr} · 2s per action · won't stop on refresh
+                    </p>
+                  </div>
+                )}
+
+                {/* Error note */}
+                {op.errors > 0 && (
+                  <div className="flex items-center gap-2 mx-4 mb-3 px-3 py-2 rounded-xl bg-rose-500/8 border border-rose-500/20">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                      {op.errors} action{op.errors !== 1 ? "s" : ""} failed — others completed successfully
+                    </p>
+                  </div>
+                )}
+
+                {/* Done message */}
+                {isDone && (
+                  <p className="text-center text-[13px] font-semibold text-green-500 px-4 mb-3">
+                    ✓ All done! {op.done} {op.mode === "follow" ? "followed" : "unfollowed"}
+                    {op.errors > 0 ? `, ${op.errors} failed` : ""}
+                  </p>
+                )}
+
+                {/* Actions */}
+                <div className="px-4 pb-4 flex gap-2">
+                  {isRunning ? (
+                    <>
+                      <button
+                        onClick={() => setExpanded(false)}
+                        className="flex-1 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 font-semibold text-[13px] transition-all"
+                      >
+                        Minimize
+                      </button>
+                      <button
+                        onClick={onCancel}
+                        className="flex-1 py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/8 text-rose-500 hover:bg-rose-500/15 font-semibold text-[13px] transition-all"
+                      >
+                        Stop
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={onDismiss}
+                      className="flex-1 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground font-semibold text-[13px] transition-all"
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </div>
+              </motion.div>
             ) : (
-              <button
-                onClick={onDismiss}
-                className="shrink-0 p-1.5 rounded-xl hover:bg-muted text-muted-foreground transition-colors"
+              /* ── COLLAPSED PILL ─────────────────────────────────── */
+              <motion.div
+                key="collapsed"
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.97 }}
+                transition={{ type: "spring", damping: 28, stiffness: 360 }}
+                className={cn(
+                  "flex items-center gap-3 px-3.5 py-2.5 rounded-2xl shadow-2xl border cursor-pointer",
+                  "bg-background/96 backdrop-blur-xl select-none",
+                  pillColor,
+                )}
+                onClick={() => setExpanded(true)}
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
+                {/* Icon */}
+                <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center shrink-0", iconBg)}>
+                  {isDone ? <CheckCircle2 className="w-4 h-4" />
+                    : isCanc ? <XCircle className="w-4 h-4" />
+                    : op.mode === "follow" ? <UserPlus className="w-4 h-4" />
+                    : <UserMinus className="w-4 h-4" />}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  {isRunning ? (
+                    <>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-[12px] font-semibold text-foreground truncate">{op.label}</p>
+                        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+                          {op.done}/{op.total}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <motion.div
+                            className={cn("h-full rounded-full", barColor)}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.5 }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{etaStr}</span>
+                      </div>
+                    </>
+                  ) : isDone ? (
+                    <p className="text-[13px] font-semibold text-foreground">
+                      Done{" "}
+                      <span className="text-green-500">{op.done} {op.mode === "follow" ? "followed" : "unfollowed"}</span>
+                      {op.errors > 0 && <span className="text-rose-400"> · {op.errors} failed</span>}
+                    </p>
+                  ) : (
+                    <p className="text-[13px] font-semibold text-foreground">
+                      Stopped · <span className="text-muted-foreground">{op.done}/{op.total} done</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Expand chevron / stop button */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isRunning && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onCancel(); }}
+                      className="text-[11px] font-semibold text-muted-foreground hover:text-rose-500 border border-border hover:border-rose-500/30 rounded-xl px-2 py-1 transition-all"
+                    >
+                      Stop
+                    </button>
+                  )}
+                  {!isRunning && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onDismiss(); }}
+                      className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
+                </div>
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StatBox({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl bg-muted/30 border border-border">
+      <span className={cn("text-[18px] font-black tabular-nums leading-none", color)}>
+        {value.toLocaleString()}
+      </span>
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">{label}</span>
+    </div>
   );
 }
