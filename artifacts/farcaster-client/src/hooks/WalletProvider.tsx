@@ -145,10 +145,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const walletClientRef = useRef<WalletClient | null>(null);
   const localSignerRef = useRef<LocalSigner | null>(null);
 
-  // Guard: prevents two concurrent calls to _autoActivateSigner (e.g. rapid
-  // account switches, same user opening two tabs and logging in simultaneously).
-  const autoActivatingRef = useRef<Set<number>>(new Set());
-
   function _zeroAndLock() {
     if (localSignerRef.current) {
       localSignerRef.current.privateKey.fill(0);
@@ -175,14 +171,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     signer: LocalSigner,
   ) => {
     const fidNum = Number(fid);
-
-    // Prevent re-entrant calls for the same FID (e.g. two tabs logging in
-    // simultaneously, or rapid account switches within a single tab).
-    if (autoActivatingRef.current.has(fidNum)) return;
-    autoActivatingRef.current.add(fidNum);
-
-    try {
-      const cached = loadSignerApproved(fidNum);
+    const cached = loadSignerApproved(fidNum);
 
       // Cache hit → unblock UI immediately; verify silently in background
       if (cached) {
@@ -259,10 +248,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
         setState((s) => ({ ...s, autoSignerLoading: false, signerError: msg }));
       }
-    } finally {
-      // Always release the guard so a retry (e.g. user taps Retry) can re-enter.
-      autoActivatingRef.current.delete(fidNum);
-    }
   }, []);
 
   const _applyAccount = useCallback(async (mnemonic: string): Promise<number> => {
@@ -799,26 +784,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     function onPageHide() { _zeroAndLock(); }
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
-  }, []);
-
-  // ── Multi-tab sync ─────────────────────────────────────────────────────────
-  // When the same user has the app open in two tabs and switches active account
-  // in one tab, sync the `accounts` list in the other tab so the switcher UI
-  // stays consistent. We only update the accounts list — we never force a full
-  // re-login in a background tab, since that would be disruptive.
-  useEffect(() => {
-    const handler = (e: StorageEvent) => {
-      if (e.key === "fc_accounts_v2" && e.newValue !== null) {
-        try {
-          const updated = JSON.parse(e.newValue);
-          if (Array.isArray(updated)) {
-            setState((s) => ({ ...s, accounts: updated }));
-          }
-        } catch { /* ignore malformed */ }
-      }
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
   }, []);
 
   // Keep a stable ref to authMethod so the accountsChanged listener below

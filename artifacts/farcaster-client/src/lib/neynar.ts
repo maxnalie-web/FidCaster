@@ -136,19 +136,34 @@ async function neynar<T>(
     }
   }
 
-  const res = await fetch(`${NEYNAR_BASE}${path}`, {
-    method,
-    headers: headers(key),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(
-      (err as { message?: string }).message ?? `HTTP ${res.status}`
-    );
+  // Direct Neynar call with 429 retry (exponential backoff + jitter).
+  // All users share one baked-in key; under heavy load the API may rate-limit.
+  // Three attempts give ~7s total headroom before propagating the error.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${NEYNAR_BASE}${path}`, {
+      method,
+      headers: headers(key),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.status === 429 && attempt < 2) {
+      // Respect Retry-After header if present, else use exponential backoff
+      const retryAfter = res.headers.get("Retry-After");
+      const waitMs = retryAfter
+        ? Math.min(parseInt(retryAfter, 10) * 1000, 10_000)
+        : (2 ** attempt) * 1000 + Math.random() * 500;
+      await new Promise(r => setTimeout(r, waitMs));
+      continue;
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        (err as { message?: string }).message ?? `HTTP ${res.status}`
+      );
+    }
+    return res.json() as Promise<T>;
   }
-  return res.json() as Promise<T>;
+  throw new Error("Neynar rate limit exceeded. Please try again in a moment.");
 }
 
 export async function getHomeFeed(
