@@ -3,7 +3,8 @@
  *
  * مشکل: browser نمیتونه مستقیم به هاب‌های رایگان فارکستر وصل بشه (CORS ندارن)
  * راه‌حل: این Worker روی شبکه Cloudflare اجرا میشه، CORS header اضافه می‌کنه،
- *         و signed bytes رو به چند هاب همزمان (Promise.any) می‌فرسته.
+ *         و signed bytes رو به چند هاب همزمان می‌فرسته.
+ *         اولین هابی که قبول کنه → بقیه abort میشن (0 کرِدیت، بدون waste).
  *         هر data center Cloudflare یه IP مجزاست → rate limit هاب تقریباً نامحدود.
  *
  * Deploy:
@@ -29,7 +30,6 @@ const CORS_HEADERS = {
 
 export default {
   async fetch(request) {
-    // Preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
     }
@@ -40,6 +40,11 @@ export default {
 
     const body = await request.arrayBuffer();
 
+    // Race all hubs simultaneously. The moment ONE accepts, abort the rest.
+    // Without AbortController, Promise.any resolves but siblings keep running —
+    // wasting bandwidth and potentially double-submitting.
+    const abort = new AbortController();
+
     try {
       const winner = await Promise.any(
         FREE_HUBS.map(hub =>
@@ -47,11 +52,15 @@ export default {
             method: "POST",
             headers: { "Content-Type": "application/octet-stream" },
             body,
-            signal: AbortSignal.timeout(8_000),
+            signal: AbortSignal.any
+              ? AbortSignal.any([abort.signal, AbortSignal.timeout(8_000)])
+              : abort.signal,
           }).then(async r => {
             const txt = await r.text();
-            if (r.ok) return txt || '{"ok":true}';
-            if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) return txt;
+            if (r.ok || txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) {
+              abort.abort("hub won");
+              return txt || '{"ok":true}';
+            }
             throw new Error(`${hub} HTTP ${r.status}: ${txt.slice(0, 80)}`);
           })
         )
@@ -62,7 +71,7 @@ export default {
       });
     } catch (e) {
       const msg = e instanceof AggregateError
-        ? e.errors.map(x => String(x)).join(" | ")
+        ? e.errors.filter(x => !String(x).includes("AbortError")).map(x => String(x)).join(" | ")
         : String(e);
       return new Response(JSON.stringify({ error: msg }), {
         status: 502,
