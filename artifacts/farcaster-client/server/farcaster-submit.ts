@@ -37,24 +37,35 @@ export function getAllNeynarKeys(): string[] {
 
 /**
  * Submit pre-signed protobuf bytes to a single hub URL.
- * Resolves with the message hash on success; throws on any failure.
+ * Pass a shared AbortSignal so sibling races can be cancelled the moment one wins.
  */
 async function tryHubOnce(
   url: string,
   msgBytes: Uint8Array,
   msgHash: string,
   apiKey?: string,
+  sharedAbort?: AbortSignal,
 ): Promise<string> {
   const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
   if (apiKey) headers["api_key"] = apiKey;
+
+  // Combine per-request timeout with the shared abort signal (if supported).
+  // AbortSignal.any is available in Node ≥ 20.3; fall back to shared signal alone.
+  const timeoutSignal = AbortSignal.timeout(8_000);
+  const signal = sharedAbort
+    ? (typeof AbortSignal.any === "function"
+        ? AbortSignal.any([sharedAbort, timeoutSignal])
+        : sharedAbort)
+    : timeoutSignal;
+
   const res = await fetch(`${url}/v1/submitMessage`, {
     method: "POST",
     headers,
     body: msgBytes,
-    signal: AbortSignal.timeout(8_000), // short timeout — we're racing, don't wait long
+    signal,
   });
   if (res.ok) {
-    console.log(`[farcaster-submit] ✓ ${apiKey ? "(neynar) " : ""}${url}`);
+    console.log(`[farcaster-submit] ✓ ${apiKey ? "(neynar) " : "(free)"}${url}`);
     return msgHash;
   }
   const txt = await res.text().catch(() => "");
@@ -65,40 +76,55 @@ async function tryHubOnce(
 /**
  * Submit already-signed protobuf bytes to Farcaster hubs.
  *
- * Strategy (no sequential retries — purely parallel racing):
- *  Phase 1 — Race ALL free hubs simultaneously (Promise.any).
- *             First hub to accept wins immediately → 0 credits consumed.
- *  Phase 2 — Only if every free hub failed: race ALL Neynar keys simultaneously.
- *             First non-rate-limited key wins → effectively no rate-limit wait.
+ * Strategy:
+ *  Phase 1 — Race ALL free hubs simultaneously (Promise.any + AbortController).
+ *             First hub to accept aborts the siblings → 0 credits consumed.
+ *  Phase 2 — Only if every free hub failed: try Neynar keys with the same
+ *             abort-on-win pattern → EXACTLY 1 credit consumed regardless of
+ *             how many keys are configured.
  *
- * With N free hubs + K Neynar keys there are N+K parallel attempts.
- * The effective throughput is the SUM of all accepted RPM, not the minimum.
+ * IMPORTANT: We use AbortController so that once the first winner responds,
+ * all other in-flight requests are cancelled immediately.  Without this,
+ * Promise.any() resolves but the remaining N-1 promises keep running to
+ * completion and each one also submits the message → N× credits wasted.
  */
 export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
   const message = Message.decode(msgBytes);
   const msgHash = Buffer.from(message.hash).toString("hex");
 
-  // Phase 1: race free hubs (parallel, no credits)
+  // Phase 1: race free hubs (parallel, no credits) — cancel siblings on first win
+  const freeAbort = new AbortController();
   const freeResult = await Promise.any(
-    FREE_HUB_URLS.map(url => tryHubOnce(url, msgBytes, msgHash))
+    FREE_HUB_URLS.map(async url => {
+      const hash = await tryHubOnce(url, msgBytes, msgHash, undefined, freeAbort.signal);
+      freeAbort.abort("free hub won"); // cancel any still-pending sibling requests
+      return hash;
+    }),
   ).catch(() => null as null);
 
   if (freeResult) return freeResult;
 
-  // Phase 2: all free hubs failed → race ALL Neynar keys simultaneously
+  // Phase 2: all free hubs failed → try Neynar keys, abort-on-win
+  // Each key starts simultaneously (for rate-limit resilience), but the moment
+  // ONE key succeeds it aborts all others → exactly 1 submitmessage credit consumed.
   const neynarKeys = getAllNeynarKeys();
   if (neynarKeys.length === 0) throw new Error("No Neynar API keys configured and all free hubs failed.");
 
+  const neynarAbort = new AbortController();
   try {
     return await Promise.any(
-      neynarKeys.map(key => tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key))
+      neynarKeys.map(async key => {
+        const hash = await tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key, neynarAbort.signal);
+        neynarAbort.abort("neynar key won"); // cancel remaining Neynar requests immediately
+        return hash;
+      }),
     );
   } catch (e: unknown) {
-    const errs = e instanceof AggregateError
-      ? e.errors.map(x => String(x))
-      : [String(e)];
+    const errs = (e instanceof AggregateError ? e.errors : [e])
+      .map(x => String(x))
+      .filter(m => !m.includes("AbortError") && !m.includes("abort")); // filter cancelled-request noise
 
-    const allSignerErrors = errs.every(m =>
+    const allSignerErrors = errs.length > 0 && errs.every(m =>
       m.includes("fid cannot be 0") || m.includes("unknown signer") || m.includes("invalid signer")
     );
     if (allSignerErrors) {
@@ -108,7 +134,8 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
         "Please try again in 1–2 minutes.",
       );
     }
-    throw new Error(`All ${FREE_HUB_URLS.length + neynarKeys.length} hub targets failed: ${errs.join(" | ")}`);
+    const desc = errs.length ? errs.join(" | ") : "all requests aborted or timed out";
+    throw new Error(`All ${FREE_HUB_URLS.length + neynarKeys.length} hub targets failed: ${desc}`);
   }
 }
 
