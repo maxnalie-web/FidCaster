@@ -173,6 +173,12 @@ export function FollowPage() {
   // List virtualization — render only the first N rows to prevent page freeze
   const [visibleCount, setVisibleCount] = useState(80);
 
+  // Deep scan — continues past the initial 10K cap for large accounts
+  const [deepScanCursor, setDeepScanCursor] = useState<string | undefined>(undefined);
+  const [deepScanning, setDeepScanning] = useState(false);
+  const deepScanRawRef = useRef<NeynarUser[]>([]);
+  const deepScanTargetRef = useRef<{ user: NeynarUser; lt: "followers" | "following" } | null>(null);
+
   const exclusions = excludeRaw.trim() ? parseExclusions(excludeRaw) : undefined;
   const excludeCount = (exclusions?.fidSet.size ?? 0) + (exclusions?.usernameSet.size ?? 0);
 
@@ -341,6 +347,11 @@ export function FollowPage() {
       return;
     }
 
+    // Expose cursor + raw data so "Scan deeper" can continue from where we stopped
+    deepScanRawRef.current = collected;
+    deepScanTargetRef.current = { user: target, lt };
+    setDeepScanCursor(cursor); // undefined if list exhausted, else next page cursor
+
     const result = applyFilters(collected, batchMode, currentFilters, currentExclusions);
     setAllUsers(result);
     setSelectedFids(new Set(result.map(u => u.fid)));
@@ -351,8 +362,49 @@ export function FollowPage() {
     const target = mode === "cleanup" ? ownProfile : targetUser;
     if (!target) return;
     const lt = mode === "cleanup" ? "following" : listType;
-    setVisibleCount(80); // reset virtualization on each fresh load
+    setVisibleCount(80);
+    setDeepScanCursor(undefined);
+    deepScanRawRef.current = [];
     loadList(target, lt, filters, mode, exclusions);
+  }
+
+  // Continues scanning 10K more raw users when initial scan found fewer than limit
+  async function handleDeepScan() {
+    if (!deepScanCursor || !deepScanTargetRef.current || deepScanning || !myFid) return;
+    setDeepScanning(true);
+    const { user: target, lt } = deepScanTargetRef.current;
+    const fetchFn = lt === "following" ? getFollowing : getFollowers;
+    const batchMode = mode === "follow" ? "follow" : "unfollow";
+    let collected = [...deepScanRawRef.current];
+    let cursor: string | undefined = deepScanCursor;
+    const rawCap = collected.length + 10_000; // 10K more raw users per batch
+
+    try {
+      do {
+        const res = await fetchFn(target.fid, myFid, neynarKey ?? "", cursor);
+        const batch = res.users.map((u: NeynarUser | { user: NeynarUser }) =>
+          ("user" in u && u.user) ? (u as { user: NeynarUser }).user : (u as NeynarUser)
+        ).filter(Boolean);
+        collected.push(...batch);
+        cursor = res.next?.cursor;
+        setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
+        const interim = applyFilters(collected, batchMode, { ...filters, limit: 999_999 }, exclusions);
+        if (interim.length >= filters.limit) break;
+      } while (cursor && collected.length < rawCap);
+
+      void setCachedFollowList(lt, target.fid, myFid, collected);
+    } catch (e) {
+      toast.error("Scan failed: " + (e instanceof Error ? e.message : "error"));
+      setDeepScanning(false);
+      return;
+    }
+
+    deepScanRawRef.current = collected;
+    setDeepScanCursor(cursor);
+    const result = applyFilters(collected, batchMode, filters, exclusions);
+    setAllUsers(result);
+    setSelectedFids(new Set(result.map(u => u.fid)));
+    setDeepScanning(false);
   }
 
   // ── Selection ─────────────────────────────────────────────────────────────
@@ -937,6 +989,27 @@ export function FollowPage() {
           {/* User list */}
           {isLoaded && allUsers.length > 0 && !batchStarted && (
             <div className="flex flex-col h-full">
+              {/* Deep scan banner — shown when we hit the scan cap before reaching the limit */}
+              {!batchStarted && deepScanCursor && allUsers.length < filters.limit && (
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-500/8 border-b border-amber-500/20">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Search className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="text-[12px] text-muted-foreground">
+                      Found <span className="font-semibold text-foreground">{allUsers.length.toLocaleString()}</span> of {filters.limit.toLocaleString()} — scanned first {deepScanRawRef.current.length.toLocaleString()} users
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleDeepScan}
+                    disabled={deepScanning}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white text-[11px] font-bold shrink-0 transition-colors disabled:opacity-60"
+                  >
+                    {deepScanning
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Scanning…</>
+                      : <><Search className="w-3 h-3" /> Scan 10K more</>}
+                  </button>
+                </div>
+              )}
+
               {/* List header */}
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/10 sticky top-[53px] z-10">
                 <div className="flex items-center gap-2">
