@@ -456,7 +456,13 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] action error:", msg);
     metrics.incHubFail();
-    res.status(500).json({ error: msg });
+    // bad_request.validation_failure = target FID deleted/deactivated/invalid.
+    // This is permanent for that FID — tell client to skip it, not retry.
+    if (msg.includes("validation_failure") || msg.includes("bad_request.validation_failure")) {
+      res.status(422).json({ skip: true, error: msg });
+    } else {
+      res.status(500).json({ error: msg });
+    }
   }
 });
 
@@ -486,7 +492,11 @@ app.post("/api/farcaster/submit-bytes", actionLimiter, async (req, res) => {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] submit-bytes error:", msg);
     metrics.incHubFail();
-    res.status(500).json({ error: msg });
+    if (msg.includes("validation_failure") || msg.includes("bad_request.validation_failure")) {
+      res.status(422).json({ skip: true, error: msg });
+    } else {
+      res.status(500).json({ error: msg });
+    }
   }
 });
 

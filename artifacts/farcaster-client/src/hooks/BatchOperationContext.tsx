@@ -170,6 +170,12 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           const lo = msg.toLowerCase();
 
           const isDuplicate = lo.includes("duplicate") || lo.includes("already follow");
+          // PERMANENT_SKIP: target FID deleted/deactivated/invalid — hub returns
+          // bad_request.validation_failure for all targets. No point retrying.
+          const isPermanentSkip =
+            lo.includes("permanent_skip") ||
+            lo.includes("validation_failure") ||
+            lo.includes("bad_request.validation");
           const isSignerError =
             lo.includes("signer_not_registered") ||
             lo.includes("signer not recognized") ||
@@ -181,7 +187,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
             msg.includes("429") || lo.includes("rate limit") || lo.includes("too many requests");
           const isTransient = lo.includes("timeout") || lo.includes("abort") || lo.includes("signal");
 
-          if (isDuplicate) {
+          if (isDuplicate || isPermanentSkip) {
             result = "skipped";
             break;
           }
