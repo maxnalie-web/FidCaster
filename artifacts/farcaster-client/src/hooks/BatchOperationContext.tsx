@@ -4,7 +4,8 @@ import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, 
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
-import type { LocalSigner } from "@/lib/wallet";
+import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
+import { loadSignerPrivKey } from "@/lib/account-store";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
 
@@ -297,33 +298,59 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     })();
   }, [runBatch]);
 
-  // ── Auto-resume on page reload for the current account ─────────────────────
+  // ── Auto-resume ALL accounts' saved batches on login/account-switch ─────────
+  // Scans every fc_batch_v2_* localStorage key so that batches started under
+  // other accounts (not just the currently-active one) resume automatically and
+  // appear as separate pills in the stack.
   useEffect(() => {
     if (!fid || !localSigner) return;
-    const myFid = Number(fid);
-    if (resumedFids.current.has(myFid)) return;
+    const currentFid = Number(fid);
 
     // One-time cleanup of old single-key format
     localStorage.removeItem(BATCH_KEY_LEGACY);
 
-    const saved = loadBatch(myFid);
-    if (!saved || saved.myFid !== myFid || !saved.pendingFids.length) return;
+    // Collect every saved batch across all accounts
+    const allKeys = Object.keys(localStorage).filter(k => k.startsWith(BATCH_KEY_PREFIX));
 
-    resumedFids.current.add(myFid);
-    toast.info(`Resuming batch (${saved.pendingFids.length} left)…`, { duration: 3000 });
-    runBatch({
-      mode: saved.mode,
-      fids: saved.pendingFids,
-      myFid: saved.myFid,
-      signer: localSigner,
-      neynarKey: saved.neynarKey || walletNeynarKey,
-      label: saved.label,
-      accountLabel: saved.accountLabel || `FID ${myFid}`,
-      total: saved.total,
-      initialDone: saved.done,
-      initialErrors: saved.errors,
-      initialSkipped: saved.skipped ?? 0,
-    });
+    for (const key of allKeys) {
+      const savedFid = parseInt(key.slice(BATCH_KEY_PREFIX.length), 10);
+      if (isNaN(savedFid) || resumedFids.current.has(savedFid)) continue;
+
+      let saved: PersistedBatch | null = null;
+      try { saved = JSON.parse(localStorage.getItem(key) ?? "null"); } catch { continue; }
+      if (!saved || !saved.pendingFids.length) continue;
+
+      resumedFids.current.add(savedFid);
+
+      if (savedFid === currentFid) {
+        // Current account — signer is already in hand
+        toast.info(`Resuming batch (${saved.pendingFids.length} left)…`, { duration: 3000 });
+        runBatch({
+          mode: saved.mode, fids: saved.pendingFids, myFid: saved.myFid,
+          signer: localSigner, neynarKey: saved.neynarKey || walletNeynarKey,
+          label: saved.label, accountLabel: saved.accountLabel || `FID ${savedFid}`,
+          total: saved.total, initialDone: saved.done,
+          initialErrors: saved.errors, initialSkipped: saved.skipped ?? 0,
+        });
+      } else {
+        // Different account — load its signer key from storage and resume
+        const snap = saved; // stable ref for async closure
+        const snapFid = savedFid;
+        (async () => {
+          const privKeyHex = await loadSignerPrivKey(snapFid);
+          if (!privKeyHex) return; // signer not available — skip silently
+          const signer = signerFromPrivateKeyHex(privKeyHex);
+          toast.info(`Resuming batch for ${snap.accountLabel} (${snap.pendingFids.length} left)…`, { duration: 3000 });
+          runBatch({
+            mode: snap.mode, fids: snap.pendingFids, myFid: snap.myFid,
+            signer, neynarKey: snap.neynarKey || walletNeynarKey,
+            label: snap.label, accountLabel: snap.accountLabel || `FID ${snapFid}`,
+            total: snap.total, initialDone: snap.done,
+            initialErrors: snap.errors, initialSkipped: snap.skipped ?? 0,
+          });
+        })();
+      }
+    }
   }, [fid, localSigner, runBatch, walletNeynarKey]);
 
   const cancelOp = useCallback((myFid: number) => {

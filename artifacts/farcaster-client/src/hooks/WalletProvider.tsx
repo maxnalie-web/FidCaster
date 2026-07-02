@@ -902,10 +902,30 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [_applyAccount]);
 
   const switchAccount = useCallback(async (fid: number) => {
-    setState((s) => ({ ...s, isLoading: true, error: null }));
+    // ── Optimistic update: show new account identity immediately from cache ──
+    // This eliminates the ~1 s flash where the old account's name/avatar/feed
+    // would show while we await fetchProfile for the new account.
+    const accounts = loadAccountsMeta();
+    const target = accounts.find((a) => a.fid === fid);
+    const optimisticProfile: FarcasterProfile | null = target ? {
+      fid,
+      username: target.username || `!${fid}`,
+      displayName: target.displayName || `FID ${fid}`,
+      pfpUrl: target.pfpUrl || "",
+      bio: "", followerCount: 0, followingCount: 0,
+      custodyAddress: target.address || "",
+    } : null;
+    fidRef.current = BigInt(fid);
+    setState((s) => ({
+      ...s,
+      isLoading: true,
+      error: null,
+      fid: BigInt(fid),
+      profile: optimisticProfile,
+      signerApproved: loadSignerApproved(fid),
+      accounts,
+    }));
     try {
-      const accounts = loadAccountsMeta();
-      const target = accounts.find((a) => a.fid === fid);
       const targetAuth = target?.authMethod;
 
       // Farcaster account · restore from per-account stored signer key
