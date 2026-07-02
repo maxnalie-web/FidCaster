@@ -37,7 +37,8 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "tsx": "catalog:",
-    "viem": "^2.31.3"
+    "viem": "^2.31.3",
+    "vite-plugin-node-polyfills": "^0.28.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",

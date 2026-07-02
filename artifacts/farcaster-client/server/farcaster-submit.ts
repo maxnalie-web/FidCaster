@@ -13,10 +13,12 @@ import {
 } from "@farcaster/hub-nodejs";
 
 // Free public hubs — no Neynar credits, raced in parallel first.
+// Prefer HTTPS-port hubs (443) — port 2281 is commonly blocked on cloud providers.
 const FREE_HUB_URLS = [
-  "https://hoyt.farcaster.xyz:2281",
-  "https://hub.farcaster.standardcrypto.vc:2281",
-  "https://api.hub.wevm.dev",          // wevm/viem team public hub (HTTPS)
+  "https://api.hub.wevm.dev",                      // wevm/viem team (HTTPS 443)
+  "https://hub.pinata.cloud",                       // Pinata public hub (HTTPS 443)
+  "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281 — may be blocked)
+  "https://hub.farcaster.standardcrypto.vc:2281",  // Standard Crypto (port 2281)
 ];
 
 // Neynar hub — costs credits per submission; used only when ALL free hubs fail.
@@ -100,7 +102,13 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
       freeAbort.abort("free hub won"); // cancel any still-pending sibling requests
       return hash;
     }),
-  ).catch(() => null as null);
+  ).catch((e: unknown) => {
+    const errs = (e instanceof AggregateError ? e.errors : [e])
+      .map(x => String(x))
+      .filter(m => !m.includes("AbortError") && !m.includes("abort"));
+    if (errs.length) console.warn(`[farcaster-submit] free hubs all failed: ${errs.join(" | ")}`);
+    return null as null;
+  });
 
   if (freeResult) return freeResult;
 
