@@ -1,13 +1,14 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, Zap, UserPlus, UserMinus, ChevronRight,
+  X, UserPlus, UserMinus, ChevronRight,
   Loader2, Users, Shield,
   TrendingUp, Heart, Clock, SlidersHorizontal, RefreshCw, Ban, ChevronDown,
   Shuffle, Sparkles, History, ArrowUpNarrowWide,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getFollowers, getFollowing, hasPowerBadge, type NeynarUser } from "@/lib/neynar";
+import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import type { LocalSigner } from "@/lib/wallet";
 import { toast } from "sonner";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
@@ -250,7 +251,7 @@ export function BatchFollowSheet({
                   <div className="divide-y divide-border/50">
                     {mode === "follow" && <>
                       <Toggle label="Only users who follow me back" sub="High follow-back probability" icon={<Heart className="w-3.5 h-3.5" />} checked={filters.onlyMutuals} onChange={v => updateFilter("onlyMutuals", v)} />
-                      <Toggle label="Power Badge only" sub="Active & verified Farcaster users" icon={<Zap className="w-3.5 h-3.5 text-amber-500" />} checked={filters.onlyPowerBadge} onChange={v => updateFilter("onlyPowerBadge", v)} />
+                      <Toggle label="Power Badge only" sub="Active & verified Farcaster users" icon={<PowerBadgeIcon size={14} />} checked={filters.onlyPowerBadge} onChange={v => updateFilter("onlyPowerBadge", v)} />
                     </>}
                     {mode === "unfollow" && <>
                       <Toggle label="Skip mutuals (they follow me)" sub="Keep real connections safe" icon={<Heart className="w-3.5 h-3.5" />} checked={filters.skipMutuals} onChange={v => updateFilter("skipMutuals", v)} />
@@ -341,8 +342,8 @@ export function BatchFollowSheet({
 
                 {/* Power Badge warning */}
                 {filters.onlyPowerBadge && (
-                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
-                    <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-violet-500/8 border border-violet-500/20">
+                    <PowerBadgeIcon size={14} />
                     <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
                       Power Badge holders are rare (~5–10% of active users). The scanner may need to go through many pages before finding enough. If 0 are found, try removing this filter.
                     </p>
@@ -490,7 +491,7 @@ export function BatchFollowSheet({
                           <p className="text-[13px] font-medium text-foreground truncate">@{u.username}</p>
                           <p className="text-[11px] text-muted-foreground">{(u.follower_count ?? 0).toLocaleString()} followers</p>
                         </div>
-                        {hasPowerBadge(u) && <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                        {hasPowerBadge(u) && <PowerBadgeIcon size={14} />}
                         {u.viewer_context?.followed_by && <Heart className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
                       </div>
                     ))}
@@ -507,7 +508,7 @@ export function BatchFollowSheet({
                     Back
                   </button>
                   <button onClick={startOperation} className={cn("flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-[15px] transition-all active:scale-[0.98]", accentCls)}>
-                    <Zap className="w-4 h-4" />
+                    <UserPlus className="w-4 h-4" />
                     {mode === "follow" ? `Follow ${fetchedUsers.length}` : `Unfollow ${fetchedUsers.length}`}
                   </button>
                 </div>

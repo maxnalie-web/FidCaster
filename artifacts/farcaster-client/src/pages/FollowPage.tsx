@@ -4,13 +4,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Search, UserPlus, UserMinus, Users, Loader2,
   X, ChevronDown, CheckSquare, Square,
-  Zap, Heart, Ban, Filter, Check, AlertCircle, Scissors,
+  Heart, Ban, Filter, Check, AlertCircle, Scissors, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   searchUsers, getUserByFid, getFollowers, getFollowing,
   hasPowerBadge, type NeynarUser,
 } from "@/lib/neynar";
+import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
+import { ProBadge, useProStatus } from "@/components/ProBadge";
 import { getCachedFollowList, setCachedFollowList } from "@/lib/farcaster-db";
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
@@ -46,6 +48,9 @@ function UserRow({
 }) {
   const followingMe = user.viewer_context?.followed_by;
   const iFollow = user.viewer_context?.following;
+  const proMap = useProStatus([user.fid]);
+  const isPro = proMap[user.fid] ?? false;
+  const hasBadge = hasPowerBadge(user);
 
   return (
     <button
@@ -74,11 +79,12 @@ function UserRow({
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-1 min-w-0">
           <p className="text-[13px] font-semibold text-foreground truncate">
             {user.display_name || user.username}
           </p>
-          {hasPowerBadge(user) && <Zap className="w-3 h-3 text-amber-500 shrink-0" />}
+          {hasBadge && <PowerBadgeIcon size={13} />}
+          {isPro && <ProBadge size={13} />}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <p className="text-[11px] text-muted-foreground truncate">@{user.username}</p>
@@ -171,7 +177,7 @@ export function FollowPage() {
   const [lastBatchLabel, setLastBatchLabel] = useState("");
 
   // List virtualization — render only the first N rows to prevent page freeze
-  const [visibleCount, setVisibleCount] = useState(80);
+  const [visibleCount, setVisibleCount] = useState(40);
 
   // Deep scan — continues past the initial 10K cap for large accounts
   const [deepScanCursor, setDeepScanCursor] = useState<string | undefined>(undefined);
@@ -307,10 +313,16 @@ export function FollowPage() {
     let collected: NeynarUser[] = [];
 
     // ── Browser-side cache (IndexedDB, 15 min TTL) ─────────────────────────
-    // Skip cache if we need significantly more raw data than was cached.
-    // Example: user requested 5000 but cache only has 2000 raw → skip cache,
-    // re-scan so strict filters (minFollowers, Power Badge) can find enough users.
-    const cached = await getCachedFollowList(lt, fetchFid, myFid);
+    // Skip cache when strict filters are active — those filters need MAX_SCAN
+    // raw data to find enough qualifying results. With only limit×4 cached
+    // users, strict filters (minFollowers, Power Badge, Pro) almost always
+    // produce an empty result.
+    const strictFilters =
+      (currentFilters.minFollowers ?? 0) > 0 ||
+      (currentFilters.maxFollowers ?? 0) > 0 ||
+      currentFilters.onlyPowerBadge === true ||
+      currentFilters.onlyPro === true;
+    const cached = strictFilters ? null : await getCachedFollowList(lt, fetchFid, myFid);
     const minRawNeeded = Math.min(currentFilters.limit * 4, MAX_SCAN);
     if (cached && cached.length >= minRawNeeded) {
       collected = cached as NeynarUser[];
@@ -328,18 +340,19 @@ export function FollowPage() {
     try {
       do {
         const res = await fetchFn(fetchFid, myFid, neynarKey ?? "", cursor);
-        // Handle both Hub-proxy format { user: NeynarUser }[] and Neynar v2 flat NeynarUser[]
         const batch = res.users.map((u: NeynarUser | { user: NeynarUser }) =>
           ("user" in u && u.user) ? (u as { user: NeynarUser }).user : (u as NeynarUser)
         ).filter(Boolean);
         collected.push(...batch);
         cursor = res.next?.cursor;
         setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
-        const interim = applyFilters(collected, batchMode, { ...currentFilters, limit: MAX_SCAN }, currentExclusions);
-        if (interim.length >= currentFilters.limit) break;
+        // Early-exit only for non-Pro filters (Pro needs full scan to batch-check status)
+        if (!currentFilters.onlyPro) {
+          const interim = applyFilters(collected, batchMode, { ...currentFilters, limit: MAX_SCAN }, currentExclusions);
+          if (interim.length >= currentFilters.limit) break;
+        }
       } while (cursor && collected.length < MAX_SCAN);
 
-      // Save full raw list to browser cache for next visit.
       void setCachedFollowList(lt, fetchFid, myFid, collected);
     } catch (e) {
       toast.error("Failed to load: " + (e instanceof Error ? e.message : "error"));
@@ -347,22 +360,48 @@ export function FollowPage() {
       return;
     }
 
-    // Expose cursor + raw data so "Scan deeper" can continue from where we stopped
     deepScanRawRef.current = collected;
     deepScanTargetRef.current = { user: target, lt };
-    setDeepScanCursor(cursor); // undefined if list exhausted, else next page cursor
+    setDeepScanCursor(cursor);
 
-    const result = applyFilters(collected, batchMode, currentFilters, currentExclusions);
-    setAllUsers(result);
-    setSelectedFids(new Set(result.map(u => u.fid)));
-    setPhase(result.length === 0 ? "empty" : "loaded");
+    // ── Pro filter: batch-fetch Pro status, then apply ────────────────────
+    let finalResult: NeynarUser[];
+    if (currentFilters.onlyPro) {
+      // First apply all other filters (without limit cap so we get all candidates)
+      const candidates = applyFilters(
+        collected, batchMode,
+        { ...currentFilters, onlyPro: false, limit: MAX_SCAN },
+        currentExclusions,
+      );
+      setScanProgress(p => ({ ...p, found: candidates.length }));
+
+      // Batch-fetch Pro status in chunks of 100
+      const proMap: Record<number, boolean> = {};
+      for (let i = 0; i < candidates.length; i += 100) {
+        const chunk = candidates.slice(i, i + 100).map(u => u.fid);
+        try {
+          const r = await fetch(`/api/pro-status?fids=${chunk.join(",")}`, { headers: { accept: "application/json" } });
+          if (r.ok) {
+            const data = await r.json() as Record<string, boolean>;
+            for (const fid of chunk) proMap[fid] = !!data[fid];
+          }
+        } catch { /* leave undefined → treated as false */ }
+      }
+      finalResult = candidates.filter(u => proMap[u.fid] === true).slice(0, currentFilters.limit);
+    } else {
+      finalResult = applyFilters(collected, batchMode, currentFilters, currentExclusions);
+    }
+
+    setAllUsers(finalResult);
+    setSelectedFids(new Set(finalResult.map(u => u.fid)));
+    setPhase(finalResult.length === 0 ? "empty" : "loaded");
   }, [myFid, neynarKey]);
 
   function handleLoad() {
     const target = mode === "cleanup" ? ownProfile : targetUser;
     if (!target) return;
     const lt = mode === "cleanup" ? "following" : listType;
-    setVisibleCount(80);
+    setVisibleCount(40);
     setDeepScanCursor(undefined);
     deepScanRawRef.current = [];
     loadList(target, lt, filters, mode, exclusions);
@@ -586,7 +625,7 @@ export function FollowPage() {
                             <p className="text-[12px] font-semibold text-foreground truncate">@{u.username}</p>
                             <p className="text-[10px] text-muted-foreground">{(u.follower_count ?? 0).toLocaleString()} followers</p>
                           </div>
-                          {hasPowerBadge(u) && <Zap className="w-3 h-3 text-amber-500 shrink-0" />}
+                          {hasPowerBadge(u) && <PowerBadgeIcon size={12} />}
                         </button>
                       ))}
                     </motion.div>
@@ -809,7 +848,10 @@ export function FollowPage() {
                         <Toggle label="Mutuals only" sub="Only those who follow me" checked={filters.onlyMutuals} onChange={v => updateFilter("onlyMutuals", v)} icon={<Heart className="w-3.5 h-3.5" />} />
                       </div>
                       <div className="px-3">
-                        <Toggle label="Power Badge only" checked={filters.onlyPowerBadge} onChange={v => updateFilter("onlyPowerBadge", v)} icon={<Zap className="w-3.5 h-3.5" />} />
+                        <Toggle label="Power Badge only" sub="Active verified Farcaster users" checked={filters.onlyPowerBadge} onChange={v => updateFilter("onlyPowerBadge", v)} icon={<PowerBadgeIcon size={14} />} />
+                      </div>
+                      <div className="px-3">
+                        <Toggle label="Farcaster Pro only" sub="Paid subscribers ($10/mo) — rare, high intent" checked={filters.onlyPro} onChange={v => updateFilter("onlyPro", v)} icon={<ProBadge size={14} />} />
                       </div>
                     </>
                   ) : (
@@ -1051,10 +1093,11 @@ export function FollowPage() {
                 ))}
                 {visibleCount < allUsers.length && (
                   <button
-                    onClick={() => setVisibleCount(v => v + 100)}
-                    className="w-full py-4 text-[13px] font-semibold text-primary hover:bg-primary/5 transition-colors"
+                    onClick={() => setVisibleCount(v => v + 40)}
+                    className="w-full flex items-center justify-center gap-2 py-4 text-[13px] font-semibold text-primary hover:bg-primary/5 transition-colors"
                   >
-                    Show {Math.min(100, allUsers.length - visibleCount)} more
+                    <ChevronRight className="w-4 h-4" />
+                    Load 40 more
                     <span className="text-muted-foreground font-normal ml-1">
                       ({allUsers.length - visibleCount} remaining)
                     </span>

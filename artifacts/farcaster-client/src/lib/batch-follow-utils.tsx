@@ -16,6 +16,7 @@ export type Preset = "balanced" | "quality" | "cleanup" | "aggressive" | "custom
 export interface BatchFilters {
   limit: number;
   onlyPowerBadge: boolean;
+  onlyPro: boolean;
   onlyMutuals: boolean;
   onlyNonFollowers: boolean;
   skipMutuals: boolean;
@@ -45,6 +46,7 @@ export interface SortOptionDef {
 export const DEFAULT_FILTERS: BatchFilters = {
   limit: 50,
   onlyPowerBadge: false,
+  onlyPro: false,
   onlyMutuals: false,
   onlyNonFollowers: false,
   skipMutuals: false,
