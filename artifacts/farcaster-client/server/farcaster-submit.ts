@@ -23,7 +23,7 @@ const FREE_HUB_URLS = [
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
 
 /** Read every NEYNAR_API_KEY* env var — used for parallel key racing below. */
-function getAllNeynarKeys(): string[] {
+export function getAllNeynarKeys(): string[] {
   const keys: string[] = [];
   const p = process.env.NEYNAR_API_KEY;
   if (p) keys.push(p);

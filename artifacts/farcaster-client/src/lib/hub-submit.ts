@@ -173,6 +173,58 @@ async function tryDirectHubSubmit(bytesBase64: string): Promise<boolean> {
   return false;
 }
 
+// ─── browser-direct Neynar hub (CORS supported) ───────────────────────────────
+//
+// hub-api.neynar.com returns Access-Control-Allow-Origin: * so browsers can POST
+// signed bytes directly — zero server involvement, zero server load.
+// We cache the hub token in module memory (5-min TTL) so batch operations
+// (e.g. 5 000 follows) only pay one small fetch overhead.
+
+interface HubToken { key: string; hub: string }
+let _cachedToken: (HubToken & { fetchedAt: number }) | null = null;
+
+async function getHubToken(): Promise<HubToken | null> {
+  if (_cachedToken && Date.now() - _cachedToken.fetchedAt < 5 * 60_000) {
+    return _cachedToken;
+  }
+  try {
+    const res = await fetch("/api/farcaster/hub-token", { signal: AbortSignal.timeout(3_000) });
+    if (!res.ok) return null;
+    const data = await res.json() as HubToken;
+    _cachedToken = { ...data, fetchedAt: Date.now() };
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Submit pre-signed bytes DIRECTLY to Neynar hub from the browser.
+ * Neynar hub has CORS headers → no server proxy needed → server load = 0.
+ * Returns true on success, false if hub is unreachable or rejects.
+ */
+async function tryDirectNeynarHub(bytesBase64: string): Promise<boolean> {
+  const token = await getHubToken();
+  if (!token) return false;
+  const bytes = Uint8Array.from(atob(bytesBase64), c => c.charCodeAt(0));
+  try {
+    const res = await fetch(`${token.hub}/v1/submitMessage`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/octet-stream", "api_key": token.key },
+      body:    bytes,
+      signal:  AbortSignal.timeout(8_000),
+    });
+    if (res.ok) return true;
+    const txt = await res.text().catch(() => "");
+    if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) return true;
+    // 429 = rate-limit on this key; let caller fall back (token will be refreshed next time)
+    if (res.status === 429) { _cachedToken = null; return false; }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Send pre-signed bytes to the server CORS proxy.
  * Server races 3 free hubs + all Neynar keys with Promise.any() — first win returned.
@@ -240,10 +292,17 @@ async function submit(
   try {
     const { bytes } = await buildAndSignLocal(new Uint8Array(privateKey), fid, action);
     signedBytes = bytes;
-    const ok = await tryDirectHubSubmit(bytes);
-    if (ok) return;
+
+    // 1a. Public hubs (user's own IP — free, no credits)
+    const directOk = await tryDirectHubSubmit(bytes);
+    if (directOk) return;
+
+    // 1b. Neynar hub direct from browser (CORS ✓ — server completely bypassed)
+    //     Server only gives us a rotating key; bytes stay in browser the whole time.
+    const neynarOk = await tryDirectNeynarHub(bytes);
+    if (neynarOk) return;
   } catch {
-    // signing failed unexpectedly → skip to full relay
+    // signing failed unexpectedly → fall through to server relay
   }
 
   // ── 2. Server CORS proxy: send pre-signed bytes (private key stays in browser) ─

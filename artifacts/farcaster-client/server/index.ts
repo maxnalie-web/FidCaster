@@ -7,7 +7,7 @@ import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { mnemonicToAccount } from "viem/accounts";
-import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type FarcasterAction } from "./farcaster-submit.js";
+import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, getAllNeynarKeys, type FarcasterAction } from "./farcaster-submit.js";
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { cacheStats } from "./cache.js";
@@ -191,6 +191,23 @@ const VALID_ACTIONS = new Set<string>([
 app.get("/internal/metrics", (_req, res) => {
   const health = healthSnapshot();
   res.json({ ...metrics.snapshot(), cache_store: cacheStats(), health });
+});
+
+// Round-robin counter for hub-token key rotation
+let _hubKeyIdx = 0;
+
+// Returns a rotating Neynar API key for browser-direct hub submission.
+// Neynar hub (hub-api.neynar.com) supports CORS so browsers can POST signed bytes
+// directly without any server relay — server load drops to zero.
+app.get("/api/farcaster/hub-token", actionLimiter, (_req, res) => {
+  const keys = getAllNeynarKeys();
+  if (keys.length === 0) {
+    res.status(503).json({ error: "No hub keys configured" });
+    return;
+  }
+  const key = keys[_hubKeyIdx % keys.length];
+  _hubKeyIdx = (_hubKeyIdx + 1) % keys.length;
+  res.json({ key, hub: "https://hub-api.neynar.com" });
 });
 
 app.get("/api/farcaster/health", (_req, res) => {
