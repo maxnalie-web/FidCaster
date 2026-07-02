@@ -7,7 +7,7 @@ import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { mnemonicToAccount } from "viem/accounts";
-import { submitFarcasterAction, signFarcasterAction, type FarcasterAction } from "./farcaster-submit.js";
+import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type FarcasterAction } from "./farcaster-submit.js";
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { cacheStats } from "./cache.js";
@@ -438,6 +438,36 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] action error:", msg);
+    metrics.incHubFail();
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Submit pre-signed protobuf bytes — races free hubs + all Neynar keys in parallel ──
+// Browser signs locally and POSTs raw bytes here; no private key transmitted.
+// Server calls submitSignedBytes() which uses Promise.any() to race every hub target.
+// First to accept wins instantly — no sequential retries, no rate-limit waits.
+app.post("/api/farcaster/submit-bytes", actionLimiter, async (req, res) => {
+  try {
+    const { bytes } = req.body as { bytes?: string };
+    if (!bytes || typeof bytes !== "string") {
+      res.status(400).json({ error: "bytes (base64) required" }); return;
+    }
+    let msgBytes: Uint8Array;
+    try {
+      msgBytes = Uint8Array.from(Buffer.from(bytes, "base64"));
+      if (msgBytes.length < 10 || msgBytes.length > 100_000) {
+        res.status(400).json({ error: "bytes length out of range" }); return;
+      }
+    } catch {
+      res.status(400).json({ error: "bytes is not valid base64" }); return;
+    }
+    const hash = await submitSignedBytes(msgBytes);
+    metrics.incHubRelay();
+    res.json({ ok: true, hash });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Internal error";
+    console.error("[server] submit-bytes error:", msg);
     metrics.incHubFail();
     res.status(500).json({ error: msg });
   }

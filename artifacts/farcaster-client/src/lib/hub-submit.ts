@@ -2,14 +2,15 @@
  * Farcaster Hub Message Submission — Browser Client
  *
  * Signing is done ENTIRELY IN THE BROWSER using @farcaster/core.
- * No server roundtrip for signing → server CPU = 0 → no queue / no pause.
+ * Private key NEVER leaves the browser — not even for the server relay.
  *
  * Chain for every action:
- *  1. Build + sign locally in this browser tab (private key never leaves device)
- *  2. Submit protobuf bytes directly to a public hub (user's own IP)
- *     Each hub: up to 2 attempts with backoff on 429 / network error.
- *  3. If all public hubs reject → server relay (/action) as last resort.
- *     Server relay also signs + submits server-side (slower, but always works).
+ *  1. Build + sign locally in this browser tab (private key never leaves device).
+ *  2. Submit protobuf bytes directly to a public hub (user's own IP, CORS permitting).
+ *  3. If direct submission is blocked (CORS / mixed-content) →
+ *     POST pre-signed bytes to /api/farcaster/submit-bytes (server CORS proxy).
+ *     Server races 3 free hubs + all Neynar keys with Promise.any() — first win returned.
+ *  4. Only if browser signing itself fails → full server relay (/action) as last resort.
  *
  * Exported functions are drop-in identical to the old version — callers unchanged.
  */
@@ -139,6 +140,7 @@ async function buildAndSignLocal(
 const BROWSER_HUB_URLS = [
   "https://hoyt.farcaster.xyz:2281",
   "https://hub.farcaster.standardcrypto.vc:2281",
+  "https://api.hub.wevm.dev",
 ];
 
 /**
@@ -171,7 +173,33 @@ async function tryDirectHubSubmit(bytesBase64: string): Promise<boolean> {
   return false;
 }
 
-/** Full server-side sign + submit — original fallback for when all hubs reject. */
+/**
+ * Send pre-signed bytes to the server CORS proxy.
+ * Server races 3 free hubs + all Neynar keys with Promise.any() — first win returned.
+ * Private key is NEVER transmitted — only already-signed bytes.
+ */
+async function submitBytesRelay(bytesBase64: string): Promise<void> {
+  const res = await fetch("/api/farcaster/submit-bytes", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ bytes: bytesBase64 }),
+    signal:  AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    if (res.status === 429) throw new Error(`HTTP 429 — server relayed a hub rate limit`);
+    if (res.status >= 500) throw new Error(`signal — server temporarily unavailable (${res.status}), will retry`);
+    const txt = await res.text().catch(() => "");
+    let msg = txt;
+    try { msg = (JSON.parse(txt) as { error?: string }).error ?? txt; } catch { /* ok */ }
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) {
+    throw new Error(`signal — hub relay returned unexpected response (server may be restarting)`);
+  }
+}
+
+/** Last-resort full relay — used only when browser-side signing itself fails. */
 async function serverRelay(body: object): Promise<void> {
   const res = await fetch("/api/farcaster/action", {
     method:  "POST",
@@ -179,37 +207,27 @@ async function serverRelay(body: object): Promise<void> {
     body:    JSON.stringify(body),
     signal:  AbortSignal.timeout(32_000),
   });
-
   if (!res.ok) {
-    // 429 → throw message with "429" so batch can detect rate-limit and wait
-    if (res.status === 429) {
-      throw new Error(`HTTP 429 — server relayed a hub rate limit`);
-    }
-    // 5xx / 502 proxy error → server or Vite proxy temporarily down → mark as transient
-    // "signal" keyword makes BatchOperationContext treat this as a retryable error
-    if (res.status >= 500) {
-      throw new Error(`signal — server temporarily unavailable (${res.status}), will retry`);
-    }
+    if (res.status === 429) throw new Error(`HTTP 429 — server relayed a hub rate limit`);
+    if (res.status >= 500) throw new Error(`signal — server temporarily unavailable (${res.status}), will retry`);
     const txt = await res.text().catch(() => "");
     let msg = txt;
     try { msg = (JSON.parse(txt) as { error?: string }).error ?? txt; } catch { /* ok */ }
     throw new Error(msg || `HTTP ${res.status}`);
   }
-
   const ct = res.headers.get("content-type") ?? "";
   if (!ct.includes("application/json")) {
-    // Proxy returned HTML (server restarting) → mark transient so batch retries once
     throw new Error(`signal — hub relay returned unexpected response (server may be restarting)`);
   }
 }
 
 /**
- * Core submission: sign locally → submit to hub → fall back to server relay.
+ * Core submission: sign locally → direct hub → server bytes proxy → last-resort relay.
  *
  * @param privateKey  Raw ed25519 private key bytes (from LocalSigner).
  * @param fid         Farcaster ID of the acting user.
  * @param action      What to do.
- * @param relayBody   Pre-built body for server relay fallback (includes signerPrivateKey as hex).
+ * @param relayBody   Pre-built body for the last-resort /action relay (only used if signing fails).
  */
 async function submit(
   privateKey: Uint8Array,
@@ -217,16 +235,24 @@ async function submit(
   action: FarcasterAction,
   relayBody: object,
 ): Promise<void> {
-  // ── 1. Sign in browser, submit from browser IP ────────────────────────────
+  // ── 1. Sign in browser, submit from browser IP (fastest, no server involved) ─
+  let signedBytes: string | null = null;
   try {
     const { bytes } = await buildAndSignLocal(new Uint8Array(privateKey), fid, action);
+    signedBytes = bytes;
     const ok = await tryDirectHubSubmit(bytes);
     if (ok) return;
   } catch {
-    // signing failed (shouldn't happen) → fall through to relay
+    // signing failed unexpectedly → skip to full relay
   }
 
-  // ── 2. Server relay (signs + submits server-side) ────────────────────────
+  // ── 2. Server CORS proxy: send pre-signed bytes (private key stays in browser) ─
+  if (signedBytes) {
+    await submitBytesRelay(signedBytes);
+    return;
+  }
+
+  // ── 3. Absolute last resort: full relay with re-signing (signing-failure path) ─
   await serverRelay(relayBody);
 }
 

@@ -12,21 +12,105 @@ import {
   Message,
 } from "@farcaster/hub-nodejs";
 
-// Hub submission order:
-//  1. Public Farcaster hubs (free, no credits consumed) — tried first.
-//     Any properly-synced hub accepts messages from on-chain-registered signers.
-//  2. Neynar hub (costs API credits) — fallback only when public hubs fail.
-//
-// Public hubs sync KeyRegistry from Optimism like everyone else;
-// "unknown signer" on a public hub = signer not yet on-chain, not a hub limitation.
-const PUBLIC_HUB_URLS = [
+// Free public hubs — no Neynar credits, raced in parallel first.
+const FREE_HUB_URLS = [
   "https://hoyt.farcaster.xyz:2281",
   "https://hub.farcaster.standardcrypto.vc:2281",
+  "https://api.hub.wevm.dev",          // wevm/viem team public hub (HTTPS)
 ];
-// Neynar hub: used ONLY as last resort when all public hubs fail server-side.
-// Each server-side submission costs Neynar credits. The primary path is
-// browser-direct (hub-submit.ts) which bypasses this entirely.
+
+// Neynar hub — costs credits per submission; used only when ALL free hubs fail.
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
+
+/** Read every NEYNAR_API_KEY* env var — used for parallel key racing below. */
+function getAllNeynarKeys(): string[] {
+  const keys: string[] = [];
+  const p = process.env.NEYNAR_API_KEY;
+  if (p) keys.push(p);
+  for (let i = 2; i <= 20; i++) {
+    const k = process.env[`NEYNAR_API_KEY_${i}`] ?? process.env[`NEYNAR_API_KEY${i}`];
+    if (k && !keys.includes(k)) keys.push(k);
+    if (!process.env[`NEYNAR_API_KEY_${i}`] && !process.env[`NEYNAR_API_KEY${i}`]) break;
+  }
+  return keys;
+}
+
+/**
+ * Submit pre-signed protobuf bytes to a single hub URL.
+ * Resolves with the message hash on success; throws on any failure.
+ */
+async function tryHubOnce(
+  url: string,
+  msgBytes: Uint8Array,
+  msgHash: string,
+  apiKey?: string,
+): Promise<string> {
+  const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
+  if (apiKey) headers["api_key"] = apiKey;
+  const res = await fetch(`${url}/v1/submitMessage`, {
+    method: "POST",
+    headers,
+    body: msgBytes,
+    signal: AbortSignal.timeout(8_000), // short timeout — we're racing, don't wait long
+  });
+  if (res.ok) {
+    console.log(`[farcaster-submit] ✓ ${apiKey ? "(neynar) " : ""}${url}`);
+    return msgHash;
+  }
+  const txt = await res.text().catch(() => "");
+  if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) return msgHash;
+  throw new Error(`${url}: HTTP ${res.status} — ${txt.slice(0, 120)}`);
+}
+
+/**
+ * Submit already-signed protobuf bytes to Farcaster hubs.
+ *
+ * Strategy (no sequential retries — purely parallel racing):
+ *  Phase 1 — Race ALL free hubs simultaneously (Promise.any).
+ *             First hub to accept wins immediately → 0 credits consumed.
+ *  Phase 2 — Only if every free hub failed: race ALL Neynar keys simultaneously.
+ *             First non-rate-limited key wins → effectively no rate-limit wait.
+ *
+ * With N free hubs + K Neynar keys there are N+K parallel attempts.
+ * The effective throughput is the SUM of all accepted RPM, not the minimum.
+ */
+export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
+  const message = Message.decode(msgBytes);
+  const msgHash = Buffer.from(message.hash).toString("hex");
+
+  // Phase 1: race free hubs (parallel, no credits)
+  const freeResult = await Promise.any(
+    FREE_HUB_URLS.map(url => tryHubOnce(url, msgBytes, msgHash))
+  ).catch(() => null as null);
+
+  if (freeResult) return freeResult;
+
+  // Phase 2: all free hubs failed → race ALL Neynar keys simultaneously
+  const neynarKeys = getAllNeynarKeys();
+  if (neynarKeys.length === 0) throw new Error("No Neynar API keys configured and all free hubs failed.");
+
+  try {
+    return await Promise.any(
+      neynarKeys.map(key => tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key))
+    );
+  } catch (e: unknown) {
+    const errs = e instanceof AggregateError
+      ? e.errors.map(x => String(x))
+      : [String(e)];
+
+    const allSignerErrors = errs.every(m =>
+      m.includes("fid cannot be 0") || m.includes("unknown signer") || m.includes("invalid signer")
+    );
+    if (allSignerErrors) {
+      throw new Error(
+        "SIGNER_NOT_REGISTERED: Your signer key is not yet recognized by the hub. " +
+        "The on-chain registration is confirmed but hubs may take a few minutes to sync. " +
+        "Please try again in 1–2 minutes.",
+      );
+    }
+    throw new Error(`All ${FREE_HUB_URLS.length + neynarKeys.length} hub targets failed: ${errs.join(" | ")}`);
+  }
+}
 
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;
 
@@ -224,63 +308,7 @@ export async function submitFarcasterAction(
   validateAction(action);
   const message = await buildMessage(signerPrivateKeyHex, fid, action);
   const msgBytes = Message.encode(message).finish();
-
   console.log(`[farcaster-submit] action=${action.type} fid=${fid} msgBytes=${msgBytes.length}`);
-
-  const errs: string[] = [];
-  const msgHash = Buffer.from(message.hash).toString("hex");
-
-  /** Try a single hub URL. Returns the hash on success, null on failure. */
-  async function tryHub(hubUrl: string, apiKey?: string): Promise<string | null> {
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
-      if (apiKey) headers["api_key"] = apiKey;
-      const res = await fetch(`${hubUrl}/v1/submitMessage`, {
-        method: "POST",
-        headers,
-        body: msgBytes,
-        signal: AbortSignal.timeout(12_000),
-      });
-      console.log(`[farcaster-submit] ${hubUrl}: HTTP ${res.status}`);
-      if (res.ok) return msgHash;
-      const txt = await res.text().catch(() => "");
-      if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) {
-        console.log(`[farcaster-submit] duplicate on ${hubUrl} — treating as success`);
-        return msgHash;
-      }
-      errs.push(`${hubUrl}: HTTP ${res.status} — ${txt.slice(0, 200)}`);
-      return null;
-    } catch (e: unknown) {
-      errs.push(`${hubUrl}: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
-      return null;
-    }
-  }
-
-  // ── 1. Try public hubs first (no Neynar credits) ────────────────────────
-  for (const url of PUBLIC_HUB_URLS) {
-    const hash = await tryHub(url);
-    if (hash) return { hash };
-  }
-
-  // ── 2. Neynar hub — last resort when public hubs unreachable server-side ─
-  // Note: costs credits. Primary path (browser-direct via hub-submit.ts)
-  // never reaches here — credits only consumed when browser falls back to relay.
-  const neynarKey = process.env.NEYNAR_API_KEY;
-  if (neynarKey) {
-    const hash = await tryHub(NEYNAR_HUB_URL, neynarKey);
-    if (hash) return { hash };
-  }
-
-  const allSignerErrors = errs.every(
-    (e) => e.includes("fid cannot be 0") || e.includes("unknown signer") || e.includes("invalid signer"),
-  );
-  if (allSignerErrors && errs.length > 0) {
-    throw new Error(
-      "SIGNER_NOT_REGISTERED: Your signer key is not yet recognized by the hub. " +
-      "The on-chain registration is confirmed but hubs may take a few minutes to sync. " +
-      "Please try again in 1–2 minutes.",
-    );
-  }
-
-  throw new Error(`Hub submission failed: ${errs.join(" | ")}`);
+  const hash = await submitSignedBytes(msgBytes);
+  return { hash };
 }
