@@ -137,11 +137,42 @@ async function buildAndSignLocal(
 
 // ─── hub submission ────────────────────────────────────────────────────────────
 
+// Cloudflare Worker URL (optional) — set VITE_HUB_WORKER_URL in Replit secrets.
+// Worker races 3 free hubs in parallel on Cloudflare's global network; each
+// data-center has its own IP so hub rate limits are effectively bypassed.
+// See hub-worker/index.js for the one-file Worker code to deploy.
+const WORKER_URL = (import.meta.env.VITE_HUB_WORKER_URL as string | undefined)?.replace(/\/$/, "");
+
 const BROWSER_HUB_URLS = [
   "https://hoyt.farcaster.xyz:2281",
   "https://hub.farcaster.standardcrypto.vc:2281",
   "https://api.hub.wevm.dev",
 ];
+
+/**
+ * Submit pre-signed bytes via Cloudflare Worker (if VITE_HUB_WORKER_URL is set).
+ * Worker races 3 free Farcaster hubs simultaneously on Cloudflare's network.
+ * CORS is handled by the Worker → browser can call freely.
+ * Each Cloudflare data-center has its own IP → hub rate limits effectively bypassed.
+ */
+async function tryWorkerHubSubmit(bytesBase64: string): Promise<boolean> {
+  if (!WORKER_URL) return false;
+  const bytes = Uint8Array.from(atob(bytesBase64), c => c.charCodeAt(0));
+  try {
+    const res = await fetch(`${WORKER_URL}/v1/submitMessage`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body:    bytes,
+      signal:  AbortSignal.timeout(10_000),
+    });
+    if (res.ok) return true;
+    const txt = await res.text().catch(() => "");
+    if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Submit pre-signed bytes to public hubs from the browser (user's own IP).
@@ -293,11 +324,16 @@ async function submit(
     const { bytes } = await buildAndSignLocal(new Uint8Array(privateKey), fid, action);
     signedBytes = bytes;
 
-    // 1a. Public hubs (user's own IP — free, no credits)
+    // 1a. Cloudflare Worker (if configured) — races 3 free hubs, CORS handled,
+    //     each CF data-center is a different IP → hub rate limits bypassed entirely.
+    const workerOk = await tryWorkerHubSubmit(bytes);
+    if (workerOk) return;
+
+    // 1b. Public hubs direct (user's own IP — free, no credits, may be CORS-blocked)
     const directOk = await tryDirectHubSubmit(bytes);
     if (directOk) return;
 
-    // 1b. Neynar hub direct from browser (CORS ✓ — server completely bypassed)
+    // 1c. Neynar hub direct from browser (CORS ✓ — server completely bypassed)
     //     Server only gives us a rotating key; bytes stay in browser the whole time.
     const neynarOk = await tryDirectNeynarHub(bytes);
     if (neynarOk) return;
