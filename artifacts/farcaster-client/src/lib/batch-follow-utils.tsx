@@ -1,4 +1,4 @@
-import { hasPowerBadge, type NeynarUser } from "@/lib/neynar";
+import { type NeynarUser } from "@/lib/neynar";
 import {
   Clock, History, Shuffle, Sparkles,
   Heart, Shield, TrendingUp, SlidersHorizontal,
@@ -15,7 +15,6 @@ export type Preset = "balanced" | "quality" | "cleanup" | "aggressive" | "custom
 
 export interface BatchFilters {
   limit: number;
-  onlyPowerBadge: boolean;
   onlyPro: boolean;
   onlyMutuals: boolean;
   onlyNonFollowers: boolean;
@@ -45,7 +44,6 @@ export interface SortOptionDef {
 
 export const DEFAULT_FILTERS: BatchFilters = {
   limit: 50,
-  onlyPowerBadge: false,
   onlyPro: false,
   onlyMutuals: false,
   onlyNonFollowers: false,
@@ -71,7 +69,7 @@ export const FOLLOW_PRESETS: PresetDef[] = [
 
 export const UNFOLLOW_PRESETS: PresetDef[] = [
   { id: "cleanup",    label: "Ghost Clean", desc: "Unfollow people who don't follow you back — mutuals are safe",        icon: <RefreshCw         className="w-4 h-4" />, color: "text-rose-500 border-rose-500/30 bg-rose-500/8",       filters: { limit: 50, skipMutuals: true } },
-  { id: "quality",    label: "Safe",        desc: "Keep mutuals safe, unfollow only those who never followed you back",  icon: <Shield            className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",    filters: { limit: 50, skipMutuals: true, onlyPowerBadge: false } },
+  { id: "quality",    label: "Safe",        desc: "Keep mutuals safe, unfollow only those who never followed you back",  icon: <Shield            className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",    filters: { limit: 50, skipMutuals: true } },
   { id: "aggressive", label: "Mass",        desc: "Unfollow everyone regardless of mutual status (no safety filter)",   icon: <UserMinus         className="w-4 h-4" />, color: "text-orange-500 border-orange-500/30 bg-orange-500/8", filters: { limit: 200 } },
   { id: "custom",     label: "Custom",      desc: "Set your own filters manually",                                        icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",      filters: {} },
 ];
@@ -98,9 +96,6 @@ export function smartScore(u: NeynarUser): number {
 
   // Strongest signal: already follows me → near-guaranteed reciprocal
   if (u.viewer_context?.followed_by === true) s += 50;
-
-  // Power Badge = Warpcast-verified quality account
-  if (hasPowerBadge(u)) s += 28;
 
   const fc = u.follower_count ?? 0;
   const fing = u.following_count ?? 0;
@@ -147,11 +142,9 @@ export function applyFilters(
   if (mode === "follow") {
     list = list.filter(u => u.viewer_context?.following !== true);
     if (filters.onlyMutuals) list = list.filter(u => u.viewer_context?.followed_by === true);
-    if (filters.onlyPowerBadge) list = list.filter(u => hasPowerBadge(u));
   } else {
     if (filters.skipMutuals || filters.onlyNonFollowers)
       list = list.filter(u => u.viewer_context?.followed_by !== true);
-    if (filters.onlyPowerBadge) list = list.filter(u => hasPowerBadge(u));
   }
   if (filters.minFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) >= filters.minFollowers);
   if (filters.maxFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) <= filters.maxFollowers);
