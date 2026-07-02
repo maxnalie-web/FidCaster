@@ -12,18 +12,16 @@ import {
   Message,
 } from "@farcaster/hub-nodejs";
 
-// Public Snapchain hubs — tried as fallback after Neynar.
-// NOTE: post-Snapchain migration (2025) some of these may be unreachable from
-// cloud server IPs (port 2281 blocked) or out-of-sync, but they remain as
-// fallback for non-server environments (Cloudflare Worker, user's own browser IP).
+// Free public hubs — no Neynar credits, raced in parallel first.
+// Prefer HTTPS-port hubs (443) — port 2281 is commonly blocked on cloud providers.
 const FREE_HUB_URLS = [
   "https://api.hub.wevm.dev",                      // wevm/viem team (HTTPS 443)
   "https://hub.pinata.cloud",                       // Pinata public hub (HTTPS 443)
-  "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281)
+  "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281 — may be blocked)
   "https://hub.farcaster.standardcrypto.vc:2281",  // Standard Crypto (port 2281)
 ];
 
-// Neynar hub — primary submission target (fully synced Snapchain node, blockDelay=0).
+// Neynar hub — costs credits per submission; used only when ALL free hubs fail.
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
 
 /** Read every NEYNAR_API_KEY* env var — used for parallel key racing below. */
@@ -55,8 +53,7 @@ async function tryHubOnce(
 
   // Combine per-request timeout with the shared abort signal (if supported).
   // AbortSignal.any is available in Node ≥ 20.3; fall back to shared signal alone.
-  // 5 s for Neynar (reliable), 4 s for free hubs (fast-fail — most are unreachable from cloud)
-  const timeoutSignal = AbortSignal.timeout(apiKey ? 5_000 : 4_000);
+  const timeoutSignal = AbortSignal.timeout(8_000);
   const signal = sharedAbort
     ? (typeof AbortSignal.any === "function"
         ? AbortSignal.any([sharedAbort, timeoutSignal])
@@ -81,84 +78,73 @@ async function tryHubOnce(
 /**
  * Submit already-signed protobuf bytes to Farcaster hubs.
  *
- * Strategy — Neynar first, free hubs as fallback:
+ * Strategy:
+ *  Phase 1 — Race ALL free hubs simultaneously (Promise.any + AbortController).
+ *             First hub to accept aborts the siblings → 0 credits consumed.
+ *  Phase 2 — Only if every free hub failed: try Neynar keys with the same
+ *             abort-on-win pattern → EXACTLY 1 credit consumed regardless of
+ *             how many keys are configured.
  *
- *  Phase 1 — Try Neynar hub (always reachable from server, fully synced).
- *             Free hubs on port 2281 are blocked by most cloud providers; even
- *             HTTPS free hubs may be out-of-sync or unreachable from a Replit
- *             server IP, so Neynar is the reliable path.
- *             AbortController ensures exactly 1 credit consumed across all keys.
- *
- *  Phase 2 — Fallback: race all free hubs simultaneously.
- *             Useful when Neynar is temporarily down or when running outside
- *             Replit where port 2281 is reachable.
- *
- * Permanent errors (unknown signer / fid=0) surface as SIGNER_NOT_REGISTERED
- * so callers can show a meaningful retry prompt instead of a generic failure.
+ * IMPORTANT: We use AbortController so that once the first winner responds,
+ * all other in-flight requests are cancelled immediately.  Without this,
+ * Promise.any() resolves but the remaining N-1 promises keep running to
+ * completion and each one also submits the message → N× credits wasted.
  */
 export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
   const message = Message.decode(msgBytes);
   const msgHash = Buffer.from(message.hash).toString("hex");
 
-  // ── Phase 1: Neynar hub first (reliable from server environment) ─────────────
-  const neynarKeys = getAllNeynarKeys();
-  if (neynarKeys.length > 0) {
-    const neynarAbort = new AbortController();
-    const neynarResult = await Promise.any(
-      neynarKeys.map(async key => {
-        const hash = await tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key, neynarAbort.signal);
-        neynarAbort.abort("neynar key won"); // cancel remaining key attempts
-        return hash;
-      }),
-    ).catch((e: unknown) => {
-      const errs = (e instanceof AggregateError ? e.errors : [e])
-        .map(x => String(x))
-        .filter(m => !m.includes("AbortError") && !m.includes("abort"));
-
-      // Signer not yet indexed → surface immediately so caller can retry
-      const allSignerErrors = errs.length > 0 && errs.every(m =>
-        m.includes("fid cannot be 0") || m.includes("unknown signer") || m.includes("invalid signer"),
-      );
-      if (allSignerErrors) {
-        throw new Error(
-          "SIGNER_NOT_REGISTERED: Your signer key is not yet recognized by the hub. " +
-          "The on-chain registration is confirmed but hubs may take a few minutes to sync. " +
-          "Please try again in 1–2 minutes.",
-        );
-      }
-      if (errs.length) console.warn(`[farcaster-submit] Neynar hub failed: ${errs.join(" | ")}`);
-      return null as null;
-    });
-
-    if (neynarResult) return neynarResult;
-  } else {
-    console.warn("[farcaster-submit] No NEYNAR_API_KEY configured — relying on free hubs only.");
-  }
-
-  // ── Phase 2: Fallback — race free hubs in parallel ───────────────────────────
-  // These typically fail on cloud providers (port 2281 blocked, out-of-sync nodes)
-  // but may succeed in other environments or when Neynar is temporarily unavailable.
+  // Phase 1: race free hubs (parallel, no credits) — cancel siblings on first win
   const freeAbort = new AbortController();
   const freeResult = await Promise.any(
     FREE_HUB_URLS.map(async url => {
       const hash = await tryHubOnce(url, msgBytes, msgHash, undefined, freeAbort.signal);
-      freeAbort.abort("free hub won");
+      freeAbort.abort("free hub won"); // cancel any still-pending sibling requests
       return hash;
     }),
   ).catch((e: unknown) => {
     const errs = (e instanceof AggregateError ? e.errors : [e])
       .map(x => String(x))
       .filter(m => !m.includes("AbortError") && !m.includes("abort"));
-    if (errs.length) console.warn(`[farcaster-submit] Free hubs also failed: ${errs.join(" | ")}`);
+    if (errs.length) console.warn(`[farcaster-submit] free hubs all failed: ${errs.join(" | ")}`);
     return null as null;
   });
 
   if (freeResult) return freeResult;
 
-  if (neynarKeys.length === 0) {
-    throw new Error("No Neynar API keys configured and all free hubs failed.");
+  // Phase 2: all free hubs failed → try Neynar keys, abort-on-win
+  // Each key starts simultaneously (for rate-limit resilience), but the moment
+  // ONE key succeeds it aborts all others → exactly 1 submitmessage credit consumed.
+  const neynarKeys = getAllNeynarKeys();
+  if (neynarKeys.length === 0) throw new Error("No Neynar API keys configured and all free hubs failed.");
+
+  const neynarAbort = new AbortController();
+  try {
+    return await Promise.any(
+      neynarKeys.map(async key => {
+        const hash = await tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key, neynarAbort.signal);
+        neynarAbort.abort("neynar key won"); // cancel remaining Neynar requests immediately
+        return hash;
+      }),
+    );
+  } catch (e: unknown) {
+    const errs = (e instanceof AggregateError ? e.errors : [e])
+      .map(x => String(x))
+      .filter(m => !m.includes("AbortError") && !m.includes("abort")); // filter cancelled-request noise
+
+    const allSignerErrors = errs.length > 0 && errs.every(m =>
+      m.includes("fid cannot be 0") || m.includes("unknown signer") || m.includes("invalid signer")
+    );
+    if (allSignerErrors) {
+      throw new Error(
+        "SIGNER_NOT_REGISTERED: Your signer key is not yet recognized by the hub. " +
+        "The on-chain registration is confirmed but hubs may take a few minutes to sync. " +
+        "Please try again in 1–2 minutes.",
+      );
+    }
+    const desc = errs.length ? errs.join(" | ") : "all requests aborted or timed out";
+    throw new Error(`All ${FREE_HUB_URLS.length + neynarKeys.length} hub targets failed: ${desc}`);
   }
-  throw new Error("All hub targets failed: Neynar hub and free hubs both unavailable.");
 }
 
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;

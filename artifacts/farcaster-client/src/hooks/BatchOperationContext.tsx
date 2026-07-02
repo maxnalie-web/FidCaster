@@ -195,11 +195,8 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           const lo = msg.toLowerCase();
 
           const isDuplicate = lo.includes("duplicate") || lo.includes("already follow");
-          // Only skip permanently when the browser relay explicitly signals it (PERMANENT_SKIP)
-          // or when the hub confirms the signer is unregistered for this FID.
-          // Do NOT skip on validation_failure — out-of-sync free hubs return that for valid actions.
           const isPermanentSkip =
-            lo.includes("permanent_skip") || lo.includes("signer_not_registered");
+            lo.includes("permanent_skip") || lo.includes("validation_failure") || lo.includes("bad_request.validation");
           const isSignerError =
             lo.includes("signer_not_registered") || lo.includes("signer not recognized") ||
             lo.includes("signer key is not yet recognized") || lo.includes("fid cannot be 0") ||
