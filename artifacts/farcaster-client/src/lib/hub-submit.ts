@@ -219,8 +219,8 @@ async function submitBytesRelay(bytesBase64: string): Promise<void> {
   if (!res.ok) {
     if (res.status === 429) throw new Error(`HTTP 429 — server relayed a hub rate limit`);
     if (res.status >= 500) throw new Error(`signal — server temporarily unavailable (${res.status}), will retry`);
-    // 422 = validation_failure — target FID deleted/invalid, skip permanently
-    if (res.status === 422) throw new Error(`PERMANENT_SKIP — target FID is invalid or deleted`);
+    // 422 = server confirmed signer is not registered for this FID → skip permanently
+    if (res.status === 422) throw new Error(`PERMANENT_SKIP — signer not registered for this FID`);
     const txt = await res.text().catch(() => "");
     let msg = txt;
     try { msg = (JSON.parse(txt) as { error?: string }).error ?? txt; } catch { /* ok */ }
@@ -243,8 +243,8 @@ async function serverRelay(body: object): Promise<void> {
   if (!res.ok) {
     if (res.status === 429) throw new Error(`HTTP 429 — server relayed a hub rate limit`);
     if (res.status >= 500) throw new Error(`signal — server temporarily unavailable (${res.status}), will retry`);
-    // 422 = validation_failure — target FID is deleted/invalid, permanent → signal skip
-    if (res.status === 422) throw new Error(`PERMANENT_SKIP — target FID is invalid or deleted`);
+    // 422 = server confirmed signer is not registered → signal permanent skip
+    if (res.status === 422) throw new Error(`PERMANENT_SKIP — signer not registered for this FID`);
     const txt = await res.text().catch(() => "");
     let msg = txt;
     try { msg = (JSON.parse(txt) as { error?: string }).error ?? txt; } catch { /* ok */ }

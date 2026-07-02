@@ -457,9 +457,9 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] action error:", msg);
     metrics.incHubFail();
-    // bad_request.validation_failure = target FID deleted/deactivated/invalid.
-    // This is permanent for that FID — tell client to skip it, not retry.
-    if (msg.includes("validation_failure") || msg.includes("bad_request.validation_failure")) {
+    // Only treat as permanent skip when the hub explicitly says the signer is unknown.
+    // General validation_failure from out-of-sync free hubs must NOT propagate as permanent.
+    if (msg.includes("SIGNER_NOT_REGISTERED")) {
       res.status(422).json({ skip: true, error: msg });
     } else {
       res.status(500).json({ error: msg });
@@ -493,7 +493,10 @@ app.post("/api/farcaster/submit-bytes", actionLimiter, async (req, res) => {
     const msg = e instanceof Error ? e.message : "Internal error";
     console.error("[server] submit-bytes error:", msg);
     metrics.incHubFail();
-    if (msg.includes("validation_failure") || msg.includes("bad_request.validation_failure")) {
+    // Only treat as permanent skip when Neynar itself reports signer not registered.
+    // Validation failures from out-of-sync free hubs (e.g. Pinata) must NOT be
+    // treated as permanent — they don't mean the target FID is invalid.
+    if (msg.includes("SIGNER_NOT_REGISTERED")) {
       res.status(422).json({ skip: true, error: msg });
     } else {
       res.status(500).json({ error: msg });
