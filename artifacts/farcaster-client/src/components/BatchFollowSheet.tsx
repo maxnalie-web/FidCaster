@@ -12,6 +12,7 @@ import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import type { LocalSigner } from "@/lib/wallet";
 import { toast } from "sonner";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
+import { useWallet } from "@/hooks/useWallet";
 
 import type { BatchMode, SortOrder, BatchFilters, Preset, PresetDef } from "@/lib/batch-follow-utils";
 import {
@@ -45,6 +46,7 @@ export function BatchFollowSheet({
   mode, sourceFid, myFid, localSigner, neynarKey, onClose, zIndex = "z-[70]", fetchList,
 }: BatchFollowSheetProps) {
   const batchOp = useBatchOperation();
+  const { profile: myProfile } = useWallet();
   const presets = mode === "follow" ? FOLLOW_PRESETS : UNFOLLOW_PRESETS;
   const [activePreset, setActivePreset] = useState<Preset>(presets[0].id);
   const [filters, setFilters] = useState<BatchFilters>({
@@ -122,6 +124,7 @@ export function BatchFollowSheet({
   function startOperation() {
     if (fetchedUsers.length === 0) { toast.info("No users match your filters"); return; }
     const verb = mode === "follow" ? "Following" : "Unfollowing";
+    const accountLabel = myProfile?.username ? `@${myProfile.username}` : `FID ${myFid}`;
     batchOp.startOp({
       mode,
       users: fetchedUsers,
@@ -129,6 +132,7 @@ export function BatchFollowSheet({
       localSigner,
       neynarKey,
       label: `${verb} ${fetchedUsers.length} users`,
+      accountLabel,
     });
     onClose(); // sheet closes — operation continues in background pill
   }

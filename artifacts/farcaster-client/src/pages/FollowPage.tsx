@@ -141,7 +141,7 @@ type Phase = "idle" | "searching" | "loading" | "loaded" | "empty";
 
 export function FollowPage() {
   const [, navigate] = useLocation();
-  const { fid, localSigner, neynarKey } = useWallet();
+  const { fid, localSigner, neynarKey, profile } = useWallet();
   const batchOp = useBatchOperation();
   const myFid = fid ? Number(fid) : 0;
 
@@ -469,7 +469,8 @@ export function FollowPage() {
     const target = mode === "cleanup" ? ownProfile : targetUser;
     const verb = mode === "follow" ? "Following" : "Unfollowing";
     const label = `${verb} ${selected.length} · @${target?.username ?? "?"}`;
-    batchOp.startOp({ mode: batchMode, users: selected, myFid, localSigner, neynarKey: neynarKey ?? "", label });
+    const accountLabel = profile?.username ? `@${profile.username}` : `FID ${myFid}`;
+    batchOp.startOp({ mode: batchMode, users: selected, myFid, localSigner, neynarKey: neynarKey ?? "", label, accountLabel });
     setLastBatchLabel(label);
     setBatchStarted(true);
     setSelectedFids(new Set());

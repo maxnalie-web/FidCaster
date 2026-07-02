@@ -77,3 +77,4 @@
 - [FidCaster SIWF client-side](fidcaster-siwf-relay.md) — SIWF is fully browser-side: mnemonicToAccount signs EIP-712 locally, POST to api.warpcast.com/v2/signed-key-requests, poll /v2/signed-key-request?token= for approval. No server needed — works in static deploy.
 - [FidCaster Promise.any credit waste](fidcaster-promise-any-credit.md) — Promise.any() does NOT cancel siblings; all N Neynar keys submitted simultaneously → N× credit cost. Fix: AbortController shared across all race branches; winner calls controller.abort() to cancel in-flight siblings immediately.
 - [FidCaster Grow filter bugs](fidcaster-grow-filter-bugs.md) — cache bypass for strict filters (minFollowers/PB/Pro), Pro vs Power Badge distinction, Pro filter post-scan batch-fetch pattern.
+- [FidCaster multi-account batch ops](fidcaster-multi-batch.md) — per-FID ops Map + per-FID cancelRefs + per-FID localStorage (fc_batch_v2_{fid}); stacked multi-pill UI; accountLabel in pill.
