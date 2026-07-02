@@ -91,7 +91,10 @@ export function BatchFollowSheet({
     try {
       do {
         const res = await fn(fetchFid, myFid, neynarKey, cursor);
-        const batch = res.users.map((u: { user: NeynarUser }) => u.user).filter(Boolean);
+        // Handle both API shapes: flat NeynarUser[] and wrapped { user: NeynarUser }[]
+      const batch = res.users.map((u: NeynarUser | { user: NeynarUser }) =>
+        ("user" in u && u.user) ? (u as { user: NeynarUser }).user : (u as NeynarUser)
+      ).filter(Boolean);
         collected.push(...batch);
         cursor = res.next?.cursor;
         // Track power badge count live during scan

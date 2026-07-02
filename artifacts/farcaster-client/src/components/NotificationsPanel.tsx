@@ -338,6 +338,17 @@ function NotifRow({
   return null;
 }
 
+// ─── Module-level notification cache ─────────────────────────────────────────
+// Survives component re-mounts so timestamps don't reset every time the user
+// navigates away and back. New notifications are prepended; old ones keep their
+// original timestamps. Cache is keyed by FID.
+const _notifCache = new Map<number, {
+  notifs: FlatNotif[];
+  cursor: string | undefined;
+  fetchedAt: number;
+}>();
+const NOTIF_CACHE_TTL = 4 * 60 * 1000; // 4 minutes — don't re-fetch more often
+
 /* ─── Filter tabs ─── */
 type FilterTab = "all" | "reactions" | "replies" | "follows";
 
@@ -365,18 +376,49 @@ export function NotificationsPanel() {
 
   useEffect(() => {
     if (!fidNum) return;
-    setLoading(true);
-    setError(null);
-    setAllFlat([]);
-    setCursor(undefined);
     lastCursorRef.current = undefined;
     lastFetchTimeRef.current = Date.now();
+
+    // ── Cache hit: restore previous data immediately, preserving original timestamps ──
+    const hit = _notifCache.get(fidNum);
+    if (hit && Date.now() - hit.fetchedAt < NOTIF_CACHE_TTL) {
+      setAllFlat(hit.notifs);
+      setCursor(hit.cursor);
+      setLoading(false);
+      return;
+    }
+
+    // ── Cache stale or miss: fetch fresh but DON'T wipe existing data first ──
+    // Keeping old data visible prevents the "flicker to wrong timestamps" issue.
+    if (hit) {
+      // Restore stale cache immediately so the UI shows something while refreshing
+      setAllFlat(hit.notifs);
+      setCursor(hit.cursor);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
     getNotifications(fidNum, neynarKey)
       .then((data) => {
-        setAllFlat(flattenNotifications(data.notifications));
+        const fresh = flattenNotifications(data.notifications);
+        setAllFlat(prev => {
+          // Prepend genuinely new notifications; keep existing ones with their timestamps
+          const seen = new Set(prev.map(p => p.id));
+          const merged = [
+            ...fresh.filter(n => !seen.has(n.id)),
+            ...prev,
+          ];
+          _notifCache.set(fidNum, { notifs: merged, cursor: data.next?.cursor, fetchedAt: Date.now() });
+          return merged;
+        });
         setCursor(data.next?.cursor);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load"))
+      .catch((e: unknown) => {
+        // Only show error if we have no cached data to fall back on
+        if (!hit) setError(e instanceof Error ? e.message : "Failed to load");
+      })
       .finally(() => setLoading(false));
   }, [fidNum, neynarKey]);
 
@@ -390,14 +432,19 @@ export function NotificationsPanel() {
     setLoadingMore(true);
     try {
       const data = await getNotifications(fidNum, neynarKey, cursor);
+      const newNotifs = flattenNotifications(data.notifications);
+      const newCursor = data.next?.cursor;
       setAllFlat((prev) => {
         const seen = new Set(prev.map((p) => p.id));
-        return [
+        const merged = [
           ...prev,
-          ...flattenNotifications(data.notifications).filter((p) => !seen.has(p.id)),
+          ...newNotifs.filter((p) => !seen.has(p.id)),
         ];
+        // Keep cache up-to-date with paginated results
+        _notifCache.set(fidNum, { notifs: merged, cursor: newCursor, fetchedAt: Date.now() });
+        return merged;
       });
-      setCursor(data.next?.cursor);
+      setCursor(newCursor);
     } catch {
       /* ignore */
     } finally {

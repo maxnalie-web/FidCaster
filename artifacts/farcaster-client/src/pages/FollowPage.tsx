@@ -170,6 +170,9 @@ export function FollowPage() {
   const [batchStarted, setBatchStarted] = useState(false);
   const [lastBatchLabel, setLastBatchLabel] = useState("");
 
+  // List virtualization — render only the first N rows to prevent page freeze
+  const [visibleCount, setVisibleCount] = useState(80);
+
   const exclusions = excludeRaw.trim() ? parseExclusions(excludeRaw) : undefined;
   const excludeCount = (exclusions?.fidSet.size ?? 0) + (exclusions?.usernameSet.size ?? 0);
 
@@ -298,11 +301,12 @@ export function FollowPage() {
     let collected: NeynarUser[] = [];
 
     // ── Browser-side cache (IndexedDB, 15 min TTL) ─────────────────────────
-    // Avoids hitting the server on repeat visits (e.g. after a batch run).
-    // With 1000 users each having a unique FID, the server cache can't help
-    // cross-user; this client cache eliminates per-user repeat calls entirely.
+    // Skip cache if we need significantly more raw data than was cached.
+    // Example: user requested 5000 but cache only has 2000 raw → skip cache,
+    // re-scan so strict filters (minFollowers, Power Badge) can find enough users.
     const cached = await getCachedFollowList(lt, fetchFid, myFid);
-    if (cached && cached.length > 0) {
+    const minRawNeeded = Math.min(currentFilters.limit * 4, MAX_SCAN);
+    if (cached && cached.length >= minRawNeeded) {
       collected = cached as NeynarUser[];
       setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
       const result = applyFilters(collected, batchMode, currentFilters, currentExclusions);
@@ -347,6 +351,7 @@ export function FollowPage() {
     const target = mode === "cleanup" ? ownProfile : targetUser;
     if (!target) return;
     const lt = mode === "cleanup" ? "following" : listType;
+    setVisibleCount(80); // reset virtualization on each fresh load
     loadList(target, lt, filters, mode, exclusions);
   }
 
@@ -960,9 +965,9 @@ export function FollowPage() {
                 </div>
               </div>
 
-              {/* Scrollable list */}
+              {/* Scrollable list — virtualized: show first N rows to avoid page freeze */}
               <div className="flex-1 overflow-y-auto divide-y divide-border/40 pb-24">
-                {allUsers.map(user => (
+                {allUsers.slice(0, visibleCount).map(user => (
                   <UserRow
                     key={user.fid}
                     user={user}
@@ -971,6 +976,17 @@ export function FollowPage() {
                     mode={mode}
                   />
                 ))}
+                {visibleCount < allUsers.length && (
+                  <button
+                    onClick={() => setVisibleCount(v => v + 100)}
+                    className="w-full py-4 text-[13px] font-semibold text-primary hover:bg-primary/5 transition-colors"
+                  >
+                    Show {Math.min(100, allUsers.length - visibleCount)} more
+                    <span className="text-muted-foreground font-normal ml-1">
+                      ({allUsers.length - visibleCount} remaining)
+                    </span>
+                  </button>
+                )}
               </div>
 
               {/* Action bar */}
