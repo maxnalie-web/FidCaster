@@ -6,7 +6,7 @@ import { hubPublishCast, neynarAction } from "@/lib/hub-submit";
 import type { NeynarCast } from "@/lib/neynar";
 import { getFollowedChannels, type FollowedChannel } from "@/lib/channel-follows";
 
-const MAX_CHARS = 320;
+const MAX_CHARS = 640;
 
 /** Read a file as a raw base64 data URL · works for ANY file, never decode-fails. */
 function readAsDataUrl(file: File): Promise<string> {
@@ -123,12 +123,14 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-resize textarea as content grows (max 300px)
+  // Auto-resize textarea as content grows (max 240px then scroll)
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 300)}px`;
+    const next = Math.min(el.scrollHeight, 240);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > 240 ? "auto" : "hidden";
   }, [text]);
 
   const canCast = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(fid);
@@ -319,7 +321,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
             onKeyDown={handleKeyDown}
             placeholder={placeholder ?? (quoteCast ? "Add your thoughts…" : replyTo ? "Write your reply…" : "Share a cast…")}
             className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none leading-relaxed min-h-[96px]"
-            style={{ overflow: "hidden" }}
+            style={{ overflowY: "hidden" }}
           />
 
           {quoteCast && (
