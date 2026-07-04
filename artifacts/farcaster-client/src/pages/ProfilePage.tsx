@@ -5,8 +5,9 @@ import {
   ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
   AlignLeft, MessageSquare, Heart, Repeat2, X,
-  Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge,
+  Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge, PenSquare,
 } from "lucide-react";
+import { CastComposer } from "@/components/CastComposer";
 import { SpamAnalyzerSheet } from "@/components/SpamAnalyzerSheet";
 import { getSpamLabelsFor, type SpamLabelValue } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
@@ -326,6 +327,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [showSpamAnalyzer, setShowSpamAnalyzer] = useState(false);
+  const [showComposer, setShowComposer] = useState(false);
   // Price (ETH string) if this FID is actively listed on the FID market, else null.
   const [marketListing, setMarketListing] = useState<string | null>(null);
   const ethUsd = useEthPrice(); // live ETH→USD (CoinGecko, refreshes) for USD price display
@@ -636,6 +638,18 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                       >
                         Edit profile
                       </button>
+                      <button
+                        onClick={() => setShowComposer((v) => !v)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-semibold transition-all border",
+                          showComposer
+                            ? "bg-primary text-primary-foreground border-primary/60"
+                            : "bg-primary/10 text-primary border-primary/30 hover:bg-primary/15"
+                        )}
+                      >
+                        <PenSquare className="w-4 h-4" />
+                        Cast
+                      </button>
                       <div className="relative" ref={moreMenuRef}>
                         <button
                           onClick={() => setShowMoreMenu(v => !v)}
@@ -893,6 +907,23 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                 </button>
               ))}
             </div>
+
+            {/* ── Composer (own profile only) ── */}
+            {isOwnProfile && showComposer && (
+              <div className="border-b border-border/40">
+                <CastComposer
+                  onPublished={(c) => {
+                    setTabs((prev) => ({
+                      ...prev,
+                      casts: { ...prev.casts, items: [c, ...prev.casts.items] },
+                    }));
+                    setShowComposer(false);
+                    setActiveTab("casts");
+                  }}
+                  onCanceled={() => setShowComposer(false)}
+                />
+              </div>
+            )}
 
             {/* ── Tab content ── */}
             {currentTab.loading && currentTab.items.length === 0 ? (
