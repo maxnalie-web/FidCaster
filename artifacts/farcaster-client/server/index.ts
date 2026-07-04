@@ -7,9 +7,10 @@ import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { mnemonicToAccount } from "viem/accounts";
-import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, getAllNeynarKeys, type FarcasterAction } from "./farcaster-submit.js";
+import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type FarcasterAction } from "./farcaster-submit.js";
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
+import { registerRpcProxy } from "./rpc-proxy.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { initSignPool } from "./sign-pool.js";
@@ -32,8 +33,9 @@ try {
 const app = express();
 app.set("trust proxy", 1);
 // In production the artifact routes traffic to PORT (set to 5173 in artifact.toml).
-// In dev the server runs on API_PORT (3001) and Vite proxies /api/* to it.
-const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? "3001");
+// In dev the server runs on API_PORT (3001) and Vite proxies /api/* to it — API_PORT
+// must win over PORT here, since dev tooling may set PORT for Vite's own dev server.
+const PORT = Number(process.env.API_PORT ?? process.env.PORT ?? "3001");
 const START_TIME = Date.now();
 
 // Additional production origins from env: ALLOWED_ORIGINS=https://fidcaster.com,https://www.fidcaster.com
@@ -197,17 +199,33 @@ app.get("/internal/metrics", (_req, res) => {
 // Round-robin counter for hub-token key rotation
 let _hubKeyIdx = 0;
 
-// Returns a rotating Neynar API key for browser-direct hub submission.
-// Neynar hub (hub-api.neynar.com) supports CORS so browsers can POST signed bytes
-// directly without any server relay — server load drops to zero.
-app.get("/api/farcaster/hub-token", actionLimiter, (_req, res) => {
-  const keys = getAllNeynarKeys();
+// Dedicated, low-privilege keys that are SAFE to hand to the browser for hub
+// submitMessage from each user's own IP (restores per-IP scaling). Set these to
+// THROWAWAY Neynar keys with a strict spending cap in the Neynar dashboard — a key
+// sent to a browser is always readable in devtools and cannot be encrypted away, so
+// the mitigation is blast-radius (a capped key), never secrecy. NEVER put your main
+// read keys here. Format: NEYNAR_HUB_KEYS=key1,key2  (comma-separated).
+function getHubPublicKeys(): string[] {
+  return (process.env.NEYNAR_HUB_KEYS ?? "")
+    .split(",").map(s => s.trim()).filter(Boolean);
+}
+
+// Own limiter — a leaked key is used against Neynar directly (bypassing us), so this
+// only throttles harvesting of the token, not post-leak abuse. Cap on Neynar does that.
+const hubTokenLimiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
+
+// Returns a rotating DEDICATED Neynar key for browser-direct hub submission.
+// Secure-by-default: if no NEYNAR_HUB_KEYS are configured we return 503 and the
+// client falls back to /api/farcaster/submit-bytes (main keys stay server-side).
+app.get("/api/farcaster/hub-token", hubTokenLimiter, (_req, res) => {
+  const keys = getHubPublicKeys();
   if (keys.length === 0) {
-    res.status(503).json({ error: "No hub keys configured" });
+    res.status(503).json({ error: "hub-token disabled: no dedicated NEYNAR_HUB_KEYS configured" });
     return;
   }
   const key = keys[_hubKeyIdx % keys.length];
   _hubKeyIdx = (_hubKeyIdx + 1) % keys.length;
+  res.setHeader("Cache-Control", "no-store");
   res.json({ key, hub: "https://hub-api.neynar.com" });
 });
 
@@ -598,8 +616,60 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
   }
 });
 
+// ── Cast translation (free, no API key — Google's public translate endpoint) ──
+// Supports exactly 8 languages, always including Farsi per product requirement.
+// Small in-memory LRU cache keyed by (text, target lang) — the same viral cast
+// gets translated by many viewers to the same language, so caching avoids
+// re-hitting the upstream endpoint for identical requests.
+const SUPPORTED_TRANSLATE_LANGS = new Set([
+  "en", "es", "fa", "ar", "fr", "zh-CN", "ru", "pt",
+  "de", "it", "ja", "ko", "hi", "tr", "vi", "id", "th", "pl", "nl", "uk",
+]);
+const translateCache = new Map<string, { text: string; at: number; detected?: string }>();
+const TRANSLATE_CACHE_MAX = 500;
+const TRANSLATE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h — translations don't change
+
+const translateLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+
+app.post("/api/translate", translateLimiter, async (req, res) => {
+  const { text, target } = req.body as { text?: string; target?: string };
+  if (!text || typeof text !== "string" || text.length === 0 || text.length > 2000) {
+    res.status(400).json({ error: "text must be 1-2000 characters" }); return;
+  }
+  if (!target || !SUPPORTED_TRANSLATE_LANGS.has(target)) {
+    res.status(400).json({ error: `target must be one of: ${[...SUPPORTED_TRANSLATE_LANGS].join(", ")}` }); return;
+  }
+
+  const cacheKey = `${target}:${text}`;
+  const cached = translateCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TRANSLATE_CACHE_TTL) {
+    res.json({ translated: cached.text, detected: cached.detected, cached: true });
+    return;
+  }
+
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(text)}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) { res.status(502).json({ error: "Translation service unavailable" }); return; }
+    const data = await r.json() as [Array<[string, string]>, unknown, string];
+    const translated = data[0]?.map((seg) => seg[0]).join("") ?? "";
+    const detected = typeof data[2] === "string" ? data[2] : undefined;
+    if (!translated) { res.status(502).json({ error: "Empty translation" }); return; }
+
+    if (translateCache.size >= TRANSLATE_CACHE_MAX) {
+      const oldestKey = translateCache.keys().next().value;
+      if (oldestKey !== undefined) translateCache.delete(oldestKey);
+    }
+    translateCache.set(cacheKey, { text: translated, at: Date.now(), detected });
+    res.json({ translated, detected, cached: false });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Translation failed" });
+  }
+});
+
 registerFidMarketRoutes(app);
 registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
+registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
 
 // ── Production static file serving ────────────────────────────────────────────
 // In production the Express server is the only process — it serves the React

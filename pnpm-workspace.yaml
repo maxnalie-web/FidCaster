@@ -6,6 +6,7 @@ packages:
 
 allowBuilds:
   '@reown/appkit': true
+  better-sqlite3: true
   bufferutil: set this to true or false
   esbuild: true
   protobufjs: true

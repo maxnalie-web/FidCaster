@@ -8,9 +8,9 @@ import {
   ExternalLink, ChevronDown, ArrowUpDown, Copy, Check,
   Activity, ShoppingCart, ChevronRight, User, Wallet,
   HelpCircle, ShieldCheck, Zap, Lock, Loader2, Flame,
-  Home, Layers, Bell,
 } from "lucide-react";
 import { useMarketWallet } from "@/hooks/useMarketWallet";
+import { BottomNav } from "@/components/BottomNav";
 import { cn } from "@/lib/utils";
 
 interface Listing {
@@ -829,30 +829,7 @@ export default function FidMarketPage() {
 
       </div>
 
-      {/* ── Mobile bottom nav ── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur-xl flex items-center" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <button onClick={() => navigate("/dashboard")} className="flex-1 flex items-center justify-center py-3.5 transition-colors">
-          <Home className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-        </button>
-        <button onClick={() => navigate("/dashboard")} className="flex-1 flex items-center justify-center py-3.5 transition-colors">
-          <Search className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-        </button>
-        <button onClick={() => navigate("/dashboard")} className="flex-1 flex items-center justify-center py-3.5 transition-colors">
-          <Layers className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-        </button>
-        <button onClick={() => navigate("/dashboard")} className="flex-1 flex items-center justify-center py-3.5 transition-colors">
-          <Bell className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-        </button>
-        <button className="flex-1 flex items-center justify-center py-3.5 transition-colors">
-          <Tag className="w-6 h-6 text-primary" strokeWidth={2.5} />
-        </button>
-        <button
-          onClick={() => { if (myFid) navigate(`/profile/${myFid}`); else navigate("/dashboard"); }}
-          className="flex-1 flex items-center justify-center py-3.5 transition-colors"
-        >
-          <User className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-        </button>
-      </nav>
+      <BottomNav active="market" />
     </div>
   );
 }

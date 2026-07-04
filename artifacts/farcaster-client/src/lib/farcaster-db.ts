@@ -2,10 +2,10 @@
  * FidCaster local IndexedDB
  *
  * Object stores (tables):
- *   feed_cache        — casts per viewer FID (TTL 10 min)
- *   profile_cache     — user profiles by FID (TTL 30 min)
- *   notifications_cache — notifications per FID (TTL 5 min)
- *   drafts            — saved draft casts (no TTL)
+ *   feed_cache        · casts per viewer FID (TTL 10 min)
+ *   profile_cache     · user profiles by FID (TTL 30 min)
+ *   notifications_cache · notifications per FID (TTL 5 min)
+ *   drafts            · saved draft casts (no TTL)
  */
 
 const DB_NAME = "fidcaster_data";
@@ -221,7 +221,7 @@ export async function deleteDraft(id: number): Promise<void> {
 
 // ── Follow list cache ─────────────────────────────────────────────────────────
 // Caches the fully-loaded follow list per (mode, targetFid, viewerFid).
-// TTL 15 min — same window as server-side follow cache.
+// TTL 15 min · same window as server-side follow cache.
 // This eliminates repeat Neynar calls when the user revisits FollowPage
 // within the cache window (very common after running a batch operation).
 

@@ -26,7 +26,7 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// ── CryptoKey store — persists the non-extractable derived key across page reloads ──
+// ── CryptoKey store · persists the non-extractable derived key across page reloads ──
 // Structured clone stores the CryptoKey object natively; extractable:false means
 // the raw bytes can never be read back, only used for encrypt/decrypt operations.
 
@@ -66,7 +66,7 @@ async function deleteCryptoKey(storeKey: string): Promise<void> {
   } catch {}
 }
 
-// ── Device key — a random AES-GCM key generated once per browser profile.
+// ── Device key · a random AES-GCM key generated once per browser profile.
 // Stored as non-extractable in IndexedDB. Used to encrypt signer private keys
 // at rest in localStorage, protecting against localStorage-dump attacks.
 const DEVICE_KEY_NAME = "fc_device_key";
@@ -208,7 +208,7 @@ export async function decryptStored(password: string): Promise<string | null> {
   return mnemonic;
 }
 
-/** Decrypt using the cached CryptoKey — no password required. Works across page refreshes. */
+/** Decrypt using the cached CryptoKey · no password required. Works across page refreshes. */
 export async function decryptStoredAuto(): Promise<string | null> {
   const stored = await getRecord(SESSION_KEY);
   if (!stored || stored.expiresAt < Date.now()) return null;
@@ -226,6 +226,8 @@ export async function hasStoredSession(): Promise<boolean> {
     if (activeFidStr) {
       const acct = await getRecord(`account_${activeFidStr}`);
       if (acct && acct.expiresAt > Date.now()) return true;
+      // Device-key-backed account (added mid-session, no password in memory)
+      if (localStorage.getItem(`fc_amk_${activeFidStr}`)) return true;
     }
     return false;
   } catch {
@@ -259,7 +261,7 @@ export async function loadAccountMnemonic(fid: number, password: string): Promis
   return mnemonic;
 }
 
-/** Load account mnemonic using cached CryptoKey — no password required. */
+/** Load account mnemonic using cached CryptoKey · no password required. */
 export async function loadAccountMnemonicAuto(fid: number): Promise<string | null> {
   const stored = await getRecord(`account_${fid}`);
   if (!stored || stored.expiresAt < Date.now()) return null;
@@ -270,10 +272,32 @@ export async function loadAccountMnemonicAuto(fid: number): Promise<string | nul
 
 export async function removeAccountMnemonic(fid: number): Promise<void> {
   await Promise.all([deleteRecord(`account_${fid}`), deleteCryptoKey(`account_${fid}`)]);
+  try { localStorage.removeItem(`fc_amk_${fid}`); } catch {}
+}
+
+/**
+ * Device-key-backed mnemonic storage · no password required. Used when adding an
+ * account while the current session has no in-memory password (e.g. it was silently
+ * restored via a cached CryptoKey rather than typed this session). Without this,
+ * addAccount() would silently fail to persist the new account, and it would drop
+ * into locked/read-only mode on the very next refresh with no password to unlock it.
+ * Reuses the same non-extractable device key as storeSignerPrivKey/loadSignerPrivKey.
+ */
+export async function storeAccountMnemonicDeviceKey(fid: number, mnemonic: string): Promise<void> {
+  const encrypted = await encryptPrivKey(mnemonic);
+  try { localStorage.setItem(`fc_amk_${fid}`, encrypted); } catch {}
+}
+
+export async function loadAccountMnemonicDeviceKey(fid: number): Promise<string | null> {
+  try {
+    const stored = localStorage.getItem(`fc_amk_${fid}`);
+    if (!stored) return null;
+    return await decryptPrivKey(stored);
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------
-// Light session — non-sensitive persistence for wallet and SIWF logins.
+// Light session · non-sensitive persistence for wallet and SIWF logins.
 // Stores only public metadata (FID, address, authMethod, profile snapshot).
 // Never stores private keys or seed phrases.
 // ---------------------------------------------------------------------------
@@ -286,7 +310,7 @@ export type LightSession = {
   displayName: string;
   pfpUrl: string;
   signerUuid?: string | null;
-  // signerPrivKey intentionally omitted — stored separately in sessionStorage via storeSignerPrivKey()
+  // signerPrivKey intentionally omitted · stored separately in sessionStorage via storeSignerPrivKey()
   expiresAt: number;
 };
 

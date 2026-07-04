@@ -21,7 +21,7 @@ export type WalletState = {
   sessionPassword: string | null;
   hasStoredSession: boolean;
   isCheckingSession: boolean;
-  /** True after an auto-lock (inactivity / tab hidden) — session keys zeroed but
+  /** True after an auto-lock (inactivity / tab hidden) · session keys zeroed but
    *  the encrypted vault remains, so the user sees the unlock screen, not landing. */
   isLocked: boolean;
   /** True when the user's FID has been transferred away (sold via FID Market) */
@@ -43,7 +43,7 @@ export type WalletContextType = WalletState & {
   retrySignerSetup: () => Promise<void>;
   /** Flow 2: connect an external wallet (MetaMask/WC), derive signer deterministically */
   loginWithWallet: (walletClient: WalletClient, address: `0x${string}`) => Promise<void>;
-  /** Flow 3: SIWF — sign in with Farcaster relay (read-only; no signer unless passed) */
+  /** Flow 3: SIWF · sign in with Farcaster relay (read-only; no signer unless passed) */
   loginWithFarcaster: (fid: number, profile: FarcasterProfile | null, localSigner: LocalSigner | null, signerUuid?: string | null) => Promise<void>;
 };
 

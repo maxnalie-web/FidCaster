@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Heart, Repeat2, MessageCircle, User, ExternalLink, Loader2, X, ChevronLeft, ChevronRight, Trash2, MoreHorizontal, Check, Copy, Quote } from "lucide-react";
+import { Heart, Repeat2, MessageCircle, User, ExternalLink, Loader2, X, ChevronLeft, ChevronRight, Trash2, MoreHorizontal, Check, Copy, Quote, Globe, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { useLocation } from "wouter";
@@ -9,6 +9,8 @@ import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hasPowerBadge, getCastReactions, type NeynarCast, type NeynarUser, type NeynarEmbed } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { CastComposer } from "@/components/CastComposer";
+import { translateText, getPreferredLang } from "@/lib/translate";
+import { ShareButton } from "@/components/ShareButton";
 import { toast } from "sonner";
 
 function timeAgo(ts: string): string {
@@ -139,20 +141,20 @@ function QuoteCastPreview({ quotedCast, onClick }: { quotedCast: NeynarCast; onC
     >
       <div className="flex items-center gap-1.5 mb-1">
         <div className="w-4 h-4 rounded-full overflow-hidden bg-muted shrink-0">
-          {quotedCast.author.pfp_url
+          {quotedCast.author?.pfp_url
             ? <img src={quotedCast.author.pfp_url} alt="" className="w-full h-full object-cover"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
             : <User className="w-2.5 h-2.5 text-muted-foreground" />
           }
         </div>
-        <span className="text-[11px] font-semibold text-foreground truncate">{quotedCast.author.display_name || quotedCast.author.username}</span>
-        <span className="text-[11px] text-muted-foreground truncate shrink-0">@{quotedCast.author.username}</span>
+        <span className="text-[11px] font-semibold text-foreground truncate">{quotedCast.author?.display_name || quotedCast.author?.username || "Unknown"}</span>
+        {quotedCast.author?.username && <span className="text-[11px] text-muted-foreground truncate shrink-0">@{quotedCast.author.username}</span>}
       </div>
       {quotedCast.text ? (
         <p className="text-[12px] text-muted-foreground leading-relaxed line-clamp-3 whitespace-pre-wrap break-words">{quotedCast.text}</p>
       ) : (
         (() => {
-          const firstUrl = quotedCast.embeds.find(e => e.url)?.url;
+          const firstUrl = quotedCast.embeds?.find(e => e.url)?.url;
           return firstUrl ? <p className="text-[11px] text-primary/70 truncate">{firstUrl}</p> : null;
         })()
       )}
@@ -193,6 +195,24 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // In-place translation: when set, the cast body is REPLACED by the translated
+  // text (device-locale language); tapping the header globe again restores it.
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+
+  async function handleTranslate(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (translation) { setTranslation(null); return; } // toggle back to original
+    if (!cast.text || translating) return;
+    setTranslating(true);
+    try {
+      setTranslation(await translateText(cast.text, getPreferredLang()));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Translation failed");
+    } finally {
+      setTranslating(false);
+    }
+  }
   const [lightbox, setLightbox] = useState<{ urls: string[]; idx: number } | null>(null);
   const [reactionsModal, setReactionsModal] = useState<{ type: "likes" | "recasts"; users: NeynarUser[]; loading: boolean } | null>(null);
 
@@ -261,10 +281,31 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
     navigate(`/cast/${cast.hash}`);
   }
 
-  function copyLink() {
-    const url = `${window.location.origin}/cast/${cast.hash}`;
-    navigator.clipboard.writeText(url).then(() => toast.success("Link copied"));
+  function copyHash() {
+    navigator.clipboard.writeText(cast.hash).then(() => toast.success("Cast hash copied"));
     setShowMenu(false);
+  }
+
+  /** Downloads the lightbox image. Falls back to opening it in a new tab (so the
+   *  user can long-press/right-click "Save image") if the host doesn't send
+   *  CORS headers permitting fetch() to read the bytes. */
+  async function saveImage(url: string) {
+    try {
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = url.split("/").pop()?.split("?")[0] || "image.jpg";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast.success("Image saved");
+    } catch {
+      window.open(url, "_blank", "noreferrer");
+    }
   }
 
   function openExternal() {
@@ -389,7 +430,22 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 </div>
               </button>
             </div>
-            {/* More menu */}
+            {/* Translate + more menu · grouped together so the parent row's
+                justify-between treats them as ONE item on the right, not two
+                separate items with the gap split evenly across the whole row. */}
+            <div className="flex items-center gap-0.5 shrink-0">
+            {cast.text && (
+              <button
+                onClick={handleTranslate}
+                title={translation ? "Show original" : "Translate"}
+                className={cn(
+                  "p-2 rounded-full transition-colors shrink-0",
+                  translation ? "text-primary bg-primary/10" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                {translating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Globe className="w-5 h-5" strokeWidth={1.75} />}
+              </button>
+            )}
             <div className="relative shrink-0" ref={menuRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v); }}
@@ -399,8 +455,8 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               </button>
               {showMenu && (
                 <div className="absolute right-0 top-full mt-1 bg-popover border border-border rounded-2xl shadow-2xl z-50 min-w-[180px] py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={copyLink} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors">
-                    <Copy className="w-4 h-4 text-muted-foreground" /> Copy link
+                  <button onClick={copyHash} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors">
+                    <Copy className="w-4 h-4 text-muted-foreground" /> Copy hash
                   </button>
                   {isOwnCast && (
                     <>
@@ -414,13 +470,26 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 </div>
               )}
             </div>
+            </div>
           </div>
 
-          {/* Cast text */}
+          {/* Cast text · swapped in place with the translation when active */}
           {cast.text && (
-            <CastBody cast={cast} navigate={navigate}
-              onOpen={expanded ? undefined : () => navigate(`/cast/${cast.hash}`)}
-              className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words mb-3" />
+            translation ? (
+              <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                <p dir="auto" className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                  {translation}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Translated ·{" "}
+                  <button onClick={handleTranslate} className="text-primary font-semibold hover:underline">Show original</button>
+                </p>
+              </div>
+            ) : (
+              <CastBody cast={cast} navigate={navigate}
+                onOpen={expanded ? undefined : () => navigate(`/cast/${cast.hash}`)}
+                className="text-[1.0625rem] text-foreground leading-relaxed whitespace-pre-wrap break-words mb-3" />
+            )
           )}
 
           {/* Images */}
@@ -556,14 +625,23 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             >
               {likeLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Heart className={cn("w-5 h-5", liked && "fill-current")} />}
             </button>
+            {/* ml-auto pushes Share to the far right, aligning it under the "..."
+                menu at the top of the card instead of sitting inline after Like. */}
+            <ShareButton cast={cast} menuDirection="up" iconSize={20} iconClassName="ml-auto flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />
           </div>
         </div>
 
         {lightbox && createPortal(
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/92 backdrop-blur-md" onClick={() => setLightbox(null)}>
-            <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={() => setLightbox(null)}>
-              <X className="w-5 h-5" />
-            </button>
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+              <button className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" title="Save image"
+                onClick={(e) => { e.stopPropagation(); saveImage(lightbox.urls[lightbox.idx]); }}>
+                <Download className="w-5 h-5" />
+              </button>
+              <button className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={() => setLightbox(null)}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             {lightbox.urls.length > 1 && (
               <>
                 <button className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-30"
@@ -637,8 +715,21 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 </div>
               </div>
 
-              {/* More menu · always visible for all casts */}
-              <div className="relative shrink-0 ml-1" ref={menuRef}>
+              {/* Translate + more menu · grouped so justify-between doesn't split them apart */}
+              <div className="flex items-center gap-0.5 shrink-0 ml-1">
+              {cast.text && (
+                <button
+                  onClick={handleTranslate}
+                  title={translation ? "Show original" : "Translate"}
+                  className={cn(
+                    "p-1.5 rounded-full transition-colors shrink-0",
+                    translation ? "text-primary bg-primary/10" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  {translating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" strokeWidth={1.75} />}
+                </button>
+              )}
+              <div className="relative shrink-0" ref={menuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v); }}
                   className="p-1.5 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -651,11 +742,11 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
-                      onClick={copyLink}
+                      onClick={copyHash}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
                     >
                       <Copy className="w-4 h-4 text-muted-foreground" />
-                      Copy link
+                      Copy hash
                     </button>
                     {isOwnCast && (
                       <>
@@ -673,13 +764,26 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   </div>
                 )}
               </div>
+              </div>
             </div>
 
-            {/* Cast text */}
+            {/* Cast text · swapped in place with the translation when active */}
             {cast.text && (
-              <CastBody cast={cast} navigate={navigate}
-                onOpen={expanded ? undefined : () => navigate(`/cast/${cast.hash}`)}
-                className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words mb-2.5" />
+              translation ? (
+                <div className="mb-2.5" onClick={(e) => e.stopPropagation()}>
+                  <p dir="auto" className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words">
+                    {translation}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Translated ·{" "}
+                    <button onClick={handleTranslate} className="text-primary font-semibold hover:underline">Show original</button>
+                  </p>
+                </div>
+              ) : (
+                <CastBody cast={cast} navigate={navigate}
+                  onOpen={expanded ? undefined : () => navigate(`/cast/${cast.hash}`)}
+                  className="text-[0.9375rem] text-foreground leading-snug whitespace-pre-wrap break-words mb-2.5" />
+              )
             )}
 
             {/* Images */}
@@ -779,7 +883,9 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 {likeLoading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Heart className={cn("w-[18px] h-[18px]", liked && "fill-current")} />}
                 {likeCount > 0 && <span className="text-[0.8125rem]">{formatCount(likeCount)}</span>}
               </button>
-
+              {/* ml-auto pushes Share to the far right, aligning it under the "..."
+                  menu at the top of the card instead of sitting inline after Like. */}
+              <ShareButton cast={cast} menuDirection="up" iconSize={16} iconClassName="ml-auto flex items-center gap-1 px-1.5 py-1.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-sm" />
             </div>
           </div>
       </div>

@@ -67,7 +67,7 @@ export function signerFromBytes(rawBytes: Uint8Array): LocalSigner {
   return { privateKey, publicKey, publicKeyHex };
 }
 
-/** Generate a fresh random Ed25519 signer — used for seedless SIWF write access. */
+/** Generate a fresh random Ed25519 signer · used for seedless SIWF write access. */
 export function randomSigner(): LocalSigner {
   return signerFromBytes(crypto.getRandomValues(new Uint8Array(32)));
 }
@@ -86,20 +86,29 @@ export function signerPrivateKeyHex(signer: LocalSigner): `0x${string}` {
   return ("0x" + Array.from(signer.privateKey).map((b: number) => b.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
 }
 
-// Wallet transports with fallback RPCs per chain
+// Wallet transports. PRIMARY is our server RPC proxy (/api/rpc/*), which broadcasts
+// from the server across a rotating node pool · no browser CORS, no per-user rate
+// limit, and it transparently skips any exhausted endpoint. Direct public nodes are
+// kept as fallbacks for deployments where the proxy isn't reachable (e.g. a static
+// host with no backend). `rank: false` keeps the proxy first (index order).
+const RPC_PROXY_OP = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/op` : "/api/rpc/op";
+const RPC_PROXY_BASE = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/base` : "/api/rpc/base";
+
 const opWalletTransport = fallback([
-  http("https://mainnet.optimism.io"),
-  http("https://rpc.ankr.com/optimism"),
+  http(RPC_PROXY_OP),
+  http("https://optimism.llamarpc.com"),
+  http("https://optimism-rpc.publicnode.com"),
   http("https://optimism.drpc.org"),
-  http("https://1rpc.io/op"),
-]);
+  http("https://mainnet.optimism.io"),
+], { retryCount: 2 });
 
 const baseWalletTransport = fallback([
-  http("https://mainnet.base.org"),
-  http("https://rpc.ankr.com/base"),
+  http(RPC_PROXY_BASE),
+  http("https://base.llamarpc.com"),
+  http("https://base-rpc.publicnode.com"),
   http("https://base.drpc.org"),
-  http("https://1rpc.io/base"),
-]);
+  http("https://mainnet.base.org"),
+], { retryCount: 2 });
 
 /** Create a walletClient bound to the Base chain for an already-derived account. */
 export function createBaseWalletClient(account: Account): WalletClient {

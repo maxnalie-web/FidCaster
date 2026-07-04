@@ -5,22 +5,27 @@ import {
   ArrowLeft, Search, UserPlus, UserMinus, Users, Loader2,
   X, ChevronDown, CheckSquare, Square,
   Heart, Ban, Filter, Check, AlertCircle, Scissors, ChevronRight,
+  ListChecks, XCircle, Clock, Eye, Award, Sparkles,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactCount } from "@/lib/utils";
 import {
-  searchUsers, getUserByFid, getFollowers, getFollowing,
-  type NeynarUser,
+  searchUsers, getUserByFid, getFollowers, getFollowing, getFollowListFids,
+  neynarScore, type NeynarUser,
 } from "@/lib/neynar";
+import { NeynarScoreBadge, NeynarLogo } from "@/components/NeynarScoreBadge";
 import { ProBadge, useProStatus } from "@/components/ProBadge";
+import { hydrateProfiles, useHydratedUser } from "@/lib/profile-hydrate";
 import { getCachedFollowList, setCachedFollowList } from "@/lib/farcaster-db";
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
+import { BottomNav } from "@/components/BottomNav";
 import { toast } from "sonner";
 import type { BatchFilters, SortOrder, Preset } from "@/lib/batch-follow-utils";
 import {
   DEFAULT_FILTERS, FOLLOW_PRESETS, UNFOLLOW_PRESETS, SORT_OPTIONS,
-  LIMIT_PRESETS, MAX_SCAN, parseExclusions, applyFilters, etaStr,
+  LIMIT_PRESETS, MAX_SCAN, parseExclusions, applyFilters, smartScore, etaStr, AVG_ACTION_SECS,
 } from "@/lib/batch-follow-utils";
+import type { BatchOp } from "@/hooks/BatchOperationContext";
 
 // ─── Mode ──────────────────────────────────────────────────────────────────────
 // "follow"  → browse someone else's followers/following and follow them
@@ -35,16 +40,147 @@ function readUrlParams(): { mode: PageMode; preloadFid: number | null } {
   return { mode, preloadFid: fid && fid > 0 ? fid : null };
 }
 
+// ─── Hub fast path ──────────────────────────────────────────────────────────────
+// Scans the raw follow graph from free hubs (~2000 FIDs/call, zero Neynar credits,
+// newest first) instead of Neynar's 100-profile pages, computes viewer_context
+// locally from the viewer's own link sets, and hydrates profiles lazily · only
+// for rows that become visible (or the smart-sort candidate window).
+// Not eligible when filters need full profiles up front (follower range, Pro,
+// username exclusions) · those keep the exact Neynar pipeline.
+
+const FAST_SCAN_CAP = 30_000;       // raw FIDs per scan (~15 free hub calls)
+const VIEWER_SET_TTL = 10 * 60_000;
+const VIEWER_SET_PAGE_CAP = 60;     // ~120K links · beyond this the set is partial
+
+const _viewerSets = new Map<string, { ts: number; set: Set<number>; complete: boolean }>();
+
+async function getViewerLinkSet(
+  myFid: number,
+  type: "followers" | "following",
+): Promise<{ set: Set<number>; complete: boolean }> {
+  const key = `${type}:${myFid}`;
+  const hit = _viewerSets.get(key);
+  if (hit && Date.now() - hit.ts < VIEWER_SET_TTL) return hit;
+  const set = new Set<number>();
+  let cursor: string | undefined;
+  let pages = 0;
+  do {
+    const page = await getFollowListFids(myFid, type, cursor);
+    for (const f of page.fids) set.add(f);
+    cursor = page.nextCursor;
+    pages++;
+  } while (cursor && pages < VIEWER_SET_PAGE_CAP);
+  const entry = { ts: Date.now(), set, complete: !cursor };
+  _viewerSets.set(key, entry);
+  return entry;
+}
+
+/** Returns the filtered list, or null when correctness requires the Neynar path. */
+async function fastHubScan(opts: {
+  targetFid: number;
+  lt: "followers" | "following";
+  myFid: number;
+  mode: "follow" | "unfollow";
+  filters: BatchFilters;
+  fidExclusions?: Set<number>;
+  onProgress: (pages: number, found: number) => void;
+}): Promise<NeynarUser[] | null> {
+  const { targetFid, lt, myFid, mode, filters, fidExclusions, onProgress } = opts;
+
+  // 1. Raw FID scan of the target list (free, newest first).
+  const raw: number[] = [];
+  const seen = new Set<number>();
+  let cursor: string | undefined;
+  let pages = 0;
+  do {
+    const page = await getFollowListFids(targetFid, lt, cursor);
+    for (const f of page.fids) if (!seen.has(f)) { seen.add(f); raw.push(f); }
+    cursor = page.nextCursor;
+    pages++;
+    onProgress(pages, raw.length);
+  } while (cursor && raw.length < FAST_SCAN_CAP);
+
+  // 2. Viewer link sets → viewer_context for every candidate (also free).
+  //    Cleanup mode scans MY following, so `following` is true by definition.
+  const needFollowers = mode === "follow" || filters.skipMutuals || filters.onlyNonFollowers;
+  const [following, followers] = await Promise.all([
+    mode === "follow"
+      ? getViewerLinkSet(myFid, "following")
+      : Promise.resolve({ set: new Set<number>(), complete: true }),
+    needFollowers
+      ? getViewerLinkSet(myFid, "followers")
+      : Promise.resolve({ set: new Set<number>(), complete: true }),
+  ]);
+
+  // Mutual-based FILTERS need the complete followers set · if the viewer has
+  // more followers than the scan cap, only the exact Neynar path is correct.
+  const usesMutualFilter = mode === "follow"
+    ? filters.onlyMutuals
+    : (filters.skipMutuals || filters.onlyNonFollowers);
+  if (usesMutualFilter && !followers.complete) return null;
+
+  // 3. Stub users with real viewer_context; profiles hydrate lazily per row.
+  let candidates: NeynarUser[] = raw
+    .filter(f => f !== myFid)
+    .map(f => ({
+      fid: f, username: "", display_name: "", pfp_url: "",
+      follower_count: 0, following_count: 0,
+      viewer_context: {
+        following: mode === "unfollow" ? true : following.set.has(f),
+        followed_by: followers.set.has(f),
+      },
+    }));
+
+  // 4. Identical filter semantics to applyFilters (range/Pro never reach here).
+  if (mode === "follow") {
+    candidates = candidates.filter(u => !u.viewer_context!.following);
+    if (filters.onlyMutuals) candidates = candidates.filter(u => u.viewer_context!.followed_by);
+  } else if (filters.skipMutuals || filters.onlyNonFollowers) {
+    candidates = candidates.filter(u => !u.viewer_context!.followed_by);
+  }
+  if (fidExclusions && fidExclusions.size > 0) {
+    candidates = candidates.filter(u => !fidExclusions.has(u.fid));
+  }
+
+  // 5. Sort. Smart scoring needs counts · hydrate a bounded candidate window
+  //    through the SQLite-backed bulk cache, then rank.
+  if (filters.sortOrder === "oldest") candidates.reverse();
+  else if (filters.sortOrder === "random") {
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+  } else if (filters.sortOrder === "smart") {
+    const windowSize = Math.min(candidates.length, Math.max(filters.limit * 2, 500), 3000);
+    const window = candidates.slice(0, windowSize);
+    const profiles = await hydrateProfiles(window.map(u => u.fid));
+    const scored = window.map(u => {
+      const p = profiles.get(u.fid);
+      return p ? { ...p, viewer_context: u.viewer_context } : u;
+    });
+    scored.sort((a, b) => smartScore(b) - smartScore(a));
+    return scored.slice(0, filters.limit);
+  }
+
+  return candidates.slice(0, filters.limit);
+}
+
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function UserRow({
-  user, selected, onToggle, mode,
+  user: rawUser, selected, onToggle, mode,
 }: {
   user: NeynarUser;
   selected: boolean;
   onToggle: () => void;
   mode: PageMode;
 }) {
+  // Fast-path rows arrive as bare-FID stubs (empty username) · hydrate the
+  // display fields lazily, keeping the viewer_context computed from hub sets.
+  const hydrated = useHydratedUser(rawUser.fid, !rawUser.username);
+  const user = !rawUser.username && hydrated
+    ? { ...hydrated, viewer_context: rawUser.viewer_context }
+    : rawUser;
   const followingMe = user.viewer_context?.followed_by;
   const iFollow = user.viewer_context?.following;
   const proMap = useProStatus([user.fid]);
@@ -86,8 +222,12 @@ function UserRow({
         <div className="flex items-center gap-2 mt-0.5">
           <p className="text-[11px] text-muted-foreground truncate">@{user.username}</p>
           <span className="text-[10px] text-muted-foreground shrink-0">
-            {(user.follower_count ?? 0).toLocaleString()} followers
+            {formatCompactCount(user.follower_count ?? 0)} followers
           </span>
+          {(() => {
+            const s = neynarScore(user);
+            return s !== undefined ? <NeynarScoreBadge score={s} className="shrink-0" /> : null;
+          })()}
         </div>
       </div>
 
@@ -145,6 +285,12 @@ export function FollowPage() {
   // ── Init from URL params ──────────────────────────────────────────────────
   const initRef = useRef(false);
   const [mode, setMode] = useState<PageMode>(() => readUrlParams().mode);
+  // "Active" is a separate view (not a scanning mode) that lists every grow
+  // running across every account · reachable via ?tab=active (the overflow
+  // chip on the floating progress stack links here).
+  const [showActive, setShowActive] = useState(
+    () => new URLSearchParams(window.location.search).get("tab") === "active"
+  );
 
   // Search state (follow mode)
   const [searchQuery, setSearchQuery] = useState("");
@@ -173,10 +319,10 @@ export function FollowPage() {
   const [batchStarted, setBatchStarted] = useState(false);
   const [lastBatchLabel, setLastBatchLabel] = useState("");
 
-  // List virtualization — render only the first N rows to prevent page freeze
+  // List virtualization · render only the first N rows to prevent page freeze
   const [visibleCount, setVisibleCount] = useState(40);
 
-  // Deep scan — continues past the initial 10K cap for large accounts
+  // Deep scan · continues past the initial 10K cap for large accounts
   const [deepScanCursor, setDeepScanCursor] = useState<string | undefined>(undefined);
   const [deepScanning, setDeepScanning] = useState(false);
   const deepScanRawRef = useRef<NeynarUser[]>([]);
@@ -188,6 +334,7 @@ export function FollowPage() {
   // ── Switch mode ───────────────────────────────────────────────────────────
 
   function switchMode(next: PageMode) {
+    setShowActive(false);
     setMode(next);
     setAllUsers([]);
     setSelectedFids(new Set());
@@ -310,14 +457,16 @@ export function FollowPage() {
     let collected: NeynarUser[] = [];
 
     // ── Browser-side cache (IndexedDB, 15 min TTL) ─────────────────────────
-    // Skip cache when strict filters are active — those filters need MAX_SCAN
+    // Skip cache when strict filters are active · those filters need MAX_SCAN
     // raw data to find enough qualifying results. With only limit×4 cached
     // users, strict filters (minFollowers, Power Badge, Pro) almost always
     // produce an empty result.
     const strictFilters =
       (currentFilters.minFollowers ?? 0) > 0 ||
       (currentFilters.maxFollowers ?? 0) > 0 ||
-      currentFilters.onlyPro === true;
+      (currentFilters.minNeynarScore ?? 0) > 0 ||
+      currentFilters.onlyPro === true ||
+      currentFilters.requirePowerBadge === true;
     const cached = strictFilters ? null : await getCachedFollowList(lt, fetchFid, myFid);
     const minRawNeeded = Math.min(currentFilters.limit * 4, MAX_SCAN);
     if (cached && cached.length >= minRawNeeded) {
@@ -328,6 +477,35 @@ export function FollowPage() {
       setSelectedFids(new Set(result.map(u => u.fid)));
       setPhase(result.length === 0 ? "empty" : "loaded");
       return;
+    }
+
+    // ── Hub fast path · raw-FID scan from free hubs (zero Neynar credits) ──
+    // Falls back to the exact Neynar pipeline below on any failure, when
+    // filters need full profiles (range/Pro), or on username exclusions.
+    const canFastScan =
+      !strictFilters &&
+      (currentExclusions?.usernameSet.size ?? 0) === 0;
+    if (canFastScan) {
+      try {
+        const fast = await fastHubScan({
+          targetFid: fetchFid, lt, myFid, mode: batchMode, filters: currentFilters,
+          fidExclusions: currentExclusions?.fidSet,
+          onProgress: (pages, found) => setScanProgress({ pages, found }),
+        });
+        if (fast) {
+          // Fast scan already covers up to 30K raw FIDs · deeper than the
+          // native scan + deep-scan combined, so no deep-scan banner needed.
+          deepScanRawRef.current = [];
+          deepScanTargetRef.current = null;
+          setDeepScanCursor(undefined);
+          setAllUsers(fast);
+          setSelectedFids(new Set(fast.map(u => u.fid)));
+          setPhase(fast.length === 0 ? "empty" : "loaded");
+          return;
+        }
+      } catch (e) {
+        console.warn("[grow] hub fast path failed · falling back to Neynar scan:", e);
+      }
     }
 
     // ── Fresh fetch from server ────────────────────────────────────────────
@@ -529,17 +707,29 @@ export function FollowPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col pb-[54px] md:pb-0">
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 bg-background/96 backdrop-blur-xl border-b border-border">
-        <div className="h-[53px] flex items-center gap-3 px-4 max-w-[900px] mx-auto w-full">
+      <header className="sticky top-0 z-30 bg-background/96 backdrop-blur-xl border-b border-border relative overflow-hidden">
+        <div className={cn(
+          "absolute inset-0 opacity-[0.07] pointer-events-none",
+          mode === "follow"
+            ? "bg-gradient-to-r from-primary via-violet-500 to-transparent"
+            : "bg-gradient-to-r from-rose-500 via-orange-400 to-transparent"
+        )} />
+        <div className="h-[53px] flex items-center gap-3 px-4 max-w-[900px] mx-auto w-full relative">
           <button
             onClick={() => navigate("/dashboard")}
             className="p-2 -ml-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
+          <div className={cn(
+            "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center",
+            mode === "follow" ? "bg-primary/10 text-primary" : "bg-rose-500/10 text-rose-500",
+          )}>
+            {mode === "follow" ? <UserPlus className="w-4 h-4" /> : <Scissors className="w-4 h-4" />}
+          </div>
           <div className="flex-1 min-w-0">
             <h1 className="font-bold text-[15px] text-foreground">{pageTitle}</h1>
             <p className="text-[11px] text-muted-foreground leading-none mt-0.5">{pageSubtitle}</p>
@@ -547,10 +737,10 @@ export function FollowPage() {
         </div>
       </header>
 
-      <div className="flex-1 max-w-[900px] w-full mx-auto flex flex-col lg:flex-row gap-0 lg:gap-6 px-0 lg:px-4 lg:py-4">
+      <div className="flex-1 lg:min-h-0 max-w-[900px] w-full mx-auto flex flex-col lg:flex-row gap-0 lg:gap-6 px-0 lg:px-4 lg:py-4">
 
-        {/* ── LEFT: CONTROLS ──────────────────────────────────────────── */}
-        <div className="lg:w-[280px] lg:shrink-0 flex flex-col gap-4">
+        {/* ── LEFT: CONTROLS (full-width when the Active view replaces the two-column layout) ── */}
+        <div className={cn("flex flex-col gap-4", showActive ? "w-full" : "lg:w-[280px] lg:shrink-0")}>
 
           {/* Mode switcher */}
           <div className="px-4 pt-4 lg:px-0 lg:pt-0">
@@ -559,7 +749,7 @@ export function FollowPage() {
                 onClick={() => switchMode("follow")}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
-                  mode === "follow"
+                  mode === "follow" && !showActive
                     ? "bg-primary text-white shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
@@ -571,7 +761,7 @@ export function FollowPage() {
                 onClick={() => switchMode("cleanup")}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
-                  mode === "cleanup"
+                  mode === "cleanup" && !showActive
                     ? "bg-rose-500 text-white shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
@@ -579,9 +769,28 @@ export function FollowPage() {
                 <Scissors className="w-3.5 h-3.5" />
                 Clean Up
               </button>
+              <button
+                onClick={() => { setShowActive(true); navigate("/follow?tab=active", { replace: true }); }}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
+                  showActive
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <ListChecks className="w-3.5 h-3.5" />
+                Active
+                {batchOp.ops.filter(o => o.phase === "running").length > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                )}
+              </button>
             </div>
           </div>
 
+          {showActive ? (
+            <ActiveGrowsView ops={batchOp.ops} onCancel={batchOp.cancelOp} onDismiss={batchOp.clearOp} onUnhide={batchOp.unhideOp} />
+          ) : (
+          <>
           {/* ── FOLLOW MODE: search for a target profile ── */}
           {mode === "follow" && (
             <div className="px-4 lg:px-0 space-y-3">
@@ -643,7 +852,7 @@ export function FollowPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] font-semibold text-foreground truncate">@{u.username}</p>
-                            <p className="text-[10px] text-muted-foreground">{(u.follower_count ?? 0).toLocaleString()} followers</p>
+                            <p className="text-[10px] text-muted-foreground">{formatCompactCount(u.follower_count ?? 0)} followers</p>
                           </div>
                         </button>
                       ))}
@@ -654,22 +863,22 @@ export function FollowPage() {
 
               {/* Target user card */}
               {targetUser && (
-                <div className="rounded-xl border border-border bg-card p-3 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0 ring-1 ring-border">
+                <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/[0.06] to-transparent p-3.5 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-muted shrink-0 ring-2 ring-primary/20">
                     {targetUser.pfp_url
                       ? <img src={targetUser.pfp_url} alt="" className="w-full h-full object-cover" />
-                      : <span className="w-full h-full flex items-center justify-center text-sm font-bold text-primary bg-primary/10">{(targetUser.username || "?")[0].toUpperCase()}</span>
+                      : <span className="w-full h-full flex items-center justify-center text-base font-bold text-primary bg-primary/10">{(targetUser.username || "?")[0].toUpperCase()}</span>
                     }
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-bold text-foreground truncate">{targetUser.display_name || targetUser.username}</p>
+                    <p className="text-[13.5px] font-bold text-foreground truncate">{targetUser.display_name || targetUser.username}</p>
                     <p className="text-[11px] text-muted-foreground">@{targetUser.username}</p>
-                    <div className="flex gap-3 mt-0.5">
+                    <div className="flex gap-3 mt-1">
                       <span className="text-[10px] text-muted-foreground">
-                        <span className="font-semibold text-foreground">{(targetUser.follower_count ?? 0).toLocaleString()}</span> followers
+                        <span className="font-semibold text-foreground">{formatCompactCount(targetUser.follower_count ?? 0)}</span> followers
                       </span>
                       <span className="text-[10px] text-muted-foreground">
-                        <span className="font-semibold text-foreground">{(targetUser.following_count ?? 0).toLocaleString()}</span> following
+                        <span className="font-semibold text-foreground">{formatCompactCount(targetUser.following_count ?? 0)}</span> following
                       </span>
                     </div>
                   </div>
@@ -703,7 +912,7 @@ export function FollowPage() {
                             {lt === "followers" ? "Followers" : "Following"}
                           </span>
                           <span className={cn("text-[10px] font-normal mt-0.5", listType === lt ? "text-primary/70" : "text-muted-foreground/60")}>
-                            {count.toLocaleString()}
+                            {formatCompactCount(count)}
                           </span>
                         </button>
                       );
@@ -712,7 +921,7 @@ export function FollowPage() {
                 </div>
               )}
 
-              {/* Empty state — no target yet */}
+              {/* Empty state · no target yet */}
               {!targetUser && phase !== "searching" && (
                 <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
                   <div className="w-12 h-12 rounded-2xl bg-primary/8 flex items-center justify-center">
@@ -744,7 +953,7 @@ export function FollowPage() {
                     <p className="text-[13px] font-bold text-foreground truncate">{ownProfile.display_name || ownProfile.username}</p>
                     <p className="text-[11px] text-muted-foreground">@{ownProfile.username}</p>
                     <span className="text-[10px] text-muted-foreground">
-                      <span className="font-semibold text-foreground">{(ownProfile.following_count ?? 0).toLocaleString()}</span> following
+                      <span className="font-semibold text-foreground">{formatCompactCount(ownProfile.following_count ?? 0)}</span> following
                     </span>
                   </div>
                   <div className="shrink-0">
@@ -768,28 +977,41 @@ export function FollowPage() {
 
               {/* Presets */}
               <div>
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                  Strategy
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3" /> Strategy
                 </p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {presets.map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => applyPreset(p.filters, p.id)}
-                      className={cn(
-                        "flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-[11px] font-semibold transition-all",
-                        activePreset === p.id ? p.color : "border-border bg-muted/10 text-muted-foreground hover:bg-muted/30",
-                      )}
-                    >
-                      {p.icon}
-                      {p.label}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-2">
+                  {presets.map(p => {
+                    const active = activePreset === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => applyPreset(p.filters, p.id)}
+                        className={cn(
+                          "relative flex flex-col items-center gap-1.5 px-2.5 py-3 rounded-2xl border text-center transition-all",
+                          active
+                            ? cn(p.color, "shadow-sm ring-1 ring-inset ring-current/10")
+                            : "border-border bg-muted/10 text-muted-foreground hover:bg-muted/30 hover:border-foreground/15",
+                        )}
+                      >
+                        {active && <Check className="w-3.5 h-3.5 absolute top-2 right-2" strokeWidth={3} />}
+                        <span className={cn(
+                          "w-9 h-9 rounded-xl flex items-center justify-center",
+                          active ? "bg-current/10" : "bg-muted/40",
+                        )}>
+                          {p.icon}
+                        </span>
+                        <span className={cn("text-[12.5px] font-bold", active ? "" : "text-foreground")}>
+                          {p.label}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                {activePreset !== "custom" && (() => {
+                {(() => {
                   const active = presets.find(p => p.id === activePreset);
                   return active ? (
-                    <p className="text-[11px] text-muted-foreground mt-1.5 px-0.5 leading-relaxed">
+                    <p className="text-[11px] text-muted-foreground mt-2 px-0.5 leading-relaxed">
                       {active.desc}
                     </p>
                   ) : null;
@@ -867,7 +1089,10 @@ export function FollowPage() {
                         <Toggle label="Mutuals only" sub="Only those who follow me" checked={filters.onlyMutuals} onChange={v => updateFilter("onlyMutuals", v)} icon={<Heart className="w-3.5 h-3.5" />} />
                       </div>
                       <div className="px-3">
-                        <Toggle label="Farcaster Pro only" sub="Paid subscribers ($10/mo) — rare, high intent" checked={filters.onlyPro} onChange={v => updateFilter("onlyPro", v)} icon={<ProBadge size={14} />} />
+                        <Toggle label="Farcaster Pro only" sub="Paid subscribers ($10/mo) · rare, high intent" checked={filters.onlyPro} onChange={v => updateFilter("onlyPro", v)} icon={<ProBadge size={14} />} />
+                      </div>
+                      <div className="px-3">
+                        <Toggle label="Power Badge only" sub="Farcaster-verified active accounts" checked={filters.requirePowerBadge} onChange={v => updateFilter("requirePowerBadge", v)} icon={<Award className="w-3.5 h-3.5" />} />
                       </div>
                     </>
                   ) : (
@@ -911,6 +1136,27 @@ export function FollowPage() {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Neynar quality score */}
+                <div className="rounded-xl border border-border px-3 py-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <NeynarLogo size={12} /> Min Neynar score
+                    </p>
+                    <span className="text-[12px] font-bold text-foreground tabular-nums">
+                      {filters.minNeynarScore > 0 ? filters.minNeynarScore : "Any"}
+                    </span>
+                  </div>
+                  <input
+                    type="range" min={0} max={99} step={1}
+                    value={filters.minNeynarScore}
+                    onChange={e => updateFilter("minNeynarScore", Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Skips low-quality/likely-spam accounts below this score. 0 = no filter.
+                  </p>
                 </div>
 
                 {/* Exclusion list */}
@@ -964,10 +1210,13 @@ export function FollowPage() {
               </button>
             </div>
           )}
+          </>
+          )}
         </div>
 
-        {/* ── RIGHT: USER LIST ────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 border-t lg:border-t-0 lg:border-l border-border">
+        {/* ── RIGHT: USER LIST · hidden while the Active view is shown ── */}
+        {!showActive && (
+        <div className="flex-1 min-w-0 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-border">
 
           {/* Scan progress */}
           {phase === "loading" && (
@@ -989,7 +1238,7 @@ export function FollowPage() {
               <div className="text-center">
                 <p className="text-base font-bold text-foreground">Done!</p>
                 <p className="text-[13px] text-muted-foreground mt-1 max-w-[260px] mx-auto">
-                  {lastBatchLabel} — the progress pill at the bottom tracks it live.
+                  {lastBatchLabel} · the progress pill at the bottom tracks it live.
                 </p>
               </div>
               <div className="flex flex-col gap-2 w-full max-w-[240px]">
@@ -1046,14 +1295,14 @@ export function FollowPage() {
 
           {/* User list */}
           {isLoaded && allUsers.length > 0 && !batchStarted && (
-            <div className="flex flex-col h-full">
-              {/* Deep scan banner — shown when we hit the scan cap before reaching the limit */}
+            <div className="flex flex-col">
+              {/* Deep scan banner · shown when we hit the scan cap before reaching the limit */}
               {!batchStarted && deepScanCursor && allUsers.length < filters.limit && (
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-500/8 border-b border-amber-500/20">
                   <div className="flex items-center gap-2 min-w-0">
                     <Search className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     <span className="text-[12px] text-muted-foreground">
-                      Found <span className="font-semibold text-foreground">{allUsers.length.toLocaleString()}</span> of {filters.limit.toLocaleString()} — scanned first {deepScanRawRef.current.length.toLocaleString()} users
+                      Found <span className="font-semibold text-foreground">{allUsers.length.toLocaleString()}</span> of {filters.limit.toLocaleString()} · scanned first {deepScanRawRef.current.length.toLocaleString()} users
                     </span>
                   </div>
                   <button
@@ -1096,8 +1345,12 @@ export function FollowPage() {
                 </div>
               </div>
 
-              {/* Scrollable list — virtualized: show first N rows to avoid page freeze */}
-              <div className="flex-1 overflow-y-auto divide-y divide-border/40 pb-24">
+              {/* List rows · flow in the page's own scroll (a bounded internal scroll
+                  region needs a definite parent height, which this responsive layout
+                  doesn't have; using page scroll + sticky header/footer avoids the
+                  "whole page blows out when the list loads" layout break). Windowed to
+                  the first N rows so huge lists never freeze the page. */}
+              <div className="divide-y divide-border/40 pb-24">
                 {allUsers.slice(0, visibleCount).map(user => (
                   <UserRow
                     key={user.fid}
@@ -1121,8 +1374,9 @@ export function FollowPage() {
                 )}
               </div>
 
-              {/* Action bar */}
-              <div className="sticky bottom-0 px-4 py-3 border-t border-border bg-background/98 backdrop-blur-md flex items-center gap-3">
+              {/* Action bar · sits above the mobile bottom nav (54px), flush to the
+                  viewport edge on desktop where there's no bottom nav to clear. */}
+              <div className="sticky bottom-[54px] md:bottom-0 px-4 py-3 border-t border-border bg-background/98 backdrop-blur-md flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-semibold text-foreground">
                     {selectedCount} user{selectedCount !== 1 ? "s" : ""} selected
@@ -1150,7 +1404,114 @@ export function FollowPage() {
             </div>
           )}
         </div>
+        )}
       </div>
+      <BottomNav active="grow" />
+    </div>
+  );
+}
+
+// ─── Active Grows · every running/finished op across every account, as a plain
+// scrollable list (not floating pills). Persists across account switches since
+// it just reads straight from BatchOperationContext, which isn't scoped to
+// "whichever account is currently active" in the first place. ──────────────────
+function ActiveGrowsView({ ops, onCancel, onDismiss, onUnhide }: {
+  ops: BatchOp[];
+  onCancel: (myFid: number, mode: "follow" | "unfollow") => void;
+  onDismiss: (myFid: number, mode: "follow" | "unfollow") => void;
+  onUnhide: (myFid: number, mode: "follow" | "unfollow") => void;
+}) {
+  if (ops.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground px-6 text-center">
+        <ListChecks className="w-10 h-10 opacity-15" />
+        <p className="text-sm">No grows running right now.</p>
+        <p className="text-[12px] text-muted-foreground/70">
+          Each account can run one Follow and one Unfollow grow at the same time.
+          Start one from the Follow or Clean Up tab.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 lg:px-0 space-y-2.5 pb-4">
+      {ops.map(op => {
+        const remaining = Math.max(0, op.total - op.done - op.errors - op.skipped);
+        const pct = op.total > 0 ? (op.done / op.total) * 100 : 0;
+        const etaSecs = remaining * AVG_ACTION_SECS;
+        const eta = etaSecs < 60 ? `~${Math.round(etaSecs)}s left` : `~${Math.round(etaSecs / 60)}m left`;
+        const isRunning = op.phase === "running";
+        const accent = op.mode === "follow" ? "text-primary" : "text-rose-500";
+        const barColor = op.mode === "follow" ? "bg-primary" : "bg-rose-500";
+
+        return (
+          <div key={op.id} className="rounded-2xl border border-border bg-card p-3.5">
+            <div className="flex items-center gap-2.5">
+              <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                op.mode === "follow" ? "bg-primary/10" : "bg-rose-500/10")}>
+                {op.mode === "follow" ? <UserPlus className={cn("w-4 h-4", accent)} /> : <UserMinus className={cn("w-4 h-4", accent)} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-foreground truncate">{op.accountLabel}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{op.label}</p>
+              </div>
+              <span className="text-[11px] font-semibold text-muted-foreground shrink-0 tabular-nums">{op.done}/{op.total}</span>
+              {isRunning ? (
+                <button
+                  onClick={() => onCancel(op.myFid, op.mode)}
+                  className="text-[11px] font-semibold text-muted-foreground hover:text-rose-500 border border-border hover:border-rose-500/30 rounded-lg px-2.5 py-1.5 transition-all shrink-0"
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={() => onDismiss(op.myFid, op.mode)}
+                  className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-3">
+              <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: `${pct}%` }} />
+            </div>
+
+            <div className="flex items-center justify-between mt-2 text-[11px]">
+              <span className={cn(
+                "flex items-center gap-1",
+                op.phase === "done" ? "text-emerald-500" : op.phase === "cancelled" ? "text-muted-foreground" : "text-muted-foreground"
+              )}>
+                {op.phase === "done"
+                  ? <><CheckSquare className="w-3 h-3" /> Completed</>
+                  : op.phase === "cancelled"
+                    ? <><XCircle className="w-3 h-3" /> Stopped</>
+                    : op.waitMsg
+                      ? <><Loader2 className="w-3 h-3 animate-spin text-amber-500" /> <span className="text-amber-500">{op.waitMsg}</span></>
+                      : <><Clock className="w-3 h-3" /> {eta}</>
+                }
+              </span>
+              {(op.skipped > 0 || op.errors > 0) && (
+                <span className="text-muted-foreground/70">
+                  {op.skipped > 0 && `${op.skipped} skipped`}
+                  {op.skipped > 0 && op.errors > 0 && " · "}
+                  {op.errors > 0 && `${op.errors} failed`}
+                </span>
+              )}
+            </div>
+
+            {isRunning && op.hiddenFromStack && (
+              <button
+                onClick={() => onUnhide(op.myFid, op.mode)}
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-border text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all"
+              >
+                <Eye className="w-3.5 h-3.5" /> Show floating pill again
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

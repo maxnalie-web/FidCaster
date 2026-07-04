@@ -98,7 +98,7 @@ export function useMarketWallet() {
           await switchToOptimism(ethereum);
           const cId2 = await ethereum.request({ method: "eth_chainId" });
           chainIdNum = parseInt(cId2, 16);
-        } catch { /* user may dismiss — proceed anyway */ }
+        } catch { /* user may dismiss · proceed anyway */ }
       }
       setChainId(chainIdNum);
       const wc = createWalletClient({
@@ -183,7 +183,7 @@ export function useMarketWallet() {
           params: [{ chainId: "0xa" }],
         });
       } catch {
-        // some wallets don't support switching via WC — proceed anyway
+        // some wallets don't support switching via WC · proceed anyway
       }
     }
 

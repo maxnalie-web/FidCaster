@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, X, Link2, ImagePlus, Upload, Quote } from "lucide-react";
+import { Loader2, X, Link2, ImagePlus, Upload, Quote, Hash, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { hubPublishCast, neynarAction } from "@/lib/hub-submit";
 import type { NeynarCast } from "@/lib/neynar";
+import { getFollowedChannels, type FollowedChannel } from "@/lib/channel-follows";
 
 const MAX_CHARS = 320;
 
@@ -100,11 +101,16 @@ type Props = {
   onCanceled?: () => void;
   onPublished: (cast: NeynarCast) => void;
   placeholder?: string;
+  /** Pre-select a channel to cast into (e.g. opened from a channel page). */
+  defaultChannel?: FollowedChannel;
 };
 
-export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, placeholder }: Props) {
+export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, placeholder, defaultChannel }: Props) {
   const { fid, localSigner, signerUuid, signerApproved, neynarKey, profile, autoSignerLoading, authMethod } = useWallet();
   const [text, setText] = useState("");
+  const [channel, setChannel] = useState<FollowedChannel | null>(defaultChannel ?? null);
+  const [showChannelPicker, setShowChannelPicker] = useState(false);
+  const followedChannels = fid ? getFollowedChannels(Number(fid)) : [];
   const quoteUrl = quoteCast
     ? `https://farcaster.xyz/${quoteCast.author.username}/${quoteCast.hash.slice(0, 10)}`
     : "";
@@ -163,11 +169,13 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
         ...uploadedImages,
         ...(embedUrl.trim() ? [embedUrl.trim()] : []),
       ];
+      const parentUrl = !replyTo && channel?.url ? channel.url : undefined;
       if (localSigner) {
         await hubPublishCast(Number(fid), localSigner, text.trim(), {
           embeds: allEmbeds.length > 0 ? allEmbeds : undefined,
           parentHash: replyTo?.hash,
           parentFid: replyTo?.author.fid,
+          parentUrl,
           neynarKey,
         });
       } else if (signerUuid) {
@@ -176,6 +184,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
           text: text.trim(),
           embeds: allEmbeds.length > 0 ? allEmbeds : undefined,
           parentHash: replyTo?.hash,
+          parentUrl,
         });
       } else {
         throw new Error("Signer not ready");
@@ -228,6 +237,53 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
 
   return (
     <div className="border-b border-border/40 px-5 py-4">
+      {!replyTo && followedChannels.length > 0 && (
+        <div className="relative mb-3">
+          <button
+            onClick={() => setShowChannelPicker((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
+              channel ? "text-primary border-primary/30 bg-primary/8" : "text-muted-foreground border-border hover:text-foreground"
+            )}
+          >
+            {channel ? (
+              <>
+                <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
+                  {channel.image_url && <img src={channel.image_url} alt="" className="w-full h-full object-cover" />}
+                </div>
+                {channel.name}
+              </>
+            ) : (
+              <><Hash className="w-3.5 h-3.5" /> Channel</>
+            )}
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          {showChannelPicker && (
+            <div className="absolute top-full mt-1 left-0 z-20 bg-popover border border-border rounded-xl shadow-xl overflow-hidden min-w-[200px] py-1">
+              <button
+                onClick={() => { setChannel(null); setShowChannelPicker(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
+              >
+                None · your main feed
+              </button>
+              <div className="my-1 border-t border-border" />
+              {followedChannels.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { setChannel(c); setShowChannelPicker(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
+                >
+                  <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
+                    {c.image_url && <img src={c.image_url} alt="" className="w-full h-full object-cover" />}
+                  </div>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {replyTo && (
         <div className="flex items-center justify-between mb-3 px-3 py-2 rounded-lg bg-muted/30 border border-border/40">
           <div className="text-xs text-muted-foreground truncate">

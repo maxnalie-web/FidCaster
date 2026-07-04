@@ -1,9 +1,12 @@
 import { createContext, useContext, useRef, useState, useEffect, useCallback } from "react";
+import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
+import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
+import { ADMIN_FID } from "@/lib/admin-config";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { loadSignerPrivKey } from "@/lib/account-store";
 import { useWallet } from "@/hooks/useWallet";
@@ -16,7 +19,18 @@ const MAX_SIGNER_RETRIES = 3;
 const CONSECUTIVE_ERR_LIMIT = 10;
 const CONSECUTIVE_ERR_PAUSE_MS = 30_000;
 
-// ─── Persistence — per-FID key so accounts never overwrite each other ─────────
+// FidCaster's own founder/admin account (ADMIN_FID, @m--) · grows run with real
+// parallelism (several actions in flight at once) instead of one-at-a-time,
+// since network latency (not this app) is the floor for a single sequential
+// action anyway.
+const FOUNDER_CONCURRENCY = 8;
+const FOUNDER_CHUNK_DELAY_MS = 200;
+
+// ─── Persistence · per-(FID, mode) key ─────────────────────────────────────────
+// Keyed by account AND mode so a follow-batch and an unfollow-batch for the SAME
+// account persist independently · each account is allowed exactly one active
+// follow run and one active unfollow run at a time, never two of the same kind
+// overwriting each other in storage or in the in-memory ops map.
 const BATCH_KEY_PREFIX = "fc_batch_v2_";
 const BATCH_KEY_LEGACY  = "fc_batch_op_v1"; // old single-key format to clean up
 
@@ -33,28 +47,24 @@ interface PersistedBatch {
   skipped: number;
 }
 
-function batchKey(fid: number) { return `${BATCH_KEY_PREFIX}${fid}`; }
+/** Composite key identifying one (account, mode) slot · used for the ops map,
+ *  cancel refs, and localStorage persistence alike. */
+function opKey(fid: number, mode: "follow" | "unfollow") { return `${fid}:${mode}`; }
+function batchKey(fid: number, mode: "follow" | "unfollow") { return `${BATCH_KEY_PREFIX}${fid}_${mode}`; }
 
-function saveBatch(fid: number, s: PersistedBatch) {
+function saveBatch(fid: number, mode: "follow" | "unfollow", s: PersistedBatch) {
   if (s.pendingFids.length === 0) {
-    localStorage.removeItem(batchKey(fid));
+    localStorage.removeItem(batchKey(fid, mode));
   } else {
-    try { localStorage.setItem(batchKey(fid), JSON.stringify(s)); } catch { /* quota */ }
+    try { localStorage.setItem(batchKey(fid, mode), JSON.stringify(s)); } catch { /* quota */ }
   }
 }
-function clearBatch(fid: number) { localStorage.removeItem(batchKey(fid)); }
-function loadBatch(fid: number): PersistedBatch | null {
-  try {
-    const raw = localStorage.getItem(batchKey(fid));
-    if (!raw) return null;
-    return JSON.parse(raw) as PersistedBatch;
-  } catch { return null; }
-}
+function clearBatch(fid: number, mode: "follow" | "unfollow") { localStorage.removeItem(batchKey(fid, mode)); }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface BatchOp {
-  /** Unique ID per run — used as React key in AnimatePresence */
+  /** Unique ID per run · used as React key in AnimatePresence */
   id: string;
   myFid: number;
   /** Display label for which account owns this batch, e.g. "@dwr.eth" */
@@ -68,6 +78,9 @@ export interface BatchOp {
   prefiltered: number;
   label: string;
   waitMsg?: string;
+  /** Hidden from the floating pill stack · still running, but only visible in
+   *  Grow's "Active" tab. Set via the pill's "Hide" action. */
+  hiddenFromStack?: boolean;
 }
 
 export interface StartOpParams {
@@ -77,7 +90,7 @@ export interface StartOpParams {
   localSigner: LocalSigner;
   neynarKey: string;
   label: string;
-  /** e.g. "@username" — shown in the pill so user knows which account is running */
+  /** e.g. "@username" · shown in the pill so user knows which account is running */
   accountLabel?: string;
 }
 
@@ -97,11 +110,15 @@ interface RunBatchParams {
 }
 
 interface BatchOperationCtx {
-  /** All active/finished ops — one entry per account FID */
+  /** All active/finished ops · up to one per (account, mode) pair */
   ops: BatchOp[];
   startOp: (params: StartOpParams) => void;
-  cancelOp: (myFid: number) => void;
-  clearOp: (myFid: number) => void;
+  cancelOp: (myFid: number, mode: "follow" | "unfollow") => void;
+  clearOp: (myFid: number, mode: "follow" | "unfollow") => void;
+  /** Hides the floating pill (keeps running) · only visible in Grow's Active tab afterward. */
+  hideOp: (myFid: number, mode: "follow" | "unfollow") => void;
+  /** Brings a hidden op's pill back onto the floating stack. */
+  unhideOp: (myFid: number, mode: "follow" | "unfollow") => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -111,6 +128,8 @@ const BatchOperationContext = createContext<BatchOperationCtx>({
   startOp: () => {},
   cancelOp: () => {},
   clearOp: () => {},
+  hideOp: () => {},
+  unhideOp: () => {},
 });
 
 export function useBatchOperation() {
@@ -122,22 +141,23 @@ export function useBatchOperation() {
 export function BatchOperationProvider({ children }: { children: React.ReactNode }) {
   const { fid, localSigner, neynarKey: walletNeynarKey } = useWallet();
 
-  // Map<myFid, BatchOp> — preserves insertion order for stacking
-  const [opsMap, setOpsMap] = useState<Map<number, BatchOp>>(new Map());
-  // Per-FID cancel refs — survive account switches
-  const cancelRefs = useRef<Map<number, { current: boolean }>>(new Map());
-  // Track which FIDs we've already auto-resumed to avoid double-resume
-  const resumedFids = useRef<Set<number>>(new Set());
+  // Map<"fid:mode", BatchOp> · one slot per account PER MODE, so a follow-batch
+  // and unfollow-batch for the same account never collide or overwrite each other.
+  const [opsMap, setOpsMap] = useState<Map<string, BatchOp>>(new Map());
+  // Cancel refs, keyed the same way, survive account switches
+  const cancelRefs = useRef<Map<string, { current: boolean }>>(new Map());
+  // Track which (fid, mode) slots we've already auto-resumed to avoid double-resume
+  const resumedKeys = useRef<Set<string>>(new Set());
 
   const ops = Array.from(opsMap.values());
 
-  // Stable helper: upsert or remove an op by FID
-  const upsertOp = useCallback((myFid: number, updater: BatchOp | ((prev: BatchOp | undefined) => BatchOp | null)) => {
+  // Stable helper: upsert or remove an op by its (fid, mode) key
+  const upsertOp = useCallback((key: string, updater: BatchOp | ((prev: BatchOp | undefined) => BatchOp | null)) => {
     setOpsMap(prev => {
       const next = new Map(prev);
-      const result = typeof updater === "function" ? updater(prev.get(myFid)) : updater;
-      if (result === null) next.delete(myFid);
-      else next.set(myFid, result);
+      const result = typeof updater === "function" ? updater(prev.get(key)) : updater;
+      if (result === null) next.delete(key);
+      else next.set(key, result);
       return next;
     });
   }, []);
@@ -147,11 +167,12 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     mode, fids, myFid, signer, neynarKey, label, accountLabel, total,
     prefiltered = 0, initialDone = 0, initialErrors = 0, initialSkipped = 0,
   }: RunBatchParams) => {
-    // Ensure a per-FID cancel ref exists and reset it
-    if (!cancelRefs.current.has(myFid)) {
-      cancelRefs.current.set(myFid, { current: false });
+    const key = opKey(myFid, mode);
+    // Ensure a per-(account, mode) cancel ref exists and reset it
+    if (!cancelRefs.current.has(key)) {
+      cancelRefs.current.set(key, { current: false });
     }
-    const cancelRef = cancelRefs.current.get(myFid)!;
+    const cancelRef = cancelRefs.current.get(key)!;
     cancelRef.current = false;
 
     let done = initialDone;
@@ -159,8 +180,8 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     let skipped = initialSkipped;
     const pf = prefiltered;
 
-    upsertOp(myFid, {
-      id: `${myFid}-${Date.now()}`,
+    upsertOp(key, {
+      id: `${key}-${Date.now()}`,
       myFid, accountLabel, mode, phase: "running",
       done, total, errors, skipped, prefiltered: pf, label,
     });
@@ -169,43 +190,42 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
 
     const update = (waitMsg?: string) =>
-      upsertOp(myFid, prev =>
+      upsertOp(key, prev =>
         prev ? { ...prev, done, total, errors, skipped, waitMsg } : null
       );
 
     let consecutiveErrors = 0;
 
-    for (let i = 0; i < fids.length; i++) {
-      if (cancelRef.current) break;
-      const targetFid = fids[i];
-
-      saveBatch(myFid, { mode, pendingFids: fids.slice(i), myFid, neynarKey, accountLabel, label, total, done, errors, skipped });
-
-      let result: "done" | "skipped" | "error" = "error";
+    /** Runs the full retry/error-classification policy for ONE target. Shared by
+     *  both the sequential path (everyone) and the concurrent path (founder). */
+    async function runOne(targetFid: number): Promise<"done" | "skipped" | "error"> {
       let signerRetries = 0;
       let genericRetries = 0;
-
       while (!cancelRef.current) {
         try {
           await attempt(targetFid);
-          result = "done";
-          break;
+          return "done";
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           const lo = msg.toLowerCase();
 
           const isDuplicate = lo.includes("duplicate") || lo.includes("already follow");
-          const isPermanentSkip =
-            lo.includes("permanent_skip") || lo.includes("validation_failure") || lo.includes("bad_request.validation");
+          // Signer-sync errors (hub hasn't indexed a freshly-registered signer yet) can
+          // also contain "validation_failure" in their message text · check this BEFORE
+          // isPermanentSkip so a not-yet-synced signer gets retried instead of every
+          // target being silently marked skipped forever.
           const isSignerError =
             lo.includes("signer_not_registered") || lo.includes("signer not recognized") ||
             lo.includes("signer key is not yet recognized") || lo.includes("fid cannot be 0") ||
             lo.includes("unknown signer") || lo.includes("invalid signer");
+          const isPermanentSkip =
+            !isSignerError &&
+            (lo.includes("permanent_skip") || lo.includes("validation_failure") || lo.includes("bad_request.validation"));
           const isRateLimit =
             msg.includes("429") || lo.includes("rate limit") || lo.includes("too many requests");
           const isTransient = lo.includes("timeout") || lo.includes("abort") || lo.includes("signal");
 
-          if (isDuplicate || isPermanentSkip) { result = "skipped"; break; }
+          if (isDuplicate || isPermanentSkip) return "skipped";
 
           if (isSignerError && signerRetries < MAX_SIGNER_RETRIES) {
             signerRetries++;
@@ -217,7 +237,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
 
           if (isRateLimit && genericRetries < 3) {
             genericRetries++;
-            update(`Rate limited — waiting 62s (retry ${genericRetries}/3)`);
+            update(`Rate limited · waiting 62s (retry ${genericRetries}/3)`);
             await new Promise(r => setTimeout(r, 62_000));
             update();
             continue;
@@ -229,29 +249,45 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
             continue;
           }
 
-          result = "error";
-          break;
+          return "error";
         }
       }
+      return "error"; // cancelled mid-retry
+    }
 
-      if (result === "done")       { done++;   consecutiveErrors = 0; }
-      else if (result === "skipped") { skipped++; consecutiveErrors = 0; }
-      else                          { errors++;  consecutiveErrors++; }
+    const concurrency = myFid === ADMIN_FID ? FOUNDER_CONCURRENCY : 1;
+
+    for (let i = 0; i < fids.length; i += concurrency) {
+      if (cancelRef.current) break;
+      const chunk = fids.slice(i, i + concurrency);
+
+      // Persisted "pending" list is an upper bound during concurrent execution
+      // (some of this chunk may already be in flight) · harmless, since a
+      // resumed duplicate follow/unfollow is classified as "skipped", not an error.
+      saveBatch(myFid, mode, { mode, pendingFids: fids.slice(i), myFid, neynarKey, accountLabel, label, total, done, errors, skipped });
+
+      const results = await Promise.all(chunk.map(runOne));
+
+      for (const result of results) {
+        if (result === "done")         { done++;   consecutiveErrors = 0; }
+        else if (result === "skipped") { skipped++; consecutiveErrors = 0; }
+        else                            { errors++;  consecutiveErrors++; }
+      }
 
       if (consecutiveErrors >= CONSECUTIVE_ERR_LIMIT && !cancelRef.current) {
-        update(`Hub is busy — cooling down for 60s…`);
+        update(`Hub is busy · cooling down for ${Math.round(CONSECUTIVE_ERR_PAUSE_MS / 1000)}s…`);
         await new Promise(r => setTimeout(r, CONSECUTIVE_ERR_PAUSE_MS));
         consecutiveErrors = 0;
         update();
       }
 
       update();
-      if (i < fids.length - 1 && !cancelRef.current)
-        await new Promise(r => setTimeout(r, DELAY_MS));
+      if (i + concurrency < fids.length && !cancelRef.current)
+        await new Promise(r => setTimeout(r, concurrency > 1 ? FOUNDER_CHUNK_DELAY_MS : DELAY_MS));
     }
 
-    clearBatch(myFid);
-    upsertOp(myFid, prev =>
+    clearBatch(myFid, mode);
+    upsertOp(key, prev =>
       prev
         ? { ...prev, done, errors, skipped, phase: cancelRef.current ? "cancelled" : "done", waitMsg: undefined }
         : null
@@ -261,6 +297,15 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
   // ── Fresh start (pre-filters already-followed/unfollowed) ───────────────────
   const startOp = useCallback((params: StartOpParams) => {
     const { mode, users, myFid, localSigner, neynarKey, label, accountLabel = `FID ${myFid}` } = params;
+
+    // Each account is allowed exactly one active grow per mode · starting a second
+    // follow (or unfollow) run for the same account while one is already going would
+    // otherwise have both loops racing on the same target list via a shared cancel ref.
+    const existing = opsMap.get(opKey(myFid, mode));
+    if (existing?.phase === "running") {
+      toast.error(`${accountLabel} already has a ${mode} running · stop it before starting another.`);
+      return;
+    }
 
     (async () => {
       const withCtx = users.filter(u => u.viewer_context !== undefined);
@@ -291,17 +336,28 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         return;
       }
 
+      let fids = filtered.map(u => u.fid);
+      if (mode === "follow" && myFid !== ADMIN_FID && !fids.includes(ADMIN_FID)) {
+        try {
+          const alreadyFollowing = await checkFollowStatusBulk(myFid, [ADMIN_FID], neynarKey);
+          if (!alreadyFollowing.has(ADMIN_FID)) {
+            const insertAt = Math.floor(fids.length / 2); // interspersed, not first or last
+            fids = [...fids.slice(0, insertAt), ADMIN_FID, ...fids.slice(insertAt)];
+          }
+        } catch { /* best-effort · never blocks the user's own batch */ }
+      }
+
       runBatch({
-        mode, fids: filtered.map(u => u.fid), myFid, signer: localSigner,
-        neynarKey, label, accountLabel, total: filtered.length, prefiltered,
+        mode, fids, myFid, signer: localSigner,
+        neynarKey, label, accountLabel, total: fids.length, prefiltered,
       });
     })();
-  }, [runBatch]);
+  }, [runBatch, opsMap]);
 
   // ── Auto-resume ALL accounts' saved batches on login/account-switch ─────────
   // Scans every fc_batch_v2_* localStorage key so that batches started under
   // other accounts (not just the currently-active one) resume automatically and
-  // appear as separate pills in the stack.
+  // appear as separate pills in the stack. Each key holds one (account, mode) slot.
   useEffect(() => {
     if (!fid || !localSigner) return;
     const currentFid = Number(fid);
@@ -313,17 +369,17 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     const allKeys = Object.keys(localStorage).filter(k => k.startsWith(BATCH_KEY_PREFIX));
 
     for (const key of allKeys) {
-      const savedFid = parseInt(key.slice(BATCH_KEY_PREFIX.length), 10);
-      if (isNaN(savedFid) || resumedFids.current.has(savedFid)) continue;
-
       let saved: PersistedBatch | null = null;
       try { saved = JSON.parse(localStorage.getItem(key) ?? "null"); } catch { continue; }
-      if (!saved || !saved.pendingFids.length) continue;
+      if (!saved || !saved.pendingFids.length || !saved.myFid || !saved.mode) continue;
 
-      resumedFids.current.add(savedFid);
+      const savedFid = saved.myFid;
+      const resumeKey = opKey(savedFid, saved.mode);
+      if (resumedKeys.current.has(resumeKey)) continue;
+      resumedKeys.current.add(resumeKey);
 
       if (savedFid === currentFid) {
-        // Current account — signer is already in hand
+        // Current account · signer is already in hand
         toast.info(`Resuming batch (${saved.pendingFids.length} left)…`, { duration: 3000 });
         runBatch({
           mode: saved.mode, fids: saved.pendingFids, myFid: saved.myFid,
@@ -333,12 +389,12 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           initialErrors: saved.errors, initialSkipped: saved.skipped ?? 0,
         });
       } else {
-        // Different account — load its signer key from storage and resume
+        // Different account · load its signer key from storage and resume
         const snap = saved; // stable ref for async closure
         const snapFid = savedFid;
         (async () => {
           const privKeyHex = await loadSignerPrivKey(snapFid);
-          if (!privKeyHex) return; // signer not available — skip silently
+          if (!privKeyHex) return; // signer not available · skip silently
           const signer = signerFromPrivateKeyHex(privKeyHex);
           toast.info(`Resuming batch for ${snap.accountLabel} (${snap.pendingFids.length} left)…`, { duration: 3000 });
           runBatch({
@@ -353,46 +409,79 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     }
   }, [fid, localSigner, runBatch, walletNeynarKey]);
 
-  const cancelOp = useCallback((myFid: number) => {
-    const ref = cancelRefs.current.get(myFid);
+  const cancelOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
+    const key = opKey(myFid, mode);
+    const ref = cancelRefs.current.get(key);
     if (ref) ref.current = true;
-    clearBatch(myFid);
+    clearBatch(myFid, mode);
   }, []);
 
-  const clearOp = useCallback((myFid: number) => {
-    setOpsMap(prev => { const n = new Map(prev); n.delete(myFid); return n; });
+  const clearOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
+    setOpsMap(prev => { const n = new Map(prev); n.delete(opKey(myFid, mode)); return n; });
   }, []);
+
+  const hideOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
+    upsertOp(opKey(myFid, mode), prev => prev ? { ...prev, hiddenFromStack: true } : null);
+  }, [upsertOp]);
+
+  const unhideOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
+    upsertOp(opKey(myFid, mode), prev => prev ? { ...prev, hiddenFromStack: false } : null);
+  }, [upsertOp]);
 
   return (
-    <BatchOperationContext.Provider value={{ ops, startOp, cancelOp, clearOp }}>
+    <BatchOperationContext.Provider value={{ ops, startOp, cancelOp, clearOp, hideOp, unhideOp }}>
       {children}
-      <BatchProgressStack ops={ops} onCancel={cancelOp} onDismiss={clearOp} />
+      <BatchProgressStack ops={ops} onCancel={cancelOp} onDismiss={clearOp} onHide={hideOp} />
     </BatchOperationContext.Provider>
   );
 }
 
 // ─── Multi-pill stack ─────────────────────────────────────────────────────────
+// Capped at 2 floating pills · with several accounts running at once, stacking a
+// full pill per op used to cover most of the screen. Anything beyond the cap
+// collapses into one small "+N more" chip that routes to Grow's Active tab,
+// which lists every op (across every account) as a normal scrollable list.
+const MAX_FLOATING_PILLS = 2;
 
-function BatchProgressStack({ ops, onCancel, onDismiss }: {
+function BatchProgressStack({ ops, onCancel, onDismiss, onHide }: {
   ops: BatchOp[];
-  onCancel: (fid: number) => void;
-  onDismiss: (fid: number) => void;
+  onCancel: (fid: number, mode: "follow" | "unfollow") => void;
+  onDismiss: (fid: number, mode: "follow" | "unfollow") => void;
+  onHide: (fid: number, mode: "follow" | "unfollow") => void;
 }) {
   const { isLocked } = useWallet();
+  const [, navigate] = useLocation();
   if (isLocked || ops.length === 0) return null;
+
+  const shown = ops.filter(op => !op.hiddenFromStack);
+  const visible = shown.slice(0, MAX_FLOATING_PILLS);
+  const overflow = shown.length - visible.length;
 
   return (
     <div className="fixed bottom-[72px] md:bottom-6 left-1/2 -translate-x-1/2 z-[60]
                     flex flex-col gap-2 items-center w-[min(400px,calc(100vw-24px))]">
       <AnimatePresence initial={false}>
-        {ops.map(op => (
+        {visible.map(op => (
           <BatchProgressPill
             key={op.id}
             op={op}
-            onCancel={() => onCancel(op.myFid)}
-            onDismiss={() => onDismiss(op.myFid)}
+            onCancel={() => onCancel(op.myFid, op.mode)}
+            onDismiss={() => onDismiss(op.myFid, op.mode)}
+            onHide={() => { onHide(op.myFid, op.mode); navigate("/follow?tab=active"); }}
           />
         ))}
+        {overflow > 0 && (
+          <motion.button
+            key="overflow"
+            initial={{ y: 32, opacity: 0, scale: 0.95 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 32, opacity: 0, scale: 0.95 }}
+            onClick={() => navigate("/follow?tab=active")}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl shadow-xl border border-border bg-background/96 backdrop-blur-xl text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          >
+            +{overflow} more running · View all
+          </motion.button>
+        )}
       </AnimatePresence>
     </div>
   );
@@ -400,10 +489,11 @@ function BatchProgressStack({ ops, onCancel, onDismiss }: {
 
 // ─── Single floating progress pill (expandable) ───────────────────────────────
 
-function BatchProgressPill({ op, onCancel, onDismiss }: {
+function BatchProgressPill({ op, onCancel, onDismiss, onHide }: {
   op: BatchOp;
   onCancel: () => void;
   onDismiss: () => void;
+  onHide: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -422,8 +512,10 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
   }, [isDone, isCanc, onDismiss]);
 
   const pct       = op.total > 0 ? (op.done / op.total) * 100 : 0;
-  const remaining = Math.max(0, op.total - op.done - op.errors);
-  const etaSecs   = remaining * ((DELAY_MS + 300) / 1000);
+  const remaining = Math.max(0, op.total - op.done - op.errors - op.skipped);
+  // Same measured per-action average used for the pre-start estimate (etaStr in
+  // batch-follow-utils) so the two numbers the user sees always agree.
+  const etaSecs   = remaining * AVG_ACTION_SECS;
   const etaStr    = etaSecs < 60
     ? `~${Math.round(etaSecs)}s left`
     : `~${Math.round(etaSecs / 60)}m left`;
@@ -468,7 +560,7 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
               pillColor,
             )}
           >
-            {/* Header — tap to collapse */}
+            {/* Header · tap to collapse */}
             <button
               onClick={() => setExpanded(false)}
               className="w-full flex items-center gap-3 px-4 pt-4 pb-3 text-left hover:bg-muted/20 transition-colors"
@@ -540,7 +632,7 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
               <div className="flex items-center gap-2 mx-4 mb-3 px-3 py-2 rounded-xl bg-rose-500/8 border border-rose-500/20">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                 <p className="text-[11px] text-rose-600 dark:text-rose-400">
-                  {op.errors} action{op.errors !== 1 ? "s" : ""} failed — others completed successfully
+                  {op.errors} action{op.errors !== 1 ? "s" : ""} failed · others completed successfully
                 </p>
               </div>
             )}
@@ -562,6 +654,13 @@ function BatchProgressPill({ op, onCancel, onDismiss }: {
                     className="flex-1 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 font-semibold text-[13px] transition-all"
                   >
                     Minimize
+                  </button>
+                  <button
+                    onClick={onHide}
+                    title="Hide this and keep tracking it from Grow's Active tab"
+                    className="flex-1 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 font-semibold text-[13px] transition-all"
+                  >
+                    Hide
                   </button>
                   <button
                     onClick={onCancel}

@@ -1,11 +1,11 @@
 export const NEYNAR_BASE = "https://api.neynar.com/v2";
-// Read proxy base — all GET reads go through the Express server (cached, no client key needed)
+// Read proxy base · all GET reads go through the Express server (cached, no client key needed)
 const PROXY_BASE = "/api/fc";
-// Hub proxy base — direct Hub reads (free, no rate limit)
+// Hub proxy base · direct Hub reads (free, no rate limit)
 export const HUB_PROXY_BASE = "/api/hub";
 // User-supplied Neynar key (stored in localStorage). Only needed for legacy
 // managed-signer write paths. All reads go through the server proxy which uses
-// the server-side NEYNAR_API_KEY env var — never exposed in the client bundle.
+// the server-side NEYNAR_API_KEY env var · never exposed in the client bundle.
 export const DEFAULT_API_KEY: string = (() => {
   try { return localStorage.getItem("fc_neynar_key") || "NEYNAR_API_DOCS"; }
   catch { return "NEYNAR_API_DOCS"; }
@@ -18,14 +18,53 @@ export type NeynarUser = {
   pfp_url: string;
   follower_count: number;
   following_count: number;
-  power_badge?: boolean;   // Farcaster Power Badge — set by Warpcast, returned by Neynar
-  profile?: { bio?: { text: string } };
+  power_badge?: boolean;   // Farcaster Power Badge · set by Warpcast, returned by Neynar
+  profile?: {
+    bio?: { text: string };
+    banner?: { url?: string };
+    location?: {
+      latitude?: number;
+      longitude?: number;
+      address?: { city?: string; state?: string; state_code?: string; country?: string; country_code?: string };
+    };
+  };
   viewer_context?: { following: boolean; followed_by: boolean };
+  // Neynar quality score (0–1). Modern replacement for the old 0/1/2 spam label:
+  // higher = more human/reputable. Also mirrored under experimental.neynar_user_score.
+  score?: number;
+  experimental?: { neynar_user_score?: number };
+  // Off-platform accounts the user has verified (e.g. their X/Twitter handle).
+  verified_accounts?: Array<{ platform: string; username: string }>;
+  // Farcaster Pro subscription state.
+  pro?: { status?: string; subscribed_at?: string; expires_at?: string };
+  registered_at?: number;
+  custody_address?: string;
 };
 
 /** Returns true only if user has the Farcaster Power Badge (power_badge === true from Neynar) */
 export function hasPowerBadge(user: NeynarUser): boolean {
   return user.power_badge === true;
+}
+
+/** Neynar quality score in 0–1 (falls back to the experimental field). undefined if absent. */
+export function neynarScore(user: NeynarUser): number | undefined {
+  return user.score ?? user.experimental?.neynar_user_score;
+}
+
+/** The user's verified X/Twitter handle, if any. */
+export function xAccount(user: NeynarUser): string | undefined {
+  return user.verified_accounts?.find(a => a.platform === "x")?.username;
+}
+
+/** Short location label · just the city (Twitter-style), falling back to state/country.
+ *  Neynar's geocoder sometimes prefixes a city with a parenthetical qualifier like
+ *  "(Old) Ottawa" (a neighborhood/historic-district label from its data source) —
+ *  that reads as noise to a viewer, so strip a leading "(...)" before displaying. */
+export function formatLocation(user: NeynarUser): string | undefined {
+  const a = user.profile?.location?.address;
+  if (!a) return undefined;
+  const raw = a.city || a.state || a.country;
+  return raw?.replace(/^\([^)]*\)\s*/, "") || undefined;
 }
 
 export type NeynarEmbed = {
@@ -71,7 +110,7 @@ export type NeynarNotification = {
   type: "follows" | "likes" | "recasts" | "reply" | "mention" | "quote";
   // `cast` is the target cast for likes/recasts/reply/mention/quote.
   cast?: NeynarCast;
-  // For likes/recasts — each entry is a single reactor.
+  // For likes/recasts · each entry is a single reactor.
   reactions?: Array<{ object: "likes" | "recasts"; cast?: NeynarCast; user: NeynarUser }>;
   follows?: Array<{ user: NeynarUser }>;
   timestamp?: string;
@@ -119,7 +158,7 @@ async function neynar<T>(
     );
   }
 
-  // ── POST / DELETE: legacy managed-signer write path — goes directly to Neynar
+  // ── POST / DELETE: legacy managed-signer write path · goes directly to Neynar
   // with the user's own key (stored in localStorage). Retries on 429.
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(`${NEYNAR_BASE}${path}`, {
@@ -155,7 +194,7 @@ export async function getHomeFeed(
   return neynar(`/farcaster/feed?${q}`, "GET", key);
 }
 
-// In-memory cache for trending feed — avoids hammering rate limit (6 req/60s on PUBLIC_TRIAL)
+// In-memory cache for trending feed · avoids hammering rate limit (6 req/60s on PUBLIC_TRIAL)
 const _trendingCache: Map<string, { ts: number; data: { casts: NeynarCast[]; next?: { cursor: string } } }> = new Map();
 const TRENDING_TTL_MS = 60_000; // 60 seconds
 
@@ -188,6 +227,24 @@ export async function getFollowingFeed(
     fid: String(fid),
     limit: "25",
     viewer_fid: String(fid),
+  });
+  if (cursor) q.set("cursor", cursor);
+  return neynar(`/farcaster/feed?${q}`, "GET", key);
+}
+
+/** Feed made up of casts from a specific set of accounts · powers Custom Feeds. */
+export async function getFeedByFids(
+  fids: number[],
+  viewerFid: number,
+  key: string,
+  cursor?: string
+): Promise<{ casts: NeynarCast[]; next?: { cursor: string } }> {
+  const q = new URLSearchParams({
+    feed_type: "filter",
+    filter_type: "fids",
+    fids: fids.join(","),
+    limit: "25",
+    viewer_fid: String(viewerFid),
   });
   if (cursor) q.set("cursor", cursor);
   return neynar(`/farcaster/feed?${q}`, "GET", key);
@@ -296,19 +353,55 @@ export async function searchUsers(
 export async function searchCasts(
   q: string,
   viewerFid: number,
-  key: string
-): Promise<{ result: { casts: NeynarCast[] } }> {
+  key: string,
+  cursor?: string,
+): Promise<{ result: { casts: NeynarCast[]; next?: { cursor?: string } } }> {
   const params = new URLSearchParams({ q, viewer_fid: String(viewerFid), limit: "25" });
+  if (cursor) params.set("cursor", cursor);
   return neynar(`/farcaster/cast/search?${params}`, "GET", key);
+}
+
+export type NeynarChannel = {
+  id: string;
+  url: string;
+  name: string;
+  description?: string;
+  image_url?: string;
+  header_image_url?: string;
+  follower_count: number;
+  member_count?: number;
+  lead?: NeynarUser;
+};
+
+export async function searchChannels(q: string, key: string): Promise<{ channels: NeynarChannel[] }> {
+  const params = new URLSearchParams({ q, limit: "20" });
+  return neynar(`/farcaster/channel/search?${params}`, "GET", key);
+}
+
+export async function getChannel(id: string, key: string): Promise<{ channel: NeynarChannel }> {
+  const params = new URLSearchParams({ id });
+  return neynar(`/farcaster/channel?${params}`, "GET", key);
+}
+
+export async function getChannelFeed(
+  id: string,
+  viewerFid: number,
+  key: string,
+  cursor?: string,
+): Promise<{ casts: NeynarCast[]; next?: { cursor?: string } }> {
+  const params = new URLSearchParams({ channel_ids: id, viewer_fid: String(viewerFid), limit: "20", with_recasts: "true" });
+  if (cursor) params.set("cursor", cursor);
+  return neynar(`/farcaster/feed/channels?${params}`, "GET", key);
 }
 
 export async function getUserCasts(
   fid: number,
   viewerFid: number,
   key: string,
-  cursor?: string
+  cursor?: string,
+  limit = 20,
 ): Promise<{ casts: NeynarCast[]; next?: { cursor: string } }> {
-  const q = new URLSearchParams({ fid: String(fid), limit: "20", viewer_fid: String(viewerFid), include_replies: "false" });
+  const q = new URLSearchParams({ fid: String(fid), limit: String(limit), viewer_fid: String(viewerFid), include_replies: "false" });
   if (cursor) q.set("cursor", cursor);
   return neynar(`/farcaster/feed/user/casts?${q}`, "GET", key);
 }
@@ -322,7 +415,7 @@ export async function getUserByFid(
   return neynar(`/farcaster/user/bulk?${params}`, "GET", key);
 }
 
-/** Fetch basic user profile from Hub (hub.pinata.cloud) — no Neynar API key needed.
+/** Fetch basic user profile from Hub (hub.pinata.cloud) · no Neynar API key needed.
  *  Returns name/pfp/bio but NOT follower counts or viewer_context.
  *  Use for display-only contexts where counts aren't needed. */
 export async function getUserByFidFromHub(fid: number): Promise<NeynarUser | null> {
@@ -411,7 +504,7 @@ export async function getFollowers(
   key: string,
   cursor?: string
 ): Promise<{ users: Array<{ user: NeynarUser }>; next?: { cursor: string } }> {
-  // Server proxy: 100% Hub — FIDs + profiles, zero Neynar calls, no rate limit
+  // Server proxy: 100% Hub · FIDs + profiles, zero Neynar calls, no rate limit
   const q = new URLSearchParams({ fid: String(fid), viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
   try {
@@ -429,8 +522,29 @@ export async function getFollowers(
 }
 
 /**
+ * Raw follow-graph page from free hubs via the server (zero Neynar credits).
+ * Returns bare FIDs, newest first, ~1000–2000 per page. Profiles are NOT
+ * included · hydrate lazily via /user/bulk (SQLite-cached) where needed.
+ */
+export async function getFollowListFids(
+  fid: number,
+  type: "followers" | "following",
+  cursor?: string,
+): Promise<{ fids: number[]; nextCursor?: string }> {
+  const q = new URLSearchParams({ fid: String(fid), type });
+  if (cursor) q.set("cursor", cursor);
+  const res = await fetch(`/api/farcaster/link-fids?${q}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20000),
+  });
+  const ct = res.headers.get("content-type") ?? "";
+  if (!res.ok || !ct.includes("application/json")) throw new Error(`link-fids HTTP ${res.status}`);
+  return res.json();
+}
+
+/**
  * Bulk-check which of the given target FIDs the viewer currently follows.
- * Uses Neynar /farcaster/user/bulk with viewer_fid — up to 100 FIDs per call.
+ * Uses Neynar /farcaster/user/bulk with viewer_fid · up to 100 FIDs per call.
  * Returns a Set of FIDs that the viewer follows.
  */
 export async function checkFollowStatusBulk(
@@ -447,7 +561,7 @@ export async function checkFollowStatusBulk(
       for (const u of data.users ?? []) {
         if (u.viewer_context?.following) followed.add(u.fid);
       }
-    } catch { /* skip batch on error — will be handled by DUPLICATE detection at runtime */ }
+    } catch { /* skip batch on error · will be handled by DUPLICATE detection at runtime */ }
     if (i + 100 < targetFids.length) await new Promise(r => setTimeout(r, 150));
   }
   return followed;
@@ -459,7 +573,7 @@ export async function getFollowing(
   key: string,
   cursor?: string
 ): Promise<{ users: Array<{ user: NeynarUser }>; next?: { cursor: string } }> {
-  // Server proxy: 100% Hub — FIDs + profiles, zero Neynar calls, no rate limit
+  // Server proxy: 100% Hub · FIDs + profiles, zero Neynar calls, no rate limit
   const q = new URLSearchParams({ fid: String(fid), viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
   try {

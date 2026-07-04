@@ -5,21 +5,24 @@ import {
   ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
   AlignLeft, MessageSquare, Heart, Repeat2, X,
-  Camera, CheckCircle2, AlertCircle, ChevronRight,
+  Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge,
 } from "lucide-react";
+import { SpamAnalyzerSheet } from "@/components/SpamAnalyzerSheet";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
+import { useEthPrice } from "@/hooks/useEthPrice";
+import { NeynarScoreBadge, XLogo } from "@/components/NeynarScoreBadge";
 
 import {
   getUserByFid, getUserCasts, getUserReplies, getUserLikes, getUserRecasts,
-  hasPowerBadge, getFollowing, type NeynarUser, type NeynarCast,
+  hasPowerBadge, getFollowing, neynarScore, xAccount, formatLocation, type NeynarUser, type NeynarCast,
 } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { hubFollow, neynarAction, hubUpdateUserData } from "@/lib/hub-submit";
 import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactCount } from "@/lib/utils";
 import { toast } from "sonner";
 
 type ProfileTab = "casts" | "replies" | "likes" | "recasts";
@@ -55,7 +58,7 @@ function EditSheet({
   onClose,
   onChangeUsername,
 }: {
-  profile: { pfpUrl?: string; displayName?: string; bio?: string; username?: string } | null;
+  profile: { pfpUrl?: string; displayName?: string; bio?: string; username?: string; bannerUrl?: string } | null;
   fid: bigint | null;
   localSigner: LocalSigner | null;
   signerApproved: boolean;
@@ -65,12 +68,14 @@ function EditSheet({
   const [displayName, setDisplayName] = useState(profile?.displayName || "");
   const [bio, setBio] = useState(profile?.bio || "");
   const [pfpUrl, setPfpUrl] = useState(profile?.pfpUrl || "");
+  const [bannerUrl, setBannerUrl] = useState(profile?.bannerUrl || "");
   const [saving, setSaving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const bannerFileRef = useRef<HTMLInputElement>(null);
 
-  async function saveField(field: "pfp" | "display" | "bio", value: string) {
+  async function saveField(field: "pfp" | "display" | "bio" | "banner", value: string) {
     if (!fid || !localSigner || !signerApproved) return;
     if (!value.trim()) { toast.error("Cannot be empty"); return; }
     setSaving(field);
@@ -78,19 +83,31 @@ function EditSheet({
     setSuccess(null);
     try {
       await hubUpdateUserData(Number(fid), localSigner, field, value.trim());
-      setSuccess(field === "pfp" ? "Profile picture updated!" : field === "display" ? "Display name updated!" : "Bio updated!");
+      setSuccess(
+        field === "pfp" ? "Profile picture updated!" :
+        field === "banner" ? "Banner updated!" :
+        field === "display" ? "Display name updated!" : "Bio updated!"
+      );
       setTimeout(() => setSuccess(null), 3000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Update failed");
+      const msg = e instanceof Error ? e.message : "Update failed";
+      // The Farcaster protocol itself gates the banner field behind a Pro
+      // subscription (hub rejects it with "Pro subscription required" for
+      // non-Pro accounts) · surface that plainly instead of the raw hub error.
+      setError(
+        field === "banner" && /pro subscription required/i.test(msg)
+          ? "Banner photos are a Farcaster Pro feature · subscribe to Farcaster Pro to set one."
+          : msg
+      );
     } finally {
       setSaving(null);
     }
   }
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, field: "pfp" | "banner") {
     const file = e.target.files?.[0];
     if (!file) return;
-    setSaving("pfp-upload");
+    setSaving(`${field}-upload`);
     setError(null);
     try {
       const reader = new FileReader();
@@ -106,8 +123,8 @@ function EditSheet({
       });
       if (!res.ok) throw new Error("Upload failed");
       const { url } = await res.json() as { url: string };
-      setPfpUrl(url);
-      await saveField("pfp", url);
+      if (field === "banner") { setBannerUrl(url); await saveField("banner", url); }
+      else { setPfpUrl(url); await saveField("pfp", url); }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -150,7 +167,7 @@ function EditSheet({
                   )}
                 </div>
                 <div className="flex-1 space-y-2">
-                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={handleFileUpload} />
+                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileUpload(e, "pfp")} />
                   <button
                     onClick={() => fileRef.current?.click()}
                     disabled={isSaving}
@@ -175,6 +192,42 @@ function EditSheet({
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Banner / header image */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-foreground">Banner</label>
+              <div className="relative w-full h-24 rounded-xl overflow-hidden bg-muted border border-border">
+                {bannerUrl
+                  ? <img src={bannerUrl} alt="banner" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/15 to-violet-500/15">
+                      <User className="w-6 h-6 text-muted-foreground/30" />
+                    </div>}
+              </div>
+              <div className="flex items-center gap-2">
+                <input ref={bannerFileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileUpload(e, "banner")} />
+                <button
+                  onClick={() => bannerFileRef.current?.click()}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-muted/30 text-xs font-semibold text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  {saving === "banner-upload" ? "Uploading…" : "Upload Banner"}
+                </button>
+                <input
+                  value={bannerUrl}
+                  onChange={e => setBannerUrl(e.target.value)}
+                  placeholder="Or paste image URL…"
+                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  onClick={() => saveField("banner", bannerUrl)}
+                  disabled={isSaving || !bannerUrl.startsWith("https://")}
+                  className="px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold disabled:opacity-40 hover:bg-primary/90 shrink-0"
+                >
+                  {saving === "banner" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+                </button>
               </div>
             </div>
 
@@ -227,7 +280,7 @@ function EditSheet({
             >
               <div className="text-left">
                 <p className="text-xs font-bold text-foreground uppercase tracking-wide">Username</p>
-                <p className="text-sm text-muted-foreground mt-0.5">@{profile?.username || "—"}</p>
+                <p className="text-sm text-muted-foreground mt-0.5">@{profile?.username || "unset"}</p>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
             </button>
@@ -270,6 +323,10 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const [followSheet, setFollowSheet] = useState<"followers" | "following" | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
+  const [showSpamAnalyzer, setShowSpamAnalyzer] = useState(false);
+  // Price (ETH string) if this FID is actively listed on the FID market, else null.
+  const [marketListing, setMarketListing] = useState<string | null>(null);
+  const ethUsd = useEthPrice(); // live ETH→USD (CoinGecko, refreshes) for USD price display
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("casts");
@@ -329,6 +386,22 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
       setTabs(prev => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
     }
   }, [targetFid, myFidNum, neynarKey]);
+
+  // Best-effort: is this FID actively listed for sale on the FID market?
+  // Server-cached, non-blocking · never delays the profile itself.
+  useEffect(() => {
+    if (!targetFid) { setMarketListing(null); return; }
+    let cancelled = false;
+    setMarketListing(null);
+    fetch(`/api/fid-market/fid-data/${targetFid}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { listing?: { active?: boolean; priceEth?: string; listingExpired?: boolean } } | null) => {
+        if (cancelled || !d?.listing?.active || d.listing.listingExpired) return;
+        if (d.listing.priceEth) setMarketListing(d.listing.priceEth);
+      })
+      .catch(() => { /* market data optional */ });
+    return () => { cancelled = true; };
+  }, [targetFid]);
 
   useEffect(() => {
     if (!targetFid) return;
@@ -477,14 +550,25 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           <>
             {/* ── Banner ── */}
             <div className="relative w-full h-32 overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">
-              {user.pfp_url && (
+              {user.profile?.banner?.url ? (
+                // Real Farcaster banner image when the user has set one.
                 <img
-                  src={user.pfp_url}
-                  aria-hidden
-                  className="absolute inset-0 w-full h-full object-cover blur-3xl scale-150 opacity-50"
+                  src={user.profile.banner.url}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
-              )}
-              <div className="absolute inset-0 bg-background/25" />
+              ) : user.pfp_url ? (
+                // Fallback: blurred avatar as an ambient cover.
+                <>
+                  <img
+                    src={user.pfp_url}
+                    aria-hidden
+                    className="absolute inset-0 w-full h-full object-cover blur-3xl scale-150 opacity-50"
+                  />
+                  <div className="absolute inset-0 bg-background/25" />
+                </>
+              ) : null}
             </div>
 
             {/* ── Profile card ── */}
@@ -538,6 +622,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                       >
                         Edit profile
                       </button>
+                      <button
+                        onClick={() => setShowSpamAnalyzer(true)}
+                        title="Analyze your quality score"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 transition-colors"
+                      >
+                        <Gauge className="w-4 h-4" />
+                        Score
+                      </button>
                       <div className="relative" ref={moreMenuRef}>
                         <button
                           onClick={() => setShowMoreMenu(v => !v)}
@@ -568,25 +660,32 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                     </>
                   ) : (
                     <>
-                      {canWrite && (
-                        <button
-                          onClick={handleFollow}
-                          disabled={followLoading}
-                          className={cn(
-                            "flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all border",
-                            following
-                              ? "bg-muted text-foreground border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-                              : "btn-luxury text-white border-transparent"
-                          )}
-                        >
-                          {followLoading
-                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : following
-                              ? <><UserCheck className="w-4 h-4" />Following</>
-                              : <><UserPlus className="w-4 h-4" />Follow</>
-                          }
-                        </button>
-                      )}
+                      <div className="flex flex-col items-end gap-1">
+                        {canWrite && (
+                          <button
+                            onClick={handleFollow}
+                            disabled={followLoading}
+                            className={cn(
+                              "flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all border",
+                              following
+                                ? "bg-muted text-foreground border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                                : "btn-luxury text-white border-transparent"
+                            )}
+                          >
+                            {followLoading
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : following
+                                ? <><UserCheck className="w-4 h-4" />Following</>
+                                : <><UserPlus className="w-4 h-4" />Follow</>
+                            }
+                          </button>
+                        )}
+                        {user.viewer_context?.followed_by && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border/60 shrink-0">
+                            Follows you
+                          </span>
+                        )}
+                      </div>
                       <div className="relative" ref={moreMenuRef}>
                         <button
                           onClick={() => setShowMoreMenu(v => !v)}
@@ -640,39 +739,73 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                 </div>
               </div>
 
-              {/* Name & handle */}
-              <div className="space-y-0.5 mb-2">
-                <h1 className="text-[21px] font-bold text-foreground leading-tight tracking-tight">
-                  {user.display_name || user.username}
-                </h1>
-                <p className="text-sm font-medium text-primary">@{user.username}</p>
-              </div>
+              {(() => {
+                const s = neynarScore(user);
+                const x = xAccount(user);
+                const loc = formatLocation(user);
+                return (
+                  <>
+                    {/* Name */}
+                    <h1 className="text-[21px] font-bold text-foreground leading-tight tracking-tight mb-0.5">
+                      {user.display_name || user.username}
+                    </h1>
 
-              {/* Bio */}
-              {extUser.profile?.bio?.text && (
-                <p className="text-sm text-foreground/80 leading-relaxed mb-2.5">
-                  {extUser.profile.bio.text}
-                </p>
-              )}
+                    {/* Handle · "Follows you" now lives next to the Follow button above */}
+                    <p className="text-sm font-medium text-primary mb-2.5">@{user.username}</p>
 
-              {/* Meta */}
-              {extUser.profile?.location?.description && (
-                <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-3">
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin className="w-3.5 h-3.5 text-primary/50" />
-                    {extUser.profile.location.description}
-                  </span>
-                </div>
-              )}
+                    {/* Bio */}
+                    {extUser.profile?.bio?.text && (
+                      <p className="text-sm text-foreground/80 leading-relaxed mb-2.5">
+                        {extUser.profile.bio.text}
+                      </p>
+                    )}
 
-              {/* Stats bar */}
-              <div className="flex items-center gap-1 pb-3 border-b border-border/40">
+                    {/* Meta row · Twitter-style inline: Neynar score · location · X · for-sale */}
+                    {(s !== undefined || loc || x || marketListing) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-xs text-muted-foreground">
+                        {s !== undefined && <NeynarScoreBadge score={s} />}
+                        {loc && (
+                          <span className="flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-primary/50" />{loc}
+                          </span>
+                        )}
+                        {x && (
+                          <a
+                            href={`https://x.com/${x}`} target="_blank" rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+                          >
+                            <XLogo size={13} />@{x}
+                          </a>
+                        )}
+                        {marketListing && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); navigate(`/market/${targetFid}`); }}
+                            className="flex items-center gap-1.5 font-semibold text-primary hover:underline"
+                          >
+                            <Tag className="w-3.5 h-3.5" /> For sale · {
+                              ethUsd
+                                ? `$${(Number(marketListing) * ethUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                : `${marketListing} Ξ`
+                            }
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Stats bar · pulled left with -ml-3 to cancel out the follower-count
+                  button's own px-3 padding, so the numbers align flush with the
+                  Neynar badge / bio text above instead of sitting visibly indented. */}
+              <div className="flex items-center gap-1 pb-3 border-b border-border/40 -ml-3">
                 <button
                   onClick={() => setFollowSheet("followers")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
                 >
-                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors">
-                    {user.follower_count.toLocaleString()}
+                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={user.follower_count.toLocaleString()}>
+                    {formatCompactCount(user.follower_count)}
                   </span>
                   <span className="text-muted-foreground text-xs">followers</span>
                 </button>
@@ -680,8 +813,8 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   onClick={() => setFollowSheet("following")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
                 >
-                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors">
-                    {user.following_count.toLocaleString()}
+                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={user.following_count.toLocaleString()}>
+                    {formatCompactCount(user.following_count)}
                   </span>
                   <span className="text-muted-foreground text-xs">following</span>
                 </button>
@@ -769,7 +902,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
       {/* ── Edit Profile Sheet ── */}
       {showEditSheet && (
         <EditSheet
-          profile={myProfile}
+          profile={myProfile ? { ...myProfile, bannerUrl: user?.profile?.banner?.url } : myProfile}
           fid={myFid}
           localSigner={localSigner}
           signerApproved={signerApproved}
@@ -779,6 +912,16 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
             if (onOpenSettings) onOpenSettings("username");
             else navigate("/dashboard?tab=profile");
           }}
+        />
+      )}
+
+      {/* ── Score Analysis Sheet ── */}
+      {showSpamAnalyzer && user && (
+        <SpamAnalyzerSheet
+          user={user}
+          myFid={myFidNum}
+          neynarKey={neynarKey ?? ""}
+          onClose={() => setShowSpamAnalyzer(false)}
         />
       )}
 

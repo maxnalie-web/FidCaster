@@ -908,7 +908,7 @@ export function LoginPage() {
             <FidCasterLogo size={22} showName={false} />
             <span className="text-white/50 text-sm font-semibold">{cfg.branding.logoText || "FidCaster"}</span>
             {cfg.landingFooter.brandTagline && (
-              <span className="text-white/20 text-xs">— {cfg.landingFooter.brandTagline}</span>
+              <span className="text-white/20 text-xs">· {cfg.landingFooter.brandTagline}</span>
             )}
           </div>
           <div className="flex items-center gap-6 text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>

@@ -69,12 +69,12 @@ export function BatchFollowSheet({
     setCustomLimit("");
   }
 
-  /** Change only the count — keeps the active strategy preset visually selected */
+  /** Change only the count · keeps the active strategy preset visually selected */
   function setLimitOnly(n: number) {
     setFilters(f => ({ ...f, limit: n }));
   }
 
-  /** Change a real filter toggle — switches strategy to Custom */
+  /** Change a real filter toggle · switches strategy to Custom */
   function updateFilter<K extends keyof BatchFilters>(key: K, val: BatchFilters[K]) {
     setFilters(f => ({ ...f, [key]: val }));
     if (key !== "limit") setActivePreset("custom");
@@ -129,7 +129,7 @@ export function BatchFollowSheet({
       label: `${verb} ${fetchedUsers.length} users`,
       accountLabel,
     });
-    onClose(); // sheet closes — operation continues in background pill
+    onClose(); // sheet closes · operation continues in background pill
   }
 
   function reset() {
@@ -437,7 +437,7 @@ export function BatchFollowSheet({
                         Only {rawMatchCount.toLocaleString()} found (wanted {filters.limit.toLocaleString()})
                       </p>
                       <p className="text-muted-foreground mt-0.5">
-                        Scanned {fetchPg.found.toLocaleString()} users — no more match your filters. You can continue with these {rawMatchCount} or go back and change the filters.
+                        Scanned {fetchPg.found.toLocaleString()} users · no more match your filters. You can continue with these {rawMatchCount} or go back and change the filters.
                       </p>
                     </div>
                   </div>
@@ -448,7 +448,7 @@ export function BatchFollowSheet({
                     <div className="text-center space-y-1">
                       <p className="text-sm font-semibold text-foreground">0 matches found</p>
                       <p className="text-[12px]">
-                        Scanned {fetchPg.found.toLocaleString()} users — none matched your filters.
+                        Scanned {fetchPg.found.toLocaleString()} users · none matched your filters.
                       </p>
                     </div>
                     <button onClick={() => setPhase("setup")} className="text-sm text-primary underline underline-offset-2">

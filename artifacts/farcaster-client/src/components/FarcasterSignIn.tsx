@@ -62,7 +62,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
     setPhase("creating");
 
     // Generate a fresh Ed25519 posting key in the browser. The private key never
-    // leaves the device — only the public key is sent to Warpcast for registration.
+    // leaves the device · only the public key is sent to Warpcast for registration.
     const localSigner = randomSigner();
     signerRef.current = localSigner;
 
@@ -87,7 +87,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
         },
       });
 
-      // POST the signed key request directly to Warpcast — no server hop needed
+      // POST the signed key request directly to Warpcast · no server hop needed
       const res = await fetch(`${WARPCAST_API}/v2/signed-key-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -107,7 +107,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
 
       const data = await res.json() as { result?: { signedKeyRequest?: { token?: string; deeplinkUrl?: string } } };
       const skr = data.result?.signedKeyRequest;
-      if (!skr?.token || !skr.deeplinkUrl) throw new Error("Warpcast returned no deeplink — try again.");
+      if (!skr?.token || !skr.deeplinkUrl) throw new Error("Warpcast returned no deeplink · try again.");
 
       const token = skr.token;
       setDeeplinkUrl(skr.deeplinkUrl);

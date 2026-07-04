@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
@@ -6,6 +6,13 @@ import path from "path";
 const port = Number(process.env.PORT ?? "5000");
 const basePath = process.env.BASE_PATH ?? "/";
 const isReplit = process.env.REPL_ID !== undefined;
+
+// Vite only auto-loads VITE_-prefixed vars. APP_FID / APP_MNEMONIC / etc. live in
+// .env WITHOUT that prefix (they're server-side secrets), so load the full env
+// explicitly here and fold in real process.env — otherwise SIWF's app identity is
+// blank in the browser build ("VITE_APP_FID / VITE_APP_MNEMONIC missing").
+const fileEnv = loadEnv(process.env.NODE_ENV ?? "development", import.meta.dirname, "");
+const env = { ...fileEnv, ...process.env };
 
 export default defineConfig({
   base: basePath,
@@ -44,17 +51,20 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   define: {
+    // Use the merged `env` (loadEnv file vars + process.env) — the non-VITE_
+    // secrets live only in .env, so process.env.APP_FID is undefined here and
+    // would bake blank credentials into the build (breaking SIWF).
     "import.meta.env.VITE_WALLETCONNECT_PROJECT_ID": JSON.stringify(
-      process.env.WALLETCONNECT_PROJECT_ID ?? ""
+      env.WALLETCONNECT_PROJECT_ID ?? env.VITE_WALLETCONNECT_PROJECT_ID ?? ""
     ),
     "import.meta.env.VITE_IMGUR_CLIENT_ID": JSON.stringify(
-      process.env.IMGUR_CLIENT_ID ?? ""
+      env.IMGUR_CLIENT_ID ?? env.VITE_IMGUR_CLIENT_ID ?? ""
     ),
     "import.meta.env.VITE_APP_FID": JSON.stringify(
-      process.env.APP_FID ?? ""
+      env.APP_FID ?? ""
     ),
     "import.meta.env.VITE_APP_MNEMONIC": JSON.stringify(
-      process.env.APP_MNEMONIC ?? ""
+      env.APP_MNEMONIC ?? ""
     ),
   },
   build: {
@@ -79,7 +89,7 @@ export default defineConfig({
         "script-src 'self' 'unsafe-inline'",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
-        "img-src 'self' data: https:",
+        "img-src 'self' data: blob: https:",
         "connect-src 'self' https: wss: ws:",
         // Mini apps run inside iframes — allow any https origin to be framed.
         "frame-src 'self' https: https://verify.walletconnect.com https://verify.walletconnect.org",
@@ -97,6 +107,8 @@ export default defineConfig({
       "/api/warpcast":  { target: "http://localhost:3001", changeOrigin: true },
       "/api/pro-status": { target: "http://localhost:3001", changeOrigin: true },
       "/api/miniapp-embed": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/translate": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/rpc":       { target: "http://localhost:3001", changeOrigin: true },
     },
   },
   preview: {
@@ -113,7 +125,7 @@ export default defineConfig({
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
-        "img-src 'self' data: https:",
+        "img-src 'self' data: blob: https:",
         "connect-src 'self' https: wss:",
         // Mini apps run inside iframes — allow any https origin to be framed.
         "frame-src 'self' https:",

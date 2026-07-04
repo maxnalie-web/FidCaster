@@ -8,7 +8,7 @@ export function isNativeRuntime(): boolean {
 }
 
 /**
- * Injected at DOCUMENT-START inside each mini app's native WebView — before any
+ * Injected at DOCUMENT-START inside each mini app's native WebView · before any
  * of the app's own JavaScript runs. Production mini apps refuse to render unless
  * they believe they're inside an official Farcaster client; they detect this by
  * reading `document.referrer` and `window.ReactNativeWebView`. A web iframe
@@ -18,7 +18,7 @@ export function isNativeRuntime(): boolean {
  * The `ReactNativeWebView` shim also routes the Farcaster Mini App SDK's
  * messages to the native app (`window.mobileApp.postMessage`) and delivers host
  * replies back as the `FarcasterFrameCallback` document event the SDK listens
- * for — the transport stage-2 wires to the real host (context + wallet).
+ * for · the transport stage-2 wires to the real host (context + wallet).
  */
 const DOCUMENT_START_SCRIPT = `
 (function () {

@@ -64,7 +64,7 @@ export function removeAccountFromStore(fid: number): void {
   saveAccountsMeta(accounts);
 }
 
-// Per-account Ed25519 signer private key — stored in localStorage encrypted with a
+// Per-account Ed25519 signer private key · stored in localStorage encrypted with a
 // device-bound AES-GCM key (non-extractable, in IndexedDB). A raw localStorage dump
 // reveals only ciphertext; the key is inaccessible without running JS in the same origin.
 import { encryptPrivKey, decryptPrivKey } from "@/lib/session-crypto";
@@ -83,7 +83,7 @@ export async function loadSignerPrivKey(fid: number): Promise<string | null> {
     const stored = localStorage.getItem(`fc_spk_${fid}`);
     if (!stored) return null;
     if (stored.startsWith("{")) return await decryptPrivKey(stored); // new encrypted format
-    return stored; // legacy plaintext — migration path
+    return stored; // legacy plaintext · migration path
   } catch { return null; }
 }
 
@@ -91,7 +91,7 @@ export function clearSignerPrivKey(fid: number): void {
   try { localStorage.removeItem(`fc_spk_${fid}`); } catch {}
 }
 
-// Persisted brute-force counter — survives page refresh so the delay can't be bypassed by reloading.
+// Persisted brute-force counter · survives page refresh so the delay can't be bypassed by reloading.
 const FAILED_ATTEMPTS_KEY = "fc_pw_fails";
 type FailedAttempts = { count: number; since: number };
 

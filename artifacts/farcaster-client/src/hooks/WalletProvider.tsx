@@ -18,6 +18,8 @@ import {
   storeAccountMnemonic,
   loadAccountMnemonic,
   loadAccountMnemonicAuto,
+  storeAccountMnemonicDeviceKey,
+  loadAccountMnemonicDeviceKey,
   removeAccountMnemonic,
   storeLightSession,
   loadLightSession,
@@ -530,6 +532,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           // Try key-based restore first (no password needed, survives refresh).
           let mnemonic: string | null = activeFid ? await loadAccountMnemonicAuto(activeFid) : null;
           if (!mnemonic) mnemonic = await decryptStoredAuto();
+          // Device-key fallback: accounts added mid-session (no password in memory)
+          // are persisted via storeAccountMnemonicDeviceKey · check that store too.
+          if (!mnemonic && activeFid) mnemonic = await loadAccountMnemonicDeviceKey(activeFid);
 
           // Migration fallback: old sessions have password in sessionStorage but no cached key yet.
           if (!mnemonic) {
@@ -894,7 +899,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
       const fidNum = await _applyAccount(mnemonic);
+      // No in-memory password (session was silently auto-restored via cached key) ·
+      // fall back to device-key storage so this account still survives a refresh.
       if (password) await storeAccountMnemonic(fidNum, mnemonic, password);
+      else await storeAccountMnemonicDeviceKey(fidNum, mnemonic);
     } catch (e: unknown) {
       setState((s) => ({ ...s, isLoading: false, error: e instanceof Error ? e.message : "Failed to add account." }));
       throw e;
@@ -1009,6 +1017,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       // Mnemonic account (or unknown authMethod = legacy mnemonic) · try key-based auto-decrypt first, then fall back to password
       let mnemonic: string | null = await loadAccountMnemonicAuto(fid);
+      // Device-key fallback: account was added mid-session with no password in memory.
+      if (!mnemonic) mnemonic = await loadAccountMnemonicDeviceKey(fid);
 
       if (!mnemonic) {
         const password = sessionPwdRef.current;

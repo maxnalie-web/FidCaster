@@ -8,12 +8,15 @@ import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { ThreadPage } from "@/pages/ThreadPage";
+import { ChannelPage } from "@/pages/ChannelPage";
+import { ChannelsListPage } from "@/pages/ChannelsListPage";
 import FidMarketPage from "@/pages/FidMarketPage";
 import FidDetailPage from "@/pages/FidDetailPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { FollowPage } from "@/pages/FollowPage";
 import { useEffect, useState } from "react";
 import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-config";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export type Theme = "light" | "dark";
 
@@ -40,13 +43,23 @@ export function useTheme(): [Theme, (t: Theme) => void] {
 }
 
 function AuthRedirect() {
-  const { fid, isLocked } = useWallet();
+  const { fid, isLocked, isCheckingSession } = useWallet();
   const [location, navigate] = useLocation();
   useEffect(() => {
+    // Don't decide anything until the stored session has actually been read ·
+    // fid/isLocked both start out "empty" on a cold page load (e.g. opening a
+    // shared /channel or /cast link directly), so acting before this flips to
+    // false bounced already-logged-in users to /login for an instant before
+    // snapping back to /dashboard, losing the deep link's destination.
+    if (isCheckingSession) return;
     if (fid && (location === "/" || location === "/login")) navigate("/dashboard");
     // Auto-locked from anywhere in the app → unlock screen, never the landing page.
     else if (!fid && isLocked && location !== "/login") navigate("/login");
-  }, [fid, isLocked, location, navigate]);
+    // A shared cast/profile/channel link opened by someone with no FidCaster
+    // session at all (not even a locked one) used to render the page anyway ·
+    // anyone could browse content without ever signing in. Require login first.
+    else if (!fid && !isLocked && /^\/(profile|cast|channel)\//.test(location)) navigate("/login");
+  }, [fid, isLocked, isCheckingSession, location, navigate]);
   return null;
 }
 
@@ -60,6 +73,8 @@ function Router() {
         <Route path="/dashboard" component={DashboardPage} />
         <Route path="/profile/:fid">{() => <ProfilePage />}</Route>
         <Route path="/cast/:hash" component={ThreadPage} />
+        <Route path="/channel/:id" component={ChannelPage} />
+        <Route path="/channels" component={ChannelsListPage} />
         <Route path="/market" component={FidMarketPage} />
         <Route path="/market/:id" component={FidDetailPage} />
         <Route path="/admin" component={AdminPage} />
@@ -93,7 +108,9 @@ function App() {
     <WalletProvider>
       <BatchOperationProvider>
         <WouterRouter base={base}>
-          <Router />
+          <ErrorBoundary>
+            <Router />
+          </ErrorBoundary>
         </WouterRouter>
         <Toaster
         position="bottom-right"

@@ -22,11 +22,12 @@ function collectKeys(): string[] {
   // Both formats are supported:
   //   NEYNAR_API_KEY_2, NEYNAR_API_KEY_3  (with underscore before number)
   //   NEYNAR_API_KEY2,  NEYNAR_API_KEY3   (no underscore — common mistake)
-  for (let i = 2; i <= 20; i++) {
+  // Scan the whole range WITHOUT breaking on a gap — keys are often numbered with
+  // holes (e.g. _16 missing but _17…_20 present); an early break would silently
+  // drop every key after the first gap.
+  for (let i = 2; i <= 55; i++) {
     const k = process.env[`NEYNAR_API_KEY_${i}`] ?? process.env[`NEYNAR_API_KEY${i}`];
     if (k && !keys.includes(k)) keys.push(k);
-    // stop scanning as soon as both variants are absent for this index
-    if (!process.env[`NEYNAR_API_KEY_${i}`] && !process.env[`NEYNAR_API_KEY${i}`]) break;
   }
 
   // NEYNAR_API_KEYS=key1,key2,key3
@@ -43,7 +44,7 @@ function collectKeys(): string[] {
 // ── Token bucket per key ──────────────────────────────────────────────────────
 const RPM = 250;
 const REFILL_MS = 60_000 / RPM;   // ~240 ms per token
-const MAX_QUEUE = 150;
+const MAX_QUEUE = 400;
 
 interface Bucket {
   key: string;
@@ -73,16 +74,30 @@ function refillBucket(b: Bucket): void {
   }
 }
 
-/** Pick the bucket with the most tokens (not penalised). */
-function bestBucket(): Bucket | null {
+// Round-robin cursor. The old "pick the bucket with the most tokens" strategy
+// broke ties by array order, so whenever traffic was light enough for tokens to
+// refill between requests (i.e. almost always) EVERY request went to buckets[0]
+// — the first key carried the entire load while the rest sat idle. A rotating
+// cursor spreads consecutive requests evenly across all keys regardless of token
+// levels, which is what actually distributes the Neynar quota.
+let _rrCursor = 0;
+
+/** Next non-penalised bucket that has a token available, round-robin. */
+function nextBucket(): Bucket | null {
   const now = Date.now();
-  let best: Bucket | null = null;
-  for (const b of buckets) {
+  const n = buckets.length;
+  if (n === 0) return null;
+  for (let i = 0; i < n; i++) {
+    const idx = (_rrCursor + i) % n;
+    const b = buckets[idx];
     if (b.penaltyUntil > now) continue;
     refillBucket(b);
-    if (!best || b.tokens > best.tokens) best = b;
+    if (b.tokens > 0) {
+      _rrCursor = (idx + 1) % n; // advance so the next call starts after this key
+      return b;
+    }
   }
-  return best ?? (buckets[0] ?? null);
+  return null; // every key is penalised or out of tokens right now
 }
 
 /** Call with the key that got HTTP 429 to back it off for 5 s. */
@@ -103,23 +118,16 @@ let queueDepth = 0;
 export function neynarThrottle(): Promise<string> {
   if (buckets.length === 0) return Promise.resolve(process.env.NEYNAR_API_KEY ?? "");
   if (queueDepth >= MAX_QUEUE) {
-    return Promise.reject(new Error("Rate limit queue full — try again shortly"));
+    return Promise.reject(new Error("Rate limit queue full · try again shortly"));
   }
   queueDepth++;
   return new Promise((resolve) => {
     const take = (): void => {
-      const b = bestBucket();
-      if (!b) { setTimeout(take, REFILL_MS); return; }
-      const now = Date.now();
-      if (now < b.penaltyUntil) { setTimeout(take, b.penaltyUntil - now + 50); return; }
-      refillBucket(b);
-      if (b.tokens > 0) {
-        b.tokens--;
-        queueDepth = Math.max(0, queueDepth - 1);
-        resolve(b.key);
-      } else {
-        setTimeout(take, REFILL_MS);
-      }
+      const b = nextBucket();
+      if (!b) { setTimeout(take, REFILL_MS); return; } // all keys busy → wait for a refill
+      b.tokens--;
+      queueDepth = Math.max(0, queueDepth - 1);
+      resolve(b.key);
     };
     take();
   });

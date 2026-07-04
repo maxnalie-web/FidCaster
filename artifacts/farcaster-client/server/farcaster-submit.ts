@@ -14,7 +14,13 @@ import {
 
 // Free public hubs — no Neynar credits, raced in parallel first.
 // Prefer HTTPS-port hubs (443) — port 2281 is commonly blocked on cloud providers.
+//
+// CUSTOM_HUB_URL (env): point this at YOUR OWN Snapchain hub for truly unlimited,
+// zero-credit writes with no Neynar dependency. A hub runs for free forever on an
+// Oracle Cloud "Always Free" ARM instance (4 cores / 24 GB). When set it's raced
+// FIRST — if it accepts, no credits are spent and Neynar is never touched.
 const FREE_HUB_URLS = [
+  ...(process.env.CUSTOM_HUB_URL ? [process.env.CUSTOM_HUB_URL.replace(/\/$/, "")] : []),
   "https://api.hub.wevm.dev",                      // wevm/viem team (HTTPS 443)
   "https://hub.pinata.cloud",                       // Pinata public hub (HTTPS 443)
   "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281 — may be blocked)
@@ -24,15 +30,17 @@ const FREE_HUB_URLS = [
 // Neynar hub — costs credits per submission; used only when ALL free hubs fail.
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
 
-/** Read every NEYNAR_API_KEY* env var — used for parallel key racing below. */
+/** Read every NEYNAR_API_KEY* env var — used for key rotation below. */
 export function getAllNeynarKeys(): string[] {
   const keys: string[] = [];
   const p = process.env.NEYNAR_API_KEY;
   if (p) keys.push(p);
-  for (let i = 2; i <= 20; i++) {
+  // Scan the whole range WITHOUT breaking on a gap — keys are often numbered with
+  // holes (e.g. _16 missing but _17…_20 present); an early break would silently
+  // drop every key after the first gap.
+  for (let i = 2; i <= 55; i++) {
     const k = process.env[`NEYNAR_API_KEY_${i}`] ?? process.env[`NEYNAR_API_KEY${i}`];
     if (k && !keys.includes(k)) keys.push(k);
-    if (!process.env[`NEYNAR_API_KEY_${i}`] && !process.env[`NEYNAR_API_KEY${i}`]) break;
   }
   return keys;
 }
@@ -47,13 +55,14 @@ async function tryHubOnce(
   msgHash: string,
   apiKey?: string,
   sharedAbort?: AbortSignal,
+  timeoutMs = 8_000,
 ): Promise<string> {
   const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
   if (apiKey) headers["api_key"] = apiKey;
 
   // Combine per-request timeout with the shared abort signal (if supported).
   // AbortSignal.any is available in Node ≥ 20.3; fall back to shared signal alone.
-  const timeoutSignal = AbortSignal.timeout(8_000);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = sharedAbort
     ? (typeof AbortSignal.any === "function"
         ? AbortSignal.any([sharedAbort, timeoutSignal])
@@ -72,7 +81,7 @@ async function tryHubOnce(
   }
   const txt = await res.text().catch(() => "");
   if (txt.includes("already exists") || txt.includes("DUPLICATE_MESSAGE")) return msgHash;
-  throw new Error(`${url}: HTTP ${res.status} — ${txt.slice(0, 120)}`);
+  throw new Error(`${url}: HTTP ${res.status} · ${txt.slice(0, 120)}`);
 }
 
 /**
@@ -81,24 +90,23 @@ async function tryHubOnce(
  * Strategy:
  *  Phase 1 — Race ALL free hubs simultaneously (Promise.any + AbortController).
  *             First hub to accept aborts the siblings → 0 credits consumed.
- *  Phase 2 — Only if every free hub failed: try Neynar keys with the same
- *             abort-on-win pattern → EXACTLY 1 credit consumed regardless of
- *             how many keys are configured.
- *
- * IMPORTANT: We use AbortController so that once the first winner responds,
- * all other in-flight requests are cancelled immediately.  Without this,
- * Promise.any() resolves but the remaining N-1 promises keep running to
- * completion and each one also submits the message → N× credits wasted.
+ *  Phase 2 — Only if every free hub failed: try Neynar keys SEQUENTIALLY in
+ *             round-robin order → ~1 request (and 1 credit) per action, and the
+ *             server IP never bursts N parallel requests per action.
  */
 export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
   const message = Message.decode(msgBytes);
   const msgHash = Buffer.from(message.hash).toString("hex");
 
-  // Phase 1: race free hubs (parallel, no credits) — cancel siblings on first win
+  // Phase 1: race free hubs (parallel, no credits) — cancel siblings on first win.
+  // Short 2.5s timeout: some free hubs (e.g. the :2281-port ones) are unreachable on
+  // many networks and would otherwise hang the whole Promise.any for 8s before we
+  // fall through to Neynar. A reachable free hub responds well under 2.5s anyway.
+  const FREE_HUB_TIMEOUT_MS = 1_500;
   const freeAbort = new AbortController();
   const freeResult = await Promise.any(
     FREE_HUB_URLS.map(async url => {
-      const hash = await tryHubOnce(url, msgBytes, msgHash, undefined, freeAbort.signal);
+      const hash = await tryHubOnce(url, msgBytes, msgHash, undefined, freeAbort.signal, FREE_HUB_TIMEOUT_MS);
       freeAbort.abort("free hub won"); // cancel any still-pending sibling requests
       return hash;
     }),
@@ -112,40 +120,54 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
 
   if (freeResult) return freeResult;
 
-  // Phase 2: all free hubs failed → try Neynar keys, abort-on-win
-  // Each key starts simultaneously (for rate-limit resilience), but the moment
-  // ONE key succeeds it aborts all others → exactly 1 submitmessage credit consumed.
+  // Phase 2: all free hubs failed → try Neynar keys ONE AT A TIME (round-robin).
+  // The old approach fired every key in PARALLEL, so each action sent N simultaneous
+  // requests to hub-api.neynar.com from this single server IP. At ~40 actions/min with
+  // 19 keys that's ~760 req/min from one IP — tripping Neynar's per-IP limit even with
+  // a single user ("1 user rate-limits itself"). Sequential rotation sends ~1 request
+  // per action and spreads consecutive actions across all keys, so neither a single
+  // key nor the server IP gets hammered. We only advance to the next key on transient
+  // failures (429/timeout); a permanent validation failure stops immediately since
+  // rotating keys can never fix a bad/deleted target FID.
   const neynarKeys = getAllNeynarKeys();
   if (neynarKeys.length === 0) throw new Error("No Neynar API keys configured and all free hubs failed.");
 
-  const neynarAbort = new AbortController();
-  try {
-    return await Promise.any(
-      neynarKeys.map(async key => {
-        const hash = await tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key, neynarAbort.signal);
-        neynarAbort.abort("neynar key won"); // cancel remaining Neynar requests immediately
-        return hash;
-      }),
-    );
-  } catch (e: unknown) {
-    const errs = (e instanceof AggregateError ? e.errors : [e])
-      .map(x => String(x))
-      .filter(m => !m.includes("AbortError") && !m.includes("abort")); // filter cancelled-request noise
+  const n = neynarKeys.length;
+  const start = _neynarRR % n;
+  _neynarRR = (_neynarRR + 1) % n;
+  const errs: string[] = [];
 
-    const allSignerErrors = errs.length > 0 && errs.every(m =>
-      m.includes("fid cannot be 0") || m.includes("unknown signer") || m.includes("invalid signer")
-    );
-    if (allSignerErrors) {
-      throw new Error(
-        "SIGNER_NOT_REGISTERED: Your signer key is not yet recognized by the hub. " +
-        "The on-chain registration is confirmed but hubs may take a few minutes to sync. " +
-        "Please try again in 1–2 minutes.",
-      );
+  for (let i = 0; i < n; i++) {
+    const key = neynarKeys[(start + i) % n];
+    try {
+      return await tryHubOnce(NEYNAR_HUB_URL, msgBytes, msgHash, key);
+    } catch (e: unknown) {
+      const msg = String(e);
+      errs.push(msg);
+      // Permanent validation failure (bad/deleted target FID) that is NOT a
+      // signer-sync issue — rotating keys is pointless, stop now.
+      if (/validation_failure/i.test(msg) && !/signer/i.test(msg)) {
+        throw new Error(msg);
+      }
+      // else: 429 / timeout / transient → try the next key.
     }
-    const desc = errs.length ? errs.join(" | ") : "all requests aborted or timed out";
-    throw new Error(`All ${FREE_HUB_URLS.length + neynarKeys.length} hub targets failed: ${desc}`);
   }
+
+  const allSignerErrors = errs.length > 0 && errs.every(m =>
+    m.includes("fid cannot be 0") || m.includes("unknown signer") || m.includes("invalid signer")
+  );
+  if (allSignerErrors) {
+    throw new Error(
+      "SIGNER_NOT_REGISTERED: Your signer key is not yet recognized by the hub. " +
+      "The on-chain registration is confirmed but hubs may take a few minutes to sync. " +
+      "Please try again in 1–2 minutes.",
+    );
+  }
+  throw new Error(`All ${FREE_HUB_URLS.length + n} hub targets failed: ${errs.join(" | ")}`);
 }
+
+// Round-robin cursor so consecutive submits start on a different Neynar key.
+let _neynarRR = 0;
 
 const VALID_CAST_HASH = /^(0x)?[0-9a-fA-F]{40,80}$/;
 
@@ -158,7 +180,7 @@ export type FarcasterAction =
   | { type: "unfollow";         targetFid: number }
   | { type: "cast";             text: string; parentHash?: string; parentFid?: number; parentUrl?: string }
   | { type: "delete-cast";      castHash: string }
-  | { type: "update-user-data"; dataType: "pfp" | "display" | "bio"; value: string };
+  | { type: "update-user-data"; dataType: "pfp" | "display" | "bio" | "banner"; value: string };
 
 function validateAction(action: FarcasterAction): void {
   const FID_MAX = 1_000_000_000;
@@ -195,13 +217,13 @@ function validateAction(action: FarcasterAction): void {
     }
   }
   if (action.type === "update-user-data") {
-    const validTypes = ["pfp", "display", "bio"];
+    const validTypes = ["pfp", "display", "bio", "banner"];
     if (!validTypes.includes(action.dataType)) throw new Error("Invalid dataType for update-user-data");
     if (typeof action.value !== "string" || action.value.length === 0 || action.value.length > 256) {
       throw new Error("User data value must be 1–256 characters");
     }
-    if (action.dataType === "pfp" && !action.value.startsWith("https://")) {
-      throw new Error("Profile picture must be a https:// URL");
+    if ((action.dataType === "pfp" || action.dataType === "banner") && !action.value.startsWith("https://")) {
+      throw new Error("Image must be a https:// URL");
     }
   }
 }
@@ -270,6 +292,7 @@ async function buildMessage(
       pfp: UserDataType.PFP,
       display: UserDataType.DISPLAY,
       bio: UserDataType.BIO,
+      banner: UserDataType.BANNER,
     };
     result = await makeUserDataAdd(
       { type: typeMap[action.dataType], value: action.value },

@@ -20,8 +20,15 @@ import {
   Plus, X, Loader2, CheckCircle2, Clock, UserCircle,
   Sun, Moon, AlertCircle, PenSquare, Copy,
   MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers, Camera, Shield,
-  Info, AlertTriangle, UserPlus, TrendingUp,
+  Info, AlertTriangle, UserPlus, TrendingUp, Globe,
+  LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash,
 } from "lucide-react";
+import { getUserByFid, type NeynarUser } from "@/lib/neynar";
+import { NeynarScoreBadge } from "@/components/NeynarScoreBadge";
+import {
+  SUPPORTED_LANGS, getPreferredLang, setPreferredLang,
+  type LangCode,
+} from "@/lib/translate";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
 import { ADMIN_FID } from "@/lib/admin-config";
 import { createWalletClient, custom } from "viem";
@@ -30,8 +37,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 type MainTab = "feed" | "notifications" | "search" | "wallet" | "profile" | "miniapps";
-type ProfileSection = "posts" | "settings";
-type SettingsTab = "username" | "signer" | "profile";
+type ProfileSection = "posts" | "settings" | "support";
+type SettingsTab = "app" | "username" | "signer" | "profile" | "language";
 
 const SIDEBAR_ITEMS: { id: MainTab; label: string; icon: typeof Home }[] = [
   { id: "feed",          label: "Home",          icon: Home },
@@ -51,9 +58,171 @@ const BOTTOM_NAV: { id: MainTab; icon: typeof Home }[] = [
 
 
 const SETTINGS_TABS: { id: SettingsTab; label: string; icon: typeof Home }[] = [
+  { id: "app",      label: "App",      icon: Settings },
   { id: "username", label: "Username", icon: AtSign },
   { id: "signer",   label: "Signer",   icon: CheckCircle2 },
+  { id: "language", label: "Language", icon: Globe },
 ];
+
+/* ─── App Settings Panel · general app-wide preferences ──────────────────────── */
+function AppSettingsPanel() {
+  const [theme, setTheme] = useTheme();
+  return (
+    <div className="space-y-6 max-w-md">
+      <div className="flex items-start justify-between gap-4 p-3.5 rounded-xl border border-border bg-muted/20">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Dark mode</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Switch between light and dark appearance.</p>
+        </div>
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className={cn(
+            "shrink-0 w-11 h-6 rounded-full transition-colors relative",
+            theme === "dark" ? "bg-primary" : "bg-muted-foreground/25"
+          )}
+        >
+          {/* Positioned with `left` (not translate-x) · this project's Tailwind build
+              doesn't emit a `transform` for translate-x utilities on this element
+              (computed style showed `transform: none`), which left the thumb sitting
+              at a stray left/right-constrained position that overflowed the track
+              once toggled on. Plain `left` always works regardless of that. */}
+          <span
+            className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-[left]"
+            style={{ left: theme === "dark" ? 22 : 2 }}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Support / About Panel ────────────────────────────────────────────────── */
+const PILLARS: { icon: typeof Zap; title: string; desc: string }[] = [
+  { icon: Zap,      title: "Built for growth",  desc: "Grow finds and follows the right people for you · quality-filtered, never spammy." },
+  { icon: Lock,     title: "Your keys, always", desc: "Posting keys are generated and signed on your device. FidCaster never holds your seed phrase." },
+  { icon: Sparkles, title: "Signal over noise", desc: "Neynar quality scores, Pro status, and verified accounts surface right on every profile." },
+  { icon: Shield,   title: "Built to last",     desc: "Every write goes straight to the Farcaster protocol · nothing about your identity lives only in our servers." },
+];
+
+function SupportPanel() {
+  const [founder, setFounder] = useState<NeynarUser | null>(null);
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    getUserByFid(ADMIN_FID, ADMIN_FID, "").then(res => setFounder(res.users?.[0] ?? null)).catch(() => {});
+  }, []);
+
+  const goToFounder = (e: React.MouseEvent) => { e.preventDefault(); navigate(`/profile/${ADMIN_FID}`); };
+
+  return (
+    <div className="max-w-lg space-y-6">
+      {/* ── Hero ── */}
+      <div className="relative overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/10 via-violet-500/5 to-background px-6 py-9 text-center">
+        <div className="pointer-events-none absolute -top-20 -right-16 w-56 h-56 rounded-full bg-primary/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 -left-12 w-40 h-40 rounded-full bg-violet-600/15 blur-3xl" />
+        <div className="relative space-y-3">
+          <div className="w-20 h-20 mx-auto flex items-center justify-center">
+            <img src="/fidcaster-logo.png" alt="" className="w-20 h-20 object-contain drop-shadow-lg" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          </div>
+          <h2 className="text-2xl font-black tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
+            FidCaster
+          </h2>
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
+            The fastest, most focused way to grow and manage a Farcaster identity,
+            crafted like a tool you'd actually want to open every day.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Pillars ── */}
+      <div className="grid grid-cols-2 gap-2.5">
+        {PILLARS.map((p) => {
+          const Icon = p.icon;
+          return (
+            <div key={p.title} className="group p-4 rounded-2xl border border-border bg-card hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all space-y-2.5">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/15 to-violet-500/15 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Icon className="w-4.5 h-4.5 text-primary" />
+              </div>
+              <p className="text-[13px] font-bold text-foreground leading-tight">{p.title}</p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">{p.desc}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Founder ── */}
+      <button onClick={goToFounder} className="w-full text-left block rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/25 hover:shadow-lg hover:shadow-primary/5 transition-all">
+        <div className="h-14 bg-gradient-to-r from-primary/25 via-violet-500/15 to-background" />
+        <div className="px-5 pb-5 -mt-8 space-y-3">
+          <div className="flex items-end gap-3">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden bg-muted shrink-0 ring-4 ring-card shadow-lg">
+              {founder?.pfp_url ? (
+                <img src={founder.pfp_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-violet-500/20"><User className="w-7 h-7 text-muted-foreground/40" /></div>
+              )}
+            </div>
+            <span className="mb-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-primary text-white">
+              Founder
+            </span>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="font-bold text-foreground text-[16px]">{founder?.display_name ?? "Maximus"}</p>
+              {founder?.score !== undefined && <NeynarScoreBadge score={founder.score} />}
+            </div>
+            <p className="text-xs text-primary font-medium">@{founder?.username ?? "m--"}</p>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {founder?.profile?.bio?.text ?? "Building FidCaster: a professional-grade Farcaster client, one release at a time."}
+          </p>
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary">
+            View profile <ExternalLink className="w-3 h-3" />
+          </span>
+        </div>
+      </button>
+
+      {/* ── Contact ── */}
+      <div className="p-4 rounded-2xl border border-border bg-gradient-to-br from-primary/5 to-transparent flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <LifeBuoy className="w-4.5 h-4.5 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-foreground">Need help or have feedback?</p>
+          <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+            Send a cast to <a href={`/profile/${ADMIN_FID}`} onClick={goToFounder} className="text-primary font-semibold hover:underline">@m--</a> or mention @fidcaster. Every message reaches the team directly.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Language / Translation Settings Panel ─────────────────────────────────── */
+function LanguageSettingsPanel() {
+  const [lang, setLang] = useState<LangCode>(() => getPreferredLang());
+
+  return (
+    <div className="space-y-6 max-w-md">
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold uppercase tracking-widest text-foreground">Preferred language</label>
+        <p className="text-xs text-muted-foreground">
+          Defaults to your device's language. Tapping the translate icon on a cast always
+          translates to this language · change it here if you'd rather it be something else.
+        </p>
+        <select
+          value={lang}
+          onChange={(e) => { const v = e.target.value as LangCode; setLang(v); setPreferredLang(v); }}
+          className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          {SUPPORTED_LANGS.map((l) => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
 
 /* ─── Signer Panel ───────────────────────────────────────────────────────── */
 function SignerPanel({
@@ -328,7 +497,7 @@ function ComposeModal({ onClose, onPublished }: { onClose: () => void; onPublish
 
 /* ─── Mobile Drawer ──────────────────────────────────────────────────────── */
 function MobileDrawer({
-  open, onClose, profile, fid, accounts, switchAccount, removeAccount, logout, theme, setTheme, onAddAccount, onOpenSettings, onNavigateToProfile,
+  open, onClose, profile, fid, accounts, switchAccount, removeAccount, logout, theme, setTheme, onAddAccount, onOpenSettings, onOpenSupport, onNavigateToProfile,
 }: {
   open: boolean; onClose: () => void;
   profile: { pfpUrl?: string; username?: string; bio?: string; displayName?: string } | null;
@@ -338,9 +507,10 @@ function MobileDrawer({
   removeAccount: (fid: number) => void;
   logout: () => void;
   theme: string; setTheme: (t: string) => void;
-  onAddAccount: () => void; onOpenSettings: () => void;
+  onAddAccount: () => void; onOpenSettings: () => void; onOpenSupport: () => void;
   onNavigateToProfile: () => void;
 }) {
+  const [, navigate] = useLocation();
   return (
     <>
       <div
@@ -429,9 +599,17 @@ function MobileDrawer({
         )}
 
         <nav className="flex-1 px-3 py-1 space-y-0.5">
+          <button onClick={() => { navigate("/channels"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+            <Hash className="w-4 h-4 shrink-0" />
+            <span className="flex-1 text-left font-medium">Channels</span>
+          </button>
           <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Settings className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Settings</span>
+          </button>
+          <button onClick={() => { onOpenSupport(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+            <LifeBuoy className="w-4 h-4 shrink-0" />
+            <span className="flex-1 text-left font-medium">Support</span>
           </button>
           <button onClick={() => { onAddAccount(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Plus className="w-4 h-4 shrink-0" />
@@ -829,6 +1007,7 @@ export function DashboardPage() {
                 })}
               </div>
               <div className="p-5">
+                {settingsTab === "app" && <AppSettingsPanel />}
                 {settingsTab === "username" && <UsernameChange />}
                 {settingsTab === "signer" && (
                   <SignerPanel
@@ -839,6 +1018,25 @@ export function DashboardPage() {
                   />
                 )}
                 {settingsTab === "profile" && <ProfileEditPanel />}
+                {settingsTab === "language" && <LanguageSettingsPanel />}
+              </div>
+            </div>
+          );
+        }
+        if (profileSection === "support") {
+          return (
+            <div>
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                <button
+                  onClick={() => setProfileSection("posts")}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-sm font-semibold text-foreground">Support</span>
+              </div>
+              <div className="p-5">
+                <SupportPanel />
               </div>
             </div>
           );
@@ -918,6 +1116,15 @@ export function DashboardPage() {
           >
             <Tag className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
             <span className="text-[1.0625rem] text-foreground/85">FID Market</span>
+          </button>
+
+          {/* Channels link */}
+          <button
+            onClick={() => navigate("/channels")}
+            className="sidebar-item"
+          >
+            <Hash className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[1.0625rem] text-foreground/85">Channels</span>
           </button>
 
           {/* Admin panel link · only for @m-- */}
@@ -1164,6 +1371,7 @@ export function DashboardPage() {
         setTheme={setTheme}
         onAddAccount={() => setShowAddAccount(true)}
         onOpenSettings={openSettings}
+        onOpenSupport={() => { setMainTab("profile"); setProfileSection("support"); }}
         onNavigateToProfile={() => navigate(`/profile/${fidNum}`)}
       />
 

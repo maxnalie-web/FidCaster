@@ -663,9 +663,9 @@ export default function FidDetailPage() {
         <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
           <div className="h-32 bg-gradient-to-br from-primary/10 via-violet-500/5 to-background flex items-center justify-center relative">
             {info?.pfpUrl ? (
-              <img src={info.pfpUrl} alt="" className="w-20 h-20 rounded-2xl object-cover shadow-xl ring-2 ring-border/40" />
+              <img src={info.pfpUrl} alt="" className="w-20 h-20 rounded-full object-cover shadow-xl ring-2 ring-border/40" />
             ) : (
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-border/40 flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary/20 to-violet-500/20 border border-border/40 flex items-center justify-center">
                 <span className="text-3xl font-black text-primary font-mono">{fid}</span>
               </div>
             )}

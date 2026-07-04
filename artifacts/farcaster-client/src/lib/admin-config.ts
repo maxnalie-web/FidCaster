@@ -165,7 +165,7 @@ export const DEFAULT_CONFIG: AdminConfig = {
   copy: {
     heroTitle: "Cast. Connect.\nTrade your\nFarcaster ID.",
     heroSubtitle: "The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism.",
-    heroDescription: "No registration. No email. Just your Farcaster identity — ready in seconds.",
+    heroDescription: "No registration. No email. Just your Farcaster identity · ready in seconds.",
     heroCta: "Enter App",
     heroSecondaryCta: "Explore FID Market",
     heroTags: ["No registration", "No email", "Open source", "On Optimism"],
@@ -174,7 +174,7 @@ export const DEFAULT_CONFIG: AdminConfig = {
   },
   seo: {
     pageTitle: "FidCaster",
-    metaDescription: "FidCaster — a luxury Farcaster client. Your keys, your identity.",
+    metaDescription: "FidCaster · a luxury Farcaster client. Your keys, your identity.",
     ogImage: "",
     ogUrl: "",
   },

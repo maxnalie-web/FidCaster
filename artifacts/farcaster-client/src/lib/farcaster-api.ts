@@ -102,8 +102,10 @@ export async function fetchReactionCounts(
   return result;
 }
 
-/** Fetch current fname from fnames.farcaster.xyz for a given FID */
-async function fetchFnameForFid(fidNum: number): Promise<string | null> {
+/** Fetch current fname from fnames.farcaster.xyz for a given FID.
+ *  This is the authoritative source: the profile's displayed username can be an
+ *  ENS name (contains "."), which is NOT an fname and can't be released. */
+export async function fetchFnameForFid(fidNum: number): Promise<string | null> {
   try {
     const r = await fetch(`https://fnames.farcaster.xyz/transfers/current?fid=${fidNum}`, {
       signal: AbortSignal.timeout(4000),
@@ -258,7 +260,7 @@ export const CURATED_MINI_APPS: MiniApp[] = [
   {
     id: "moxie",
     name: "Moxie",
-    description: "Creator economy — earn rewards from your fans",
+    description: "Creator economy · earn rewards from your fans",
     iconUrl: "https://moxie.xyz/favicon.ico",
     url: "https://moxie.xyz",
     category: "Creator",
@@ -406,15 +408,15 @@ function categoryFromUrl(url: string): string {
  * Fetch mini-apps (Farcaster Frames/mini-apps).
  *
  * Source priority:
- *  1. Warpcast client API — `client.warpcast.com/v2/discover-frames` (official)
- *  2. Warpcast client API — `client.warpcast.com/v2/featured-frames` (fallback endpoint)
- *  3. Neynar "frames" channel feed — surfaces community-shared mini apps
- *  4. Curated static list — always-available offline fallback
+ *  1. Warpcast client API · `client.warpcast.com/v2/discover-frames` (official)
+ *  2. Warpcast client API · `client.warpcast.com/v2/featured-frames` (fallback endpoint)
+ *  3. Neynar "frames" channel feed · surfaces community-shared mini apps
+ *  4. Curated static list · always-available offline fallback
  */
 export async function fetchMiniApps(): Promise<MiniApp[]> {
   // ── 1: Official Farcaster ranked catalog (server proxies the SAME public
   //      endpoint the Farcaster/Base app uses: api.farcaster.xyz/v1/top-frameapps).
-  //      Already ranked #1..#N — preserve the order exactly. ──────────────────
+  //      Already ranked #1..#N · preserve the order exactly. ──────────────────
   try {
     const res = await fetch("/api/mini-apps", {
       headers: { accept: "application/json" },

@@ -12,7 +12,12 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
 import { metrics } from "./metrics.js";
+
+// This file runs as ESM (tsx) — bare `require` doesn't exist there, which
+// silently disabled the whole SQLite cache ("require is not defined").
+const requireCjs = createRequire(import.meta.url);
 
 const TTL_MS       = 12 * 60 * 60_000; // 12 hours
 const MAX_QUEUE    = 500;               // flush early if this many unique FIDs are pending
@@ -29,8 +34,7 @@ let _db: Db | null = null;
 
 function initDb(): Db | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Database = require("better-sqlite3");
+    const Database = requireCjs("better-sqlite3");
     const __dir  = dirname(fileURLToPath(import.meta.url));
     const dbPath = resolve(__dir, "../profile-cache.sqlite");
     const sqlite = new Database(dbPath) as import("better-sqlite3").Database;
@@ -129,8 +133,11 @@ function initDb(): Db | null {
   }
 }
 
+let _initTried = false;
+
 function db(): Db | null {
-  if (_db === null) _db = initDb();
+  // Init exactly once — a failed init must not re-run (and re-log) on every call.
+  if (!_initTried) { _initTried = true; _db = initDb(); }
   return _db;
 }
 

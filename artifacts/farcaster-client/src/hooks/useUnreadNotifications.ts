@@ -38,7 +38,7 @@ export function useUnreadNotifications(fid: number, neynarKey: string) {
       }
       latestTsRef.current = latest;
 
-      // First-ever load on this device (no stored cursor) — auto-catch-up so
+      // First-ever load on this device (no stored cursor) · auto-catch-up so
       // notifications already seen on another device don't light up the badge.
       // Only NEW notifications that arrive after this first load will count.
       if (seenRef.current === 0 && latest > 0) {
@@ -58,7 +58,7 @@ export function useUnreadNotifications(fid: number, neynarKey: string) {
     if (!fid) return;
     void refresh();
     lastFetchAt.current = Date.now();
-    // Poll every 5 min — matches the 5-min server-side cache TTL.
+    // Poll every 5 min · matches the 5-min server-side cache TTL.
     // No point polling faster than the cache expires.
     const id = setInterval(() => {
       void refresh();
@@ -75,7 +75,7 @@ export function useUnreadNotifications(fid: number, neynarKey: string) {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
   }, [fid, refresh]);
 
-  // Call when the user opens the Notifications tab — clears the badge.
+  // Call when the user opens the Notifications tab · clears the badge.
   // Pin to the newest notification's server timestamp (fallback: client clock),
   // so the badge stays cleared across reloads and account switches.
   const markSeen = useCallback(() => {

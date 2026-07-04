@@ -8,24 +8,34 @@ import {
 } from "viem";
 import { optimism, base } from "viem/chains";
 
+// PRIMARY transport is our server RPC proxy (/api/rpc/*): it forwards each call
+// from the server across a rotating pool of public nodes, skipping any that are
+// rate-limited or down · so from the browser it behaves like an unlimited,
+// CORS-free endpoint. Direct public nodes stay as fallbacks for backend-less
+// deployments. Index order is preserved (no rank) so the proxy is always tried first.
+const RPC_PROXY_OP = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/op` : "/api/rpc/op";
+const RPC_PROXY_BASE = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/base` : "/api/rpc/base";
+
 export const publicClient = createPublicClient({
   chain: optimism,
   transport: fallback([
-    http("https://mainnet.optimism.io"),
-    http("https://rpc.ankr.com/optimism"),
+    http(RPC_PROXY_OP),
+    http("https://optimism.llamarpc.com"),
+    http("https://optimism-rpc.publicnode.com"),
     http("https://optimism.drpc.org"),
-    http("https://1rpc.io/op"),
-  ]),
+    http("https://mainnet.optimism.io"),
+  ], { retryCount: 2 }),
 });
 
 export const basePublicClient = createPublicClient({
   chain: base,
   transport: fallback([
-    http("https://mainnet.base.org"),
-    http("https://rpc.ankr.com/base"),
+    http(RPC_PROXY_BASE),
+    http("https://base.llamarpc.com"),
+    http("https://base-rpc.publicnode.com"),
     http("https://base.drpc.org"),
-    http("https://1rpc.io/base"),
-  ]),
+    http("https://mainnet.base.org"),
+  ], { retryCount: 2 }),
 });
 
 export const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
@@ -139,7 +149,7 @@ export const KEY_REGISTRY_ADDRESS =
 export const KEY_GATEWAY_ADDRESS =
   "0x00000000fc56947c7e7183f8ca4b62398caadf0b" as const;
 
-// SignedKeyRequestValidator — used to generate EIP-712 SignedKeyRequest metadata (metadataType=1).
+// SignedKeyRequestValidator · used to generate EIP-712 SignedKeyRequest metadata (metadataType=1).
 export const SIGNED_KEY_REQUEST_VALIDATOR_ADDRESS =
   "0x00000000FC700472606ED4fA22623Acf62c60553" as const;
 
@@ -255,7 +265,7 @@ export async function registerSignerOnchain(
 
   // Try simulation first so the wallet shows accurate gas estimates.
   // If simulation fails (e.g. RPC quirk, stale state), fall back to a direct
-  // writeContract call — the wallet (Rainbow, MetaMask, etc.) will do its own
+  // writeContract call · the wallet (Rainbow, MetaMask, etc.) will do its own
   // simulation and surface any real revert to the user.
   try {
     const { request } = await publicClient.simulateContract({

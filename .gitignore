@@ -56,3 +56,8 @@ Thumbs.db
 
 # FidMarket indexer persisted state
 artifacts/farcaster-client/server/.fidmarket-tracked.json
+
+# Local runtime caches — regenerated on server start, not source
+artifacts/farcaster-client/*.sqlite
+artifacts/farcaster-client/*.sqlite-shm
+artifacts/farcaster-client/*.sqlite-wal

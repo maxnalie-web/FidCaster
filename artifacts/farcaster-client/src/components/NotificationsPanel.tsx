@@ -8,8 +8,7 @@ import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useProStatus, ProBadge } from "./ProBadge";
 
 function notifPrimaryFid(n: FlatNotif): number {
-  if (n.kind === "follow-group") return n.users[0]?.fid ?? 0;
-  if (n.kind === "like" || n.kind === "recast") return n.reactor.fid;
+  if (n.kind === "follow-group" || n.kind === "like-group" || n.kind === "recast-group") return n.users[0]?.fid ?? 0;
   return n.author.fid;
 }
 
@@ -25,8 +24,8 @@ function timeAgo(ts: string): string {
 
 type FlatNotif =
   | { kind: "follow-group"; id: string; ts: string; users: NeynarUser[] }
-  | { kind: "like"; id: string; ts: string; reactor: NeynarUser; castText: string; castHash?: string }
-  | { kind: "recast"; id: string; ts: string; reactor: NeynarUser; castText: string; castHash?: string }
+  | { kind: "like-group"; id: string; ts: string; users: NeynarUser[]; castText: string; castHash?: string }
+  | { kind: "recast-group"; id: string; ts: string; users: NeynarUser[]; castText: string; castHash?: string }
   | { kind: "reply"; id: string; ts: string; author: NeynarUser; text: string; castHash: string }
   | { kind: "mention"; id: string; ts: string; author: NeynarUser; text: string; castHash: string }
   | { kind: "quote"; id: string; ts: string; author: NeynarUser; text: string; castHash: string };
@@ -34,7 +33,7 @@ type FlatNotif =
 function flattenNotifications(notifs: NeynarNotification[]): FlatNotif[] {
   const result: FlatNotif[] = [];
   for (const n of notifs) {
-    // For reply/mention/quote: n.cast IS the event — use its timestamp (most accurate).
+    // For reply/mention/quote: n.cast IS the event · use its timestamp (most accurate).
     // For likes/recasts/follows: n.cast is the TARGET cast (not the event); use
     // most_recent_timestamp which Neynar sets to the time of the most recent reaction.
     const ts =
@@ -49,18 +48,24 @@ function flattenNotifications(notifs: NeynarNotification[]): FlatNotif[] {
         users: n.follows.map((f) => f.user),
       });
     } else if ((n.type === "likes" || n.type === "recasts") && n.reactions?.length) {
+      // Neynar groups every reaction on one cast into a single notification and gives
+      // only ONE group timestamp (most_recent_timestamp) · there are NO per-reactor
+      // times. Expanding into one row per reactor (the old behaviour) stamped them all
+      // with that single time, so dozens showed the same "10m ago", and every time a
+      // new reaction arrived the whole group's timestamp bumped and the days-old ones
+      // resurfaced as "new". Collapse to ONE grouped row (like follows) with a stable
+      // per-cast id so it updates in place instead of re-flooding the feed.
       const isLike = n.type === "likes";
-      for (const r of n.reactions) {
-        const castObj = r.cast ?? n.cast;
-        result.push({
-          kind: isLike ? "like" : "recast",
-          id: `${n.type}-${castObj?.hash ?? ts}-${r.user.fid}`,
-          ts,
-          reactor: r.user,
-          castText: castObj?.text ?? "",
-          castHash: castObj?.hash,
-        });
-      }
+      const castObj = n.reactions[0]?.cast ?? n.cast;
+      const castHash = castObj?.hash;
+      result.push({
+        kind: isLike ? "like-group" : "recast-group",
+        id: `${n.type}-${castHash ?? ts}`,
+        ts,
+        users: n.reactions.map((r) => r.user),
+        castText: castObj?.text ?? "",
+        castHash,
+      });
     } else if ((n.type === "reply" || n.type === "mention" || n.type === "quote") && n.cast) {
       result.push({
         kind: n.type === "reply" ? "reply" : n.type === "quote" ? "quote" : "mention",
@@ -192,58 +197,70 @@ function FollowGroupRow({
   );
 }
 
-/* ─── Reaction row (like / recast) ─── */
-function ReactionRow({
+/* ─── Reaction group row (likes / recasts on one cast) ─── */
+function ReactionGroupRow({
   n,
   navigate,
   proMap,
 }: {
-  n: Extract<FlatNotif, { kind: "like" | "recast" }>;
+  n: Extract<FlatNotif, { kind: "like-group" | "recast-group" }>;
   navigate: (p: string) => void;
   proMap: Record<number, boolean>;
 }) {
-  const isLike = n.kind === "like";
+  const isLike = n.kind === "like-group";
+  const shown = n.users.slice(0, 5);
+  const extra = n.users.length - shown.length;
+  const first = n.users[0];
+  if (!first) return null;
 
   return (
     <div
-      onClick={() => {
-        if (n.castHash) navigate(`/cast/${n.castHash}`);
-      }}
+      onClick={() => { if (n.castHash) navigate(`/cast/${n.castHash}`); }}
       className={cn(
         "flex items-start gap-3 px-4 py-3.5 hover:bg-accent/15 transition-colors",
         n.castHash && "cursor-pointer"
       )}
     >
-      <Avatar user={n.reactor} size={9} onClick={() => navigate(`/profile/${n.reactor.fid}`)} />
+      {/* Icon */}
+      <div className={cn(
+        "w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+        isLike ? "bg-rose-500/10" : "bg-emerald-500/10"
+      )}>
+        {isLike
+          ? <Heart className="w-4 h-4 text-rose-500 fill-current" />
+          : <Repeat2 className="w-4 h-4 text-emerald-500" strokeWidth={2} />}
+      </div>
 
       <div className="flex-1 min-w-0">
+        {/* Stacked avatars */}
+        <div className="flex items-center gap-0 mb-2 flex-wrap">
+          {shown.map((u, i) => (
+            <div key={u.fid} className={cn("relative", i > 0 && "-ml-2")}>
+              <div className="ring-2 ring-background rounded-full">
+                <Avatar user={u} size={8} onClick={() => navigate(`/profile/${u.fid}`)} />
+              </div>
+            </div>
+          ))}
+          {extra > 0 && (
+            <div className="-ml-2 relative z-0 w-8 h-8 rounded-full bg-muted ring-2 ring-background flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+              +{extra}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm leading-snug text-foreground">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/profile/${n.reactor.fid}`);
-              }}
+              onClick={(e) => { e.stopPropagation(); navigate(`/profile/${first.fid}`); }}
               className="font-semibold hover:text-primary transition-colors"
             >
-              {n.reactor.display_name}
+              {first.display_name}
             </button>
-            {proMap[n.reactor.fid] && (
-              <ProBadge size={11} className="ml-0.5 inline-block align-middle" />
+            {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
+            {n.users.length > 1 && (
+              <span className="text-muted-foreground"> and {n.users.length - 1} other{n.users.length - 1 > 1 ? "s" : ""}</span>
             )}
-            <span className="text-muted-foreground">
-              {isLike ? (
-                <>
-                  {" "}
-                  <Heart className="w-3 h-3 text-rose-500 fill-current inline-block -mt-0.5" /> liked your cast
-                </>
-              ) : (
-                <>
-                  {" "}
-                  <Repeat2 className="w-3 h-3 text-emerald-500 inline-block -mt-0.5" strokeWidth={2} /> recasted your cast
-                </>
-              )}
-            </span>
+            <span className="text-muted-foreground">{isLike ? " liked your cast" : " recasted your cast"}</span>
           </p>
           <span className="text-[11px] text-muted-foreground/60 shrink-0 mt-0.5">{timeAgo(n.ts)}</span>
         </div>
@@ -332,7 +349,7 @@ function NotifRow({
   proMap: Record<number, boolean>;
 }) {
   if (n.kind === "follow-group") return <FollowGroupRow n={n} navigate={navigate} proMap={proMap} />;
-  if (n.kind === "like" || n.kind === "recast") return <ReactionRow n={n} navigate={navigate} proMap={proMap} />;
+  if (n.kind === "like-group" || n.kind === "recast-group") return <ReactionGroupRow n={n} navigate={navigate} proMap={proMap} />;
   if (n.kind === "reply" || n.kind === "mention" || n.kind === "quote")
     return <ConversationRow n={n} navigate={navigate} proMap={proMap} />;
   return null;
@@ -347,7 +364,7 @@ const _notifCache = new Map<number, {
   cursor: string | undefined;
   fetchedAt: number;
 }>();
-const NOTIF_CACHE_TTL = 4 * 60 * 1000; // 4 minutes — don't re-fetch more often
+const NOTIF_CACHE_TTL = 4 * 60 * 1000; // 4 minutes · don't re-fetch more often
 
 /* ─── Filter tabs ─── */
 type FilterTab = "all" | "reactions" | "replies" | "follows";
@@ -404,11 +421,29 @@ export function NotificationsPanel() {
       .then((data) => {
         const fresh = flattenNotifications(data.notifications);
         setAllFlat(prev => {
+          // Follow-group ids embed most_recent_timestamp, which changes whenever a
+          // new follower arrives · so the "same" group re-appears under a new id.
+          // Drop stale prev follow-groups that share any user with a fresh group,
+          // otherwise the user sees duplicated "X followed you" rows after refresh.
+          const freshFollowFids = new Set(
+            fresh.flatMap(n => (n.kind === "follow-group" ? n.users.map(u => u.fid) : []))
+          );
+          // Reaction groups use a STABLE per-cast id, so a fresh version is the current
+          // state of that group · let it REPLACE the previous one (updated count +
+          // timestamp) instead of both coexisting. This is what stops days-old
+          // reactions from resurfacing as a flood of "new" rows: one group row simply
+          // moves up in place when (and only when) genuinely new activity arrives.
+          const freshIds = new Set(fresh.map(n => n.id));
+          const prevKept = prev.filter(p => {
+            if (p.kind === "follow-group") return !p.users.some(u => freshFollowFids.has(u.fid));
+            if (p.kind === "like-group" || p.kind === "recast-group") return !freshIds.has(p.id);
+            return true;
+          });
           // Prepend genuinely new notifications; keep existing ones with their timestamps
-          const seen = new Set(prev.map(p => p.id));
+          const seen = new Set(prevKept.map(p => p.id));
           const merged = [
             ...fresh.filter(n => !seen.has(n.id)),
-            ...prev,
+            ...prevKept,
           ];
           _notifCache.set(fidNum, { notifs: merged, cursor: data.next?.cursor, fetchedAt: Date.now() });
           return merged;
@@ -446,20 +481,22 @@ export function NotificationsPanel() {
       });
       setCursor(newCursor);
     } catch {
-      /* ignore */
+      // Allow retrying this cursor · otherwise the `lastCursorRef === cursor`
+      // guard permanently blocks pagination after one failed fetch.
+      lastCursorRef.current = undefined;
     } finally {
       setLoadingMore(false);
     }
   }
 
   const filtered = allFlat.filter((n) => {
-    if (filter === "reactions") return n.kind === "like" || n.kind === "recast";
+    if (filter === "reactions") return n.kind === "like-group" || n.kind === "recast-group";
     if (filter === "replies") return n.kind === "reply" || n.kind === "mention" || n.kind === "quote";
     if (filter === "follows") return n.kind === "follow-group";
     return true;
   });
 
-  // Always sort newest first — no sort toggle needed
+  // Always sort newest first · no sort toggle needed
   const sorted = [...filtered].sort((a, b) => {
     const at = Date.parse(a.ts) || 0;
     const bt = Date.parse(b.ts) || 0;

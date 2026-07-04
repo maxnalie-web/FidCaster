@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
  * IntersectionObserver).
  *
  * Why a scroll listener: the sentinel lives *inside* an overflow container, and
- * wiring an observer through a ref proved fragile — during commit the sentinel's
+ * wiring an observer through a ref proved fragile · during commit the sentinel's
  * ref attaches before its parent container's ref, so the observer ended up with
  * the wrong root and silently stopped firing after a page or two. A scroll
  * listener attached in an effect (when all refs are guaranteed set) is reliable.
@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
  * we're not already loading. After each load it re-checks, so short content or a
  * fast flick keeps paging all the way to the end.
  *
- * `rootRef` — the scrollable container for in-sheet lists; omit it for lists that
+ * `rootRef` · the scrollable container for in-sheet lists; omit it for lists that
  * scroll the page/window (notifications, thread replies).
  *
  * Returns a ref to place on a trailing sentinel element (kept for layout/compat).

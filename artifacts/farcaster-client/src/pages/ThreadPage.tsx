@@ -8,22 +8,32 @@ import { CastComposer } from "@/components/CastComposer";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { cn } from "@/lib/utils";
 
+// Module-level (survives unmount), keyed by cast hash · lets pressing back after
+// opening a reply's own thread return to the PARENT thread instantly at the exact
+// same scroll position, instead of re-fetching from scratch. Without this, the
+// loading spinner briefly shrinks the page height, the browser clamps the scroll
+// position to 0, and content only repopulates afterward · so back felt like it
+// "jumped to the top" before a second back press actually left the thread.
+const _threadCache = new Map<string, { cast: NeynarCast; replies: NeynarCast[]; repliesCursor?: string; scrollY: number }>();
+
 export function ThreadPage() {
   const [, params] = useRoute("/cast/:hash");
   const [, navigate] = useLocation();
   const { fid, neynarKey, profile, signerApproved, localSigner } = useWallet();
   const viewerFid = fid ? Number(fid) : 0;
   const hash = params?.hash ?? "";
+  const cachedForHash = _threadCache.get(hash);
 
-  const [cast, setCast] = useState<NeynarCast | null>(null);
-  const [replies, setReplies] = useState<NeynarCast[]>([]);
-  const [repliesCursor, setRepliesCursor] = useState<string | undefined>();
+  const [cast, setCast] = useState<NeynarCast | null>(() => cachedForHash?.cast ?? null);
+  const [replies, setReplies] = useState<NeynarCast[]>(() => cachedForHash?.replies ?? []);
+  const [repliesCursor, setRepliesCursor] = useState<string | undefined>(() => cachedForHash?.repliesCursor);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cachedForHash);
   const [error, setError] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
   const [highlightHash, setHighlightHash] = useState<string>("");
   const composerRef = useRef<HTMLDivElement>(null);
+  const scrollYRef = useRef(typeof window !== "undefined" ? window.scrollY : 0);
 
   // Extract target reply hash from URL fragment (#0xabc...)
   const targetHash = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
@@ -32,6 +42,15 @@ export function ThreadPage() {
 
   useEffect(() => {
     if (!hash) return;
+    // Already have this exact thread cached (e.g. came back via browser back) ·
+    // state was already restored by the lazy initializers above, so just
+    // restore scroll and skip the network round-trip entirely.
+    const cached = _threadCache.get(hash);
+    if (cached) {
+      setLoading(false);
+      requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
+      return;
+    }
     setLoading(true);
     setError(null);
     getCastConversation(hash, viewerFid, neynarKey)
@@ -44,6 +63,23 @@ export function ThreadPage() {
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load thread"))
       .finally(() => setLoading(false));
   }, [hash, viewerFid, neynarKey]);
+
+  // Track scroll continuously so it can be captured the instant this thread is
+  // left (either navigating deeper into a reply, or away entirely).
+  useEffect(() => {
+    const onScroll = () => { scrollYRef.current = window.scrollY; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Persist this thread's state on unmount/hash-change so returning to it is instant.
+  useEffect(() => {
+    if (!hash) return;
+    return () => {
+      if (cast) _threadCache.set(hash, { cast, replies, repliesCursor, scrollY: scrollYRef.current });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hash, cast, replies, repliesCursor]);
 
   async function loadMoreReplies() {
     if (!repliesCursor || loadingMore || !hash) return;

@@ -83,7 +83,7 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
   } catch (e: unknown) {
     const err = e as Error & { status?: number; body?: unknown };
     if (err.status === 429) {
-      res.status(503).set("Retry-After", "5").json({ error: "Rate limit — retry in 5s" });
+      res.status(503).set("Retry-After", "5").json({ error: "Rate limit · retry in 5s" });
       return;
     }
     if (err.status) { res.status(err.status).json(err.body ?? { error: err.message }); return; }
@@ -226,6 +226,97 @@ async function followListHandler(mode: "followers" | "following", req: Request, 
   }
 }
 
+// ── Raw follow-graph scan via free hubs (zero Neynar credits) ─────────────────
+// linksByTargetFid / linksByFid return up to ~2000 link messages per call with
+// reverse=true (newest first) — 20× fewer calls than Neynar's 100-user pages and
+// completely free. Used by the Grow fast path, which only needs FIDs up front
+// and hydrates profiles lazily through the SQLite-backed /user/bulk cache.
+//
+// Page tokens are hub-specific, so the cursor we hand out embeds the hub index
+// ("<hubIdx>:<token>") and pagination stays pinned to the hub that issued it.
+const LINK_HUBS = [
+  "https://snap.farcaster.xyz:3381/v1", // official Farcaster snapchain node
+  "https://hub.pinata.cloud/v1",
+];
+const linkHubFailUntil = new Map<string, number>();
+
+type LinkFidsPage = { fids: number[]; nextCursor?: string };
+type HubLinkMsg = { data?: { type?: string; fid?: number; linkBody?: { targetFid?: number } } };
+
+async function fetchLinkFidsFromHub(
+  base: string, hubIdx: number,
+  type: "followers" | "following", fid: number, pageToken?: string,
+): Promise<LinkFidsPage> {
+  const q = type === "followers"
+    ? `linksByTargetFid?target_fid=${fid}&link_type=follow&pageSize=1000&reverse=true`
+    : `linksByFid?fid=${fid}&link_type=follow&pageSize=1000&reverse=true`;
+  const url = `${base}/${q}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+  if (!r.ok) throw new Error(`link hub HTTP ${r.status}`);
+  const d = await r.json() as { messages?: HubLinkMsg[]; nextPageToken?: string };
+  const fids: number[] = [];
+  const seen = new Set<number>();
+  for (const m of d.messages ?? []) {
+    if (m.data?.type !== "MESSAGE_TYPE_LINK_ADD") continue;
+    const f = type === "followers" ? Number(m.data.fid) : Number(m.data.linkBody?.targetFid);
+    if (Number.isInteger(f) && f > 0 && !seen.has(f)) { seen.add(f); fids.push(f); }
+  }
+  return {
+    fids,
+    nextCursor: d.nextPageToken ? `${hubIdx}:${d.nextPageToken}` : undefined,
+  };
+}
+
+async function linkFidsHandler(req: Request, res: Response): Promise<void> {
+  const fid = Number(req.query.fid);
+  const type = req.query.type === "following" ? "following" : "followers";
+  if (!Number.isInteger(fid) || fid <= 0) { res.status(400).json({ error: "fid required" }); return; }
+
+  const rawCursor = (req.query.cursor as string) || "";
+  let pinnedHub = -1;
+  let pageToken: string | undefined;
+  if (rawCursor) {
+    const sep = rawCursor.indexOf(":");
+    pinnedHub = Number(rawCursor.slice(0, sep));
+    pageToken = rawCursor.slice(sep + 1);
+    if (!Number.isInteger(pinnedHub) || pinnedHub < 0 || pinnedHub >= LINK_HUBS.length) {
+      res.status(400).json({ error: "invalid cursor" }); return;
+    }
+  }
+
+  const cacheKey = `linkfids:${type}:${fid}:${rawCursor || "start"}`;
+  const hit = cacheGet(cacheKey);
+  if (hit !== undefined) { res.setHeader("X-Cache", "HIT"); res.json(hit); return; }
+
+  try {
+    const result = await singleFlight(cacheKey, async () => {
+      const cached = cacheGet(cacheKey);
+      if (cached !== undefined) return cached as LinkFidsPage;
+      // First page: try any healthy hub. Paginated: stay on the cursor's hub.
+      const order = pinnedHub >= 0
+        ? [pinnedHub]
+        : LINK_HUBS.map((_, i) => i).filter(i => Date.now() >= (linkHubFailUntil.get(LINK_HUBS[i]) ?? 0));
+      const tryOrder = order.length > 0 ? order : LINK_HUBS.map((_, i) => i);
+      let lastErr: unknown;
+      for (const i of tryOrder) {
+        try {
+          const page = await fetchLinkFidsFromHub(LINK_HUBS[i], i, type, fid, pageToken);
+          cacheSet(cacheKey, page, 600_000); // 10 min — follow graphs change slowly
+          return page;
+        } catch (e) {
+          lastErr = e;
+          linkHubFailUntil.set(LINK_HUBS[i], Date.now() + 60_000);
+        }
+      }
+      throw lastErr instanceof Error ? lastErr : new Error("all link hubs failed");
+    });
+    res.setHeader("X-Cache", "MISS");
+    res.json(result);
+  } catch (e: unknown) {
+    res.status(502).json({ error: e instanceof Error ? e.message : "link scan failed" });
+  }
+}
+
 // ── Bulk user lookup with SQLite profile cache ────────────────────────────────
 // /api/fc/farcaster/user/bulk?fids=1,2,3&viewer_fid=...
 // Checks SQLite first; only fetches missing FIDs from Neynar.
@@ -288,7 +379,7 @@ async function bulkUserHandler(req: Request, res: Response): Promise<void> {
   } catch (e: unknown) {
     const err = e as Error & { status?: number; body?: unknown };
     if (err.status === 429) {
-      res.status(503).set("Retry-After", "5").json({ error: "Rate limit — retry in 5s" });
+      res.status(503).set("Retry-After", "5").json({ error: "Rate limit · retry in 5s" });
       return;
     }
     if (err.status) { res.status(err.status).json(err.body ?? { error: err.message }); return; }
@@ -342,6 +433,11 @@ export function registerProxyRoutes(app: Express): void {
   });
   app.get("/api/farcaster/following", (req: Request, res: Response) => {
     void followListHandler("following", req, res);
+  });
+
+  // ── Raw follow-graph FIDs from free hubs (Grow fast path, zero credits) ───
+  app.get("/api/farcaster/link-fids", (req: Request, res: Response) => {
+    void linkFidsHandler(req, res);
   });
 
   // ── Hub user proxy ─────────────────────────────────────────────────────────

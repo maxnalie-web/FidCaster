@@ -34,7 +34,7 @@ type FarcasterAction =
   | { type: "unfollow";        targetFid: number }
   | { type: "cast";            text: string; parentHash?: string; parentFid?: number; parentUrl?: string }
   | { type: "delete-cast";     castHash: string }
-  | { type: "update-user-data"; dataType: "pfp" | "display" | "bio"; value: string };
+  | { type: "update-user-data"; dataType: "pfp" | "display" | "bio" | "banner"; value: string };
 
 function hexToBytes(hex: string): Uint8Array {
   const h = hex.startsWith("0x") ? hex.slice(2) : hex;
@@ -76,6 +76,7 @@ async function sign(
   } else if (action.type === "update-user-data") {
     const typeMap: Record<string, UserDataType> = {
       pfp: UserDataType.PFP, display: UserDataType.DISPLAY, bio: UserDataType.BIO,
+      banner: UserDataType.BANNER,
     };
     result = await makeUserDataAdd(
       { type: typeMap[action.dataType], value: action.value }, dataOptions, signer,

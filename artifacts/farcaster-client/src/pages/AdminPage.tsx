@@ -259,7 +259,7 @@ function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
       if (tries >= MAX_PIN_TRIES) {
         localStorage.setItem(ADMIN_PIN_LOCK_KEY, String(Date.now() + LOCKOUT_MS));
         localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
-        setError("Too many wrong attempts — locked for 5 minutes.");
+        setError("Too many wrong attempts · locked for 5 minutes.");
       } else {
         setError(`Wrong PIN. ${MAX_PIN_TRIES - tries} attempt${MAX_PIN_TRIES - tries !== 1 ? "s" : ""} left.`);
       }
@@ -327,7 +327,7 @@ function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-destructive/8 border border-destructive/20">
               <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
               <p className="text-[12px] text-destructive">
-                Locked — wait {Math.floor(lockInfo.secsLeft / 60)}:{String(lockInfo.secsLeft % 60).padStart(2, "0")}
+                Locked · wait {Math.floor(lockInfo.secsLeft / 60)}:{String(lockInfo.secsLeft % 60).padStart(2, "0")}
               </p>
             </div>
           )}
@@ -383,7 +383,7 @@ export function AdminPage() {
   const [cfg, update] = useAdminConfig();
   const [activeSection, setActiveSection] = useState<Section>("branding");
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
-  // PIN gate — session-scoped; cleared on browser/tab close
+  // PIN gate · session-scoped; cleared on browser/tab close
   const [pinUnlocked, setPinUnlocked] = useState(
     () => sessionStorage.getItem(PIN_UNLOCK_KEY) === "1"
   );
@@ -437,7 +437,7 @@ export function AdminPage() {
     );
   }
 
-  // PIN gate — shown every new browser session even for the admin FID
+  // PIN gate · shown every new browser session even for the admin FID
   if (!pinUnlocked) {
     return <PinGate onUnlocked={() => setPinUnlocked(true)} />;
   }
@@ -583,7 +583,7 @@ export function AdminPage() {
               <>
                 <Card title="Hero Section">
                   <Field>
-                    <Label sub="Main headline — use \\n for line breaks">Hero Title</Label>
+                    <Label sub="Main headline · use \\n for line breaks">Hero Title</Label>
                     <Txtarea value={cfg.copy.heroTitle} onChange={v => set("copy", "heroTitle", v)} rows={3} placeholder="Cast. Connect.\nTrade your\nFarcaster ID." />
                   </Field>
                   <Field>
@@ -713,14 +713,14 @@ export function AdminPage() {
                 </Field>
                 <Field>
                   <Label sub="Meta description tag">Meta Description</Label>
-                  <Txtarea value={cfg.seo.metaDescription} onChange={v => set("seo", "metaDescription", v)} rows={2} placeholder="FidCaster — a luxury Farcaster client. Your keys, your identity." />
+                  <Txtarea value={cfg.seo.metaDescription} onChange={v => set("seo", "metaDescription", v)} rows={2} placeholder="FidCaster · a luxury Farcaster client. Your keys, your identity." />
                 </Field>
                 <Field>
-                  <Label sub="og:image URL — shown when sharing on social media">OG Image URL</Label>
+                  <Label sub="og:image URL · shown when sharing on social media">OG Image URL</Label>
                   <Inp value={cfg.seo.ogImage} onChange={v => set("seo", "ogImage", v)} placeholder="https://..." />
                 </Field>
                 <Field>
-                  <Label sub="og:url — canonical URL of the page">OG URL</Label>
+                  <Label sub="og:url · canonical URL of the page">OG URL</Label>
                   <Inp value={cfg.seo.ogUrl} onChange={v => set("seo", "ogUrl", v)} placeholder="https://fidcaster.app" />
                 </Field>
               </Card>
@@ -942,7 +942,7 @@ export function AdminPage() {
             {activeSection === "users" && (
               <>
                 <Card title="Grow Tools Access">
-                  <InfoBox>When enabled, ALL signed-in users get access to Grow (batch follow/unfollow) tools — no need to add them individually below.</InfoBox>
+                  <InfoBox>When enabled, ALL signed-in users get access to Grow (batch follow/unfollow) tools · no need to add them individually below.</InfoBox>
                   <ToggleRow enabled={cfg.features.growToolsForAll} onChange={v => set("features", "growToolsForAll", v)} label="Grow tools for everyone" sub="If off, only users in the privileged list below can use batch tools" />
                 </Card>
                 <InfoBox>Users on this list get batch follow, advanced tools, and privileged features (when Grow tools for everyone is off).</InfoBox>

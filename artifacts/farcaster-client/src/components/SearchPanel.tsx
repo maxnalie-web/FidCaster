@@ -1,15 +1,47 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { Search, Loader2, UserPlus, UserCheck, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Search, Loader2, UserPlus, UserCheck, Check, ChevronRight, Users as UsersIcon } from "lucide-react";
+import { cn, formatCompactCount } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
-import { searchUsers, searchCasts, hasPowerBadge, type NeynarUser, type NeynarCast } from "@/lib/neynar";
+import { searchUsers, searchCasts, searchChannels, hasPowerBadge, type NeynarUser, type NeynarCast, type NeynarChannel } from "@/lib/neynar";
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hubFollow } from "@/lib/hub-submit";
 import { CastCard } from "./CastCard";
 
-type SearchTab = "users" | "casts";
+type SearchTab = "users" | "casts" | "channels";
+
+function ChannelRow({ channel, onOpen }: { channel: NeynarChannel; onOpen: (id: string) => void }) {
+  return (
+    <button
+      onClick={() => onOpen(channel.id)}
+      className="w-full flex items-center gap-3 px-5 py-4 border-b border-border/40 hover:bg-accent/20 transition-colors text-left"
+    >
+      <div className="w-10 h-10 rounded-xl overflow-hidden bg-primary/10 shrink-0 ring-1 ring-border">
+        {channel.image_url ? (
+          <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <span className="w-full h-full flex items-center justify-center text-sm font-bold text-primary">
+            {channel.name?.[0]?.toUpperCase()}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground truncate">{channel.name}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="text-[11px] text-muted-foreground truncate">/{channel.id}</p>
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+            <UsersIcon className="w-2.5 h-2.5" /> {formatCompactCount(channel.follower_count)}
+          </span>
+        </div>
+        {channel.description && (
+          <p className="text-xs text-muted-foreground/70 mt-1 line-clamp-1">{channel.description}</p>
+        )}
+      </div>
+      <ChevronRight className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+    </button>
+  );
+}
 
 function FollowButton({ user, viewerFid }: { user: NeynarUser; viewerFid: number }) {
   const { fid, localSigner, signerApproved, neynarKey } = useWallet();
@@ -111,14 +143,16 @@ export function SearchPanel() {
   const [tab, setTab] = useState<SearchTab>("users");
   const [users, setUsers] = useState<NeynarUser[]>([]);
   const [casts, setCasts] = useState<NeynarCast[]>([]);
+  const [channels, setChannels] = useState<NeynarChannel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, navigate] = useLocation();
   function goToProfile(user: NeynarUser) { navigate(`/profile/${user.fid}`); }
+  function goToChannel(id: string) { navigate(`/channel/${id}`); }
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!query.trim() || query.length < 2) { setUsers([]); setCasts([]); return; }
+    if (!query.trim() || query.length < 2) { setUsers([]); setCasts([]); setChannels([]); return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
@@ -127,9 +161,12 @@ export function SearchPanel() {
         if (tab === "users") {
           const res = await searchUsers(query, fidNum, neynarKey);
           setUsers(res.result.users);
-        } else {
+        } else if (tab === "casts") {
           const res = await searchCasts(query, fidNum, neynarKey);
           setCasts(res.result.casts);
+        } else {
+          const res = await searchChannels(query, neynarKey);
+          setChannels(res.channels);
         }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Search failed");
@@ -140,7 +177,7 @@ export function SearchPanel() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, tab, fidNum, neynarKey]);
 
-  function handleTabChange(t: SearchTab) { setTab(t); setUsers([]); setCasts([]); }
+  function handleTabChange(t: SearchTab) { setTab(t); setUsers([]); setCasts([]); setChannels([]); }
 
   return (
     <div>
@@ -157,7 +194,7 @@ export function SearchPanel() {
           />
         </div>
         <div className="flex gap-1">
-          {(["users", "casts"] as SearchTab[]).map((t) => (
+          {(["users", "casts", "channels"] as SearchTab[]).map((t) => (
             <button key={t} onClick={() => handleTabChange(t)}
               className={cn("px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all tab-pill",
                 tab === t ? "active" : "text-muted-foreground hover:text-foreground")}>
@@ -177,10 +214,14 @@ export function SearchPanel() {
         <div className="text-center py-12 text-sm text-muted-foreground">No users found</div>
       ) : tab === "casts" && casts.length === 0 ? (
         <div className="text-center py-12 text-sm text-muted-foreground">No casts found</div>
+      ) : tab === "channels" && channels.length === 0 ? (
+        <div className="text-center py-12 text-sm text-muted-foreground">No channels found</div>
       ) : tab === "users" ? (
         users.map((u) => <UserRow key={u.fid} user={u} viewerFid={fidNum} onViewProfile={goToProfile} />)
-      ) : (
+      ) : tab === "casts" ? (
         casts.map((c) => <CastCard key={c.hash} cast={c} viewerFid={fidNum} compact onViewProfile={goToProfile} />)
+      ) : (
+        channels.map((c) => <ChannelRow key={c.id} channel={c} onOpen={goToChannel} />)
       )}
     </div>
   );

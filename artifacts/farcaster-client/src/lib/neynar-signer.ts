@@ -1,5 +1,5 @@
 /**
- * Neynar Managed Signer — create, approve, and persist.
+ * Neynar Managed Signer · create, approve, and persist.
  * This approach avoids on-chain registration (no ETH needed).
  * The user approves once in Warpcast; after that all writes use the JSON API.
  */
@@ -56,7 +56,7 @@ export async function createNeynarSigner(neynarKey: string): Promise<NeynarSigne
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`Failed to create signer: HTTP ${res.status} — ${txt}`);
+    throw new Error(`Failed to create signer: HTTP ${res.status} · ${txt}`);
   }
   return res.json() as Promise<NeynarSignerInfo>;
 }
@@ -69,7 +69,7 @@ export async function checkNeynarSigner(signerUuid: string, neynarKey: string): 
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`Failed to check signer: HTTP ${res.status} — ${txt}`);
+    throw new Error(`Failed to check signer: HTTP ${res.status} · ${txt}`);
   }
   return res.json() as Promise<NeynarSignerInfo>;
 }

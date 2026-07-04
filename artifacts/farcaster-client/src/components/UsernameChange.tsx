@@ -7,6 +7,7 @@ import { useMarketWallet } from "@/hooks/useMarketWallet";
 import {
   checkFnameAvailability,
   transferFname,
+  fetchFnameForFid,
   FNAME_EIP712_DOMAIN,
   FNAME_EIP712_TYPES,
 } from "@/lib/farcaster-api";
@@ -115,7 +116,14 @@ export function UsernameChange() {
   const [fnamePhase, setFnamePhase] = useState<FnamePhase>({ id: "idle" });
   const [successPopup, setSuccessPopup] = useState<{ type: "onchain" | "fname"; name: string } | null>(null);
 
-  const hasCurrentFname = Boolean(profile?.username && !profile.username.startsWith("!"));
+  // A displayed username containing "." is an ENS name, not an fname · it has no
+  // record on fnames.farcaster.xyz and must never be sent there for release.
+  const hasCurrentFname = Boolean(
+    profile?.username && !profile.username.startsWith("!") && !profile.username.includes(".")
+  );
+  // Actual fname being released this run · drives the "Sign to release @…" label
+  // (may differ from the displayed username when that is an ENS alias).
+  const [releasingName, setReleasingName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!newName || newName.length < 2) { setCheckState("idle"); return; }
@@ -153,27 +161,33 @@ export function UsernameChange() {
     const now = Math.floor(Date.now() / 1000);
 
     try {
-      if (hasCurrentFname && profile?.username) {
-        // Pre-check: the fname server validates the signature against the FID's CURRENT
-        // on-chain custody address (IdRegistry.custodyOf). The connected signing wallet must
-        // equal that custody · the transfer-history "owner" can be stale and is NOT what the
-        // server checks, so we compare against the live on-chain custody instead.
-        try {
-          const custody = await getCustodyAddress(BigInt(fidNum));
-          if (custody && custody.toLowerCase() !== effectiveAddress.toLowerCase()) {
-            // Connected wallet is genuinely not the custody · signing would fail. Warn & pause.
-            setFnamePhase({ id: "wallet-mismatch", ownerAddr: custody });
-            return;
-          }
-        } catch { /* skip pre-check on RPC error · let the server be the source of truth */ }
+      // Pre-check: the fname server validates the signature against the FID's CURRENT
+      // on-chain custody address (IdRegistry.custodyOf). The connected signing wallet must
+      // equal that custody · the transfer-history "owner" can be stale and is NOT what the
+      // server checks, so we compare against the live on-chain custody instead.
+      // Applies to the claim signature too, so it runs regardless of release.
+      try {
+        const custody = await getCustodyAddress(BigInt(fidNum));
+        if (custody && custody.toLowerCase() !== effectiveAddress.toLowerCase()) {
+          // Connected wallet is genuinely not the custody · signing would fail. Warn & pause.
+          setFnamePhase({ id: "wallet-mismatch", ownerAddr: custody });
+          return;
+        }
+      } catch { /* skip pre-check on RPC error · let the server be the source of truth */ }
 
+      // Release what the fname server actually has on record for this FID · the
+      // displayed username can be an ENS alias (e.g. "name.eth") that the fname
+      // server doesn't know, which made release fail with "Validation failure".
+      const currentFname = await fetchFnameForFid(fidNum);
+      if (currentFname) {
+        setReleasingName(currentFname);
         setFnamePhase({ id: "signing-release" });
         const releaseTs = now - 1;
-        const releaseSig = await signFnameProof(profile.username, releaseTs, effectiveAddress);
+        const releaseSig = await signFnameProof(currentFname, releaseTs, effectiveAddress);
 
         setFnamePhase({ id: "releasing" });
         const releaseRes = await transferFname({
-          name: profile.username,
+          name: currentFname,
           from: fidNum,
           to: 0,
           fid: fidNum,
@@ -228,12 +242,16 @@ export function UsernameChange() {
     const fidNum = Number(fid);
     const now = Math.floor(Date.now() / 1000);
     try {
-      if (hasCurrentFname && profile?.username) {
+      // Same server-truth rule as handleFnameChange: release the fname the server
+      // has on record, never the displayed username (which may be an ENS alias).
+      const currentFname = await fetchFnameForFid(fidNum);
+      if (currentFname) {
+        setReleasingName(currentFname);
         setFnamePhase({ id: "signing-release" });
         const releaseTs = now - 1;
-        const releaseSig = await signFnameProof(profile.username, releaseTs, effectiveAddress);
+        const releaseSig = await signFnameProof(currentFname, releaseTs, effectiveAddress);
         setFnamePhase({ id: "releasing" });
-        const releaseRes = await transferFname({ name: profile.username, from: fidNum, to: 0, fid: fidNum, owner: effectiveAddress, timestamp: releaseTs, signature: releaseSig });
+        const releaseRes = await transferFname({ name: currentFname, from: fidNum, to: 0, fid: fidNum, owner: effectiveAddress, timestamp: releaseTs, signature: releaseSig });
         if (!releaseRes.success) {
           setFnamePhase({ id: "error", msg: releaseRes.error ?? "Release failed · the fname server rejected the signature. You may need to connect the original custody wallet." });
           return;
@@ -258,7 +276,7 @@ export function UsernameChange() {
   }
 
   const fnameLabel: Record<string, string> = {
-    "signing-release": `Sign to release @${profile?.username ?? "…"}`,
+    "signing-release": `Sign to release @${releasingName ?? profile?.username ?? "…"}`,
     "releasing": "Submitting release…",
     "signing-claim": `Sign to claim @${newName}`,
     "claiming": "Submitting claim…",
@@ -276,8 +294,9 @@ export function UsernameChange() {
           <div className="space-y-1">
             <p className="text-sm font-bold text-foreground">Connect a wallet to continue</p>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              You are signed in via Farcaster (read-only). To change your username on-chain, connect
-              your custody wallet below · no need to sign out.
+              You're signed in via Farcaster with full casting, liking, and following access.
+              Username changes are a separate on-chain action that needs your custody wallet's
+              signature though · connect it below · no need to sign out.
             </p>
           </div>
         </div>

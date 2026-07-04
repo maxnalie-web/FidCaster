@@ -1,5 +1,5 @@
 /**
- * Neynar JSON write API — no protobuf needed.
+ * Neynar JSON write API · no protobuf needed.
  * Requires a valid Neynar API key + approved signer_uuid.
  */
 
@@ -14,7 +14,7 @@ async function neynarPost(path: string, body: unknown, key: string): Promise<voi
   });
   if (res.ok) return;
   const txt = await res.text().catch(() => "");
-  throw new Error(`Neynar ${path}: HTTP ${res.status} — ${txt}`);
+  throw new Error(`Neynar ${path}: HTTP ${res.status} · ${txt}`);
 }
 
 async function neynarDelete(path: string, body: unknown, key: string): Promise<void> {
@@ -26,7 +26,7 @@ async function neynarDelete(path: string, body: unknown, key: string): Promise<v
   });
   if (res.ok) return;
   const txt = await res.text().catch(() => "");
-  throw new Error(`Neynar ${path}: HTTP ${res.status} — ${txt}`);
+  throw new Error(`Neynar ${path}: HTTP ${res.status} · ${txt}`);
 }
 
 export async function neynarPublishCast(
