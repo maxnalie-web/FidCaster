@@ -8,6 +8,7 @@ import {
   Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge,
 } from "lucide-react";
 import { SpamAnalyzerSheet } from "@/components/SpamAnalyzerSheet";
+import { getSpamLabelsFor, type SpamLabelValue } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { useEthPrice } from "@/hooks/useEthPrice";
@@ -315,6 +316,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const isOwnProfile = targetFid === myFidNum;
   const isPro = useIsPro(targetFid);
   const [user, setUser] = useState<NeynarUser | null>(null);
+  const [spamLabel, setSpamLabel] = useState<SpamLabelValue | undefined>(undefined);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -400,6 +402,18 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         if (d.listing.priceEth) setMarketListing(d.listing.priceEth);
       })
       .catch(() => { /* market data optional */ });
+    return () => { cancelled = true; };
+  }, [targetFid]);
+
+  // Real Farcaster spam label (0/2, see src/lib/spam-labels.ts) · shown in the
+  // "···" menu below the FID for any profile, not just your own.
+  useEffect(() => {
+    if (!targetFid) { setSpamLabel(undefined); return; }
+    let cancelled = false;
+    setSpamLabel(undefined);
+    getSpamLabelsFor([targetFid]).then((labels) => {
+      if (!cancelled) setSpamLabel(labels[targetFid]);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [targetFid]);
 
@@ -646,6 +660,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                               <span className="text-muted-foreground">FID</span>
                               <span className="font-mono font-semibold">{targetFid}</span>
                             </button>
+                            {spamLabel !== undefined && (
+                              <div className="flex items-center justify-between gap-2.5 px-3.5 py-2 text-sm">
+                                <span className="text-muted-foreground">Spam label</span>
+                                <span className={cn("font-semibold", spamLabel === 0 ? "text-rose-500" : spamLabel === 2 ? "text-emerald-500" : "text-amber-500")}>
+                                  {spamLabel} · {spamLabel === 0 ? "Spam" : spamLabel === 2 ? "Not spam" : "Nerfed"}
+                                </span>
+                              </div>
+                            )}
                             <div className="my-1 border-t border-border" />
                             <button
                               onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied")); setShowMoreMenu(false); }}
@@ -705,6 +727,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                               <span className="text-muted-foreground">FID</span>
                               <span className="font-mono font-semibold">{targetFid}</span>
                             </button>
+                            {spamLabel !== undefined && (
+                              <div className="flex items-center justify-between gap-2.5 px-3.5 py-2 text-sm">
+                                <span className="text-muted-foreground">Spam label</span>
+                                <span className={cn("font-semibold", spamLabel === 0 ? "text-rose-500" : spamLabel === 2 ? "text-emerald-500" : "text-amber-500")}>
+                                  {spamLabel} · {spamLabel === 0 ? "Spam" : spamLabel === 2 ? "Not spam" : "Nerfed"}
+                                </span>
+                              </div>
+                            )}
                             {extUser.verified_addresses?.eth_addresses?.[0] && (
                               <button
                                 onClick={() => {

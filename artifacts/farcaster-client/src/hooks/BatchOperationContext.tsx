@@ -45,12 +45,34 @@ interface PersistedBatch {
   done: number;
   errors: number;
   skipped: number;
+  /** Whether the floating pill was hidden (Active-tab-only) · survives refresh. */
+  hidden?: boolean;
 }
 
 /** Composite key identifying one (account, mode) slot · used for the ops map,
  *  cancel refs, and localStorage persistence alike. */
 function opKey(fid: number, mode: "follow" | "unfollow") { return `${fid}:${mode}`; }
 function batchKey(fid: number, mode: "follow" | "unfollow") { return `${BATCH_KEY_PREFIX}${fid}_${mode}`; }
+function stopKey(fid: number, mode: "follow" | "unfollow") { return `fc_batch_stopped_${fid}_${mode}`; }
+
+// A user-initiated Stop sets the cancel flag a runOne might not observe until
+// its current retry wait (rate-limit backoff can be up to 90s) finishes ·
+// during that window the loop can still be mid-flight when a refresh happens.
+// This tombstone tells the resume-scan below "don't resurrect this one" for
+// long enough to cover that window, even if a stale snapshot still exists.
+const STOP_TOMBSTONE_MS = 2 * 60_000;
+
+function markStopped(fid: number, mode: "follow" | "unfollow") {
+  try { localStorage.setItem(stopKey(fid, mode), String(Date.now())); } catch { /* quota */ }
+}
+function isRecentlyStopped(fid: number, mode: "follow" | "unfollow"): boolean {
+  try {
+    const raw = localStorage.getItem(stopKey(fid, mode));
+    if (!raw) return false;
+    if (Date.now() - Number(raw) > STOP_TOMBSTONE_MS) { localStorage.removeItem(stopKey(fid, mode)); return false; }
+    return true;
+  } catch { return false; }
+}
 
 function saveBatch(fid: number, mode: "follow" | "unfollow", s: PersistedBatch) {
   if (s.pendingFids.length === 0) {
@@ -60,6 +82,17 @@ function saveBatch(fid: number, mode: "follow" | "unfollow", s: PersistedBatch) 
   }
 }
 function clearBatch(fid: number, mode: "follow" | "unfollow") { localStorage.removeItem(batchKey(fid, mode)); }
+
+/** Patches just the `hidden` flag onto whatever snapshot is currently saved,
+ *  without needing the full running state that only the active loop holds. */
+function patchBatchHidden(fid: number, mode: "follow" | "unfollow", hidden: boolean) {
+  try {
+    const raw = localStorage.getItem(batchKey(fid, mode));
+    if (!raw) return;
+    const saved = JSON.parse(raw) as PersistedBatch;
+    localStorage.setItem(batchKey(fid, mode), JSON.stringify({ ...saved, hidden }));
+  } catch { /* quota / parse */ }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +140,7 @@ interface RunBatchParams {
   initialDone?: number;
   initialErrors?: number;
   initialSkipped?: number;
+  initialHidden?: boolean;
 }
 
 interface BatchOperationCtx {
@@ -146,6 +180,11 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
   const [opsMap, setOpsMap] = useState<Map<string, BatchOp>>(new Map());
   // Cancel refs, keyed the same way, survive account switches
   const cancelRefs = useRef<Map<string, { current: boolean }>>(new Map());
+  // Mirrors each op's hiddenFromStack synchronously, so the running loop's
+  // periodic saveBatch (which doesn't have access to reactive opsMap state
+  // inside its closure) can persist the current hidden flag instead of
+  // always writing `hidden: false` and silently undoing Hide on next tick.
+  const hiddenRefs = useRef<Map<string, boolean>>(new Map());
   // Track which (fid, mode) slots we've already auto-resumed to avoid double-resume
   const resumedKeys = useRef<Set<string>>(new Set());
 
@@ -165,7 +204,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
   // ── Core runner ─────────────────────────────────────────────────────────────
   const runBatch = useCallback(async ({
     mode, fids, myFid, signer, neynarKey, label, accountLabel, total,
-    prefiltered = 0, initialDone = 0, initialErrors = 0, initialSkipped = 0,
+    prefiltered = 0, initialDone = 0, initialErrors = 0, initialSkipped = 0, initialHidden = false,
   }: RunBatchParams) => {
     const key = opKey(myFid, mode);
     // Ensure a per-(account, mode) cancel ref exists and reset it
@@ -174,6 +213,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     }
     const cancelRef = cancelRefs.current.get(key)!;
     cancelRef.current = false;
+    hiddenRefs.current.set(key, initialHidden);
 
     let done = initialDone;
     let errors = initialErrors;
@@ -184,6 +224,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       id: `${key}-${Date.now()}`,
       myFid, accountLabel, mode, phase: "running",
       done, total, errors, skipped, prefiltered: pf, label,
+      hiddenFromStack: initialHidden,
     });
 
     const attempt = (targetFid: number) =>
@@ -264,7 +305,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       // Persisted "pending" list is an upper bound during concurrent execution
       // (some of this chunk may already be in flight) · harmless, since a
       // resumed duplicate follow/unfollow is classified as "skipped", not an error.
-      saveBatch(myFid, mode, { mode, pendingFids: fids.slice(i), myFid, neynarKey, accountLabel, label, total, done, errors, skipped });
+      saveBatch(myFid, mode, { mode, pendingFids: fids.slice(i), myFid, neynarKey, accountLabel, label, total, done, errors, skipped, hidden: hiddenRefs.current.get(key) ?? false });
 
       const results = await Promise.all(chunk.map(runOne));
 
@@ -376,6 +417,15 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       const savedFid = saved.myFid;
       const resumeKey = opKey(savedFid, saved.mode);
       if (resumedKeys.current.has(resumeKey)) continue;
+
+      // The user explicitly stopped/dismissed this (fid, mode) recently · a
+      // stale snapshot can still be sitting here if the loop was mid-retry
+      // when that happened (see markStopped's call sites for why). Honor the
+      // stop and clean up rather than resurrecting it.
+      if (isRecentlyStopped(savedFid, saved.mode)) {
+        localStorage.removeItem(key);
+        continue;
+      }
       resumedKeys.current.add(resumeKey);
 
       if (savedFid === currentFid) {
@@ -387,6 +437,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
           label: saved.label, accountLabel: saved.accountLabel || `FID ${savedFid}`,
           total: saved.total, initialDone: saved.done,
           initialErrors: saved.errors, initialSkipped: saved.skipped ?? 0,
+          initialHidden: !!saved.hidden,
         });
       } else {
         // Different account · load its signer key from storage and resume
@@ -403,6 +454,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
             label: snap.label, accountLabel: snap.accountLabel || `FID ${snapFid}`,
             total: snap.total, initialDone: snap.done,
             initialErrors: snap.errors, initialSkipped: snap.skipped ?? 0,
+            initialHidden: !!snap.hidden,
           });
         })();
       }
@@ -414,18 +466,32 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     const ref = cancelRefs.current.get(key);
     if (ref) ref.current = true;
     clearBatch(myFid, mode);
+    // The running loop may still be mid-retry-wait (rate-limit backoff can run
+    // up to 90s) when Stop is clicked, so it hasn't reached the point where it
+    // would itself clear storage yet · a refresh during that window used to
+    // find the still-there snapshot and resume it right back up. This
+    // tombstone tells the resume scan to ignore this (fid, mode) regardless.
+    markStopped(myFid, mode);
   }, []);
 
   const clearOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
+    clearBatch(myFid, mode);
+    markStopped(myFid, mode);
     setOpsMap(prev => { const n = new Map(prev); n.delete(opKey(myFid, mode)); return n; });
   }, []);
 
   const hideOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
-    upsertOp(opKey(myFid, mode), prev => prev ? { ...prev, hiddenFromStack: true } : null);
+    const key = opKey(myFid, mode);
+    hiddenRefs.current.set(key, true);
+    patchBatchHidden(myFid, mode, true);
+    upsertOp(key, prev => prev ? { ...prev, hiddenFromStack: true } : null);
   }, [upsertOp]);
 
   const unhideOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
-    upsertOp(opKey(myFid, mode), prev => prev ? { ...prev, hiddenFromStack: false } : null);
+    const key = opKey(myFid, mode);
+    hiddenRefs.current.set(key, false);
+    patchBatchHidden(myFid, mode, false);
+    upsertOp(key, prev => prev ? { ...prev, hiddenFromStack: false } : null);
   }, [upsertOp]);
 
   return (

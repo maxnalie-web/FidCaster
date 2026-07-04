@@ -14,6 +14,8 @@ import { FidSoldScreen } from "@/components/FidSoldScreen";
 import { FarcasterSignIn } from "@/components/FarcasterSignIn";
 import { CastComposer } from "@/components/CastComposer";
 import { useTheme } from "@/App";
+import { getFontSize, applyFontSize, getReduceMotion, applyReduceMotion, type FontSize } from "@/lib/app-settings";
+import { clearAllCaches } from "@/lib/farcaster-db";
 import {
   Home, Bell, Search, User, LogOut, AtSign,
   FileText, MessageSquare, Settings, Wallet,
@@ -21,7 +23,7 @@ import {
   Sun, Moon, AlertCircle, PenSquare, Copy,
   MoreHorizontal, Tag, KeyRound, QrCode, ChevronLeft, Layers, Camera, Shield,
   Info, AlertTriangle, UserPlus, TrendingUp, Globe,
-  LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash,
+  LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash, Type, Wind, Trash2,
 } from "lucide-react";
 import { getUserByFid, type NeynarUser } from "@/lib/neynar";
 import { NeynarScoreBadge } from "@/components/NeynarScoreBadge";
@@ -65,31 +67,127 @@ const SETTINGS_TABS: { id: SettingsTab; label: string; icon: typeof Home }[] = [
 ];
 
 /* ─── App Settings Panel · general app-wide preferences ──────────────────────── */
+function ToggleRow({ icon, title, desc, checked, onChange }: {
+  icon: React.ReactNode; title: string; desc: string; checked: boolean; onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 p-3.5 rounded-xl border border-border bg-muted/20">
+      <div className="flex items-start gap-3 min-w-0">
+        <span className="shrink-0 mt-0.5 text-muted-foreground">{icon}</span>
+        <div>
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+        </div>
+      </div>
+      <button
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "shrink-0 w-11 h-6 rounded-full transition-colors relative",
+          checked ? "bg-primary" : "bg-muted-foreground/25"
+        )}
+      >
+        {/* Positioned with `left` (not translate-x) · this project's Tailwind build
+            doesn't emit a `transform` for translate-x utilities on this element
+            (computed style showed `transform: none`), which left the thumb sitting
+            at a stray left/right-constrained position that overflowed the track
+            once toggled on. Plain `left` always works regardless of that. */}
+        <span
+          className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-[left]"
+          style={{ left: checked ? 22 : 2 }}
+        />
+      </button>
+    </div>
+  );
+}
+
+const FONT_SIZE_OPTIONS: { id: FontSize; label: string }[] = [
+  { id: "sm", label: "Small" },
+  { id: "md", label: "Default" },
+  { id: "lg", label: "Large" },
+];
+
 function AppSettingsPanel() {
   const [theme, setTheme] = useTheme();
+  const [fontSize, setFontSize] = useState<FontSize>(getFontSize);
+  const [reduceMotion, setReduceMotion] = useState(getReduceMotion);
+  const [clearing, setClearing] = useState(false);
+
+  function changeFontSize(size: FontSize) {
+    setFontSize(size);
+    applyFontSize(size);
+  }
+
+  function changeReduceMotion(v: boolean) {
+    setReduceMotion(v);
+    applyReduceMotion(v);
+  }
+
+  async function handleClearCache() {
+    setClearing(true);
+    try {
+      await clearAllCaches();
+      toast.success("Cached data cleared");
+    } finally {
+      setClearing(false);
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-md">
+      <ToggleRow
+        icon={theme === "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+        title="Dark mode"
+        desc="Switch between light and dark appearance."
+        checked={theme === "dark"}
+        onChange={(v) => setTheme(v ? "dark" : "light")}
+      />
+
+      <ToggleRow
+        icon={<Wind className="w-4 h-4" />}
+        title="Reduce motion"
+        desc="Cuts most hover, theme, and transition animations app-wide."
+        checked={reduceMotion}
+        onChange={changeReduceMotion}
+      />
+
+      <div className="p-3.5 rounded-xl border border-border bg-muted/20 space-y-2.5">
+        <div className="flex items-center gap-3">
+          <Type className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">Text size</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Changes text size across the whole app.</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {FONT_SIZE_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => changeFontSize(opt.id)}
+              className={cn(
+                "py-2 rounded-lg border text-xs font-semibold transition-all",
+                fontSize === opt.id ? "bg-primary/10 border-primary/30 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex items-start justify-between gap-4 p-3.5 rounded-xl border border-border bg-muted/20">
-        <div>
-          <p className="text-sm font-semibold text-foreground">Dark mode</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Switch between light and dark appearance.</p>
+        <div className="flex items-start gap-3 min-w-0">
+          <Trash2 className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">Clear cached data</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Wipes locally cached feeds, profiles, and notifications. Your account and keys aren't touched.</p>
+          </div>
         </div>
         <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className={cn(
-            "shrink-0 w-11 h-6 rounded-full transition-colors relative",
-            theme === "dark" ? "bg-primary" : "bg-muted-foreground/25"
-          )}
+          onClick={handleClearCache}
+          disabled={clearing}
+          className="shrink-0 px-3.5 py-2 rounded-xl border border-border bg-background text-xs font-semibold text-foreground hover:bg-accent transition-colors disabled:opacity-50"
         >
-          {/* Positioned with `left` (not translate-x) · this project's Tailwind build
-              doesn't emit a `transform` for translate-x utilities on this element
-              (computed style showed `transform: none`), which left the thumb sitting
-              at a stray left/right-constrained position that overflowed the track
-              once toggled on. Plain `left` always works regardless of that. */}
-          <span
-            className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-[left]"
-            style={{ left: theme === "dark" ? 22 : 2 }}
-          />
+          {clearing ? "Clearing…" : "Clear"}
         </button>
       </div>
     </div>

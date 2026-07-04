@@ -76,6 +76,19 @@ html.dark {
   --destructive-foreground: 0 0% 100%;
 }
 
+/* Settings → App → "Reduce motion" · collapses CSS transitions/animations
+   app-wide. Doesn't reach framer-motion's JS-driven animations (a handful of
+   dropdowns/toggles), but covers the vast majority of hover/focus/theme
+   transitions used throughout the app. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
 @layer base {
   * {
     @apply border-border;

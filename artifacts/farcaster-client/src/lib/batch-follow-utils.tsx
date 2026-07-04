@@ -1,4 +1,5 @@
 import { type NeynarUser, neynarScore, hasPowerBadge, xAccount } from "@/lib/neynar";
+import { getCachedSpamLabel, matchesSpamLabelFilter, type SpamLabelFilter } from "@/lib/spam-labels";
 import {
   Clock, History, Shuffle, Sparkles,
   Heart, Shield, TrendingUp, SlidersHorizontal,
@@ -25,6 +26,8 @@ export interface BatchFilters {
   minNeynarScore: number;
   /** Only accounts holding the Farcaster Power Badge · strong "real, active user" signal. */
   requirePowerBadge: boolean;
+  /** Farcaster's real published spam label (0/2, see src/lib/spam-labels.ts) · independent of minNeynarScore. */
+  spamLabel: SpamLabelFilter;
   sortOrder: SortOrder;
 }
 
@@ -56,6 +59,7 @@ export const DEFAULT_FILTERS: BatchFilters = {
   maxFollowers: 0,
   minNeynarScore: 0,
   requirePowerBadge: false,
+  spamLabel: "any",
   sortOrder: "newest",
 };
 
@@ -178,6 +182,9 @@ export function applyFilters(
       const s = neynarScore(u);
       return s === undefined || s >= threshold;
     });
+  }
+  if (filters.spamLabel !== "any") {
+    list = list.filter(u => matchesSpamLabelFilter(filters.spamLabel, getCachedSpamLabel(u.fid)));
   }
   if (exclusions) {
     list = list.filter(u =>

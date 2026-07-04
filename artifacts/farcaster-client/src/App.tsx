@@ -17,6 +17,7 @@ import { FollowPage } from "@/pages/FollowPage";
 import { useEffect, useState } from "react";
 import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-config";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { applyStoredAppSettings } from "@/lib/app-settings";
 
 export type Theme = "light" | "dark";
 
@@ -99,6 +100,7 @@ function App() {
 
   useEffect(() => {
     applyTheme(getTheme());
+    applyStoredAppSettings();
     const cfg = loadAdminConfig();
     applyAdminTheme(cfg);
     applyAdminSeo(cfg);

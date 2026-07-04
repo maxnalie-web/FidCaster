@@ -641,7 +641,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             </button>
             {/* ml-auto pushes Share to the far right, aligning it under the "..."
                 menu at the top of the card instead of sitting inline after Like. */}
-            <ShareButton cast={cast} menuDirection="up" iconSize={20} iconClassName="ml-auto flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />
+            <ShareButton cast={cast} menuDirection="up" iconSize={20} wrapperClassName="ml-auto" iconClassName="flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />
           </div>
         </div>
 
@@ -913,7 +913,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               </button>
               {/* ml-auto pushes Share to the far right, aligning it under the "..."
                   menu at the top of the card instead of sitting inline after Like. */}
-              <ShareButton cast={cast} menuDirection="up" iconSize={16} iconClassName="ml-auto flex items-center gap-1 px-1.5 py-1.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-sm" />
+              <ShareButton cast={cast} menuDirection="up" iconSize={16} wrapperClassName="ml-auto" iconClassName="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-sm" />
             </div>
           </div>
       </div>

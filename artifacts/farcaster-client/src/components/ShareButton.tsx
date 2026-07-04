@@ -13,9 +13,14 @@ const MENU_EST_HEIGHT = 280;
  * Share entry point for a cast: copy link, share out to X/Telegram/WhatsApp,
  * the device's native share sheet, and a rendered PNG image of the cast.
  */
-export function ShareButton({ cast, iconClassName, iconSize = 18, menuDirection = "up" }: {
+export function ShareButton({ cast, iconClassName, wrapperClassName, iconSize = 18, menuDirection = "up" }: {
   cast: NeynarCast;
   iconClassName?: string;
+  /** Class for the outer wrapper div · this is the actual flex item in the
+   *  reaction row, so layout utilities like `ml-auto` belong here, not on
+   *  `iconClassName` (which only affects the inner button and has no effect
+   *  on how much space the wrapper itself claims in the row). */
+  wrapperClassName?: string;
   iconSize?: number;
   /** Preferred direction when there's room for it · auto-flips near a screen edge. */
   menuDirection?: "up" | "down";
@@ -124,7 +129,7 @@ export function ShareButton({ cast, iconClassName, iconSize = 18, menuDirection 
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={cn("relative", wrapperClassName)} ref={ref}>
       <button
         ref={buttonRef}
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}

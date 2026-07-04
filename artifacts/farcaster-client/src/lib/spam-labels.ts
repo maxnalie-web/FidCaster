@@ -9,6 +9,17 @@
 
 export type SpamLabelValue = 0 | 2 | 3;
 
+/** UI-facing tri-state for "filter by this label" controls (Grow, Custom Feeds). */
+export type SpamLabelFilter = "any" | "not-spam" | "spam-only";
+
+export function matchesSpamLabelFilter(filter: SpamLabelFilter, label: SpamLabelValue | undefined): boolean {
+  if (filter === "any") return true;
+  // Unlabelled FIDs are "unknown" in the real dataset, not evidence either way · kept.
+  if (label === undefined) return true;
+  if (filter === "not-spam") return label === 2;
+  return label === 0;
+}
+
 const cache = new Map<number, SpamLabelValue | null>();
 
 export async function getSpamLabelsFor(fids: number[]): Promise<Record<number, SpamLabelValue>> {

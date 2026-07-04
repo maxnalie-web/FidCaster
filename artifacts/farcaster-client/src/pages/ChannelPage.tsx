@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Loader2, Hash, Users, Check, Plus, ShieldCheck, ExternalLink, PenSquare } from "lucide-react";
+import { ArrowLeft, Loader2, Hash, Users, Check, Plus, ShieldCheck, PenSquare } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { getChannel, getChannelFeed, type NeynarChannel, type NeynarCast, type NeynarUser } from "@/lib/neynar";
 import { CastCard } from "@/components/CastCard";
@@ -158,15 +158,6 @@ export function ChannelPage() {
                   <PenSquare className="w-3.5 h-3.5" /> Cast here
                 </button>
               </div>
-              {isOwner && (
-                <a
-                  href={`https://farcaster.xyz/~/channel/${channel.id}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 mt-3 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ExternalLink className="w-3 h-3" /> Edit channel on Farcaster
-                </a>
-              )}
             </div>
 
             {showComposer && (

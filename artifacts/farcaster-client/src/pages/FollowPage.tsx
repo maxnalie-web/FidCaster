@@ -16,6 +16,7 @@ import { NeynarScoreBadge, NeynarLogo } from "@/components/NeynarScoreBadge";
 import { ProBadge, useProStatus } from "@/components/ProBadge";
 import { hydrateProfiles, useHydratedUser } from "@/lib/profile-hydrate";
 import { getCachedFollowList, setCachedFollowList } from "@/lib/farcaster-db";
+import { getSpamLabelsFor, type SpamLabelFilter } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
 import { BottomNav } from "@/components/BottomNav";
@@ -466,12 +467,14 @@ export function FollowPage() {
       (currentFilters.maxFollowers ?? 0) > 0 ||
       (currentFilters.minNeynarScore ?? 0) > 0 ||
       currentFilters.onlyPro === true ||
-      currentFilters.requirePowerBadge === true;
+      currentFilters.requirePowerBadge === true ||
+      currentFilters.spamLabel !== "any";
     const cached = strictFilters ? null : await getCachedFollowList(lt, fetchFid, myFid);
     const minRawNeeded = Math.min(currentFilters.limit * 4, MAX_SCAN);
     if (cached && cached.length >= minRawNeeded) {
       collected = cached as NeynarUser[];
       setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
+      if (currentFilters.spamLabel !== "any") await getSpamLabelsFor(collected.map(u => u.fid));
       const result = applyFilters(collected, batchMode, currentFilters, currentExclusions);
       setAllUsers(result);
       setSelectedFids(new Set(result.map(u => u.fid)));
@@ -537,6 +540,8 @@ export function FollowPage() {
     deepScanRawRef.current = collected;
     deepScanTargetRef.current = { user: target, lt };
     setDeepScanCursor(cursor);
+
+    if (currentFilters.spamLabel !== "any") await getSpamLabelsFor(collected.map(u => u.fid));
 
     // ── Pro filter: batch-fetch Pro status, then apply ────────────────────
     let finalResult: NeynarUser[];
@@ -616,6 +621,8 @@ export function FollowPage() {
 
     deepScanRawRef.current = collected;
     setDeepScanCursor(cursor);
+
+    if (filters.spamLabel !== "any") await getSpamLabelsFor(collected.map(u => u.fid));
 
     // ── Pro filter: batch-fetch Pro status, then apply ─────────────────────
     let result: NeynarUser[];
@@ -981,14 +988,17 @@ export function FollowPage() {
                   <Sparkles className="w-3 h-3" /> Strategy
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {presets.map(p => {
+                  {presets.map((p, i) => {
                     const active = activePreset === p.id;
+                    const isLast = i === presets.length - 1;
+                    const isLastOdd = isLast && presets.length % 2 === 1;
                     return (
                       <button
                         key={p.id}
                         onClick={() => applyPreset(p.filters, p.id)}
                         className={cn(
-                          "relative flex flex-col items-center gap-1.5 px-2.5 py-3 rounded-2xl border text-center transition-all",
+                          "relative flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all",
+                          isLastOdd && "col-span-2 justify-center text-center",
                           active
                             ? cn(p.color, "shadow-sm ring-1 ring-inset ring-current/10")
                             : "border-border bg-muted/10 text-muted-foreground hover:bg-muted/30 hover:border-foreground/15",
@@ -996,7 +1006,7 @@ export function FollowPage() {
                       >
                         {active && <Check className="w-3.5 h-3.5 absolute top-2 right-2" strokeWidth={3} />}
                         <span className={cn(
-                          "w-9 h-9 rounded-xl flex items-center justify-center",
+                          "w-7 h-7 rounded-lg flex items-center justify-center shrink-0",
                           active ? "bg-current/10" : "bg-muted/40",
                         )}>
                           {p.icon}
@@ -1156,6 +1166,36 @@ export function FollowPage() {
                   />
                   <p className="text-[10px] text-muted-foreground">
                     Skips low-quality/likely-spam accounts below this score. 0 = no filter.
+                  </p>
+                </div>
+
+                {/* Real Farcaster spam label · independent of the score slider above */}
+                <div className="rounded-xl border border-border px-3 py-2.5 space-y-2">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Spam label
+                  </p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { id: "any", label: "Any" },
+                      { id: "not-spam", label: "Not spam" },
+                      { id: "spam-only", label: "Spam only" },
+                    ] as { id: SpamLabelFilter; label: string }[]).map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => updateFilter("spamLabel", opt.id)}
+                        className={cn(
+                          "py-2 rounded-lg border text-[11px] font-semibold transition-all",
+                          filters.spamLabel === opt.id
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "border-border text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Farcaster's actual published 0/2 label, refreshed weekly · unlabelled accounts are kept either way.
                   </p>
                 </div>
 

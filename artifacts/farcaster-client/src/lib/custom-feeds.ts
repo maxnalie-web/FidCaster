@@ -1,7 +1,7 @@
 import { neynarScore, type NeynarUser } from "@/lib/neynar";
-import { getSpamLabelsFor, getCachedSpamLabel } from "@/lib/spam-labels";
+import { getSpamLabelsFor, getCachedSpamLabel, matchesSpamLabelFilter, type SpamLabelFilter } from "@/lib/spam-labels";
 
-export type SpamLabelFilter = "any" | "not-spam" | "spam-only";
+export type { SpamLabelFilter };
 
 export interface CustomFeed {
   id: string;
@@ -90,15 +90,7 @@ export function matchesAuthorFilters(author: NeynarUser, feed: CustomFeed): bool
     const s = neynarScore(author);
     if (s !== undefined && s * 100 < feed.minNeynarScore) return false;
   }
-  if (feed.spamLabel !== "any") {
-    const label = getCachedSpamLabel(author.fid);
-    // Unlabelled FIDs ("unknown" in the real dataset) are kept rather than
-    // dropped · absence isn't evidence either way.
-    if (label !== undefined) {
-      if (feed.spamLabel === "not-spam" && label !== 2) return false;
-      if (feed.spamLabel === "spam-only" && label !== 0) return false;
-    }
-  }
+  if (!matchesSpamLabelFilter(feed.spamLabel, getCachedSpamLabel(author.fid))) return false;
   return true;
 }
 
