@@ -110,6 +110,7 @@ export default defineConfig({
       "/api/translate": { target: "http://localhost:3001", changeOrigin: true },
       "/api/rpc":       { target: "http://localhost:3001", changeOrigin: true },
       "/api/spam-labels": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/user-prefs": { target: "http://localhost:3001", changeOrigin: true },
     },
   },
   preview: {

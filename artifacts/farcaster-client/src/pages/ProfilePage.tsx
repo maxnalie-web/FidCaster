@@ -636,14 +636,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                       >
                         Edit profile
                       </button>
-                      <button
-                        onClick={() => setShowSpamAnalyzer(true)}
-                        title="Analyze your quality score"
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 transition-colors"
-                      >
-                        <Gauge className="w-4 h-4" />
-                        Score
-                      </button>
                       <div className="relative" ref={moreMenuRef}>
                         <button
                           onClick={() => setShowMoreMenu(v => !v)}
@@ -675,6 +667,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                             >
                               <Copy className="w-4 h-4 text-muted-foreground" />
                               Copy link
+                            </button>
+                            <div className="my-1 border-t border-border" />
+                            <button
+                              onClick={() => { setShowSpamAnalyzer(true); setShowMoreMenu(false); }}
+                              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                            >
+                              <Gauge className="w-4 h-4 text-muted-foreground" />
+                              Check account health
                             </button>
                           </div>
                         )}

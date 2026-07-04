@@ -29,6 +29,36 @@ function storageKey(fid: number): string {
   return `fc_custom_feeds_${fid}`;
 }
 
+const PREF_KEY = "custom_feeds";
+
+/** Fire-and-forget push to the server so this account's feeds show up on any
+ *  other browser/device signed in as the same FID, not just this localStorage. */
+function pushToServer(fid: number, feeds: CustomFeed[]): void {
+  fetch("/api/user-prefs", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fid, key: PREF_KEY, value: JSON.stringify(feeds) }),
+  }).catch(() => { /* best-effort · localStorage already has it */ });
+}
+
+/** Pulls this account's feeds from the server (if any) and reconciles them
+ *  into localStorage, so a feed built on another device/browser shows up
+ *  here too. Called once when the feed tab mounts · safe to call repeatedly,
+ *  it's a no-op once local and server already agree. */
+export async function syncCustomFeedsFromServer(fid: number): Promise<CustomFeed[]> {
+  try {
+    const res = await fetch(`/api/user-prefs?fid=${fid}&key=${PREF_KEY}`);
+    if (!res.ok) return getCustomFeeds(fid);
+    const { value } = await res.json() as { value: string | null };
+    if (!value) return getCustomFeeds(fid);
+    const remote = (JSON.parse(value) as Partial<CustomFeed>[]).map(withDefaults);
+    save(fid, remote);
+    return remote;
+  } catch {
+    return getCustomFeeds(fid); // offline / server unreachable · keep using the local copy
+  }
+}
+
 export const DEFAULT_CUSTOM_FEED_FILTERS = {
   minNeynarScore: 0,
   minFollowers: 0,
@@ -55,6 +85,7 @@ export function getCustomFeeds(fid: number): CustomFeed[] {
 
 function save(fid: number, feeds: CustomFeed[]): void {
   try { localStorage.setItem(storageKey(fid), JSON.stringify(feeds)); } catch {}
+  pushToServer(fid, feeds);
 }
 
 export function saveCustomFeed(fid: number, feed: CustomFeed): CustomFeed[] {

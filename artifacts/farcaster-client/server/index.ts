@@ -16,6 +16,7 @@ import { metrics } from "./metrics.js";
 import { initSignPool } from "./sign-pool.js";
 import { healthSnapshot } from "./health.js";
 import { getSpamLabels, scheduleSpamLabelRefresh } from "./spam-labels.js";
+import { getUserPref, setUserPref } from "./user-prefs.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -682,6 +683,28 @@ app.get("/api/spam-labels", (req: express.Request, res: express.Response) => {
     .filter((n) => Number.isFinite(n) && n > 0)
     .slice(0, 200);
   res.json(getSpamLabels(fids));
+});
+
+// Per-FID small preferences store (currently: Custom Feeds) · lets a feed
+// built on one device/browser show up on another under the same account
+// instead of only ever existing in that one browser's localStorage.
+app.get("/api/user-prefs", (req: express.Request, res: express.Response) => {
+  const fid = Number(req.query.fid);
+  const key = String(req.query.key ?? "");
+  if (!Number.isFinite(fid) || fid <= 0 || !key) { res.status(400).json({ error: "fid and key required" }); return; }
+  const value = getUserPref(fid, key);
+  res.json({ value: value ?? null });
+});
+
+app.put("/api/user-prefs", (req: express.Request, res: express.Response) => {
+  const { fid, key, value } = req.body as { fid?: number; key?: string; value?: string };
+  if (!fid || !Number.isFinite(fid) || fid <= 0 || !key || typeof value !== "string") {
+    res.status(400).json({ error: "fid, key, and value (string) required" });
+    return;
+  }
+  const result = setUserPref(fid, key, value);
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  res.json({ ok: true });
 });
 
 // ── Production static file serving ────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { Loader2, RefreshCw, ChevronDown, Plus, Settings2, Rss } from "lucide-re
 import { useWallet } from "@/hooks/useWallet";
 import { getFollowingFeed, getTrendingFeed, getFeedByFids, searchCasts, type NeynarCast, type NeynarUser } from "@/lib/neynar";
 import { getCachedFeed, setCachedFeed } from "@/lib/farcaster-db";
-import { getCustomFeeds, matchesKeywords, matchesAuthorFilters, prefetchSpamLabels, type CustomFeed } from "@/lib/custom-feeds";
+import { getCustomFeeds, syncCustomFeedsFromServer, matchesKeywords, matchesAuthorFilters, prefetchSpamLabels, type CustomFeed } from "@/lib/custom-feeds";
 import { CastCard } from "./CastCard";
 import { CustomFeedBuilderSheet } from "./CustomFeedBuilderSheet";
 import { cn } from "@/lib/utils";
@@ -52,11 +52,18 @@ export function FeedPanel() {
   const skipNextResetRef = useRef(!!initialCache); // true on the very first mount if we restored from cache
 
   useEffect(() => {
-    if (fidNum) {
-      const feeds = getCustomFeeds(fidNum);
+    if (!fidNum) return;
+    // Instant paint from whatever's cached locally, then reconcile with the
+    // server copy · a feed built on another browser/device under the same
+    // account shows up here too instead of only ever living in this one
+    // browser's localStorage.
+    const localFeeds = getCustomFeeds(fidNum);
+    setCustomFeeds(localFeeds);
+    if (!activeCustomFeedId && localFeeds.length > 0) setActiveCustomFeedId(localFeeds[0].id);
+    syncCustomFeedsFromServer(fidNum).then((feeds) => {
       setCustomFeeds(feeds);
       if (!activeCustomFeedId && feeds.length > 0) setActiveCustomFeedId(feeds[0].id);
-    }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fidNum]);
 
