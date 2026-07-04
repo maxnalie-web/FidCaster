@@ -4,7 +4,7 @@ import { Loader2, RefreshCw, ChevronDown, Plus, Settings2, Rss } from "lucide-re
 import { useWallet } from "@/hooks/useWallet";
 import { getFollowingFeed, getTrendingFeed, getFeedByFids, searchCasts, type NeynarCast, type NeynarUser } from "@/lib/neynar";
 import { getCachedFeed, setCachedFeed } from "@/lib/farcaster-db";
-import { getCustomFeeds, matchesKeywords, matchesAuthorFilters, type CustomFeed } from "@/lib/custom-feeds";
+import { getCustomFeeds, matchesKeywords, matchesAuthorFilters, prefetchSpamLabels, type CustomFeed } from "@/lib/custom-feeds";
 import { CastCard } from "./CastCard";
 import { CustomFeedBuilderSheet } from "./CustomFeedBuilderSheet";
 import { cn } from "@/lib/utils";
@@ -118,6 +118,7 @@ export function FeedPanel() {
       res = { ...res, casts: res.casts.filter((c) => matchesKeywords(c.text || "", feed.keywords)) };
     }
     if (feed.minNeynarScore > 0 || feed.minFollowers > 0 || feed.spamLabel !== "any") {
+      if (feed.spamLabel !== "any") await prefetchSpamLabels(res.casts.map((c) => c.author.fid));
       res = { ...res, casts: res.casts.filter((c) => matchesAuthorFilters(c.author, feed)) };
     }
     return res;
@@ -271,7 +272,7 @@ export function FeedPanel() {
           </button>
 
           {showFeedMenu && customFeeds.length > 0 && (
-            <div className="absolute top-full left-0 mt-1 z-30 bg-popover border border-border rounded-xl shadow-2xl min-w-[220px] py-1 overflow-hidden">
+            <div className="absolute top-full right-0 mt-1 z-30 bg-popover border border-border rounded-xl shadow-2xl w-[220px] max-w-[calc(100vw-24px)] py-1 overflow-hidden">
               {customFeeds.map((f) => (
                 <div key={f.id} className="flex items-center group">
                   <button

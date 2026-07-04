@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X, Loader2, CheckCircle2, AlertTriangle, XCircle, Info, Clock } from "lucide-react";
 import { getUserCasts, type NeynarUser, type NeynarCast } from "@/lib/neynar";
 import { analyzeAccount, type SpamAnalysisResult, type SpamCheck } from "@/lib/spam-analysis";
+import { getSpamLabelsFor } from "@/lib/spam-labels";
 import { cn } from "@/lib/utils";
 
 // One analysis per account per day · analyzing costs real API calls and the
@@ -115,9 +116,12 @@ export function SpamAnalyzerSheet({ user, myFid, neynarKey, onClose }: {
     }
     setLoading(true);
     setError(null);
-    getUserCasts(user.fid, myFid, neynarKey, undefined, 40)
-      .then((res) => {
-        const analysis = analyzeAccount(user, res.casts as NeynarCast[]);
+    Promise.all([
+      getUserCasts(user.fid, myFid, neynarKey, undefined, 40),
+      getSpamLabelsFor([user.fid]),
+    ])
+      .then(([res, labels]) => {
+        const analysis = analyzeAccount(user, res.casts as NeynarCast[], labels[user.fid]);
         setResult(analysis);
         setCachedResult(user.fid, analysis);
         setLastRun(user.fid);

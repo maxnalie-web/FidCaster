@@ -131,7 +131,7 @@ export function ShareButton({ cast, iconClassName, iconSize = 18, menuDirection 
         className={iconClassName ?? "flex items-center gap-1 px-2.5 py-2.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"}
         title="Share"
       >
-        <Share width={iconSize} height={iconSize} />
+        <Share width={iconSize} height={iconSize} className="-scale-x-100" />
       </button>
       {open && menuPos && (
         <div

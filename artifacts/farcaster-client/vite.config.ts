@@ -109,6 +109,7 @@ export default defineConfig({
       "/api/miniapp-embed": { target: "http://localhost:3001", changeOrigin: true },
       "/api/translate": { target: "http://localhost:3001", changeOrigin: true },
       "/api/rpc":       { target: "http://localhost:3001", changeOrigin: true },
+      "/api/spam-labels": { target: "http://localhost:3001", changeOrigin: true },
     },
   },
   preview: {

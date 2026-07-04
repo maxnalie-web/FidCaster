@@ -420,12 +420,26 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   <span className="truncate">{cast.author.display_name || cast.author.username}</span>
                   {authorIsPro && <ProBadge size={15} />}
                 </p>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-wrap">
                   <p className="text-[0.8125rem] text-muted-foreground">@{cast.author.username}</p>
                   {hasPowerBadge(cast.author) && (
                     <span title="Power Badge" className="shrink-0 inline-flex">
                       <PowerBadgeIcon size={15} />
                     </span>
+                  )}
+                  {cast.channel && (
+                    <>
+                      <span className="text-muted-foreground/60 text-[0.8125rem]">in</span>
+                      <span
+                        onClick={(e) => { e.stopPropagation(); navigate(`/channel/${cast.channel!.id}`); }}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-muted/60 hover:bg-muted transition-colors"
+                      >
+                        <span className="w-3.5 h-3.5 rounded-full overflow-hidden bg-primary/10 shrink-0">
+                          {cast.channel.image_url && <img src={cast.channel.image_url} alt="" className="w-full h-full object-cover" />}
+                        </span>
+                        <span className="text-[0.8125rem] font-medium text-foreground/80">{cast.channel.name}</span>
+                      </span>
+                    </>
                   )}
                 </div>
               </button>
@@ -709,6 +723,20 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   <span title="Power Badge" className="shrink-0 inline-flex">
                     <PowerBadgeIcon size={15} />
                   </span>
+                )}
+                {cast.channel && (
+                  <>
+                    <span className="text-muted-foreground/60 text-[0.8125rem] shrink-0">in</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/channel/${cast.channel!.id}`); }}
+                      className="flex items-center gap-1 shrink-0 min-w-0 px-1.5 py-0.5 rounded-full bg-muted/60 hover:bg-muted transition-colors"
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full overflow-hidden bg-primary/10 shrink-0">
+                        {cast.channel.image_url && <img src={cast.channel.image_url} alt="" className="w-full h-full object-cover" />}
+                      </span>
+                      <span className="text-[0.8125rem] font-medium text-foreground/80 truncate max-w-[100px]">{cast.channel.name}</span>
+                    </button>
+                  </>
                 )}
                 <span className="text-muted-foreground/50 text-sm shrink-0">·</span>
                 <span className="text-[0.875rem] text-muted-foreground shrink-0">{timeAgo(cast.timestamp)}</span>

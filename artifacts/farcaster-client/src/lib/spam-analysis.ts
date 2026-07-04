@@ -39,8 +39,8 @@ function normalizeText(t: string): string {
   return t.toLowerCase().replace(/https?:\/\/\S+/g, "").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
-function daysSince(unixSecs: number): number {
-  return (Date.now() / 1000 - unixSecs) / 86400;
+function daysSince(isoTimestamp: string): number {
+  return (Date.now() - new Date(isoTimestamp).getTime()) / 86_400_000;
 }
 
 const PROMO_PATTERNS = [
@@ -48,7 +48,20 @@ const PROMO_PATTERNS = [
   /\$\w+.{0,10}(pump|moon|100x)/i, /dm me/i, /link in bio/i,
 ];
 
-export function analyzeAccount(user: NeynarUser, casts: NeynarCast[]): SpamAnalysisResult {
+// Stock phrasing that shows up disproportionately in AI-generated marketing/
+// reply text ("chatgpt-isms"). Not proof any single cast is AI-written · a
+// human can use these too · but a cluster of them across many casts from one
+// account is a real, observable pattern worth flagging honestly as a heuristic.
+const AI_STYLE_PATTERNS = [
+  /\bgame[\s-]?changer\b/i, /\blet'?s dive into\b/i, /\bdelve into\b/i,
+  /\bin today'?s fast[\s-]?paced world\b/i, /\bunlock the power of\b/i,
+  /\brevolutioniz\w+\b/i, /\bnavigate the complexities\b/i, /\belevate your\b/i,
+  /\bit'?s (worth noting|important to note)\b/i, /\bin conclusion\b/i,
+  /\boverall,/i, /\bfurthermore,/i, /\bmoreover,/i, /\bthe world of\b/i,
+  /\bseamless(ly)?\b/i, /\bleverage\b/i, /\brobust\b/i, /\bin summary\b/i,
+];
+
+export function analyzeAccount(user: NeynarUser, casts: NeynarCast[], spamLabel?: 0 | 2 | 3): SpamAnalysisResult {
   const checks: SpamCheck[] = [];
   const score = neynarScore(user);
   const username = user.username ? `@${user.username}` : "this account";
@@ -74,6 +87,20 @@ export function analyzeAccount(user: NeynarUser, casts: NeynarCast[]): SpamAnaly
     });
   }
 
+  // ── Real Farcaster spam label (github.com/merkle-team/labels) ─────────────
+  // This is the actual platform label, not an approximation · 0 = flagged
+  // likely-spammy, 2 = flagged unlikely-spammy, 3 = nerfed for malicious
+  // activity, undefined = no label yet (not enough data, not a verdict).
+  if (spamLabel === 0) {
+    checks.push({ id: "spam-label", label: "Farcaster spam label", status: "fail", detail: `${username} is currently labelled likely-spammy (0) in Farcaster's own published dataset · this directly suppresses reach in feeds and search.`, fixHint: "This label is recalculated weekly from your account's real activity, social graph, and content · every other fix in this report feeds into it, there's no direct appeal.", impact: "high" });
+  } else if (spamLabel === 3) {
+    checks.push({ id: "spam-label", label: "Farcaster spam label", status: "fail", detail: `${username} is labelled "nerfed for malicious activity" · the most severe label Farcaster publishes.`, fixHint: "This is reserved for confirmed malicious behavior, not ordinary low-quality posting · if this seems wrong, it's worth appealing directly with Farcaster/Warpcast support.", impact: "high" });
+  } else if (spamLabel === 2) {
+    checks.push({ id: "spam-label", label: "Farcaster spam label", status: "pass", detail: `${username} is labelled unlikely-spammy (2) in Farcaster's own published dataset.`, impact: "high" });
+  } else {
+    checks.push({ id: "spam-label", label: "Farcaster spam label", status: "warn", detail: `${username} has no spam label yet in Farcaster's published dataset · usually means too little recent activity to be scored, not a verdict either way.`, impact: "low" });
+  }
+
   // ── Power Badge ───────────────────────────────────────────────────────────
   // Power Badge and the Farcaster Pro subscription's purple badge are two
   // separate things · Pro ($120/yr) does not grant the Power Badge, which
@@ -85,7 +112,7 @@ export function analyzeAccount(user: NeynarUser, casts: NeynarCast[]): SpamAnaly
     detail: hasPowerBadge(user)
       ? `${username} holds the Power Badge · one of the strongest "real, active user" signals on the network.`
       : `${username} doesn't currently hold the Power Badge.`,
-    fixHint: hasPowerBadge(user) ? undefined : "It's awarded algorithmically for sustained genuine activity, not something a subscription unlocks · keep posting and engaging authentically and it follows on its own timeline.",
+    fixHint: hasPowerBadge(user) ? undefined : "This is the purple Power Badge specifically, separate from the Pro subscriber badge · it's awarded algorithmically for sustained genuine activity rather than by purchase.",
     impact: "medium",
   });
 
@@ -194,6 +221,19 @@ export function analyzeAccount(user: NeynarUser, casts: NeynarCast[]): SpamAnaly
       checks.push({ id: "promo-language", label: "Promotional language", status: "warn", detail: `${promoHits} of ${username}'s last ${casts.length} casts (${Math.round(promoRatio * 100)}%) read as promotional.`, fixHint: "Fine in moderation · just don't let it grow past what it already is.", impact: "low" });
     } else {
       checks.push({ id: "promo-language", label: "Promotional language", status: "pass", detail: `Only ${promoHits} of ${username}'s last ${casts.length} casts read as promotional · not a concern.`, impact: "low" });
+    }
+
+    // Content originality · clusters of stock "AI-sounding" phrasing across
+    // many casts. This is a heuristic on wording patterns, not a detector
+    // that reads intent · framed honestly as a signal, not a verdict.
+    const aiStyleHits = casts.filter((c) => AI_STYLE_PATTERNS.filter((re) => re.test(c.text || "")).length > 0).length;
+    const aiStyleRatio = aiStyleHits / casts.length;
+    if (aiStyleRatio > 0.3 && aiStyleHits >= 4) {
+      checks.push({ id: "content-quality", label: "Content originality", status: "warn", detail: `${aiStyleHits} of ${username}'s last ${casts.length} casts (${Math.round(aiStyleRatio * 100)}%) use stock phrasing common in AI-generated or templated text (e.g. "game-changer", "let's dive into", "in today's fast-paced world"). This is a wording pattern, not proof of anything, but it clusters strongly here.`, fixHint: "Write in your own voice · casts that read as generic/templated get less genuine engagement even before any algorithm looks at them.", impact: "medium" });
+    } else if (aiStyleHits > 0) {
+      checks.push({ id: "content-quality", label: "Content originality", status: "pass", detail: `${username}'s casts read as written in a personal voice, with only occasional stock phrasing.`, impact: "low" });
+    } else {
+      checks.push({ id: "content-quality", label: "Content originality", status: "pass", detail: `No templated/AI-style phrasing patterns detected across ${username}'s last ${casts.length} casts.`, impact: "low" });
     }
 
     // Posting burstiness (many casts in a very short window)

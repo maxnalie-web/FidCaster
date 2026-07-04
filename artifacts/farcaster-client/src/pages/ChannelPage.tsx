@@ -102,18 +102,18 @@ export function ChannelPage() {
           </div>
         ) : channel ? (
           <>
-            {channel.header_image_url && (
-              <div className="h-32 w-full overflow-hidden bg-primary/10">
+            <div className="relative h-32 w-full overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">
+              {channel.header_image_url && (
                 <img src={channel.header_image_url} alt="" className="w-full h-full object-cover" />
-              </div>
-            )}
+              )}
+            </div>
             <div className="px-4 py-4 border-b border-border">
               <div className="flex items-start gap-3">
-                <div className="w-14 h-14 rounded-2xl overflow-hidden bg-primary/10 shrink-0 -mt-8 ring-4 ring-background">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden bg-primary/10 shrink-0 -mt-10 ring-4 ring-background shadow-lg">
                   {channel.image_url ? (
                     <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <span className="w-full h-full flex items-center justify-center text-lg font-bold text-primary">
+                    <span className="w-full h-full flex items-center justify-center text-xl font-bold text-primary bg-gradient-to-br from-primary/15 to-violet-500/15">
                       {channel.name?.[0]?.toUpperCase()}
                     </span>
                   )}
@@ -144,16 +144,16 @@ export function ChannelPage() {
                 </button>
               </div>
               {channel.description && (
-                <p className="text-sm text-foreground/80 mt-3">{channel.description}</p>
+                <p className="text-sm text-foreground/80 mt-3 leading-relaxed">{channel.description}</p>
               )}
-              <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center justify-between mt-3.5">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Users className="w-3.5 h-3.5" />
                   <span>{channel.follower_count.toLocaleString()} followers</span>
                 </div>
                 <button
                   onClick={() => setShowComposer((v) => !v)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
                 >
                   <PenSquare className="w-3.5 h-3.5" /> Cast here
                 </button>
@@ -164,7 +164,7 @@ export function ChannelPage() {
                   target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1.5 mt-3 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ExternalLink className="w-3 h-3" /> Manage channel settings on Farcaster
+                  <ExternalLink className="w-3 h-3" /> Edit channel on Farcaster
                 </a>
               )}
             </div>

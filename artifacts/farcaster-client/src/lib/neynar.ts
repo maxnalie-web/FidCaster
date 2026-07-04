@@ -37,7 +37,8 @@ export type NeynarUser = {
   verified_accounts?: Array<{ platform: string; username: string }>;
   // Farcaster Pro subscription state.
   pro?: { status?: string; subscribed_at?: string; expires_at?: string };
-  registered_at?: number;
+  /** ISO 8601 timestamp string (e.g. "2023-11-07T19:42:51.000Z"), not a Unix number. */
+  registered_at?: string;
   custody_address?: string;
 };
 
@@ -93,6 +94,8 @@ export type NeynarCast = {
   viewer_context?: { liked: boolean; recasted: boolean };
   mentioned_profiles?: NeynarUser[];
   direct_replies?: NeynarCast[];
+  /** Present whenever this cast was posted into a channel · null/absent otherwise. */
+  channel?: { id: string; name: string; image_url?: string } | null;
 };
 
 export type NeynarFrame = {

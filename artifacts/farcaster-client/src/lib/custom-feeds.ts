@@ -1,4 +1,5 @@
 import { neynarScore, type NeynarUser } from "@/lib/neynar";
+import { getSpamLabelsFor, getCachedSpamLabel } from "@/lib/spam-labels";
 
 export type SpamLabelFilter = "any" | "not-spam" | "spam-only";
 
@@ -20,7 +21,7 @@ export interface CustomFeed {
   minNeynarScore: number;
   /** Minimum author follower count. 0 = no filter. */
   minFollowers: number;
-  /** Approximate mapping onto Farcaster's old 0/1/2 spam label via Neynar score. */
+  /** Farcaster's real published spam label (0 = spam, 2 = not spam) · see src/lib/spam-labels.ts. */
   spamLabel: SpamLabelFilter;
 }
 
@@ -76,6 +77,12 @@ export function matchesKeywords(text: string, keywords: string[]): boolean {
   return keywords.some((k) => lower.includes(k.toLowerCase()));
 }
 
+/** Prefetches the real spam-label dataset for a batch of authors, so `matchesAuthorFilters`
+ *  below can filter synchronously afterward. Only needed when a feed's spamLabel filter is on. */
+export async function prefetchSpamLabels(fids: number[]): Promise<void> {
+  await getSpamLabelsFor(fids);
+}
+
 /** Applies the score/follower/spam-label author filters · each is independent and optional. */
 export function matchesAuthorFilters(author: NeynarUser, feed: CustomFeed): boolean {
   if (feed.minFollowers > 0 && (author.follower_count ?? 0) < feed.minFollowers) return false;
@@ -84,10 +91,12 @@ export function matchesAuthorFilters(author: NeynarUser, feed: CustomFeed): bool
     if (s !== undefined && s * 100 < feed.minNeynarScore) return false;
   }
   if (feed.spamLabel !== "any") {
-    const s = neynarScore(author);
-    if (s !== undefined) {
-      if (feed.spamLabel === "not-spam" && s < 0.7) return false;
-      if (feed.spamLabel === "spam-only" && s >= 0.3) return false;
+    const label = getCachedSpamLabel(author.fid);
+    // Unlabelled FIDs ("unknown" in the real dataset) are kept rather than
+    // dropped · absence isn't evidence either way.
+    if (label !== undefined) {
+      if (feed.spamLabel === "not-spam" && label !== 2) return false;
+      if (feed.spamLabel === "spam-only" && label !== 0) return false;
     }
   }
   return true;

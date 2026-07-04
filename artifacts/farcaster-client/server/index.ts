@@ -15,6 +15,7 @@ import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { initSignPool } from "./sign-pool.js";
 import { healthSnapshot } from "./health.js";
+import { getSpamLabels, scheduleSpamLabelRefresh } from "./spam-labels.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -671,6 +672,18 @@ registerFidMarketRoutes(app);
 registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
 
+// Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
+// field · see server/spam-labels.ts for why this needs its own dataset.
+// GET /api/spam-labels?fids=1,2,3 -> { "1": 0, "2": 2 } (absent fid = unknown)
+app.get("/api/spam-labels", (req: express.Request, res: express.Response) => {
+  const fids = String(req.query.fids ?? "")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .slice(0, 200);
+  res.json(getSpamLabels(fids));
+});
+
 // ── Production static file serving ────────────────────────────────────────────
 // In production the Express server is the only process — it serves the React
 // SPA and all API routes. Vite's dev server handles this in development.
@@ -722,6 +735,7 @@ const server = app.listen(PORT, host, () => {
   // Spin up worker thread pool for ed25519 signing — offloads CPU from main loop.
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
+  scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
 });
 
 function shutdown(signal: string) {

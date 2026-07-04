@@ -293,7 +293,7 @@ export function CustomFeedBuilderSheet({ existing, onClose, onSaved, onDeleted }
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-muted-foreground">Approximated from Neynar's quality score, since Farcaster doesn't expose the old 0/1/2 label directly.</p>
+            <p className="text-[10px] text-muted-foreground">Farcaster's real published spam label · updated weekly. Accounts with no label yet are kept either way.</p>
           </div>
 
           <div className="flex gap-2 pt-2">
