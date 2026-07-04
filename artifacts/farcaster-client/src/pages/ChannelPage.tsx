@@ -109,14 +109,16 @@ export function ChannelPage() {
             </div>
             <div className="px-4 py-4 border-b border-border">
               <div className="flex items-start gap-3">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden bg-primary/10 shrink-0 -mt-10 ring-4 ring-background shadow-lg">
-                  {channel.image_url ? (
-                    <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="w-full h-full flex items-center justify-center text-xl font-bold text-primary bg-gradient-to-br from-primary/15 to-violet-500/15">
-                      {channel.name?.[0]?.toUpperCase()}
-                    </span>
-                  )}
+                <div className="shrink-0 -mt-10 p-[2.5px] rounded-[18px] bg-gradient-to-br from-primary via-violet-500 to-indigo-500 shadow-lg ring-2 ring-background">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden bg-primary/10">
+                    {channel.image_url ? (
+                      <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="w-full h-full flex items-center justify-center text-xl font-bold text-primary bg-gradient-to-br from-primary/15 to-violet-500/15">
+                        {channel.name?.[0]?.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1 min-w-0 pt-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
