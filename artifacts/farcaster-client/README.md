@@ -168,7 +168,7 @@ artifacts/farcaster-client/
 
 | File | Language | Purpose |
 |---|---|---|
-| `index.ts` | TS | **Express app entry.** Helmet security headers, CORS allowlist (localhost + fidcaster.xyz + ALLOWED_ORIGINS), rate limiters, body validation, route mounting, error handling |
+| `index.ts` | TS | **Express app entry.** Helmet security headers, CORS allowlist (Replit + fidcaster.xyz), rate limiters, body validation, route mounting, error handling |
 | `neynar-proxy.ts` | TS | **Neynar API proxy with multi-key rotation.** 12-key pool, RPM throttling, single-flight deduplication, in-memory cache with SWR, Pro-status endpoint (6h cache per FID) |
 | `fid-market-routes.ts` | TS | **FID Market indexer + REST API.** Streams `Listed`/`Bought`/`Cancelled` events from Optimism in 5,000-block chunks, maintains in-memory listing cache, exposes `/api/fid-market/*` endpoints |
 | `farcaster-submit.ts` | TS | **Hub broadcaster.** Receives pre-signed action params, encodes with `@farcaster/hub-nodejs`, submits to `hub-api.neynar.com`. Actions: follow, unfollow, like, unlike, recast, unrecast, cast, delete-cast |
