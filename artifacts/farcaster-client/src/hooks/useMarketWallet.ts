@@ -27,9 +27,20 @@ async function getWCProvider() {
   const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
   wcProvider = await EthereumProvider.init({
     projectId,
-    chains: [optimism.id],
+    // Optimism as a REQUIRED chain makes many wallets reject or silently
+    // mis-negotiate the pairing (most wallet apps only guarantee mainnet) ·
+    // the session then approves without eip155:10, and every subsequent
+    // Optimism request fails with "Missing or invalid. request() chainId:
+    // eip155:10". Making everything optional lets any wallet connect, and
+    // the post-connect wallet_switchEthereumChain call below prompts it to
+    // add/switch to Optimism afterward instead of requiring it upfront.
+    chains: [],
+    optionalChains: [optimism.id, 1],
+    // Lets the provider serve Optimism read calls over this RPC even for
+    // wallets that never approved eip155:10 in their session namespaces ·
+    // further guards against the same "missing chainId" failure.
+    rpcMap: { [optimism.id]: "https://mainnet.optimism.io" },
     showQrModal: true,
-    optionalChains: [1],
     metadata: {
       name: "FidCaster",
       description: "Farcaster FID Market on Optimism",
