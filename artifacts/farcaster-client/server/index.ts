@@ -62,10 +62,19 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      // This HTTP header and index.html's CSP <meta> tag both apply · a
+      // browser enforces their INTERSECTION, so any directive missing here
+      // silently overrides the meta tag back down to default-src ('self').
+      // font-src wasn't set at all (defaulting to 'self' only), which broke
+      // both Google Fonts and the WalletConnect/Reown modal's custom font;
+      // frameSrc was 'none', which blocked the modal's verify.walletconnect
+      // domain-verification iframe outright · both are real causes of "wallet
+      // connect" issues, not just cosmetic.
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.reown.com"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'", "https:", "wss:"],
-      frameSrc: ["'none'"],
+      frameSrc: ["'self'", "https://verify.walletconnect.com", "https://verify.walletconnect.org"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
     },

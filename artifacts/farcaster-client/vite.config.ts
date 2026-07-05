@@ -141,7 +141,7 @@ export default defineConfig({
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline'",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com",
+        "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
         "img-src 'self' data: blob: https:",
         "connect-src 'self' https: wss: ws:",
         // Mini apps run inside iframes — allow any https origin to be framed.
@@ -179,7 +179,7 @@ export default defineConfig({
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com",
+        "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
         "img-src 'self' data: blob: https:",
         "connect-src 'self' https: wss:",
         // Mini apps run inside iframes — allow any https origin to be framed.
