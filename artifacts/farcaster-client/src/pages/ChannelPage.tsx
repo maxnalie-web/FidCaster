@@ -178,12 +178,13 @@ export function ChannelPage() {
         ) : null}
       </div>
 
-      {/* ── Floating compose button · same placement as Home ── */}
+      {/* ── Floating compose button · same placement as Home (bottom-[70px]
+          clears a 54px bottom nav bar when one is present) ── */}
       {channel && viewerFid > 0 && (
         <button
           onClick={() => setShowComposer(true)}
           aria-label="Cast in channel"
-          className="fixed bottom-6 right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          className="fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
           style={{ marginBottom: "env(safe-area-inset-bottom)" }}
         >
           <PenSquare className="w-[22px] h-[22px]" />
