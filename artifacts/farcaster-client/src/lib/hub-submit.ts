@@ -136,7 +136,7 @@ async function buildAndSignLocal(
 
 // ─── hub submission ────────────────────────────────────────────────────────────
 
-// Cloudflare Worker URL (optional) · set VITE_HUB_WORKER_URL in Replit secrets.
+// Cloudflare Worker URL (optional) · set VITE_HUB_WORKER_URL in your environment.
 // Worker races 3 free hubs in parallel on Cloudflare's global network; each
 // data-center has its own IP so hub rate limits are effectively bypassed.
 // See hub-worker/index.js for the one-file Worker code to deploy.

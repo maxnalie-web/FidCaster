@@ -48,11 +48,6 @@ const extraOrigins = (process.env.ALLOWED_ORIGINS ?? "")
 const ALLOWED_ORIGINS = [
   /^https?:\/\/localhost(:\d+)?$/,
   /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
-  /^https:\/\/[\w.-]+\.replit\.dev$/,
-  /^https:\/\/[\w.-]+\.replit\.app$/,
-  /^https:\/\/[\w.-]+\.repl\.co$/,
-  /^https:\/\/[\w.-]+\.spock\.replit\.dev$/,
-  /^https:\/\/[\w.-]+\.worf\.replit\.dev$/,
   /^https:\/\/(www\.)?fidcaster\.xyz$/,
   ...extraOrigins,
 ];

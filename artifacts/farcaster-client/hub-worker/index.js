@@ -12,7 +12,7 @@
  *  2. کل این فایل رو paste کن
  *  3. Save & Deploy
  *  4. URL مثلاً: https://farcaster-hub.USERNAME.workers.dev
- *  5. اون URL رو به Replit بده: VITE_HUB_WORKER_URL=https://farcaster-hub.USERNAME.workers.dev
+ *  5. اون URL رو تو محیط اپ ست کن: VITE_HUB_WORKER_URL=https://farcaster-hub.USERNAME.workers.dev
  */
 
 const FREE_HUBS = [

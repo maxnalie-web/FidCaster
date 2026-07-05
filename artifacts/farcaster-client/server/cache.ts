@@ -62,7 +62,7 @@ export function cacheGetSWR(
   // Soft-expired: kick off a single shared refresh if none is running.
   // Wrapped in a 10s race-timeout so a hung Neynar call never holds the
   // revalidating lock indefinitely — the key simply stays stale until
-  // the next SWR window fires a fresh attempt. (ChatGPT-suggested hardening)
+  // the next SWR window fires a fresh attempt.
   if (now > e.softExpiresAt && !inFlight) {
     metrics.incSwrRefresh();
     const SWR_TIMEOUT_MS = 10_000;
