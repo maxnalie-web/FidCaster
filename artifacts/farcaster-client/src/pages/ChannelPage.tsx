@@ -4,7 +4,7 @@ import { ArrowLeft, Loader2, Hash, Users, Check, Plus, ShieldCheck, PenSquare } 
 import { useWallet } from "@/hooks/useWallet";
 import { getChannel, getChannelFeed, type NeynarChannel, type NeynarCast, type NeynarUser } from "@/lib/neynar";
 import { CastCard } from "@/components/CastCard";
-import { CastComposer } from "@/components/CastComposer";
+import { ComposeModal } from "@/components/ComposeModal";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { isChannelFollowed, followChannel, unfollowChannel } from "@/lib/channel-follows";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,9 @@ export function ChannelPage() {
   const [following, setFollowing] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
   const loadedIdRef = useRef<string>("");
+
+  // Open the channel scrolled to the very top (manual scroll restoration is on).
+  useEffect(() => { window.scrollTo(0, 0); }, [id]);
 
   useEffect(() => {
     // Wait for the wallet's own fid to be ready · fetching with viewer_fid=0
@@ -102,14 +105,14 @@ export function ChannelPage() {
           </div>
         ) : channel ? (
           <>
-            <div className="relative h-32 w-full overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">
+            <div className="relative h-28 w-full overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">
               {channel.header_image_url && (
                 <img src={channel.header_image_url} alt="" className="w-full h-full object-cover" />
               )}
             </div>
             <div className="px-4 py-4 border-b border-border">
               <div className="flex items-start gap-3">
-                <div className="shrink-0 -mt-10 p-[2.5px] rounded-[18px] bg-gradient-to-br from-primary via-violet-500 to-indigo-500 shadow-lg ring-2 ring-background">
+                <div className="shrink-0 -mt-12 p-[3px] rounded-[20px] bg-background shadow-lg">
                   <div className="w-16 h-16 rounded-2xl overflow-hidden bg-primary/10">
                     {channel.image_url ? (
                       <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
@@ -148,30 +151,11 @@ export function ChannelPage() {
               {channel.description && (
                 <p className="text-sm text-foreground/80 mt-3 leading-relaxed">{channel.description}</p>
               )}
-              <div className="flex items-center justify-between mt-3.5">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Users className="w-3.5 h-3.5" />
-                  <span>{channel.follower_count.toLocaleString()} followers</span>
-                </div>
-                <button
-                  onClick={() => setShowComposer((v) => !v)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-                >
-                  <PenSquare className="w-3.5 h-3.5" /> Cast here
-                </button>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-3.5">
+                <Users className="w-3.5 h-3.5" />
+                <span>{channel.follower_count.toLocaleString()} followers</span>
               </div>
             </div>
-
-            {showComposer && (
-              <div className="border-b border-border">
-                <CastComposer
-                  defaultChannel={{ id: channel.id, name: channel.name, image_url: channel.image_url, follower_count: channel.follower_count, url: channel.url }}
-                  onPublished={(c) => { setCasts((prev) => [c, ...prev]); setShowComposer(false); }}
-                  onCanceled={() => setShowComposer(false)}
-                  placeholder={`Cast in /${channel.id}…`}
-                />
-              </div>
-            )}
 
             {casts.length > 0 ? (
               <>
@@ -193,6 +177,28 @@ export function ChannelPage() {
           </>
         ) : null}
       </div>
+
+      {/* ── Floating compose button · same placement as Home ── */}
+      {channel && viewerFid > 0 && (
+        <button
+          onClick={() => setShowComposer(true)}
+          aria-label="Cast in channel"
+          className="fixed bottom-6 right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <PenSquare className="w-[22px] h-[22px]" />
+        </button>
+      )}
+
+      {/* ── Compose popup ── */}
+      {channel && showComposer && (
+        <ComposeModal
+          title={`Cast in /${channel.id}`}
+          defaultChannel={{ id: channel.id, name: channel.name, image_url: channel.image_url, follower_count: channel.follower_count, url: channel.url }}
+          onClose={() => setShowComposer(false)}
+          onPublished={(c) => setCasts((prev) => [c, ...prev])}
+        />
+      )}
     </div>
   );
 }

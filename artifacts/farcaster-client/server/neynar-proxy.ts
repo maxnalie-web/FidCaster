@@ -16,7 +16,7 @@ function ttlFor(path: string): number {
   if (path.includes("/user/bulk"))         return  600_000; // 10 min profiles
   if (path.includes("/user/search"))       return   60_000; // 1 min  search
   if (path.includes("/cast/search"))       return   60_000;
-  if (path.includes("/cast/conversation")) return  180_000; // 3 min  thread
+  if (path.includes("/cast/conversation")) return   45_000; // 45s   thread · keep comments fresh (SWR + throttle protect the rate limit)
   if (path.includes("/followers"))         return  900_000; // 15 min — was 3 min (5× saving)
   if (path.includes("/following"))         return  900_000; // 15 min — was 3 min
   if (path.includes("/reactions"))         return  180_000; // 3 min

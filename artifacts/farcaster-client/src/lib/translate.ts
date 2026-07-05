@@ -115,15 +115,25 @@ export function defaultTargetLang(): LangCode {
 // viewer's device locale, and this lets them override that default explicitly.
 const PREF_LANG_KEY = "fc_translate_lang";
 
-/** Viewer's preferred translation target · defaults to their device locale until set. */
-export function getPreferredLang(): LangCode {
+/** Either an explicit language code, or "auto" (follow the device locale). */
+export type LangSetting = LangCode | "auto";
+
+/** Raw setting as chosen in Settings → Language · "auto" when unset or auto. */
+export function getLangSetting(): LangSetting {
   try {
     const stored = localStorage.getItem(PREF_LANG_KEY);
+    if (stored === "auto") return "auto";
     if (stored && SUPPORTED_LANGS.some((l) => l.code === stored)) return stored as LangCode;
   } catch { /* ignore */ }
-  return defaultTargetLang();
+  return "auto";
 }
 
-export function setPreferredLang(lang: LangCode): void {
+/** Viewer's preferred translation target · resolves "auto" to the device locale. */
+export function getPreferredLang(): LangCode {
+  const setting = getLangSetting();
+  return setting === "auto" ? defaultTargetLang() : setting;
+}
+
+export function setPreferredLang(lang: LangSetting): void {
   try { localStorage.setItem(PREF_LANG_KEY, lang); } catch { /* ignore */ }
 }

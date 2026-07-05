@@ -99,6 +99,13 @@ function App() {
   const [theme] = useTheme();
 
   useEffect(() => {
+    // Own scroll position ourselves · the app already restores feed/thread
+    // scroll manually, and the browser's default "auto" restoration fights that,
+    // leaving pages opened half-scrolled (top of the profile hidden under the
+    // sticky header) and making back navigation jump before it leaves.
+    if ("scrollRestoration" in history) {
+      try { history.scrollRestoration = "manual"; } catch { /* older browsers */ }
+    }
     applyTheme(getTheme());
     applyStoredAppSettings();
     const cfg = loadAdminConfig();

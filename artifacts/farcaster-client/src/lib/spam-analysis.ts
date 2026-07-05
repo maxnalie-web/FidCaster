@@ -101,18 +101,16 @@ export function analyzeAccount(user: NeynarUser, casts: NeynarCast[], spamLabel?
     checks.push({ id: "spam-label", label: "Farcaster spam label", status: "warn", detail: `${username} has no spam label yet in Farcaster's published dataset · usually means too little recent activity to be scored, not a verdict either way.`, impact: "low" });
   }
 
-  // ── Power Badge ───────────────────────────────────────────────────────────
-  // Power Badge and the Farcaster Pro subscription's purple badge are two
-  // separate things · Pro ($120/yr) does not grant the Power Badge, which
-  // stays purely algorithmic (sustained, genuine engagement over time).
+  // ── Purple (Pro) badge ─────────────────────────────────────────────────────
+  // Farcaster's purple badge is the Pro subscriber badge · a real, active,
+  // in-good-standing signal.
   checks.push({
     id: "power-badge",
-    label: "Power Badge",
+    label: "Purple badge",
     status: hasPowerBadge(user) ? "pass" : "warn",
     detail: hasPowerBadge(user)
-      ? `${username} holds the Power Badge · one of the strongest "real, active user" signals on the network.`
-      : `${username} doesn't currently hold the Power Badge.`,
-    fixHint: hasPowerBadge(user) ? undefined : "This is the purple Power Badge specifically, separate from the Pro subscriber badge · it's awarded algorithmically for sustained genuine activity rather than by purchase.",
+      ? `${username} holds the purple badge · one of the strongest "real, active user" signals on the network.`
+      : `${username} doesn't currently hold the purple badge.`,
     impact: "medium",
   });
 

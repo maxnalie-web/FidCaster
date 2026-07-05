@@ -22,7 +22,10 @@ export function ThreadPage() {
   const { fid, neynarKey, profile, signerApproved, localSigner } = useWallet();
   const viewerFid = fid ? Number(fid) : 0;
   const hash = params?.hash ?? "";
-  const cachedForHash = _threadCache.get(hash);
+  // Key the cache by viewer too · a thread's like/recast state is per-account,
+  // so switching accounts must not restore the previous account's version.
+  const cacheKeyBase = `${viewerFid}:${hash}`;
+  const cachedForHash = _threadCache.get(cacheKeyBase);
 
   const [cast, setCast] = useState<NeynarCast | null>(() => cachedForHash?.cast ?? null);
   const [replies, setReplies] = useState<NeynarCast[]>(() => cachedForHash?.replies ?? []);
@@ -43,12 +46,20 @@ export function ThreadPage() {
   useEffect(() => {
     if (!hash) return;
     // Already have this exact thread cached (e.g. came back via browser back) ·
-    // state was already restored by the lazy initializers above, so just
-    // restore scroll and skip the network round-trip entirely.
-    const cached = _threadCache.get(hash);
+    // state was already restored by the lazy initializers above. Show it
+    // instantly (restore scroll) BUT still refresh in the background so new
+    // replies/reactions land quickly instead of staying stale on every revisit.
+    const cached = _threadCache.get(cacheKeyBase);
     if (cached) {
       setLoading(false);
       requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
+      getCastConversation(hash, viewerFid, neynarKey)
+        .then((res) => {
+          setCast(res.conversation.cast);
+          setReplies(res.conversation.cast.direct_replies ?? []);
+          setRepliesCursor(res.next?.cursor);
+        })
+        .catch(() => { /* keep showing cached copy on background-refresh failure */ });
       return;
     }
     setLoading(true);
@@ -62,7 +73,7 @@ export function ThreadPage() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load thread"))
       .finally(() => setLoading(false));
-  }, [hash, viewerFid, neynarKey]);
+  }, [hash, viewerFid, neynarKey, cacheKeyBase]);
 
   // Track scroll continuously so it can be captured the instant this thread is
   // left (either navigating deeper into a reply, or away entirely).
@@ -76,7 +87,7 @@ export function ThreadPage() {
   useEffect(() => {
     if (!hash) return;
     return () => {
-      if (cast) _threadCache.set(hash, { cast, replies, repliesCursor, scrollY: scrollYRef.current });
+      if (cast) _threadCache.set(cacheKeyBase, { cast, replies, repliesCursor, scrollY: scrollYRef.current });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hash, cast, replies, repliesCursor]);

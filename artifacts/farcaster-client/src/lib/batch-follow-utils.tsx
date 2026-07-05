@@ -18,10 +18,14 @@ export interface BatchFilters {
   limit: number;
   onlyPro: boolean;
   onlyMutuals: boolean;
+  /** Follow mode: exclude accounts that already follow me. Unfollow mode: skip mutuals. */
   onlyNonFollowers: boolean;
   skipMutuals: boolean;
   minFollowers: number;
   maxFollowers: number;
+  /** FID range · only include accounts whose FID falls within [minFid, maxFid]. 0 = no bound. */
+  minFid: number;
+  maxFid: number;
   /** 0–100 (Neynar's 0–1 score ×100 for a friendlier UI number). 0 = no filter. */
   minNeynarScore: number;
   /** Only accounts holding the Farcaster Power Badge · strong "real, active user" signal. */
@@ -57,6 +61,8 @@ export const DEFAULT_FILTERS: BatchFilters = {
   skipMutuals: false,
   minFollowers: 0,
   maxFollowers: 0,
+  minFid: 0,
+  maxFid: 0,
   minNeynarScore: 0,
   requirePowerBadge: false,
   spamLabel: "any",
@@ -73,7 +79,7 @@ export const SORT_OPTIONS: SortOptionDef[] = [
 export const FOLLOW_PRESETS: PresetDef[] = [
   { id: "balanced",   label: "Mutuals",    desc: "People who already follow you, ranked by how likely they are to engage back",              icon: <Heart             className="w-4 h-4" />, color: "text-primary border-primary/30 bg-primary/8",             filters: { limit: 100, onlyMutuals: true, sortOrder: "smart" } },
   { id: "quality",    label: "Quality",    desc: "Established, real accounts: 500+ followers, Neynar score 40+, verified where possible",     icon: <Shield            className="w-4 h-4" />, color: "text-amber-500 border-amber-500/30 bg-amber-500/8",       filters: { limit: 100, minFollowers: 500, minNeynarScore: 40, sortOrder: "smart" } },
-  { id: "network",    label: "Power Circle", desc: "Power Badge holders only, ranked by real engagement signals · highest follow-back rate", icon: <Award             className="w-4 h-4" />, color: "text-violet-500 border-violet-500/30 bg-violet-500/8",    filters: { limit: 100, requirePowerBadge: true, sortOrder: "smart" } },
+  { id: "network",    label: "Purple Circle", desc: "Purple badge holders only, ranked by real engagement signals · highest follow-back rate", icon: <Award             className="w-4 h-4" />, color: "text-violet-500 border-violet-500/30 bg-violet-500/8",    filters: { limit: 100, requirePowerBadge: true, sortOrder: "smart" } },
   { id: "aggressive", label: "Growth",     desc: "Smart-ranked wide net across active accounts, tuned for maximum follow-back volume",         icon: <TrendingUp        className="w-4 h-4" />, color: "text-emerald-500 border-emerald-500/30 bg-emerald-500/8", filters: { limit: 500, sortOrder: "smart", minFollowers: 30, maxFollowers: 50000, minNeynarScore: 20 } },
   { id: "custom",     label: "Custom",     desc: "Set every filter yourself",                                                                  icon: <SlidersHorizontal className="w-4 h-4" />, color: "text-muted-foreground border-border bg-muted/30",         filters: {} },
 ];
@@ -161,15 +167,22 @@ export function applyFilters(
   mode: BatchMode,
   filters: BatchFilters,
   exclusions?: { fidSet: Set<number>; usernameSet: Set<string> },
+  selfFid?: number,
 ): NeynarUser[] {
   let list = [...users];
+  // Never operate on your own account.
+  if (selfFid) list = list.filter(u => u.fid !== selfFid);
   if (mode === "follow") {
     list = list.filter(u => u.viewer_context?.following !== true);
     if (filters.onlyMutuals) list = list.filter(u => u.viewer_context?.followed_by === true);
+    // "Hide people who follow me" · exclude accounts already following the viewer.
+    if (filters.onlyNonFollowers) list = list.filter(u => u.viewer_context?.followed_by !== true);
   } else {
     if (filters.skipMutuals || filters.onlyNonFollowers)
       list = list.filter(u => u.viewer_context?.followed_by !== true);
   }
+  if (filters.minFid > 0) list = list.filter(u => u.fid >= filters.minFid);
+  if (filters.maxFid > 0) list = list.filter(u => u.fid <= filters.maxFid);
   if (filters.minFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) >= filters.minFollowers);
   if (filters.maxFollowers > 0) list = list.filter(u => (u.follower_count ?? 0) <= filters.maxFollowers);
   if (filters.requirePowerBadge) list = list.filter(u => hasPowerBadge(u));

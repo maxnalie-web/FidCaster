@@ -116,7 +116,7 @@ async function fastHubScan(opts: {
   // Mutual-based FILTERS need the complete followers set · if the viewer has
   // more followers than the scan cap, only the exact Neynar path is correct.
   const usesMutualFilter = mode === "follow"
-    ? filters.onlyMutuals
+    ? (filters.onlyMutuals || filters.onlyNonFollowers)
     : (filters.skipMutuals || filters.onlyNonFollowers);
   if (usesMutualFilter && !followers.complete) return null;
 
@@ -132,13 +132,17 @@ async function fastHubScan(opts: {
       },
     }));
 
-  // 4. Identical filter semantics to applyFilters (range/Pro never reach here).
+  // 4. Identical filter semantics to applyFilters (follower-range/Pro never reach here).
   if (mode === "follow") {
     candidates = candidates.filter(u => !u.viewer_context!.following);
     if (filters.onlyMutuals) candidates = candidates.filter(u => u.viewer_context!.followed_by);
+    if (filters.onlyNonFollowers) candidates = candidates.filter(u => !u.viewer_context!.followed_by);
   } else if (filters.skipMutuals || filters.onlyNonFollowers) {
     candidates = candidates.filter(u => !u.viewer_context!.followed_by);
   }
+  // FID range is known on the bare stubs, so the fast path can apply it directly.
+  if (filters.minFid > 0) candidates = candidates.filter(u => u.fid >= filters.minFid);
+  if (filters.maxFid > 0) candidates = candidates.filter(u => u.fid <= filters.maxFid);
   if (fidExclusions && fidExclusions.size > 0) {
     candidates = candidates.filter(u => !fidExclusions.has(u.fid));
   }
@@ -279,6 +283,7 @@ type Phase = "idle" | "searching" | "loading" | "loaded" | "empty";
 
 export function FollowPage() {
   const [, navigate] = useLocation();
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const { fid, localSigner, neynarKey, profile } = useWallet();
   const batchOp = useBatchOperation();
   const myFid = fid ? Number(fid) : 0;
@@ -475,7 +480,7 @@ export function FollowPage() {
       collected = cached as NeynarUser[];
       setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
       if (currentFilters.spamLabel !== "any") await getSpamLabelsFor(collected.map(u => u.fid));
-      const result = applyFilters(collected, batchMode, currentFilters, currentExclusions);
+      const result = applyFilters(collected, batchMode, currentFilters, currentExclusions, myFid);
       setAllUsers(result);
       setSelectedFids(new Set(result.map(u => u.fid)));
       setPhase(result.length === 0 ? "empty" : "loaded");
@@ -525,7 +530,7 @@ export function FollowPage() {
         setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
         // Early-exit only for non-Pro filters (Pro needs full scan to batch-check status)
         if (!currentFilters.onlyPro) {
-          const interim = applyFilters(collected, batchMode, { ...currentFilters, limit: MAX_SCAN }, currentExclusions);
+          const interim = applyFilters(collected, batchMode, { ...currentFilters, limit: MAX_SCAN }, currentExclusions, myFid);
           if (interim.length >= currentFilters.limit) break;
         }
       } while (cursor && collected.length < MAX_SCAN);
@@ -550,7 +555,7 @@ export function FollowPage() {
       const candidates = applyFilters(
         collected, batchMode,
         { ...currentFilters, onlyPro: false, limit: MAX_SCAN },
-        currentExclusions,
+        currentExclusions, myFid,
       );
       setScanProgress(p => ({ ...p, found: candidates.length }));
 
@@ -568,7 +573,7 @@ export function FollowPage() {
       }
       finalResult = candidates.filter(u => proMap[u.fid] === true).slice(0, currentFilters.limit);
     } else {
-      finalResult = applyFilters(collected, batchMode, currentFilters, currentExclusions);
+      finalResult = applyFilters(collected, batchMode, currentFilters, currentExclusions, myFid);
     }
 
     setAllUsers(finalResult);
@@ -607,7 +612,7 @@ export function FollowPage() {
         cursor = res.next?.cursor;
         setScanProgress({ pages: Math.ceil(collected.length / 100), found: collected.length });
         if (!filters.onlyPro) {
-          const interim = applyFilters(collected, batchMode, { ...filters, limit: 999_999 }, exclusions);
+          const interim = applyFilters(collected, batchMode, { ...filters, limit: 999_999 }, exclusions, myFid);
           if (interim.length >= filters.limit) break;
         }
       } while (cursor && collected.length < rawCap);
@@ -627,7 +632,7 @@ export function FollowPage() {
     // ── Pro filter: batch-fetch Pro status, then apply ─────────────────────
     let result: NeynarUser[];
     if (filters.onlyPro) {
-      const candidates = applyFilters(collected, batchMode, { ...filters, onlyPro: false, limit: MAX_SCAN }, exclusions);
+      const candidates = applyFilters(collected, batchMode, { ...filters, onlyPro: false, limit: MAX_SCAN }, exclusions, myFid);
       setScanProgress(p => ({ ...p, found: candidates.length }));
       const proMap: Record<number, boolean> = {};
       for (let i = 0; i < candidates.length; i += 100) {
@@ -642,7 +647,7 @@ export function FollowPage() {
       }
       result = candidates.filter(u => proMap[u.fid] === true).slice(0, filters.limit);
     } else {
-      result = applyFilters(collected, batchMode, filters, exclusions);
+      result = applyFilters(collected, batchMode, filters, exclusions, myFid);
     }
 
     setAllUsers(result);
@@ -978,55 +983,9 @@ export function FollowPage() {
             </div>
           )}
 
-          {/* ── Presets + Filters (shown once a target is set) ── */}
+          {/* ── Filters (shown once a target is set) ── */}
           {canLoad && (
             <div className="px-4 lg:px-0 space-y-3">
-
-              {/* Presets */}
-              <div>
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3" /> Strategy
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {presets.map((p, i) => {
-                    const active = activePreset === p.id;
-                    const isLast = i === presets.length - 1;
-                    const isLastOdd = isLast && presets.length % 2 === 1;
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => applyPreset(p.filters, p.id)}
-                        className={cn(
-                          "relative flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all",
-                          isLastOdd && "col-span-2 justify-center text-center",
-                          active
-                            ? cn(p.color, "shadow-sm ring-1 ring-inset ring-current/10")
-                            : "border-border bg-muted/10 text-muted-foreground hover:bg-muted/30 hover:border-foreground/15",
-                        )}
-                      >
-                        {active && <Check className="w-3.5 h-3.5 absolute top-2 right-2" strokeWidth={3} />}
-                        <span className={cn(
-                          "w-7 h-7 rounded-lg flex items-center justify-center shrink-0",
-                          active ? "bg-current/10" : "bg-muted/40",
-                        )}>
-                          {p.icon}
-                        </span>
-                        <span className={cn("text-[12.5px] font-bold", active ? "" : "text-foreground")}>
-                          {p.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {(() => {
-                  const active = presets.find(p => p.id === activePreset);
-                  return active ? (
-                    <p className="text-[11px] text-muted-foreground mt-2 px-0.5 leading-relaxed">
-                      {active.desc}
-                    </p>
-                  ) : null;
-                })()}
-              </div>
 
               {/* Filter toggle (mobile) */}
               <div className="lg:hidden">
@@ -1096,13 +1055,16 @@ export function FollowPage() {
                   {mode === "follow" ? (
                     <>
                       <div className="px-3">
-                        <Toggle label="Mutuals only" sub="Only those who follow me" checked={filters.onlyMutuals} onChange={v => updateFilter("onlyMutuals", v)} icon={<Heart className="w-3.5 h-3.5" />} />
+                        <Toggle label="Mutuals only" sub="Only those who already follow me" checked={filters.onlyMutuals} onChange={v => { updateFilter("onlyMutuals", v); if (v) updateFilter("onlyNonFollowers", false); }} icon={<Heart className="w-3.5 h-3.5" />} />
+                      </div>
+                      <div className="px-3">
+                        <Toggle label="Hide people who follow me" sub="Skip accounts that already follow me" checked={filters.onlyNonFollowers} onChange={v => { updateFilter("onlyNonFollowers", v); if (v) updateFilter("onlyMutuals", false); }} icon={<UserMinus className="w-3.5 h-3.5" />} />
                       </div>
                       <div className="px-3">
                         <Toggle label="Farcaster Pro only" sub="Paid subscribers ($10/mo) · rare, high intent" checked={filters.onlyPro} onChange={v => updateFilter("onlyPro", v)} icon={<ProBadge size={14} />} />
                       </div>
                       <div className="px-3">
-                        <Toggle label="Power Badge only" sub="Farcaster-verified active accounts" checked={filters.requirePowerBadge} onChange={v => updateFilter("requirePowerBadge", v)} icon={<Award className="w-3.5 h-3.5" />} />
+                        <Toggle label="Purple badge only" sub="Farcaster purple (Pro) badge holders" checked={filters.requirePowerBadge} onChange={v => updateFilter("requirePowerBadge", v)} icon={<Award className="w-3.5 h-3.5" />} />
                       </div>
                     </>
                   ) : (
@@ -1146,6 +1108,35 @@ export function FollowPage() {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* FID range */}
+                <div className="rounded-xl border border-border px-3 py-2.5 space-y-2">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">FID range</p>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-muted-foreground">From FID</label>
+                      <input
+                        type="number" min={0}
+                        value={filters.minFid || ""}
+                        onChange={e => updateFilter("minFid", Number(e.target.value) || 0)}
+                        placeholder="1"
+                        className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-border bg-muted/20 text-[12px] text-foreground outline-none focus:border-primary/40 transition-colors"
+                      />
+                    </div>
+                    <span className="text-muted-foreground text-sm pb-1.5">–</span>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-muted-foreground">To FID</label>
+                      <input
+                        type="number" min={0}
+                        value={filters.maxFid || ""}
+                        onChange={e => updateFilter("maxFid", Number(e.target.value) || 0)}
+                        placeholder="any"
+                        className="w-full mt-0.5 px-2 py-1.5 rounded-lg border border-border bg-muted/20 text-[12px] text-foreground outline-none focus:border-primary/40 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Only list accounts whose FID is in this range. Lower FIDs are older accounts.</p>
                 </div>
 
                 {/* Neynar quality score */}

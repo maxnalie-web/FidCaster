@@ -7,7 +7,7 @@ import {
   AlignLeft, MessageSquare, Heart, Repeat2, X,
   Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge, PenSquare,
 } from "lucide-react";
-import { CastComposer } from "@/components/CastComposer";
+import { ComposeModal } from "@/components/ComposeModal";
 import { SpamAnalyzerSheet } from "@/components/SpamAnalyzerSheet";
 import { getSpamLabelsFor, type SpamLabelValue } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
@@ -328,6 +328,9 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [showSpamAnalyzer, setShowSpamAnalyzer] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
+  // Open every profile scrolled to the very top · with manual scroll restoration
+  // the browser no longer does this for us.
+  useEffect(() => { window.scrollTo(0, 0); }, [targetFid]);
   // Price (ETH string) if this FID is actively listed on the FID market, else null.
   const [marketListing, setMarketListing] = useState<string | null>(null);
   const ethUsd = useEthPrice(); // live ETH→USD (CoinGecko, refreshes) for USD price display
@@ -638,18 +641,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                       >
                         Edit profile
                       </button>
-                      <button
-                        onClick={() => setShowComposer((v) => !v)}
-                        className={cn(
-                          "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-semibold transition-all border",
-                          showComposer
-                            ? "bg-primary text-primary-foreground border-primary/60"
-                            : "bg-primary/10 text-primary border-primary/30 hover:bg-primary/15"
-                        )}
-                      >
-                        <PenSquare className="w-4 h-4" />
-                        Cast
-                      </button>
                       <div className="relative" ref={moreMenuRef}>
                         <button
                           onClick={() => setShowMoreMenu(v => !v)}
@@ -696,7 +687,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                     </>
                   ) : (
                     <>
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="relative flex items-center">
                         {canWrite && (
                           <button
                             onClick={handleFollow}
@@ -717,7 +708,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                           </button>
                         )}
                         {user.viewer_context?.followed_by && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border/60 shrink-0">
+                          <span className="absolute top-full right-0 mt-1 px-1.5 py-px rounded-full text-[9px] font-medium leading-none bg-muted text-muted-foreground border border-border/50 whitespace-nowrap">
                             Follows you
                           </span>
                         )}
@@ -908,23 +899,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
               ))}
             </div>
 
-            {/* ── Composer (own profile only) ── */}
-            {isOwnProfile && showComposer && (
-              <div className="border-b border-border/40">
-                <CastComposer
-                  onPublished={(c) => {
-                    setTabs((prev) => ({
-                      ...prev,
-                      casts: { ...prev.casts, items: [c, ...prev.casts.items] },
-                    }));
-                    setShowComposer(false);
-                    setActiveTab("casts");
-                  }}
-                  onCanceled={() => setShowComposer(false)}
-                />
-              </div>
-            )}
-
             {/* ── Tab content ── */}
             {currentTab.loading && currentTab.items.length === 0 ? (
               <div className="flex items-center justify-center py-14">
@@ -1008,7 +982,31 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         </div>
       )}
 
+      {/* ── Floating compose button (own profile) · same placement as Home ── */}
+      {isOwnProfile && canWrite && (
+        <button
+          onClick={() => setShowComposer(true)}
+          aria-label="New cast"
+          className="fixed bottom-6 right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <PenSquare className="w-[22px] h-[22px]" />
+        </button>
+      )}
 
+      {/* ── Compose popup (own profile) ── */}
+      {isOwnProfile && showComposer && (
+        <ComposeModal
+          onClose={() => setShowComposer(false)}
+          onPublished={(c) => {
+            setTabs((prev) => ({
+              ...prev,
+              casts: { ...prev.casts, items: [c, ...prev.casts.items] },
+            }));
+            setActiveTab("casts");
+          }}
+        />
+      )}
     </div>
   );
 }
