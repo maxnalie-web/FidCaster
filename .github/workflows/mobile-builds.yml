@@ -1,0 +1,142 @@
+name: Mobile builds (Android APK / iOS)
+
+# This sandbox that developed the Capacitor Android/iOS projects has no Android
+# SDK and no Xcode (Linux-only, and the SDK/Xcode download hosts are blocked by
+# its network policy), so the native builds can only be produced and verified
+# here on GitHub's hosted runners — Ubuntu ships an Android SDK, macOS ships
+# Xcode. Run manually via the "Run workflow" button, or it fires automatically
+# on pushes to main that touch the native projects.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/farcaster-client/android/**"
+      - "artifacts/farcaster-client/ios/**"
+      - "artifacts/farcaster-client/src/**"
+      - "artifacts/farcaster-client/public/**"
+      - "artifacts/farcaster-client/capacitor.config.ts"
+      - "artifacts/farcaster-client/vite.config.ts"
+      - "artifacts/farcaster-client/package.json"
+      - ".github/workflows/mobile-builds.yml"
+
+defaults:
+  run:
+    working-directory: artifacts/farcaster-client
+
+jobs:
+  # ── Android: produces an installable, sideloadable debug APK ────────────────
+  # (signed with Gradle's auto-generated debug keystore — fine for testing,
+  # not for a Play Store release, which needs a real upload key.)
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Build web bundle
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+          WALLETCONNECT_PROJECT_ID: ${{ secrets.WALLETCONNECT_PROJECT_ID }}
+          IMGUR_CLIENT_ID: ${{ secrets.IMGUR_CLIENT_ID }}
+          APP_FID: ${{ secrets.APP_FID }}
+          APP_MNEMONIC: ${{ secrets.APP_MNEMONIC }}
+
+      - name: Sync into Android project
+        run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Accept Android SDK licenses
+        # Lets AGP auto-download whatever exact platform/build-tools patch
+        # version this Gradle build needs (compileSdk 36, see variables.gradle)
+        # instead of hardcoding a build-tools micro-version that may not exist
+        # yet on the runner's preinstalled SDK.
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: artifacts/farcaster-client/android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fidcaster-debug-apk
+          path: artifacts/farcaster-client/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  # ── iOS: builds for the Simulator (no Apple Developer signing configured) ──
+  # A real, install-on-a-phone .ipa needs a signing certificate + provisioning
+  # profile from an Apple Developer account — add APPLE_* secrets and a
+  # dedicated archive/export step once those are available.
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Build web bundle
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+          WALLETCONNECT_PROJECT_ID: ${{ secrets.WALLETCONNECT_PROJECT_ID }}
+          IMGUR_CLIENT_ID: ${{ secrets.IMGUR_CLIENT_ID }}
+          APP_FID: ${{ secrets.APP_FID }}
+          APP_MNEMONIC: ${{ secrets.APP_MNEMONIC }}
+
+      - name: Sync into iOS project
+        run: npx cap sync ios
+
+      - name: Resolve Swift Package dependencies
+        run: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+
+      - name: Build for iOS Simulator (unsigned)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Zip the .app bundle
+        run: |
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -r FidCaster-simulator.zip App.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fidcaster-ios-simulator
+          path: artifacts/farcaster-client/build/Build/Products/Debug-iphonesimulator/FidCaster-simulator.zip
+          if-no-files-found: error
