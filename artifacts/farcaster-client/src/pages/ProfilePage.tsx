@@ -982,12 +982,16 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         </div>
       )}
 
-      {/* ── Floating compose button (own profile) · same placement as Home ── */}
+      {/* ── Floating compose button (own profile) · same placement as Home.
+          bottom-[70px], not bottom-6: this component also renders embedded
+          inside DashboardPage's own "profile" tab, which has its own 54px
+          bottom nav bar · bottom-6 sat the button right on top of the nav's
+          Profile icon instead of above it. ── */}
       {isOwnProfile && canWrite && (
         <button
           onClick={() => setShowComposer(true)}
           aria-label="New cast"
-          className="fixed bottom-6 right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          className="fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
           style={{ marginBottom: "env(safe-area-inset-bottom)" }}
         >
           <PenSquare className="w-[22px] h-[22px]" />

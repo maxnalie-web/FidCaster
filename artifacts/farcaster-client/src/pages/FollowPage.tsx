@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Search, UserPlus, UserMinus, Users, Loader2,
   X, ChevronDown, CheckSquare, Square,
-  Heart, Ban, Filter, Check, AlertCircle, Scissors, ChevronRight,
+  Heart, Ban, Check, AlertCircle, Scissors, ChevronRight,
   ListChecks, XCircle, Clock, Eye, Award, Sparkles,
 } from "lucide-react";
 import { cn, formatCompactCount } from "@/lib/utils";
@@ -319,7 +319,6 @@ export function FollowPage() {
   // Filter state
   const [filters, setFilters] = useState<BatchFilters>(DEFAULT_FILTERS);
   const [excludeRaw, setExcludeRaw] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
   const [showExclude, setShowExclude] = useState(false);
   const [activePreset, setActivePreset] = useState<Preset>("custom");
   const [batchStarted, setBatchStarted] = useState(false);
@@ -987,21 +986,8 @@ export function FollowPage() {
           {canLoad && (
             <div className="px-4 lg:px-0 space-y-3">
 
-              {/* Filter toggle (mobile) */}
-              <div className="lg:hidden">
-                <button
-                  onClick={() => setShowFilters(v => !v)}
-                  className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl border border-border bg-muted/10 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Filter className="w-3.5 h-3.5" />
-                  Filters
-                  {excludeCount > 0 && <span className="ml-auto text-rose-500">{excludeCount} excluded</span>}
-                  <ChevronDown className={cn("w-3.5 h-3.5 ml-auto transition-transform", showFilters && "rotate-180")} />
-                </button>
-              </div>
-
-              {/* Filter panel */}
-              <div className={cn("space-y-3", !showFilters && "hidden lg:block")}>
+              {/* Filter panel · always open, no collapse toggle */}
+              <div className="space-y-3">
 
                 {/* Limit */}
                 <div>
