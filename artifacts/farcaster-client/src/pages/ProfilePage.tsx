@@ -688,7 +688,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                               className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
                             >
                               <Gauge className="w-4 h-4 text-muted-foreground" />
-                              Check account health
+                              Health check
                             </button>
                           </div>
                         )}
