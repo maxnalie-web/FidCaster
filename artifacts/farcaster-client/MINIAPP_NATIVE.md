@@ -37,14 +37,13 @@ npm run cap:add:android
 
 ## Backend (important)
 
-The web app calls `/api/*` (the Express server). A packaged native build serves
-the static bundle from the device, so point it at your hosted backend by editing
-`capacitor.config.ts`:
+The web app calls `/api/*` (the Express server). A packaged native build loads
+the app straight from the live deployment (`https://fidcaster.xyz`, set in
+`capacitor.config.ts`) so those calls reach the real backend. Override it for
+local device/simulator testing against a LAN dev server:
 
-```ts
-server: { url: "https://your-deployed-fidcaster.com" }   // production
-// or, for live-reload against the dev server on your LAN:
-server: { url: "http://<your-LAN-ip>:5001", cleartext: true }
+```bash
+CAP_SERVER_URL=http://<your-LAN-ip>:5001 npm run cap:sync
 ```
 
 ## Run on device / simulator

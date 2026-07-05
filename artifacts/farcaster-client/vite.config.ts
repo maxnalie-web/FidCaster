@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 const port = Number(process.env.PORT ?? "5000");
 const basePath = process.env.BASE_PATH ?? "/";
@@ -20,6 +21,64 @@ export default defineConfig({
     nodePolyfills({ include: ["buffer", "stream", "util", "process"] }),
     react(),
     tailwindcss(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.svg", "icons/favicon-16.png", "icons/favicon-32.png", "icons/apple-touch-icon.png"],
+      manifest: {
+        name: "FidCaster",
+        short_name: "FidCaster",
+        description: "FidCaster — a luxury Farcaster client. Your keys, your identity.",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        background_color: "#ffffff",
+        theme_color: "#6b26d9",
+        orientation: "portrait",
+        categories: ["social", "utilities"],
+        icons: [
+          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/icons/maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+          { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+      workbox: {
+        // Precache only the built static assets · API responses must never be
+        // precached/cached by the service worker (this app already had bugs
+        // from stale server-side caching — a SW cache on top would make that
+        // far worse and much harder to diagnose).
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff,woff2}"],
+        // The main JS chunk is a few MB (a separate, pre-existing code-splitting
+        // opportunity) · raise Workbox's 2 MiB default so it still gets precached
+        // instead of silently being dropped from offline support.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            // Explicit network-only for the API, even though it's outside
+            // globPatterns already · documents intent and guards against a
+            // future runtimeCaching rule accidentally widening to /api/.
+            urlPattern: /^\/api\//,
+            handler: "NetworkOnly",
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\//,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "google-fonts-stylesheets" },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     isReplit
       ? [

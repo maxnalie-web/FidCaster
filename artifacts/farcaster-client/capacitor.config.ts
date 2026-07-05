@@ -15,8 +15,14 @@ const config: CapacitorConfig = {
   appId: "xyz.fidcaster.app",
   appName: "FidCaster",
   webDir: "dist/public",
-  // For development against the live dev server, uncomment and point at your LAN IP:
-  // server: { url: "http://192.168.1.10:5001", cleartext: true },
+  // Loads the app from the live deployment so /api/* calls reach the real
+  // backend instead of the offline bundled copy · override with an env var
+  // for local device/simulator testing against a LAN dev server:
+  //   CAP_SERVER_URL=http://192.168.1.10:5001 npm run cap:sync
+  server: {
+    url: process.env.CAP_SERVER_URL ?? "https://fidcaster.xyz",
+    cleartext: process.env.CAP_SERVER_URL?.startsWith("http://") ?? false,
+  },
   ios: { contentInset: "always" },
   android: { allowMixedContent: true },
 };
