@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-This repository’s deployed application is `artifacts/farcaster-client`, a React + Vite single-page Farcaster client that runs as a static site. In production, users sign in with a Farcaster custody-wallet seed phrase, derive keys locally in the browser, store encrypted session material in browser storage, read social data from Neynar/Farcaster services, upload optional images to Imgur, and submit Optimism transactions from the browser.
+This repository’s deployed application is `artifacts/farcaster-client`, a React + Vite single-page Farcaster client that runs as a static site on Replit. In production, users sign in with a Farcaster custody-wallet seed phrase, derive keys locally in the browser, store encrypted session material in browser storage, read social data from Neynar/Farcaster services, upload optional images to Imgur, and submit Optimism transactions from the browser.
 
-The important production fact for security analysis is that the deployed artifact is static-only: the build output (`dist/public`) is served as static files. The Express helper under `artifacts/farcaster-client/server/` is a development-only local service behind Vite proxy rules and is not production-reachable unless deployment architecture changes.
+The important production fact for security analysis is that the deployed artifact is static-only: `artifacts/farcaster-client/.replit-artifact/artifact.toml` uses `serve = "static"` with `dist/public`. The Express helper under `artifacts/farcaster-client/server/` is a development-only local service behind Vite proxy rules and is not production-reachable unless deployment architecture changes.
 
 This threat model supersedes stale repo documentation that describes a different app. For production security decisions, use the Farcaster client files and artifact config as authoritative.
 
@@ -31,7 +31,7 @@ This threat model supersedes stale repo documentation that describes a different
 - **Highest-risk production areas**: `src/hooks/WalletProvider.tsx`, `src/lib/session-crypto.ts`, `src/lib/wallet.ts`, `src/components/CastCard.tsx`, `src/components/CastComposer.tsx`, `src/pages/FidDetailPage.tsx`, `src/lib/neynar*.ts`.
 - **Public/authenticated surface**: all production routes are public static pages; authenticated state is client-local and gates wallet/signer actions in the UI, not server endpoints.
 - **Usually dev-only and skip unless deployment changes**: `artifacts/farcaster-client/server/**`, Vite proxy config in `artifacts/farcaster-client/vite.config.ts`.
-- **Authoritative deployment scope**: the static build output at `artifacts/farcaster-client/dist/public`.
+- **Authoritative deployment scope**: `artifacts/farcaster-client/.replit-artifact/artifact.toml`.
 
 ## Threat Categories
 
