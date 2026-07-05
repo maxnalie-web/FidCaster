@@ -110,6 +110,23 @@ function clearPwdFromSession() {
   try { sessionStorage.removeItem(SESSION_PWD_KEY); } catch {}
 }
 
+// Persisted "locked" flag · survives page refresh (and browser restart, since
+// it must outlive the IndexedDB-stored device key it's gating). Locking only
+// wiped in-memory secrets and React state before this, which the mount-restore
+// effect never checked — so refreshing right after an auto-lock silently
+// restored the mnemonic via the no-password device key and dropped the user
+// straight back into the app instead of showing the lock screen.
+const SESSION_LOCKED_KEY = "fc_session_locked";
+function markSessionLocked(): void {
+  try { localStorage.setItem(SESSION_LOCKED_KEY, "1"); } catch {}
+}
+function clearSessionLockedFlag(): void {
+  try { localStorage.removeItem(SESSION_LOCKED_KEY); } catch {}
+}
+function isSessionLockedPersisted(): boolean {
+  try { return localStorage.getItem(SESSION_LOCKED_KEY) === "1"; } catch { return false; }
+}
+
 /** Retry getSignerState up to 3 times with 1s backoff · Optimism RPC can be flaky. */
 async function getSignerStateWithRetry(fid: bigint, pubKey: `0x${string}`): Promise<number> {
   let lastErr: unknown;
@@ -253,6 +270,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const _applyAccount = useCallback(async (mnemonic: string): Promise<number> => {
+    // Reaching here always means a real mnemonic was just decrypted (mount-time
+    // auto-restore, unlockWithPassword, or a fresh import) · clear any stale
+    // persisted lock flag so the app doesn't keep forcing the lock screen.
+    clearSessionLockedFlag();
     const neynarKey = neynarKeyRef.current;
     const { address, walletClient, localSigner } = await deriveAccount(mnemonic);
 
@@ -381,6 +402,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     extWalletClient: WalletClient,
     extAddress: `0x${string}`,
   ) => {
+    clearSessionLockedFlag();
     setState((s) => ({ ...s, isLoading: true, error: null, authMethod: null }));
     try {
       let fid: bigint = loadCachedFid(extAddress) ?? 0n;
@@ -478,6 +500,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     localSigner: LocalSigner | null,
     signerUuid?: string | null,
   ) => {
+    clearSessionLockedFlag();
     const fid = BigInt(fidNum);
     const uuid = signerUuid ?? null;
     const meta: AccountMeta = {
@@ -526,7 +549,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       // ── Mnemonic session restore ───────────────────────────────────────────
-      if (found) {
+      // Skip the no-password auto-restore entirely when the session was locked
+      // before this refresh · falls through to the light-session branch below,
+      // which restores the profile in locked/read-only mode instead.
+      if (found && !isSessionLockedPersisted()) {
         try {
           const activeFid = getActiveFid();
           // Try key-based restore first (no password needed, survives refresh).
@@ -729,10 +755,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     function doLock() {
       _zeroAndLock();
+      markSessionLocked();
       // Do NOT clearLightSession() here · keep the profile metadata so that on the
-      // next page load the user sees their feed in read-only mode instead of being
-      // bounced to the marketing landing. The session can still be restored via
-      // the stored CryptoKey or by re-entering the seed password.
+      // next page load (even after a refresh) the user sees their feed in
+      // read-only locked mode instead of being bounced to the marketing landing.
+      // markSessionLocked() above is what makes that stick across a refresh ·
+      // it blocks the mount-restore effect's no-password auto-decrypt, so the
+      // only way back in is re-entering the seed password.
       setState((s) => ({
         ...s,
         address: null, fid: null, profile: null, walletClient: null, localSigner: null,
@@ -768,6 +797,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } else {
         if (hiddenSince !== null && Date.now() - hiddenSince >= HIDDEN_LOCK_MS) {
           _zeroAndLock();
+          markSessionLocked();
           setState((s) => ({
             ...s,
             address: null, fid: null, profile: null, walletClient: null, localSigner: null,
@@ -1106,6 +1136,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     // No accounts left (or only wallet accounts) · full logout
     _zeroAndLock();
+    clearSessionLockedFlag();
     clearStoredSession();
     clearLightSession();
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
