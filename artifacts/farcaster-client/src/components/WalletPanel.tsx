@@ -168,7 +168,10 @@ export function WalletPanel() {
   function handleMax() {
     if (selectedToken.loading) return;
     if (sendToken === "base-usdc") {
-      setAmount(formatBal(selectedToken.balance, 2));
+      // Use the exact raw balance (formatUnits), not the rounded 2-decimal
+      // display value · toFixed(2) rounds UP for values like 10.005, which
+      // then fails the "insufficient balance" check right after tapping Max.
+      if (baseUsdc !== null) setAmount(formatUnits(baseUsdc, 6));
     } else {
       // leave ~0.0001 ETH for gas
       const max = Math.max(0, selectedToken.balance - 0.0001);

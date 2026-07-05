@@ -227,9 +227,17 @@ export function UsernameChange() {
         setFnamePhase({ id: "done" });
         await refreshProfile();
       } else {
+        // The optimistic success popup above assumed this would succeed · it
+        // didn't, so clear it. Without this, the user sees "success! go
+        // finalize on Farcaster" for a claim that actually failed.
+        setSuccessPopup(null);
         setFnamePhase({ id: "error", msg: claimRes.error ?? "Claim failed" });
       }
     } catch (e: unknown) {
+      // Same rollback as the claimRes.success === false branch above · a thrown
+      // error (network failure, etc.) after the optimistic popup was shown must
+      // also clear it, or the user still sees a false "success" message.
+      setSuccessPopup(null);
       setFnamePhase({ id: "error", msg: e instanceof Error ? e.message : "Unknown error" });
     } finally {
       await restoreOptimismChain();
