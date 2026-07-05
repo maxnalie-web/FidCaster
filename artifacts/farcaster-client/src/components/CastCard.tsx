@@ -423,7 +423,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 <div className="flex items-center gap-1 flex-wrap">
                   <p className="text-[0.8125rem] text-muted-foreground">@{cast.author.username}</p>
                   {hasPowerBadge(cast.author) && (
-                    <span title="Power Badge" className="shrink-0 inline-flex">
+                    <span title="Purple badge" className="shrink-0 inline-flex">
                       <PowerBadgeIcon size={15} />
                     </span>
                   )}
@@ -720,7 +720,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 {authorIsPro && <ProBadge size={14} />}
                 <span className="text-[0.875rem] text-muted-foreground truncate hidden sm:inline">@{cast.author.username}</span>
                 {hasPowerBadge(cast.author) && (
-                  <span title="Power Badge" className="shrink-0 inline-flex">
+                  <span title="Purple badge" className="shrink-0 inline-flex">
                     <PowerBadgeIcon size={15} />
                   </span>
                 )}

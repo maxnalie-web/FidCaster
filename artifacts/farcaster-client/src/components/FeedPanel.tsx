@@ -33,7 +33,9 @@ export function FeedPanel() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const activeCustomFeed = customFeeds.find((f) => f.id === activeCustomFeedId) ?? null;
-  const cacheKey = feedTab === "custom" ? `custom:${activeCustomFeedId ?? ""}` : feedTab;
+  // Key by the viewer's fid so switching accounts never shows the previous
+  // account's cached casts (which carry that account's like/recast state).
+  const cacheKey = `${fidNum}:${feedTab === "custom" ? `custom:${activeCustomFeedId ?? ""}` : feedTab}`;
 
   const initialCache = _feedCache[cacheKey];
   const [casts, setCasts] = useState<NeynarCast[]>(() => initialCache?.casts ?? []);
@@ -300,7 +302,7 @@ export function FeedPanel() {
                   </button>
                   <button
                     onClick={() => openEditFeed(f)}
-                    className="p-2 mr-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors opacity-0 group-hover:opacity-100"
+                    className="p-2 mr-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     title="Edit feed"
                   >
                     <Settings2 className="w-3.5 h-3.5" />
@@ -327,25 +329,6 @@ export function FeedPanel() {
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
         </button>
       </div>
-
-      {feedTab === "custom" && activeCustomFeed && (() => {
-        const parts: string[] = [];
-        if (activeCustomFeed.accountFids.length > 0) parts.push(`${activeCustomFeed.accountFids.length} account${activeCustomFeed.accountFids.length === 1 ? "" : "s"}`);
-        if (activeCustomFeed.keywords.length > 0) parts.push(`keywords: ${activeCustomFeed.keywords.join(", ")}`);
-        if (activeCustomFeed.minNeynarScore > 0) parts.push(`score ≥ ${activeCustomFeed.minNeynarScore}`);
-        if (activeCustomFeed.minFollowers > 0) parts.push(`followers ≥ ${activeCustomFeed.minFollowers.toLocaleString()}`);
-        if (activeCustomFeed.spamLabel !== "any") parts.push(activeCustomFeed.spamLabel === "not-spam" ? "not spam" : "spam only");
-        return (
-          <button
-            onClick={() => openEditFeed(activeCustomFeed)}
-            className="w-full flex items-center gap-1.5 px-4 py-2 text-[11px] text-muted-foreground hover:text-foreground bg-muted/10 border-b border-border/40 transition-colors"
-          >
-            <Settings2 className="w-3 h-3 shrink-0" />
-            <span className="truncate">{parts.join(" · ") || "No filters set"}</span>
-            <span className="ml-auto shrink-0 text-primary">Edit</span>
-          </button>
-        );
-      })()}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

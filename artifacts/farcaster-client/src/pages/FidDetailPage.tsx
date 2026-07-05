@@ -184,6 +184,7 @@ export default function FidDetailPage() {
   const params = useParams<{ id: string }>();
   const fid = parseInt(params.id || "0", 10);
   const [, navigate] = useLocation();
+  useEffect(() => { window.scrollTo(0, 0); }, [fid]);
 
   const { fid: myFid, address: myAddress, walletClient, authMethod } = useWallet();
   const {

@@ -375,12 +375,12 @@ export function BatchFollowSheet({
                 </p>
                 {false && (
                   <p className="text-[12px] font-semibold text-amber-500">
-                    ⚡ {fetchPg.pbFound} Power Badge found so far
+                    ⚡ {fetchPg.pbFound} purple badge found so far
                   </p>
                 )}
                 {false && fetchPg.pages > 20 && fetchPg.pbFound === 0 && (
                   <p className="text-[11px] text-muted-foreground max-w-[220px] mx-auto leading-snug">
-                    Still scanning… Power Badge users are rare. This may take a while.
+                    Still scanning… Purple badge users are rare. This may take a while.
                   </p>
                 )}
               </div>

@@ -48,11 +48,11 @@ const PROMO_PATTERNS = [
   /\$\w+.{0,10}(pump|moon|100x)/i, /dm me/i, /link in bio/i,
 ];
 
-// Stock phrasing that shows up disproportionately in AI-generated marketing/
-// reply text ("chatgpt-isms"). Not proof any single cast is AI-written · a
-// human can use these too · but a cluster of them across many casts from one
-// account is a real, observable pattern worth flagging honestly as a heuristic.
-const AI_STYLE_PATTERNS = [
+// Stock phrasing that shows up disproportionately in templated, auto-generated
+// marketing/reply text. Not proof any single cast is machine-written · a human
+// can use these too · but a cluster of them across many casts from one account
+// is a real, observable pattern worth flagging honestly as a heuristic.
+const STOCK_PHRASE_PATTERNS = [
   /\bgame[\s-]?changer\b/i, /\blet'?s dive into\b/i, /\bdelve into\b/i,
   /\bin today'?s fast[\s-]?paced world\b/i, /\bunlock the power of\b/i,
   /\brevolutioniz\w+\b/i, /\bnavigate the complexities\b/i, /\belevate your\b/i,
@@ -101,18 +101,16 @@ export function analyzeAccount(user: NeynarUser, casts: NeynarCast[], spamLabel?
     checks.push({ id: "spam-label", label: "Farcaster spam label", status: "warn", detail: `${username} has no spam label yet in Farcaster's published dataset · usually means too little recent activity to be scored, not a verdict either way.`, impact: "low" });
   }
 
-  // ── Power Badge ───────────────────────────────────────────────────────────
-  // Power Badge and the Farcaster Pro subscription's purple badge are two
-  // separate things · Pro ($120/yr) does not grant the Power Badge, which
-  // stays purely algorithmic (sustained, genuine engagement over time).
+  // ── Purple (Pro) badge ─────────────────────────────────────────────────────
+  // Farcaster's purple badge is the Pro subscriber badge · a real, active,
+  // in-good-standing signal.
   checks.push({
     id: "power-badge",
-    label: "Power Badge",
+    label: "Purple badge",
     status: hasPowerBadge(user) ? "pass" : "warn",
     detail: hasPowerBadge(user)
-      ? `${username} holds the Power Badge · one of the strongest "real, active user" signals on the network.`
-      : `${username} doesn't currently hold the Power Badge.`,
-    fixHint: hasPowerBadge(user) ? undefined : "This is the purple Power Badge specifically, separate from the Pro subscriber badge · it's awarded algorithmically for sustained genuine activity rather than by purchase.",
+      ? `${username} holds the purple badge · one of the strongest "real, active user" signals on the network.`
+      : `${username} doesn't currently hold the purple badge.`,
     impact: "medium",
   });
 
@@ -223,17 +221,17 @@ export function analyzeAccount(user: NeynarUser, casts: NeynarCast[], spamLabel?
       checks.push({ id: "promo-language", label: "Promotional language", status: "pass", detail: `Only ${promoHits} of ${username}'s last ${casts.length} casts read as promotional · not a concern.`, impact: "low" });
     }
 
-    // Content originality · clusters of stock "AI-sounding" phrasing across
+    // Content originality · clusters of stock, generic-sounding phrasing across
     // many casts. This is a heuristic on wording patterns, not a detector
     // that reads intent · framed honestly as a signal, not a verdict.
-    const aiStyleHits = casts.filter((c) => AI_STYLE_PATTERNS.filter((re) => re.test(c.text || "")).length > 0).length;
-    const aiStyleRatio = aiStyleHits / casts.length;
-    if (aiStyleRatio > 0.3 && aiStyleHits >= 4) {
-      checks.push({ id: "content-quality", label: "Content originality", status: "warn", detail: `${aiStyleHits} of ${username}'s last ${casts.length} casts (${Math.round(aiStyleRatio * 100)}%) use stock phrasing common in AI-generated or templated text (e.g. "game-changer", "let's dive into", "in today's fast-paced world"). This is a wording pattern, not proof of anything, but it clusters strongly here.`, fixHint: "Write in your own voice · casts that read as generic/templated get less genuine engagement even before any algorithm looks at them.", impact: "medium" });
-    } else if (aiStyleHits > 0) {
+    const stockPhraseHits = casts.filter((c) => STOCK_PHRASE_PATTERNS.filter((re) => re.test(c.text || "")).length > 0).length;
+    const stockPhraseRatio = stockPhraseHits / casts.length;
+    if (stockPhraseRatio > 0.3 && stockPhraseHits >= 4) {
+      checks.push({ id: "content-quality", label: "Content originality", status: "warn", detail: `${stockPhraseHits} of ${username}'s last ${casts.length} casts (${Math.round(stockPhraseRatio * 100)}%) use stock phrasing common in templated marketing text (e.g. "game-changer", "let's dive into", "in today's fast-paced world"). This is a wording pattern, not proof of anything, but it clusters strongly here.`, fixHint: "Write in your own voice · casts that read as generic/templated get less genuine engagement even before any algorithm looks at them.", impact: "medium" });
+    } else if (stockPhraseHits > 0) {
       checks.push({ id: "content-quality", label: "Content originality", status: "pass", detail: `${username}'s casts read as written in a personal voice, with only occasional stock phrasing.`, impact: "low" });
     } else {
-      checks.push({ id: "content-quality", label: "Content originality", status: "pass", detail: `No templated/AI-style phrasing patterns detected across ${username}'s last ${casts.length} casts.`, impact: "low" });
+      checks.push({ id: "content-quality", label: "Content originality", status: "pass", detail: `No templated/stock phrasing patterns detected across ${username}'s last ${casts.length} casts.`, impact: "low" });
     }
 
     // Posting burstiness (many casts in a very short window)

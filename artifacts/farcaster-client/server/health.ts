@@ -4,7 +4,7 @@
  * Derives a "degraded" signal from live metrics so the /internal/metrics
  * endpoint can surface it and operators can act before users notice.
  *
- * Thresholds (from ChatGPT review — practical values for 10K-user load):
+ * Thresholds (practical values for 10K-user load):
  *   hub fail rate  > 20%   →  hubs unreachable or severely throttled
  *   cache hit ratio < 70%  →  cache is cold/evicting too fast
  *   sqlite queue peak > 400 → approaching MAX_QUEUE (500), flush pressure high

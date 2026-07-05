@@ -23,8 +23,17 @@ import readline from "readline";
 
 const requireCjs = createRequire(import.meta.url);
 
-const POINTER_URL = "https://raw.githubusercontent.com/warpcast/labels/main/spam.jsonl";
-const BATCH_URL_PRIMARY = "https://github.com/warpcast/labels.git/info/lfs/objects/batch";
+// The dataset repo moved (warpcast/labels → merkle-team/labels). Try both raw
+// pointer URLs so a 404 on the old path doesn't wipe out ALL labels · and both
+// LFS batch endpoints when resolving the download href.
+const POINTER_URLS = [
+  "https://raw.githubusercontent.com/merkle-team/labels/main/spam.jsonl",
+  "https://raw.githubusercontent.com/warpcast/labels/main/spam.jsonl",
+];
+const BATCH_URLS = [
+  "https://github.com/merkle-team/labels.git/info/lfs/objects/batch",
+  "https://github.com/warpcast/labels.git/info/lfs/objects/batch",
+];
 const REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60_000; // matches upstream's weekly update cadence
 
 type Db = {
@@ -91,30 +100,41 @@ function db(): Db | null {
 }
 
 async function resolveLatestPointer(): Promise<{ oid: string; size: number }> {
-  const res = await fetch(POINTER_URL);
-  if (!res.ok) throw new Error(`pointer fetch failed: ${res.status}`);
-  const text = await res.text();
-  const oid = /oid sha256:([a-f0-9]+)/.exec(text)?.[1];
-  const size = Number(/size (\d+)/.exec(text)?.[1]);
-  if (!oid || !size) throw new Error("couldn't parse LFS pointer file");
-  return { oid, size };
+  let lastErr = "";
+  for (const url of POINTER_URLS) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { lastErr = `pointer fetch failed: ${res.status}`; continue; }
+      const text = await res.text();
+      const oid = /oid sha256:([a-f0-9]+)/.exec(text)?.[1];
+      const size = Number(/size (\d+)/.exec(text)?.[1]);
+      if (!oid || !size) { lastErr = "couldn't parse LFS pointer file"; continue; }
+      return { oid, size };
+    } catch (e) { lastErr = (e as Error).message; }
+  }
+  throw new Error(lastErr || "no pointer URL resolved");
 }
 
 async function resolveDownloadUrl(oid: string, size: number): Promise<string> {
   const body = JSON.stringify({ operation: "download", transfers: ["basic"], objects: [{ oid, size }] });
   const headers = { Accept: "application/vnd.git-lfs+json", "Content-Type": "application/vnd.git-lfs+json" };
-  let res = await fetch(BATCH_URL_PRIMARY, { method: "POST", headers, body });
-  let data = await res.json() as { objects?: Array<{ actions?: { download?: { href?: string } } }>; url?: string };
-  // The repo moved (warpcast/labels → merkle-team/labels) · GitHub answers the
-  // LFS batch POST with a 301-style JSON redirect body rather than an HTTP
-  // redirect fetch would follow automatically, so retry once against it.
-  if (!data.objects && data.url) {
-    res = await fetch(data.url, { method: "POST", headers, body });
-    data = await res.json();
+  let lastErr = "";
+  for (const batchUrl of BATCH_URLS) {
+    try {
+      let res = await fetch(batchUrl, { method: "POST", headers, body });
+      let data = await res.json() as { objects?: Array<{ actions?: { download?: { href?: string } } }>; url?: string };
+      // GitHub sometimes answers the LFS batch POST with a JSON redirect body
+      // (a moved repo) rather than an HTTP redirect fetch would follow · retry once.
+      if (!data.objects && data.url) {
+        res = await fetch(data.url, { method: "POST", headers, body });
+        data = await res.json();
+      }
+      const href = data.objects?.[0]?.actions?.download?.href;
+      if (href) return href;
+      lastErr = "LFS batch API returned no download href";
+    } catch (e) { lastErr = (e as Error).message; }
   }
-  const href = data.objects?.[0]?.actions?.download?.href;
-  if (!href) throw new Error("LFS batch API returned no download href");
-  return href;
+  throw new Error(lastErr || "no LFS batch URL resolved");
 }
 
 let refreshing = false;

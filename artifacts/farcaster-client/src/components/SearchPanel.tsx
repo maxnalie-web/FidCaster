@@ -11,6 +11,20 @@ import { CastCard } from "./CastCard";
 
 type SearchTab = "users" | "casts" | "channels";
 
+// Module-level (survives unmount) · opening a result's profile unmounts the
+// whole dashboard, so without this the query + results vanish when the user
+// presses back. Keyed by the viewer so switching accounts starts fresh.
+interface SearchCache {
+  viewerFid: number;
+  query: string;
+  tab: SearchTab;
+  users: NeynarUser[];
+  casts: NeynarCast[];
+  channels: NeynarChannel[];
+  scrollY: number;
+}
+let _searchCache: SearchCache | null = null;
+
 function ChannelRow({ channel, onOpen }: { channel: NeynarChannel; onOpen: (id: string) => void }) {
   return (
     <button
@@ -117,7 +131,7 @@ function UserRow({ user, viewerFid, onViewProfile }: {
         <div className="flex items-center gap-1">
           <p className="text-xs text-muted-foreground">@{user.username}</p>
           {hasPowerBadge(user) && (
-            <span title="Power Badge" className="shrink-0 inline-flex">
+            <span title="Purple badge" className="shrink-0 inline-flex">
               <PowerBadgeIcon size={15} />
             </span>
           )}
@@ -139,20 +153,36 @@ export function SearchPanel() {
   const { fid, neynarKey } = useWallet();
   const fidNum = fid ? Number(fid) : 0;
 
-  const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<SearchTab>("users");
-  const [users, setUsers] = useState<NeynarUser[]>([]);
-  const [casts, setCasts] = useState<NeynarCast[]>([]);
-  const [channels, setChannels] = useState<NeynarChannel[]>([]);
+  // Restore previous search (query + results) when the cache belongs to this viewer.
+  const restored = _searchCache && _searchCache.viewerFid === fidNum ? _searchCache : null;
+  const [query, setQuery] = useState(restored?.query ?? "");
+  const [tab, setTab] = useState<SearchTab>(restored?.tab ?? "users");
+  const [users, setUsers] = useState<NeynarUser[]>(restored?.users ?? []);
+  const [casts, setCasts] = useState<NeynarCast[]>(restored?.casts ?? []);
+  const [channels, setChannels] = useState<NeynarChannel[]>(restored?.channels ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Skip the very first debounced search when results were restored from cache,
+  // so returning to search doesn't re-fetch (and briefly blank) the list.
+  const skipNextSearch = useRef<boolean>(!!restored && !!restored.query.trim());
   const [, navigate] = useLocation();
   function goToProfile(user: NeynarUser) { navigate(`/profile/${user.fid}`); }
   function goToChannel(id: string) { navigate(`/channel/${id}`); }
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Persist the current search to the module cache whenever it changes, and
+  // restore scroll on mount when coming back to a cached search.
+  useEffect(() => {
+    _searchCache = { viewerFid: fidNum, query, tab, users, casts, channels, scrollY: window.scrollY };
+  }, [fidNum, query, tab, users, casts, channels]);
+  useEffect(() => {
+    if (restored?.scrollY) requestAnimationFrame(() => window.scrollTo(0, restored.scrollY));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!query.trim() || query.length < 2) { setUsers([]); setCasts([]); setChannels([]); return; }
+    if (skipNextSearch.current) { skipNextSearch.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLoading(true);

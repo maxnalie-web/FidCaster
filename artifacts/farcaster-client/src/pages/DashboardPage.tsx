@@ -28,8 +28,8 @@ import {
 import { getUserByFid, type NeynarUser } from "@/lib/neynar";
 import { NeynarScoreBadge } from "@/components/NeynarScoreBadge";
 import {
-  SUPPORTED_LANGS, getPreferredLang, setPreferredLang,
-  type LangCode,
+  SUPPORTED_LANGS, getLangSetting, setPreferredLang, defaultTargetLang,
+  type LangCode, type LangSetting,
 } from "@/lib/translate";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
 import { ADMIN_FID } from "@/lib/admin-config";
@@ -298,21 +298,25 @@ function SupportPanel() {
 
 /* ─── Language / Translation Settings Panel ─────────────────────────────────── */
 function LanguageSettingsPanel() {
-  const [lang, setLang] = useState<LangCode>(() => getPreferredLang());
+  const [setting, setSetting] = useState<LangSetting>(() => getLangSetting());
+  // The language "auto" resolves to · shown so the user can confirm detection.
+  const detected = SUPPORTED_LANGS.find((l) => l.code === defaultTargetLang());
 
   return (
     <div className="space-y-6 max-w-md">
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-widest text-foreground">Preferred language</label>
         <p className="text-xs text-muted-foreground">
-          Defaults to your device's language. Tapping the translate icon on a cast always
-          translates to this language · change it here if you'd rather it be something else.
+          Tapping the translate icon on a cast always translates to this language. Choose
+          <strong className="text-foreground"> Auto</strong> to follow your device's language
+          {detected ? <> · currently detected as <strong className="text-foreground">{detected.label}</strong></> : null}.
         </p>
         <select
-          value={lang}
-          onChange={(e) => { const v = e.target.value as LangCode; setLang(v); setPreferredLang(v); }}
+          value={setting}
+          onChange={(e) => { const v = e.target.value as LangSetting; setSetting(v); setPreferredLang(v); }}
           className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
         >
+          <option value="auto">Auto{detected ? ` (${detected.label})` : ""}</option>
           {SUPPORTED_LANGS.map((l) => (
             <option key={l.code} value={l.code}>{l.label}</option>
           ))}

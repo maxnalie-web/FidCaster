@@ -102,6 +102,7 @@ let _cachedFidInfoMap: Record<number, FidInfo> = {};
 
 export default function FidMarketPage() {
   const [, navigate] = useLocation();
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [listings,       setListings]       = useState<Listing[]>(_cachedListings);
   const [trades,         setTrades]         = useState<Trade[]>(_cachedTrades);
   const [totalTradedEth, setTotalTradedEth] = useState(_cachedTotalTradedEth);

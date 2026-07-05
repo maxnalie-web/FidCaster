@@ -204,11 +204,12 @@ let initialScanDone = false;
 let tradesInitialDone = false;
 let lastScannedBlock = BigInt(0);
 
-// Listings stay valid for 7 days (~302k Optimism blocks @ 2s). The cold-start
-// discovery scan must cover that whole window, else still-active listings whose
-// Listed event has scrolled out get dropped. Incremental refreshes only need a
-// small recent window because trackedFids is persisted + accumulated.
-const INITIAL_SCAN_RANGE = BigInt(320_000);
+// Listings can stay valid for up to 30 days (~1.3M Optimism blocks @ 2s). The
+// cold-start discovery scan must cover that whole window, else still-active
+// listings whose Listed event has scrolled out get dropped. Incremental
+// refreshes only need a small recent window because trackedFids is persisted +
+// accumulated (a discovered FID is always re-verified on-chain regardless).
+const INITIAL_SCAN_RANGE = BigInt(1_300_000);
 const EVENT_SCAN_RANGE = BigInt(50_000);
 const LOG_CHUNK_SIZE = BigInt(5_000);
 let isRefreshingListings = false;
@@ -284,7 +285,13 @@ async function readFidListing(fid: number): Promise<CachedListing | null> {
     const deadlineNum = Number(fromDeadline);
     const listedAtNum = Number(listedAt);
     const sigExpired = deadlineNum > 0 && deadlineNum < now;
-    const listingExpired = listedAtNum > 0 && now - listedAtNum > 7 * 24 * 3600;
+    // A listing is only truly expired once the seller's signed deadline passes
+    // (the contract enforces `fromDeadline`, which the seller sets from the chosen
+    // duration · up to 30 days). The old fixed 7-day cap wrongly marked longer
+    // listings expired after a week even though they were still buyable on-chain.
+    const listingExpired = deadlineNum > 0
+      ? deadlineNum < now
+      : (listedAtNum > 0 && now - listedAtNum > 30 * 24 * 3600);
     const active = !!seller && seller !== "0x0000000000000000000000000000000000000000";
     const buyable = active && !sigExpired && !listingExpired && priceWei > BigInt(0);
     return {

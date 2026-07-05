@@ -67,7 +67,7 @@ function FollowRow({
         <div className="flex items-center gap-1">
           <p className="text-sm text-muted-foreground truncate">@{user.username}</p>
           {hasPowerBadge(user) && (
-            <span title="Power Badge" className="shrink-0 inline-flex">
+            <span title="Purple badge" className="shrink-0 inline-flex">
               <PowerBadgeIcon size={15} />
             </span>
           )}

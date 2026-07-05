@@ -5,7 +5,6 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 import path from "path";
 const port = Number(process.env.PORT ?? "5000");
 const basePath = process.env.BASE_PATH ?? "/";
-const isReplit = process.env.REPL_ID !== undefined;
 
 // Vite only auto-loads VITE_-prefixed vars. APP_FID / APP_MNEMONIC / etc. live in
 // .env WITHOUT that prefix (they're server-side secrets), so load the full env
@@ -20,32 +19,10 @@ export default defineConfig({
     nodePolyfills({ include: ["buffer", "stream", "util", "process"] }),
     react(),
     tailwindcss(),
-    ...(process.env.NODE_ENV !== "production" &&
-    isReplit
-      ? [
-          await import("@replit/vite-plugin-runtime-error-modal").then((m) =>
-            m.default(),
-          ),
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
-          ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
   ],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(
-        import.meta.dirname,
-        "..",
-        "..",
-        "attached_assets",
-      ),
     },
     dedupe: ["react", "react-dom"],
   },
