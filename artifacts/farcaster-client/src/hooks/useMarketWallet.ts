@@ -14,9 +14,19 @@ let wcProvider: any = null;
 
 async function getWCProvider() {
   if (wcProvider) return wcProvider;
+  const projectId = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "").trim();
+  // WalletConnect's relay + QR modal + wallet list require a real project id
+  // (from cloud.reown.com). With an empty id the modal silently never loads,
+  // which looks like "connect wallet is broken" even though the injected
+  // (MetaMask/extension) path works fine. Fail loudly with a clear reason.
+  if (!projectId) {
+    throw new Error(
+      "WalletConnect isn't configured. Set the WALLETCONNECT_PROJECT_ID environment variable (get a free id at cloud.reown.com) and rebuild. Browser-extension wallets still work in the meantime.",
+    );
+  }
   const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
   wcProvider = await EthereumProvider.init({
-    projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID,
+    projectId,
     chains: [optimism.id],
     showQrModal: true,
     optionalChains: [1],
