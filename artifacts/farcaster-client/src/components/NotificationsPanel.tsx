@@ -139,7 +139,7 @@ function FollowGroupRow({
   const first = n.users[0];
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3.5 hover:bg-accent/15 transition-colors">
+    <div className="flex items-start gap-3 mx-3 my-1.5 px-3.5 py-3 rounded-2xl border border-border/40 bg-card/40 hover:bg-accent/10 hover:border-border/70 transition-all">
       {/* Icon */}
       <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-sky-500/10 mt-0.5">
         <UserPlus className="w-4 h-4 text-sky-500" strokeWidth={2} />
@@ -168,7 +168,7 @@ function FollowGroupRow({
             onClick={() => navigate(`/profile/${first.fid}`)}
             className="font-semibold hover:text-primary transition-colors"
           >
-            {first.display_name}
+            @{first.username}
           </button>
           {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
           {n.users.length === 1 ? (
@@ -180,7 +180,7 @@ function FollowGroupRow({
                 onClick={() => navigate(`/profile/${n.users[1].fid}`)}
                 className="font-semibold hover:text-primary transition-colors"
               >
-                {n.users[1].display_name}
+                @{n.users[1].username}
               </button>
               {proMap[n.users[1].fid] && (
                 <ProBadge size={11} className="ml-0.5 inline-block align-middle" />
@@ -217,7 +217,7 @@ function ReactionGroupRow({
     <div
       onClick={() => { if (n.castHash) navigate(`/cast/${n.castHash}`); }}
       className={cn(
-        "flex items-start gap-3 px-4 py-3.5 hover:bg-accent/15 transition-colors",
+        "flex items-start gap-3 mx-3 my-1.5 px-3.5 py-3 rounded-2xl border border-border/40 bg-card/40 hover:bg-accent/10 hover:border-border/70 transition-all",
         n.castHash && "cursor-pointer"
       )}
     >
@@ -254,7 +254,7 @@ function ReactionGroupRow({
               onClick={(e) => { e.stopPropagation(); navigate(`/profile/${first.fid}`); }}
               className="font-semibold hover:text-primary transition-colors"
             >
-              {first.display_name}
+              @{first.username}
             </button>
             {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
             {n.users.length > 1 && (
@@ -295,7 +295,7 @@ function ConversationRow({
   return (
     <div
       onClick={() => navigate(`/cast/${n.castHash}`)}
-      className="flex items-start gap-3 px-4 py-3.5 hover:bg-accent/15 transition-colors cursor-pointer"
+      className="flex items-start gap-3 mx-3 my-1.5 px-3.5 py-3 rounded-2xl border border-border/40 bg-card/40 hover:bg-accent/10 hover:border-border/70 transition-all cursor-pointer"
     >
       <div className="relative shrink-0">
         <Avatar user={n.author} size={9} onClick={() => navigate(`/profile/${n.author.fid}`)} />
@@ -319,7 +319,7 @@ function ConversationRow({
               }}
               className="font-semibold hover:text-primary transition-colors"
             >
-              {n.author.display_name}
+              @{n.author.username}
             </button>
             {proMap[n.author.fid] && (
               <ProBadge size={11} className="ml-0.5 inline-block align-middle" />
@@ -553,7 +553,7 @@ export function NotificationsPanel() {
           <p className="text-sm">No notifications</p>
         </div>
       ) : (
-        <div className="divide-y divide-border/25">
+        <div className="py-1">
           {sorted.map((n) => (
             <NotifRow key={n.id} n={n} navigate={navigate} proMap={proMap} />
           ))}

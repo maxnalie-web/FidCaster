@@ -147,8 +147,10 @@ function QuoteCastPreview({ quotedCast, onClick }: { quotedCast: NeynarCast; onC
             : <User className="w-2.5 h-2.5 text-muted-foreground" />
           }
         </div>
-        <span className="text-[11px] font-semibold text-foreground truncate">{quotedCast.author?.display_name || quotedCast.author?.username || "Unknown"}</span>
-        {quotedCast.author?.username && <span className="text-[11px] text-muted-foreground truncate shrink-0">@{quotedCast.author.username}</span>}
+        <span className="text-[11px] font-semibold text-foreground truncate">{quotedCast.author?.username ? `@${quotedCast.author.username}` : quotedCast.author?.display_name || "Unknown"}</span>
+        {quotedCast.author?.username && quotedCast.author?.display_name && (
+          <span className="text-[11px] text-muted-foreground truncate shrink-0">{quotedCast.author.display_name}</span>
+        )}
       </div>
       {quotedCast.text ? (
         <p className="text-[12px] text-muted-foreground leading-relaxed line-clamp-3 whitespace-pre-wrap break-words">{quotedCast.text}</p>
@@ -417,11 +419,11 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               </button>
               <button onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }} className="text-left hover:opacity-80 transition-opacity">
                 <p className="font-bold text-[0.9375rem] text-foreground leading-tight flex items-center gap-1">
-                  <span className="truncate">{cast.author.display_name || cast.author.username}</span>
+                  <span className="truncate">@{cast.author.username}</span>
                   {authorIsPro && <ProBadge size={15} />}
                 </p>
                 <div className="flex items-center gap-1 flex-wrap">
-                  <p className="text-[0.8125rem] text-muted-foreground">@{cast.author.username}</p>
+                  <p className="text-[0.8125rem] text-muted-foreground truncate">{cast.author.display_name || cast.author.username}</p>
                   {hasPowerBadge(cast.author) && (
                     <span title="Purple badge" className="shrink-0 inline-flex">
                       <PowerBadgeIcon size={15} />
@@ -715,10 +717,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }}
                   className="font-semibold text-[0.9375rem] text-foreground hover:underline truncate"
                 >
-                  {cast.author.display_name || cast.author.username}
+                  @{cast.author.username}
                 </button>
                 {authorIsPro && <ProBadge size={14} />}
-                <span className="text-[0.875rem] text-muted-foreground truncate hidden sm:inline">@{cast.author.username}</span>
+                <span className="text-[0.875rem] text-muted-foreground truncate hidden sm:inline">{cast.author.display_name || cast.author.username}</span>
                 {hasPowerBadge(cast.author) && (
                   <span title="Purple badge" className="shrink-0 inline-flex">
                     <PowerBadgeIcon size={15} />
@@ -1042,10 +1044,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-semibold text-foreground truncate">{u.display_name || u.username}</span>
+                        <span className="text-sm font-semibold text-foreground truncate">@{u.username}</span>
                         {hasPowerBadge(u) && <PowerBadgeIcon size={14} />}
                       </div>
-                      <span className="text-xs text-muted-foreground">@{u.username}</span>
+                      <span className="text-xs text-muted-foreground truncate">{u.display_name || u.username}</span>
                     </div>
                     <span className="text-xs text-muted-foreground font-mono shrink-0">{u.follower_count >= 1000 ? `${(u.follower_count / 1000).toFixed(1)}k` : u.follower_count} followers</span>
                   </button>

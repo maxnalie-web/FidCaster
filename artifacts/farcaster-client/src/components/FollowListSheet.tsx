@@ -61,11 +61,11 @@ function FollowRow({
       {/* Info */}
       <button className="flex-1 min-w-0 text-left" onClick={() => onViewProfile(user)}>
         <p className="text-[0.9375rem] font-semibold text-foreground truncate hover:underline flex items-center gap-1">
-          <span className="truncate">{user.display_name || user.username}</span>
+          <span className="truncate">@{user.username}</span>
           {useIsPro(user.fid) && <ProBadge size={14} />}
         </p>
         <div className="flex items-center gap-1">
-          <p className="text-sm text-muted-foreground truncate">@{user.username}</p>
+          <p className="text-sm text-muted-foreground truncate">{user.display_name || user.username}</p>
           {hasPowerBadge(user) && (
             <span title="Purple badge" className="shrink-0 inline-flex">
               <PowerBadgeIcon size={15} />
