@@ -514,10 +514,20 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   return (
     <div className={embedded ? "" : "min-h-screen bg-background"}>
 
-      {/* ── Sticky Header ── */}
+      {/* ── Sticky Header ──
+          Carries a sliver of the banner behind it (blurred + darkened for
+          legibility) so scrolling down doesn't leave a plain bar with just a
+          name · matches the profile's own identity the way the full banner
+          does further down the page. */}
       {!embedded && (
-        <header className="sticky top-0 z-40 glass border-b border-border/50">
-          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center">
+        <header className="sticky top-0 z-40 border-b border-border/50 overflow-hidden">
+          {user?.profile?.banner?.url && (
+            <div className="absolute inset-0 -z-10">
+              <img src={user.profile.banner.url} alt="" className="w-full h-full object-cover scale-110 blur-md" />
+              <div className="absolute inset-0 bg-background/75" />
+            </div>
+          )}
+          <div className={cn("max-w-2xl mx-auto px-4 h-14 flex items-center", !user?.profile?.banner?.url && "glass")}>
             <button
               onClick={() => { if (window.history.length > 1) window.history.back(); else navigate("/"); }}
               className="p-2 -ml-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
@@ -525,9 +535,12 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
               <ArrowLeft className="w-5 h-5" />
             </button>
             {user && (
-              <span className="ml-2 font-semibold text-foreground text-[15px] truncate">
-                {user.display_name || user.username}
-              </span>
+              <div className="ml-2 min-w-0">
+                <p className="font-semibold text-foreground text-[15px] truncate leading-tight">
+                  {user.display_name || user.username}
+                </p>
+                <p className="text-[12px] text-muted-foreground truncate leading-tight">@{user.username}</p>
+              </div>
             )}
           </div>
         </header>
