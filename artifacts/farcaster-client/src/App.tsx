@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-config";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
+import { SignerSetupPopup } from "@/components/SignerSetupPopup";
 
 export type Theme = "light" | "dark";
 
@@ -121,6 +122,7 @@ function App() {
             <Router />
           </ErrorBoundary>
         </WouterRouter>
+        <SignerSetupPopup />
         <Toaster
         position="bottom-right"
         theme={theme === "dark" ? "dark" : "light"}

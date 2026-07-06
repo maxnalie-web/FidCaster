@@ -285,6 +285,27 @@ export async function registerSignerOnchain(
     }
     // For any other simulation error, skip pre-flight and let the wallet decide.
     console.warn("simulateContract failed, falling back to direct writeContract:", simMsg);
+
+    // Still try to attach an explicit gas limit even though the simulation
+    // itself failed: without one, some wallets (seen with Rainbow over
+    // WalletConnect) run their own conservative client-side gas estimate for
+    // an unsimulated call and show a false "this transaction is likely to
+    // fail" warning even though it succeeds once actually broadcast. A real
+    // on-chain estimate with headroom avoids that false alarm; if the
+    // estimate itself fails too, fall through and let the wallet decide with
+    // no gas hint at all (unchanged prior behavior).
+    let gas: bigint | undefined;
+    try {
+      const estimated = await publicClient.estimateContractGas({
+        address: KEY_GATEWAY_ADDRESS,
+        abi: KEY_GATEWAY_WRITE_ABI,
+        functionName: "add",
+        args: [1, publicKeyHex, 1, metadata],
+        account: localAccount,
+      });
+      gas = (estimated * 130n) / 100n; // +30% headroom
+    } catch { /* leave gas unset · wallet estimates on its own */ }
+
     return walletClient.writeContract({
       address: KEY_GATEWAY_ADDRESS,
       abi: KEY_GATEWAY_WRITE_ABI,
@@ -292,6 +313,7 @@ export async function registerSignerOnchain(
       args: [1, publicKeyHex, 1, metadata],
       account: localAccount,
       chain: optimism,
+      ...(gas !== undefined ? { gas } : {}),
     });
   }
 }
