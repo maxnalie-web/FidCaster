@@ -72,23 +72,15 @@ async function fileToUploadPayload(file: File): Promise<{ base64: string; mime: 
   }
 }
 
-/** Direct browser → catbox.moe upload — free, no API key, scales independently
- * of our own server (critical for video, which can run tens of MB per file). */
-async function uploadToCatbox(file: File): Promise<string> {
-  const form = new FormData();
-  form.append("reqtype", "fileupload");
-  form.append("fileToUpload", file);
-  const res = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: form });
-  const text = (await res.text()).trim();
-  if (!res.ok || !text.startsWith("http")) throw new Error(text || "Upload failed");
-  return text;
-}
-
-async function uploadViaServer(base64: string, mime: string): Promise<string> {
+/** Server proxies to Cloudinary (our own signed account) as the primary
+ * backend, with Imgur/catbox as fallbacks — see server/index.ts. The API
+ * secret can only ever be used server-side, so this is the only upload
+ * path; there's no separate client-direct fast path anymore. */
+async function uploadViaServer(base64: string, mime: string, fid: bigint | null): Promise<string> {
   const res = await fetch("/api/farcaster/upload-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image: base64, type: mime }),
+    body: JSON.stringify({ image: base64, type: mime, fid: fid ? Number(fid) : undefined }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string };
@@ -98,37 +90,13 @@ async function uploadViaServer(base64: string, mime: string): Promise<string> {
   return data.url;
 }
 
-async function uploadMedia(file: File, isVideo: boolean): Promise<string> {
-  try {
-    return await uploadToCatbox(file);
-  } catch { /* fall through to a same-origin proxy below */ }
-
+async function uploadMedia(file: File, isVideo: boolean, fid: bigint | null): Promise<string> {
   if (isVideo) {
-    // Videos are too large for a comfortable base64/JSON round trip · catbox
-    // direct upload is the only path, so surface a clear retry message.
-    throw new Error("Video upload failed, check your connection and try again.");
+    const dataUrl = await readAsDataUrl(file);
+    return uploadViaServer(dataUrl.split(",")[1] ?? "", file.type || "video/mp4", fid);
   }
-
   const { base64, mime } = await fileToUploadPayload(file);
-  const clientId = (import.meta.env.VITE_IMGUR_CLIENT_ID ?? "") as string;
-  if (clientId) {
-    try {
-      const form = new FormData();
-      form.append("image", base64);
-      form.append("type", "base64");
-      const res = await fetch("https://api.imgur.com/3/image", {
-        method: "POST",
-        headers: { Authorization: `Client-ID ${clientId}` },
-        body: form,
-      });
-      if (res.ok) {
-        const data = await res.json() as { data: { link: string } };
-        return data.data.link;
-      }
-    } catch { /* fall through to server proxy */ }
-  }
-
-  return uploadViaServer(base64, mime);
+  return uploadViaServer(base64, mime, fid);
 }
 
 type Props = {
@@ -236,7 +204,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
 
       setUploading(true);
       try {
-        const url = await uploadMedia(file, isVideo);
+        const url = await uploadMedia(file, isVideo, fid);
         const entry: Media = { url, kind: isVideo ? "video" : "image" };
         pending = [...pending, entry];
         setMedia(pending);

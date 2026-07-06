@@ -17,6 +17,8 @@ import { initSignPool } from "./sign-pool.js";
 import { healthSnapshot } from "./health.js";
 import { getSpamLabels, scheduleSpamLabelRefresh, awaitInitialSpamLabels } from "./spam-labels.js";
 import { getUserPref, setUserPref } from "./user-prefs.js";
+import { isCloudinaryConfigured, uploadToCloudinary } from "./cloudinary-upload.js";
+import { isUnderUploadQuota, recordUpload, DAILY_UPLOAD_LIMIT } from "./upload-quota.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -572,30 +574,42 @@ app.post("/api/farcaster/sign-message", actionLimiter, async (req, res) => {
   }
 });
 
-// ── Media upload proxy (fallback for when the client can't upload directly) ──
-// Primary path is client → catbox.moe direct (no key, scales independently of
-// this server); this route only exists as a same-origin fallback for
-// environments where the direct browser upload fails (CORS quirks, extensions,
-// etc.), and for Imgur when a client ID happens to be configured.
-//
-// freeimage.host's old fallback used a hardcoded public demo API key shared
-// across countless unrelated projects for years — exactly the kind of shared
-// credential that gets globally rate-limited or revoked without notice, which
-// is almost certainly why uploads stopped working app-wide. catbox.moe needs
-// no key at all, so there's no shared credential to die.
+// ── Media upload proxy ──────────────────────────────────────────────────────
+// Primary path is Cloudinary (our own account, signed server-side — the API
+// secret must never reach the client). Imgur/catbox remain as fallbacks for
+// resilience if Cloudinary isn't configured or has an outage, but they're
+// both third-party free tiers this app doesn't control — freeimage.host's
+// old shared demo key dying (rate-limited/revoked with zero notice, since it
+// was shared across countless unrelated projects) is exactly why uploads
+// went down app-wide before Cloudinary was wired in.
 const uploadLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
   try {
-    const { image: imageDataUrl, type: mimeType = "image/jpeg" } = req.body as { image?: string; type?: string };
+    const { image: imageDataUrl, type: mimeType = "image/jpeg", fid } = req.body as { image?: string; type?: string; fid?: number };
     if (!imageDataUrl) {
       res.status(400).json({ error: "Expected JSON body {image: dataURL}" });
+      return;
+    }
+    if (typeof fid === "number" && fid > 0 && !isUnderUploadQuota(fid)) {
+      res.status(429).json({ error: `Daily upload limit reached (${DAILY_UPLOAD_LIMIT}/day). Try again tomorrow.` });
       return;
     }
     // Strip optional data URL prefix — keep only raw base64
     const base64 = imageDataUrl.includes(",") ? imageDataUrl.split(",")[1] : imageDataUrl;
     const buffer = Buffer.from(base64, "base64");
     const isVideo = mimeType.startsWith("video/");
+
+    if (isCloudinaryConfigured()) {
+      try {
+        const url = await uploadToCloudinary(base64, mimeType, isVideo ? "video" : "image");
+        if (typeof fid === "number" && fid > 0) recordUpload(fid);
+        res.json({ url });
+        return;
+      } catch (e) {
+        console.warn("[upload] Cloudinary failed, falling back:", (e as Error).message);
+      }
+    }
 
     const imgurClientId = process.env.IMGUR_CLIENT_ID || process.env.VITE_IMGUR_CLIENT_ID;
     if (imgurClientId && !isVideo) {
@@ -613,6 +627,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
         if (upstream.ok) {
           const data = await upstream.json() as { success: boolean; data: { link: string } };
           if (data.success) {
+            if (typeof fid === "number" && fid > 0) recordUpload(fid);
             res.json({ url: data.data.link });
             return;
           }
@@ -623,7 +638,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
       }
     }
 
-    // Universal fallback: catbox.moe — free, permanent, no API key, images + video.
+    // Last-resort fallback: catbox.moe — free, no API key, images + video.
     const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
     const form = new FormData();
     form.append("reqtype", "fileupload");
@@ -635,6 +650,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
     });
     const text = (await catboxRes.text()).trim();
     if (catboxRes.ok && text.startsWith("http")) {
+      if (typeof fid === "number" && fid > 0) recordUpload(fid);
       res.json({ url: text });
       return;
     }
