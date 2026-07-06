@@ -1166,6 +1166,7 @@ export function DashboardPage() {
               src="/fidcaster-logo.png"
               alt="FidCaster"
               className="w-11 h-11 object-contain logo-animated shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
             <span className="fidcaster-brand font-extrabold text-[1.4rem]">FidCaster</span>
           </div>

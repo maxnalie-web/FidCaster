@@ -72,6 +72,7 @@ export function FidCasterLogo({ size = 96, showName = false, className = "" }: F
           alt="FidCaster"
           className="relative logo-animated logo-blend"
           style={{ width: size, height: size, objectFit: "contain", zIndex: 10 }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
       </div>
 
