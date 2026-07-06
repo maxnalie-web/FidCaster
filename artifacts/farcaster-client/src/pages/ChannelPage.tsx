@@ -25,7 +25,7 @@ export function ChannelPage() {
   const [error, setError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
-  const loadedIdRef = useRef<string>("");
+  const loadedKeyRef = useRef<string>("");
 
   // Open the channel scrolled to the very top (manual scroll restoration is on).
   useEffect(() => { window.scrollTo(0, 0); }, [id]);
@@ -33,8 +33,13 @@ export function ChannelPage() {
   useEffect(() => {
     // Wait for the wallet's own fid to be ready · fetching with viewer_fid=0
     // before the session finishes restoring is rejected by the API outright.
-    if (!id || !viewerFid || loadedIdRef.current === id) return;
-    loadedIdRef.current = id;
+    // Keyed on (id, viewerFid) together — not just id — so switching accounts
+    // while sitting on the same channel route re-fetches viewer-scoped state
+    // (follow status, personalized feed) instead of leaving the previous
+    // account's data on screen.
+    const loadKey = `${id}:${viewerFid}`;
+    if (!id || !viewerFid || loadedKeyRef.current === loadKey) return;
+    loadedKeyRef.current = loadKey;
     setLoading(true);
     setError(null);
     Promise.all([

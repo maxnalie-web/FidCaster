@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
 import { cacheGet, cacheGetSWR, cacheSet } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { neynarThrottle, singleFlight, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
@@ -440,11 +441,19 @@ export function registerProxyRoutes(app: Express): void {
     void linkFidsHandler(req, res);
   });
 
+  // Both hub routes below fetch a free third-party hub (hub.pinata.cloud)
+  // directly, with no per-key throttle underneath — unlike the Neynar routes
+  // above. index.ts's global limiter deliberately skips /api/hub/* (assuming
+  // Neynar-layer throttling, which doesn't apply here), so this is the only
+  // rate limit in front of either of them; without it a client could drive
+  // unbounded outbound requests against that third party through our IP.
+  const hubProxyLimiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
+
   // ── Hub user proxy ─────────────────────────────────────────────────────────
-  app.get("/api/hub/user/:fid", hubUserProxy);
+  app.get("/api/hub/user/:fid", hubProxyLimiter, hubUserProxy);
 
   // ── Hub generic proxy ──────────────────────────────────────────────────────
-  app.use("/api/hub", (req: Request, res: Response, next: NextFunction) => {
+  app.use("/api/hub", hubProxyLimiter, (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") { next(); return; }
     void hubGenericProxy(req, res);
   });
@@ -606,62 +615,4 @@ export function registerProxyRoutes(app: Express): void {
     res.json(result);
   });
 
-  // ── Mini-app embed proxy ──────────────────────────────────────────────────
-  // Serves a mini app's HTML from OUR origin so a document-start script we
-  // inject runs same-origin. Apps gate on `self===top || window.ReactNativeWebView`;
-  // we can't set that flag in a cross-origin iframe, but a same-origin proxied
-  // document can — so the app renders embedded instead of "can't run here".
-  // Subresources are rewritten to load from the app's real origin.
-  app.get("/api/miniapp-embed", async (req: Request, res: Response) => {
-    const target = String(req.query.u ?? "");
-    let origin: string;
-    try { origin = new URL(target).origin; } catch { res.status(400).send("bad url"); return; }
-
-    try {
-      const upstream = await fetch(target, {
-        headers: {
-          accept: "text/html,application/xhtml+xml",
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile Safari/604.1",
-        },
-        signal: AbortSignal.timeout(15_000),
-      });
-      let html = await upstream.text();
-
-      // Make every root-absolute URL load from the app's real origin. (No <base>
-      // tag — that would make client-side navigations leave our origin and hit
-      // the app's gate again.)
-      html = html
-        .replace(/(href|src|action)=("|')\/(?!\/)/g, `$1=$2${origin}/`)
-        .replace(/url\(\/(?!\/)/g, `url(${origin}/`)
-        .replace(/(["'(])\/_next\//g, `$1${origin}/_next/`);
-
-      // Strip <meta http-equiv="refresh"> redirects.
-      html = html.replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, "");
-
-      // Document-start injection: spoof the "inside a Farcaster client" signals,
-      // and neutralise the canonical-URL redirect some apps do (which would take
-      // the iframe back to their real origin and re-trigger the gate).
-      const inject =
-        `<script>(function(){` +
-        `try{Object.defineProperty(document,'referrer',{get:function(){return 'https://farcaster.xyz/'},configurable:true});}catch(e){}` +
-        `try{window.__webpack_public_path__='${origin}/_next/';}catch(e){}` +
-        `try{var H=location.host;var X=function(u){try{return typeof u==='string'&&/^https?:\\/\\//i.test(u)&&u.indexOf(H)===-1;}catch(e){return false;}};` +
-        `try{var a=location.assign.bind(location);location.assign=function(u){if(!X(u))return a(u);};}catch(e){}` +
-        `try{var rp=location.replace.bind(location);location.replace=function(u){if(!X(u))return rp(u);};}catch(e){}` +
-        `var O=window.open;window.open=function(u){if(X(u)){try{parent.postMessage({__openUrl:String(u)},'*');}catch(e){}return null;}return O.apply(window,arguments);};}catch(e){}` +
-        `try{if(!window.ReactNativeWebView){window.ReactNativeWebView={postMessage:function(d){try{parent.postMessage({__fcsdk:d},'*');}catch(e){}}};` +
-        `window.addEventListener('message',function(e){try{if(e.data&&e.data.__fcsdkReply!==undefined){document.dispatchEvent(new MessageEvent('FarcasterFrameCallback',{data:e.data.__fcsdkReply}));}}catch(err){}});}}catch(e){}` +
-        `})();</script>`;
-
-      if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, (m) => m + inject);
-      else html = inject + html;
-
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("X-Frame-Options", "SAMEORIGIN");
-      res.removeHeader("Content-Security-Policy");
-      res.send(html);
-    } catch (e) {
-      res.status(502).send(e instanceof Error ? e.message : "embed proxy error");
-    }
-  });
 }
