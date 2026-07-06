@@ -762,9 +762,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // markSessionLocked() above is what makes that stick across a refresh ·
       // it blocks the mount-restore effect's no-password auto-decrypt, so the
       // only way back in is re-entering the seed password.
+      //
+      // Keep fid/profile in state (not null) · this mirrors exactly what the
+      // mount-restore effect does when reloading an already-locked session, so
+      // locking mid-session behaves the same as locking-then-refreshing: the
+      // user stays on whatever page they're on in read-only mode instead of
+      // AuthRedirect's "!fid && isLocked" branch bouncing them to /login.
       setState((s) => ({
         ...s,
-        address: null, fid: null, profile: null, walletClient: null, localSigner: null,
+        address: null, walletClient: null, localSigner: null,
         signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
         sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
         isLocked: true,
@@ -798,9 +804,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         if (hiddenSince !== null && Date.now() - hiddenSince >= HIDDEN_LOCK_MS) {
           _zeroAndLock();
           markSessionLocked();
+          // Keep fid/profile · see doLock() above for why (stay on current page,
+          // read-only, instead of bouncing to /login).
           setState((s) => ({
             ...s,
-            address: null, fid: null, profile: null, walletClient: null, localSigner: null,
+            address: null, walletClient: null, localSigner: null,
             signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
             sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
             isLocked: true,
