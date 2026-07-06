@@ -1047,10 +1047,11 @@ export function FollowPage() {
                         <Toggle label="Hide people who follow me" sub="Skip accounts that already follow me" checked={filters.onlyNonFollowers} onChange={v => { updateFilter("onlyNonFollowers", v); if (v) updateFilter("onlyMutuals", false); }} icon={<UserMinus className="w-3.5 h-3.5" />} />
                       </div>
                       <div className="px-3">
+                        {/* Farcaster's purple badge IS the Pro-subscriber badge · there is no
+                            separate badge, so this is the only toggle for it (a second
+                            "Purple badge only" toggle used to exist here, checking the same
+                            thing under a different name — removed). */}
                         <Toggle label="Farcaster Pro only" sub="Paid subscribers ($10/mo) · rare, high intent" checked={filters.onlyPro} onChange={v => updateFilter("onlyPro", v)} icon={<ProBadge size={14} />} />
-                      </div>
-                      <div className="px-3">
-                        <Toggle label="Purple badge only" sub="Farcaster purple (Pro) badge holders" checked={filters.requirePowerBadge} onChange={v => updateFilter("requirePowerBadge", v)} icon={<Award className="w-3.5 h-3.5" />} />
                       </div>
                     </>
                   ) : (

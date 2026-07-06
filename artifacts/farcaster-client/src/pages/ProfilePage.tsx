@@ -687,7 +687,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                     </>
                   ) : (
                     <>
-                      <div className="relative flex items-center">
+                      <div className="flex items-center">
                         {canWrite && (
                           <button
                             onClick={handleFollow}
@@ -706,11 +706,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                                 : <><UserPlus className="w-4 h-4" />Follow</>
                             }
                           </button>
-                        )}
-                        {user.viewer_context?.followed_by && (
-                          <span className="absolute top-full right-0 mt-1 px-1.5 py-px rounded-full text-[9px] font-medium leading-none bg-muted text-muted-foreground border border-border/50 whitespace-nowrap">
-                            Follows you
-                          </span>
                         )}
                       </div>
                       <div className="relative" ref={moreMenuRef}>
@@ -785,8 +780,15 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                       {user.display_name || user.username}
                     </h1>
 
-                    {/* Handle · "Follows you" now lives next to the Follow button above */}
-                    <p className="text-sm font-medium text-primary mb-2.5">@{user.username}</p>
+                    {/* Handle · "Follows you" sits right next to it */}
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-primary mb-2.5">
+                      @{user.username}
+                      {user.viewer_context?.followed_by && (
+                        <span className="px-1.5 py-px rounded-full text-[10px] font-semibold leading-none bg-muted text-muted-foreground border border-border/50 whitespace-nowrap">
+                          Follows you
+                        </span>
+                      )}
+                    </p>
 
                     {/* Bio */}
                     {extUser.profile?.bio?.text && (
