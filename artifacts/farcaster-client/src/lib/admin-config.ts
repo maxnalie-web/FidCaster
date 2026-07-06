@@ -1,7 +1,17 @@
 /**
  * Admin configuration store.
- * All settings live in localStorage under fc_admin_cfg.
- * Only readable by the app; only writable from AdminPage (guarded by FID check).
+ *
+ * Source of truth is now the server (`/api/public-config` for reads served to
+ * every visitor, `/api/admin/config` for authenticated writes) — a real
+ * database row, not each browser's own localStorage. localStorage is kept
+ * only as a synchronous first-paint cache (so the UI doesn't flash defaults
+ * while the network request is in flight); it's refreshed from the server on
+ * every load and is never treated as authoritative.
+ *
+ * `api.neynarApiKey` / `api.imgurClientId` are never included in what's sent
+ * to or read from the public config — those are real secrets and live only
+ * in the admin-only `/api/admin/secrets` endpoint (see AdminPage's API Keys
+ * section), which requires a valid admin session.
  */
 
 export const ADMIN_FID = 16333; // @m--
@@ -280,29 +290,78 @@ interface StoredConfig {
   data: AdminConfig;
 }
 
+/** Secrets never belong in the shared public config — always scrub them,
+ * whether reading a locally-cached copy or building a payload to send. */
+function scrubSecrets(cfg: AdminConfig): AdminConfig {
+  return { ...cfg, api: { ...cfg.api, neynarApiKey: "", imgurClientId: "" } };
+}
+
+/** Synchronous fast-paint cache — refreshed from the server by
+ * refreshAdminConfigFromServer() on every app load. Never authoritative. */
 export function loadAdminConfig(): AdminConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return structuredClone(DEFAULT_CONFIG);
     const parsed: StoredConfig = JSON.parse(raw);
     if (parsed.version !== STORAGE_VERSION) return structuredClone(DEFAULT_CONFIG);
-    return deepMerge(structuredClone(DEFAULT_CONFIG), parsed.data);
+    return scrubSecrets(deepMerge(structuredClone(DEFAULT_CONFIG), parsed.data));
   } catch {
     return structuredClone(DEFAULT_CONFIG);
   }
 }
 
+/** Updates the local fast-paint cache and notifies listeners. Does NOT talk
+ * to the server — call pushAdminConfigToServer() (admin-only) for that. */
 export function saveAdminConfig(cfg: AdminConfig): void {
+  const clean = scrubSecrets(cfg);
   try {
-    const stored: StoredConfig = { version: STORAGE_VERSION, data: cfg };
+    const stored: StoredConfig = { version: STORAGE_VERSION, data: clean };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-    window.dispatchEvent(new CustomEvent("fc_admin_cfg_change", { detail: cfg }));
   } catch {}
+  window.dispatchEvent(new CustomEvent("fc_admin_cfg_change", { detail: clean }));
 }
 
 export function resetAdminConfig(): void {
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
   window.dispatchEvent(new CustomEvent("fc_admin_cfg_change", { detail: structuredClone(DEFAULT_CONFIG) }));
+}
+
+/** Fetches the real, server-persisted config (every visitor calls this on
+ * app load) and updates the local cache so it applies site-wide instead of
+ * only in the browser that last edited it. Safe to call unauthenticated. */
+export async function refreshAdminConfigFromServer(): Promise<AdminConfig> {
+  try {
+    const r = await fetch("/api/public-config");
+    if (!r.ok) return loadAdminConfig();
+    const { config } = await r.json() as { config: AdminConfig | null };
+    const merged = scrubSecrets(config ? deepMerge(structuredClone(DEFAULT_CONFIG), config) : structuredClone(DEFAULT_CONFIG));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, data: merged } satisfies StoredConfig));
+    } catch {}
+    window.dispatchEvent(new CustomEvent("fc_admin_cfg_change", { detail: merged }));
+    return merged;
+  } catch {
+    return loadAdminConfig();
+  }
+}
+
+/** Admin-only — persists cfg to the server so every visitor sees it. Requires
+ * a valid admin session cookie; the server 401s otherwise. */
+export async function pushAdminConfigToServer(cfg: AdminConfig): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const r = await fetch("/api/admin/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: scrubSecrets(cfg) }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      return { ok: false, error: (data as { error?: string }).error ?? `Save failed (${r.status})` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
+  }
 }
 
 // ── Deep merge helper ─────────────────────────────────────────────────────────

@@ -19,6 +19,12 @@ import { getSpamLabels, scheduleSpamLabelRefresh, awaitInitialSpamLabels } from 
 import { getUserPref, setUserPref } from "./user-prefs.js";
 import { isCloudinaryConfigured, uploadToCloudinary } from "./cloudinary-upload.js";
 import { isUnderUploadQuota, recordUpload, DAILY_UPLOAD_LIMIT } from "./upload-quota.js";
+import {
+  isAdminConfigured, checkAdminPassword, issueSessionToken,
+  requireAdminSession, hasValidAdminSession, setSessionCookie, clearSessionCookie,
+} from "./admin-auth.js";
+import { getPublicConfig, setPublicConfig, getAdminSecrets, setAdminSecrets } from "./admin-store.js";
+import { setAdminNeynarKey } from "./neynar-limit.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -753,6 +759,99 @@ app.put("/api/user-prefs", (req: express.Request, res: express.Response) => {
   res.json({ ok: true });
 });
 
+// ── Admin panel: real server-side auth + persisted config/secrets ──────────────
+// Replaces the old client-only PIN (a hash compared entirely in the browser,
+// trivially bypassable) with a signed session cookie checked here on the
+// server, and replaces localStorage-only settings with a real DB so changes
+// actually reach every visitor, not just the browser that made them.
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts. Try again later." },
+});
+
+app.post("/api/admin/login", adminLoginLimiter, (req, res) => {
+  if (!isAdminConfigured()) {
+    res.status(503).json({ error: "Admin panel is not configured (ADMIN_PASSWORD unset on the server)." });
+    return;
+  }
+  const { password } = req.body as { password?: string };
+  if (!password || typeof password !== "string" || !checkAdminPassword(password)) {
+    // Deliberately identical response/timing-shape for "wrong password" and
+    // "no such thing" — nothing here reveals whether admin is configured.
+    res.status(401).json({ error: "Invalid password" });
+    return;
+  }
+  const token = issueSessionToken();
+  if (!token) { res.status(503).json({ error: "Admin session signing is not configured." }); return; }
+  setSessionCookie(res, token);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/logout", (_req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/session", (req, res) => {
+  res.json({ valid: hasValidAdminSession(req) });
+});
+
+const MAX_CONFIG_BYTES = 2 * 1024 * 1024; // 2MB — generous for JSON settings incl. custom CSS
+
+// Public, unauthenticated — every visitor's app load fetches this so admin
+// settings actually apply site-wide instead of only in the editing browser.
+app.get("/api/public-config", (_req, res) => {
+  const json = getPublicConfig();
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.json({ config: json ? JSON.parse(json) : null });
+});
+
+app.get("/api/admin/config", requireAdminSession, (_req, res) => {
+  const json = getPublicConfig();
+  res.json({ config: json ? JSON.parse(json) : null });
+});
+
+app.put("/api/admin/config", requireAdminSession, (req, res) => {
+  const { config } = req.body as { config?: unknown };
+  if (!config || typeof config !== "object") { res.status(400).json({ error: "config object required" }); return; }
+  const json = JSON.stringify(config);
+  if (json.length > MAX_CONFIG_BYTES) { res.status(413).json({ error: "config too large" }); return; }
+  setPublicConfig(json);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/secrets", requireAdminSession, (_req, res) => {
+  res.json(getAdminSecrets());
+});
+
+const VALID_SECRET_KEYS = new Set(["neynarApiKey", "imgurClientId", "cloudinaryAccountsJson"]);
+
+app.put("/api/admin/secrets", requireAdminSession, (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  if (!body || typeof body !== "object") { res.status(400).json({ error: "body required" }); return; }
+  const partial: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (!VALID_SECRET_KEYS.has(k)) { res.status(400).json({ error: `Unknown secret key: ${k}` }); return; }
+    if (typeof v !== "string") { res.status(400).json({ error: `${k} must be a string` }); return; }
+    if (v.length > MAX_CONFIG_BYTES) { res.status(413).json({ error: `${k} too large` }); return; }
+    partial[k] = v;
+  }
+  if (partial.cloudinaryAccountsJson) {
+    try {
+      const parsed = JSON.parse(partial.cloudinaryAccountsJson);
+      if (!Array.isArray(parsed)) throw new Error("not an array");
+    } catch {
+      res.status(400).json({ error: "cloudinaryAccountsJson must be valid JSON array" }); return;
+    }
+  }
+  setAdminSecrets(partial);
+  if ("neynarApiKey" in partial) setAdminNeynarKey(partial.neynarApiKey || null);
+  res.json({ ok: true });
+});
+
 // ── Production static file serving ────────────────────────────────────────────
 // In production the Express server is the only process — it serves the React
 // SPA and all API routes. Vite's dev server handles this in development.
@@ -814,6 +913,10 @@ const server = app.listen(PORT, host, () => {
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
+  // Hydrate the admin-configured Neynar key (if any was saved via the admin
+  // panel in a previous run) into the in-memory rate limiter on boot.
+  const savedNeynarKey = getAdminSecrets().neynarApiKey;
+  if (savedNeynarKey) setAdminNeynarKey(savedNeynarKey);
 });
 
 function shutdown(signal: string) {

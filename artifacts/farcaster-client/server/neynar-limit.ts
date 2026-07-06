@@ -13,11 +13,21 @@
  * 3. Single-flight — N concurrent cache-miss requests share ONE upstream fetch.
  */
 
+// Admin-panel-configured key (server-side store, hot-reloadable without a
+// redeploy) — additive to whatever's in env vars, never replaces them.
+let extraAdminKey: string | null = null;
+
+export function setAdminNeynarKey(key: string | null): void {
+  extraAdminKey = key && key.trim() ? key.trim() : null;
+  initBuckets();
+}
+
 // ── Collect all configured API keys ──────────────────────────────────────────
 function collectKeys(): string[] {
   const keys: string[] = [];
+  if (extraAdminKey) keys.push(extraAdminKey);
   const primary = process.env.NEYNAR_API_KEY;
-  if (primary) keys.push(primary);
+  if (primary && !keys.includes(primary)) keys.push(primary);
 
   // Both formats are supported:
   //   NEYNAR_API_KEY_2, NEYNAR_API_KEY_3  (with underscore before number)
@@ -54,16 +64,26 @@ interface Bucket {
 }
 
 let buckets: Bucket[] = [];
+let _bucketsInitialized = false;
 
 function initBuckets(): void {
   const keys = collectKeys();
   buckets = keys.map(key => ({ key, tokens: RPM, lastRefill: Date.now(), penaltyUntil: 0 }));
+  _bucketsInitialized = true;
   if (buckets.length > 1) {
     console.log(`[neynar] ${buckets.length} API keys loaded — effective RPM: ${buckets.length * RPM}`);
   }
 }
 
-initBuckets();
+// Lazy — NOT called at module top level. If it ran eagerly here, ESM import
+// evaluation order would run this before server/index.ts's own .env-loading
+// code executes (same bug class fixed earlier in cloudinary-upload.ts), so
+// any key that's only set via the .env file (not a real shell/PM2 env var)
+// would be silently missed. ensureBucketsInitialized() is called on first
+// real use instead (see neynarThrottle() below).
+function ensureBucketsInitialized(): void {
+  if (!_bucketsInitialized) initBuckets();
+}
 
 function refillBucket(b: Bucket): void {
   const now = Date.now();
@@ -102,6 +122,7 @@ function nextBucket(): Bucket | null {
 
 /** Call with the key that got HTTP 429 to back it off for 5 s. */
 export function penalize429(key?: string): void {
+  ensureBucketsInitialized();
   const target = key ? buckets.find(b => b.key === key) : buckets[0];
   if (!target) return;
   target.tokens = 0;
@@ -110,12 +131,19 @@ export function penalize429(key?: string): void {
 
 let queueDepth = 0;
 
+/** True if at least one Neynar key is configured (env vars or admin panel). */
+export function hasAnyNeynarKey(): boolean {
+  ensureBucketsInitialized();
+  return buckets.length > 0 || !!process.env.NEYNAR_API_KEY;
+}
+
 /**
  * Waits until a token is available on the best key, then returns that key string.
  * Callers must use the returned key for their Neynar request so 429s can be
  * attributed back to the right bucket via `penalize429(key)`.
  */
 export function neynarThrottle(): Promise<string> {
+  ensureBucketsInitialized();
   if (buckets.length === 0) return Promise.resolve(process.env.NEYNAR_API_KEY ?? "");
   if (queueDepth >= MAX_QUEUE) {
     return Promise.reject(new Error("Rate limit queue full · try again shortly"));

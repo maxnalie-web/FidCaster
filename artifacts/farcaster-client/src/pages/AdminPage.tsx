@@ -6,14 +6,17 @@ import {
   Shield, ToggleLeft, ToggleRight, ArrowLeft, Check,
   AlertTriangle, Info, RefreshCw, Globe, Search, Share2,
   Sparkles, Code, FileText, Link, Twitter, Send,
-  Github, MessageSquare, Eye, EyeOff, Lock, KeyRound, LogIn,
+  Github, MessageSquare, Eye, EyeOff, Lock, KeyRound, LogIn, LogOut, CloudUpload,
 } from "lucide-react";
-import { useWallet } from "@/hooks/useWallet";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
 import {
-  resetAdminConfig, applyAdminTheme, applyAdminSeo,
-  ADMIN_FID, type Announcement, type FeaturedChannel, type LandingFeature, type FooterLink,
+  resetAdminConfig, applyAdminTheme, applyAdminSeo, pushAdminConfigToServer, DEFAULT_CONFIG,
+  type Announcement, type FeaturedChannel, type LandingFeature, type FooterLink,
 } from "@/lib/admin-config";
+import {
+  adminLogin, adminLogout, checkAdminSession, fetchAdminSecrets, pushAdminSecrets,
+  type AdminSecrets,
+} from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -201,86 +204,153 @@ function AddField({ placeholder, onAdd, btnLabel = "Add" }: {
   );
 }
 
-// ── Admin PIN helpers ─────────────────────────────────────────────────────────
+// ── API Keys section: real server-side secrets, not localStorage ────────────
+// Neynar key, Imgur client ID, and the Cloudinary account pool all live in
+// server/admin-store.ts's `secrets` table (admin-session-gated read/write)
+// and take effect immediately — no redeploy, no env var edit needed.
 
-const ADMIN_PIN_KEY       = "fc_admin_pin";      // SHA-256 hash of PIN
-const ADMIN_PIN_LOCK_KEY  = "fc_admin_pin_locked"; // locked-until timestamp
-const ADMIN_PIN_TRIES_KEY = "fc_admin_pin_tries";  // consecutive wrong attempts
-const PIN_UNLOCK_KEY      = "fc_admin_unlocked";   // sessionStorage: unlock flag
-const MAX_PIN_TRIES       = 5;
-const LOCKOUT_MS          = 5 * 60 * 1000;         // 5 minutes
+interface CloudinaryAccountRow { cloudName: string; apiKey: string; apiSecret: string }
 
-async function sha256Hex(text: string): Promise<string> {
-  const data = new TextEncoder().encode("fidcaster_admin:" + text);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-function getPinLockInfo(): { locked: boolean; secsLeft: number; tries: number } {
-  const lockedUntil = Number(localStorage.getItem(ADMIN_PIN_LOCK_KEY) ?? 0);
-  const tries = Number(localStorage.getItem(ADMIN_PIN_TRIES_KEY) ?? 0);
-  const secsLeft = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000));
-  return { locked: secsLeft > 0, secsLeft, tries };
-}
-
-// ── PIN Gate Component ────────────────────────────────────────────────────────
-
-function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
-  const storedHash = localStorage.getItem(ADMIN_PIN_KEY);
-  const [mode, setMode] = useState<"enter" | "set">(storedHash ? "enter" : "set");
-  const [pin, setPin] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [lockInfo, setLockInfo] = useState(getPinLockInfo());
-  const inputRef = useRef<HTMLInputElement>(null);
+function ApiKeysSection() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [neynarKey, setNeynarKey] = useState("");
+  const [imgurId, setImgurId] = useState("");
+  const [accounts, setAccounts] = useState<CloudinaryAccountRow[]>([]);
 
   useEffect(() => {
-    inputRef.current?.focus();
-    // Refresh lock countdown every second
-    const t = setInterval(() => setLockInfo(getPinLockInfo()), 1000);
-    return () => clearInterval(t);
+    fetchAdminSecrets().then(s => {
+      if (s) {
+        setNeynarKey(s.neynarApiKey);
+        setImgurId(s.imgurClientId);
+        try { setAccounts(s.cloudinaryAccountsJson ? JSON.parse(s.cloudinaryAccountsJson) : []); } catch { setAccounts([]); }
+      }
+      setLoading(false);
+    });
   }, []);
 
-  async function handleEnter(e: React.FormEvent) {
-    e.preventDefault();
-    if (lockInfo.locked) return;
-    setLoading(true);
-    setError("");
-    const hash = await sha256Hex(pin);
-    if (hash === storedHash) {
-      localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
-      localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
-      sessionStorage.setItem(PIN_UNLOCK_KEY, "1");
-      onUnlocked();
-    } else {
-      const tries = lockInfo.tries + 1;
-      localStorage.setItem(ADMIN_PIN_TRIES_KEY, String(tries));
-      if (tries >= MAX_PIN_TRIES) {
-        localStorage.setItem(ADMIN_PIN_LOCK_KEY, String(Date.now() + LOCKOUT_MS));
-        localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
-        setError("Too many wrong attempts · locked for 5 minutes.");
-      } else {
-        setError(`Wrong PIN. ${MAX_PIN_TRIES - tries} attempt${MAX_PIN_TRIES - tries !== 1 ? "s" : ""} left.`);
-      }
-      setPin("");
-      setLockInfo(getPinLockInfo());
-    }
-    setLoading(false);
+  function addAccount() {
+    setAccounts(a => [...a, { cloudName: "", apiKey: "", apiSecret: "" }]);
+  }
+  function updateAccount(i: number, field: keyof CloudinaryAccountRow, value: string) {
+    setAccounts(a => a.map((acc, idx) => (idx === i ? { ...acc, [field]: value } : acc)));
+  }
+  function removeAccount(i: number) {
+    setAccounts(a => a.filter((_, idx) => idx !== i));
   }
 
-  async function handleSet(e: React.FormEvent) {
+  async function saveSecrets() {
+    setSaving(true);
+    const validAccounts = accounts.filter(a => a.cloudName.trim() && a.apiKey.trim() && a.apiSecret.trim());
+    const result = await pushAdminSecrets({
+      neynarApiKey: neynarKey.trim(),
+      imgurClientId: imgurId.trim(),
+      cloudinaryAccountsJson: JSON.stringify(validAccounts),
+    });
+    setSaving(false);
+    if (result.ok) toast.success("API keys saved — live immediately, no redeploy needed");
+    else toast.error(result.error ?? "Save failed");
+  }
+
+  if (loading) {
+    return (
+      <Card title="API Keys">
+        <div className="flex justify-center py-8"><RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" /></div>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card title="Neynar & Image Hosting">
+        <InfoBox>
+          Stored server-side and applied immediately — no redeploy. When set here, these override
+          the server's own environment variables. Leave blank to keep using the server's env vars.
+        </InfoBox>
+        <Field>
+          <Label sub="Used for all Farcaster read/write API calls">Neynar API Key</Label>
+          <Inp type="password" value={neynarKey} onChange={setNeynarKey} placeholder="neynar_..." />
+        </Field>
+        <Field>
+          <Label sub="Fallback image host used only if Cloudinary isn't configured">Imgur Client ID</Label>
+          <Inp type="password" value={imgurId} onChange={setImgurId} />
+        </Field>
+      </Card>
+
+      <Card title="Cloudinary Accounts (image/video upload pool)" className="mt-4">
+        <InfoBox>
+          Add one or more Cloudinary accounts to expand upload capacity — the server load-balances
+          across all of them and fails over automatically on error. Free credentials at cloudinary.com/console.
+        </InfoBox>
+        {accounts.length === 0 && (
+          <p className="text-[12px] text-muted-foreground mb-3">No accounts configured yet — uploads fall back to the server's env vars, then Imgur, then catbox.moe.</p>
+        )}
+        <div className="space-y-3">
+          {accounts.map((acc, i) => (
+            <div key={i} className="p-3 rounded-xl border border-border/60 bg-muted/10 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Account {i + 1}</span>
+                <button onClick={() => removeAccount(i)} className="text-muted-foreground hover:text-destructive transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <Inp value={acc.cloudName} onChange={v => updateAccount(i, "cloudName", v)} placeholder="Cloud name" />
+              <Inp value={acc.apiKey} onChange={v => updateAccount(i, "apiKey", v)} placeholder="API key" />
+              <Inp type="password" value={acc.apiSecret} onChange={v => updateAccount(i, "apiSecret", v)} placeholder="API secret" />
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={addAccount}
+          className="mt-3 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 text-primary text-[12px] font-semibold hover:bg-primary/20 transition-colors border border-primary/20"
+        >
+          <Plus className="w-3.5 h-3.5" /> Add Cloudinary account
+        </button>
+      </Card>
+
+      <button
+        onClick={saveSecrets}
+        disabled={saving}
+        className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-white font-bold text-[13px] hover:bg-primary/90 transition-all disabled:opacity-50"
+      >
+        {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload className="w-3.5 h-3.5" />}
+        Save API Keys
+      </button>
+    </>
+  );
+}
+
+// ── Real server-checked admin login ─────────────────────────────────────────
+// Replaces the old client-only PIN (a SHA-256 hash compared entirely in the
+// browser against a value also stored in the browser's own localStorage —
+// trivially bypassable via devtools, since nothing on the server ever
+// checked it). The actual gate now is server/admin-auth.ts: a password
+// verified server-side, guarding a signed httpOnly session cookie that every
+// /api/admin/* route re-checks independently. This component only renders
+// the form and reflects what the server decides — it has no authority of
+// its own.
+
+function AdminLoginGate({ onLoggedIn }: { onLoggedIn: () => void }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (pin.length < 6) { setError("PIN must be at least 6 characters."); return; }
-    if (pin !== confirm) { setError("PINs don't match."); return; }
+    if (!password) return;
     setLoading(true);
-    const hash = await sha256Hex(pin);
-    localStorage.setItem(ADMIN_PIN_KEY, hash);
-    localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
-    localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
-    sessionStorage.setItem(PIN_UNLOCK_KEY, "1");
-    onUnlocked();
+    setError("");
+    const result = await adminLogin(password);
     setLoading(false);
+    if (result.ok) {
+      onLoggedIn();
+    } else {
+      setError(result.error ?? "Invalid password");
+      setPassword("");
+    }
   }
 
   return (
@@ -290,86 +360,34 @@ function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
           <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="font-bold text-xl text-foreground">
-            {mode === "set" ? "Set Admin PIN" : "Admin Access"}
-          </h1>
+          <h1 className="font-bold text-xl text-foreground">Admin Access</h1>
           <p className="text-sm text-muted-foreground mt-1.5">
-            {mode === "set"
-              ? "Create a PIN to protect the admin panel. You'll need it every session."
-              : "Enter your admin PIN to continue."}
+            Enter the admin password to continue. Verified on the server — nothing here can be bypassed from the browser.
           </p>
         </div>
 
-        <form onSubmit={mode === "set" ? handleSet : handleEnter} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3">
           <input
             ref={inputRef}
             type="password"
-            value={pin}
-            onChange={e => { setPin(e.target.value); setError(""); }}
-            placeholder={mode === "set" ? "Create PIN (min 6 chars)" : "Enter PIN"}
-            disabled={lockInfo.locked || loading}
+            value={password}
+            onChange={e => { setPassword(e.target.value); setError(""); }}
+            placeholder="Admin password"
+            disabled={loading}
             autoComplete="current-password"
-            className="w-full px-4 py-3 rounded-xl border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/60 text-center tracking-widest text-lg transition-colors disabled:opacity-50"
+            className="w-full px-4 py-3 rounded-xl border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/60 text-center text-lg transition-colors disabled:opacity-50"
           />
-          {mode === "set" && (
-            <input
-              type="password"
-              value={confirm}
-              onChange={e => { setConfirm(e.target.value); setError(""); }}
-              placeholder="Confirm PIN"
-              disabled={loading}
-              autoComplete="new-password"
-              className="w-full px-4 py-3 rounded-xl border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/60 text-center tracking-widest text-lg transition-colors"
-            />
-          )}
 
-          {lockInfo.locked && (
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-destructive/8 border border-destructive/20">
-              <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
-              <p className="text-[12px] text-destructive">
-                Locked · wait {Math.floor(lockInfo.secsLeft / 60)}:{String(lockInfo.secsLeft % 60).padStart(2, "0")}
-              </p>
-            </div>
-          )}
-          {error && !lockInfo.locked && (
-            <p className="text-[12px] text-destructive text-center">{error}</p>
-          )}
+          {error && <p className="text-[12px] text-destructive text-center">{error}</p>}
 
           <button
             type="submit"
-            disabled={lockInfo.locked || loading || pin.length === 0}
+            disabled={loading || password.length === 0}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-white font-bold text-[15px] transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {loading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : mode === "set" ? (
-              <><KeyRound className="w-4 h-4" /> Set PIN & Enter</>
-            ) : (
-              <><LogIn className="w-4 h-4" /> Unlock</>
-            )}
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><LogIn className="w-4 h-4" /> Sign in</>}
           </button>
         </form>
-
-        {mode === "enter" && (
-          <p className="text-center text-[11px] text-muted-foreground mt-5">
-            Forgot your PIN?{" "}
-            <button
-              onClick={() => {
-                if (window.confirm("This will clear the stored PIN hash and require setting a new one. Continue?")) {
-                  localStorage.removeItem(ADMIN_PIN_KEY);
-                  localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
-                  localStorage.removeItem(ADMIN_PIN_TRIES_KEY);
-                  setMode("set");
-                  setPin("");
-                  setError("");
-                }
-              }}
-              className="underline underline-offset-2 hover:text-foreground transition-colors"
-            >
-              Reset PIN
-            </button>
-          </p>
-        )}
       </div>
     </div>
   );
@@ -378,35 +396,45 @@ function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
 // ── Main AdminPage ────────────────────────────────────────────────────────────
 
 export function AdminPage() {
-  const { fid } = useWallet();
   const [, navigate] = useLocation();
   const [cfg, update] = useAdminConfig();
   const [activeSection, setActiveSection] = useState<Section>("branding");
-  const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
-  // PIN gate · session-scoped; cleared on browser/tab close
-  const [pinUnlocked, setPinUnlocked] = useState(
-    () => sessionStorage.getItem(PIN_UNLOCK_KEY) === "1"
-  );
-
-  const isAdmin = fid !== null && Number(fid) === ADMIN_FID;
+  const [saveState, setSaveState] = useState<"idle" | "saved" | "error">("idle");
+  // Real server session — not a client-side guess. "checking" avoids a flash
+  // of the login form for an already-logged-in admin on refresh.
+  const [session, setSession] = useState<"checking" | "loggedOut" | "loggedIn">("checking");
 
   useEffect(() => {
-    if (isAdmin) { applyAdminTheme(cfg); applyAdminSeo(cfg); }
-  }, [cfg, isAdmin]);
+    checkAdminSession().then(valid => setSession(valid ? "loggedIn" : "loggedOut"));
+  }, []);
 
-  function save() {
-    applyAdminTheme(cfg);
-    applyAdminSeo(cfg);
-    setSaveState("saved");
-    toast.success("Settings saved");
+  useEffect(() => {
+    if (session === "loggedIn") { applyAdminTheme(cfg); applyAdminSeo(cfg); }
+  }, [cfg, session]);
+
+  async function save() {
+    const result = await pushAdminConfigToServer(cfg);
+    if (result.ok) {
+      setSaveState("saved");
+      toast.success("Saved — now live for every visitor");
+    } else {
+      setSaveState("error");
+      toast.error(result.error ?? "Save failed");
+    }
     setTimeout(() => setSaveState("idle"), 2500);
   }
 
-  function doReset() {
-    if (!confirm("Reset all settings to defaults?")) return;
+  async function doReset() {
+    if (!confirm("Reset all settings to defaults? This applies site-wide immediately.")) return;
     resetAdminConfig();
+    await pushAdminConfigToServer(DEFAULT_CONFIG);
     toast.success("Reset to defaults");
     window.location.reload();
+  }
+
+  async function doLogout() {
+    await adminLogout();
+    setSession("loggedOut");
   }
 
   function set<K extends keyof typeof cfg>(section: K, key: keyof (typeof cfg)[K], value: unknown) {
@@ -419,27 +447,16 @@ export function AdminPage() {
   const activeDef = SECTIONS.find(s => s.id === activeSection);
 
   // ── Guards ────────────────────────────────────────────────────────────────
-  if (!isAdmin) {
+  if (session === "checking") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4 p-8">
-          <div className="w-16 h-16 rounded-2xl bg-destructive/10 flex items-center justify-center mx-auto">
-            <Shield className="w-8 h-8 text-destructive/60" />
-          </div>
-          <p className="text-xl font-bold text-foreground">Access Denied</p>
-          <p className="text-sm text-muted-foreground">This page is only accessible to the admin.</p>
-          <button onClick={() => navigate("/dashboard")}
-            className="px-5 py-2 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors">
-            Go Back
-          </button>
-        </div>
+        <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  // PIN gate · shown every new browser session even for the admin FID
-  if (!pinUnlocked) {
-    return <PinGate onUnlocked={() => setPinUnlocked(true)} />;
+  if (session === "loggedOut") {
+    return <AdminLoginGate onLoggedIn={() => setSession("loggedIn")} />;
   }
 
   return (
@@ -461,7 +478,7 @@ export function AdminPage() {
             <span className="font-bold text-[15px] text-foreground">Admin Panel</span>
           </div>
           <span className="hidden sm:flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-            @m-- · FID {ADMIN_FID}
+            Signed in
           </span>
         </div>
 
@@ -484,13 +501,24 @@ export function AdminPage() {
               "flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[12px] font-semibold transition-all",
               saveState === "saved"
                 ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
+                : saveState === "error"
+                ? "bg-destructive/15 text-destructive border border-destructive/25"
                 : "bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/20",
             )}
           >
             {saveState === "saved"
               ? <><Check className="w-3 h-3" /> Saved</>
+              : saveState === "error"
+              ? <><AlertTriangle className="w-3 h-3" /> Failed</>
               : <><Save className="w-3 h-3" /> Save changes</>
             }
+          </button>
+          <button
+            onClick={doLogout}
+            title="Log out"
+            className="p-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors border border-border/60"
+          >
+            <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>
@@ -974,39 +1002,26 @@ export function AdminPage() {
 
             {/* ── API ────────────────────────────────────────────── */}
             {activeSection === "api" && (
-              <Card title="API Configuration">
-                <InfoBox variant="warn">Stored in localStorage only. Empty = use server env variables.</InfoBox>
-                <Field>
-                  <Label sub="Overrides NEYNAR_API_KEY env var">Neynar API Key</Label>
-                  <Inp type="password" value={cfg.api.neynarApiKey} onChange={v => set("api", "neynarApiKey", v)} placeholder="neynar_..." />
-                </Field>
-                <Field>
-                  <Label sub="Default: hub-api.neynar.com">Hub URL Override</Label>
-                  <Inp value={cfg.api.hubUrl} onChange={v => set("api", "hubUrl", v)} placeholder="https://hub-api.neynar.com" />
-                </Field>
-                <Field>
-                  <Label sub="Default: mainnet.optimism.io">Optimism RPC URL</Label>
-                  <Inp value={cfg.api.rpcUrl} onChange={v => set("api", "rpcUrl", v)} placeholder="https://mainnet.optimism.io" />
-                </Field>
-                <Field>
-                  <Label sub="For image uploads">Imgur Client ID</Label>
-                  <Inp type="password" value={cfg.api.imgurClientId} onChange={v => set("api", "imgurClientId", v)} />
-                </Field>
-                <div className="mt-4 pt-4 border-t border-border/40 grid grid-cols-2 gap-3">
-                  <Field>
-                    <Label sub="Max actions per minute">Action Rate Limit</Label>
-                    <input type="number" value={cfg.rateLimits.actionPerMin} min={10} max={1000}
-                      onChange={e => update(p => ({ ...p, rateLimits: { ...p.rateLimits, actionPerMin: Number(e.target.value) } }))}
-                      className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
-                  </Field>
-                  <Field>
-                    <Label sub="Global requests per minute">Global Rate Limit</Label>
-                    <input type="number" value={cfg.rateLimits.globalPerMin} min={10} max={1000}
-                      onChange={e => update(p => ({ ...p, rateLimits: { ...p.rateLimits, globalPerMin: Number(e.target.value) } }))}
-                      className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
-                  </Field>
-                </div>
-              </Card>
+              <>
+                <ApiKeysSection />
+                <Card title="Rate Limits" className="mt-4">
+                  <InfoBox variant="warn">Display-only reference — actual enforcement lives in the server's rate limiters (server/index.ts) and isn't yet wired to these values.</InfoBox>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <Label sub="Max actions per minute">Action Rate Limit</Label>
+                      <input type="number" value={cfg.rateLimits.actionPerMin} min={10} max={1000}
+                        onChange={e => update(p => ({ ...p, rateLimits: { ...p.rateLimits, actionPerMin: Number(e.target.value) } }))}
+                        className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
+                    </Field>
+                    <Field>
+                      <Label sub="Global requests per minute">Global Rate Limit</Label>
+                      <input type="number" value={cfg.rateLimits.globalPerMin} min={10} max={1000}
+                        onChange={e => update(p => ({ ...p, rateLimits: { ...p.rateLimits, globalPerMin: Number(e.target.value) } }))}
+                        className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
+                    </Field>
+                  </div>
+                </Card>
+              </>
             )}
 
             {/* ── MISC ───────────────────────────────────────────── */}
@@ -1053,8 +1068,12 @@ export function AdminPage() {
                     <Inp value={cfg.misc.footerText} onChange={v => set("misc", "footerText", v)} placeholder="Optional footer note" />
                   </Field>
                 </Card>
-                <Card title="Admin PIN">
-                  <ChangePinForm />
+                <Card title="Admin Access">
+                  <InfoBox>
+                    The admin password is set via the server's <code className="font-mono">ADMIN_PASSWORD</code> environment
+                    variable, not from this panel — changing it requires updating the server config and restarting the process.
+                    Sessions expire automatically after 12 hours.
+                  </InfoBox>
                 </Card>
               </>
             )}
@@ -1063,75 +1082,6 @@ export function AdminPage() {
         </main>
       </div>
     </div>
-  );
-}
-
-// ── Change PIN form ───────────────────────────────────────────────────────────
-
-function ChangePinForm() {
-  const [oldPin, setOldPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [cfmPin, setCfmPin] = useState("");
-  const [error, setError] = useState("");
-  const [ok, setOk] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const hasPin = !!localStorage.getItem(ADMIN_PIN_KEY);
-
-  async function handleChange(e: React.FormEvent) {
-    e.preventDefault();
-    setError(""); setOk(false); setLoading(true);
-    if (hasPin) {
-      const oldHash = await sha256Hex(oldPin);
-      if (oldHash !== localStorage.getItem(ADMIN_PIN_KEY)) {
-        setError("Current PIN is wrong."); setLoading(false); return;
-      }
-    }
-    if (newPin.length < 6) { setError("New PIN must be at least 6 characters."); setLoading(false); return; }
-    if (newPin !== cfmPin) { setError("New PINs don't match."); setLoading(false); return; }
-    const hash = await sha256Hex(newPin);
-    localStorage.setItem(ADMIN_PIN_KEY, hash);
-    localStorage.removeItem(ADMIN_PIN_LOCK_KEY);
-    localStorage.setItem(ADMIN_PIN_TRIES_KEY, "0");
-    setOldPin(""); setNewPin(""); setCfmPin("");
-    setOk(true); setLoading(false);
-  }
-
-  return (
-    <form onSubmit={handleChange} className="space-y-3">
-      <p className="text-[12px] text-muted-foreground leading-snug mb-2">
-        The admin PIN protects the panel from unauthorized access. Required every new browser session.
-      </p>
-      {hasPin && (
-        <div>
-          <Label>Current PIN</Label>
-          <input type="password" value={oldPin} onChange={e => { setOldPin(e.target.value); setError(""); setOk(false); }}
-            placeholder="Current PIN"
-            className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label>{hasPin ? "New PIN" : "Create PIN"}</Label>
-          <input type="password" value={newPin} onChange={e => { setNewPin(e.target.value); setError(""); setOk(false); }}
-            placeholder="Min 6 chars"
-            className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
-        </div>
-        <div>
-          <Label>Confirm</Label>
-          <input type="password" value={cfmPin} onChange={e => { setCfmPin(e.target.value); setError(""); setOk(false); }}
-            placeholder="Repeat PIN"
-            className="w-full px-3 py-2 rounded-xl text-[13px] bg-muted/30 border border-border text-foreground outline-none focus:border-primary/50 transition-all" />
-        </div>
-      </div>
-      {error && <p className="text-[12px] text-destructive">{error}</p>}
-      {ok && <p className="text-[12px] text-emerald-500 font-semibold">PIN changed successfully.</p>}
-      <button type="submit" disabled={loading}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-white font-bold text-[13px] hover:bg-primary/90 transition-all disabled:opacity-50">
-        {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
-        {hasPin ? "Change PIN" : "Set PIN"}
-      </button>
-    </form>
   );
 }
 

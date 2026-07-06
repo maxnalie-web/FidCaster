@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { cacheGet, cacheGetSWR, cacheSet } from "./cache.js";
 import { metrics } from "./metrics.js";
-import { neynarThrottle, singleFlight, penalize429 } from "./neynar-limit.js";
+import { neynarThrottle, singleFlight, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getCachedProfiles, setCachedProfiles } from "./profile-db.js";
 
 const NEYNAR_V2 = "https://api.neynar.com/v2";
@@ -28,7 +28,7 @@ function ttlFor(path: string): number {
 // ── Neynar read proxy ─────────────────────────────────────────────────────────
 // Mounted at /api/fc → req.path already has /api/fc stripped by Express
 async function neynarProxy(req: Request, res: Response): Promise<void> {
-  if (!process.env.NEYNAR_API_KEY && !process.env.NEYNAR_API_KEYS) {
+  if (!hasAnyNeynarKey()) {
     res.status(503).json({ error: "Neynar API key not configured on server." }); return;
   }
 

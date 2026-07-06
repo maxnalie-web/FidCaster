@@ -17,7 +17,7 @@ import FidDetailPage from "@/pages/FidDetailPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { FollowPage } from "@/pages/FollowPage";
 import { useEffect, useState } from "react";
-import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-config";
+import { applyAdminTheme, applyAdminSeo, loadAdminConfig, refreshAdminConfigFromServer } from "@/lib/admin-config";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
 import { SignerSetupPopup } from "@/components/SignerSetupPopup";
@@ -126,6 +126,14 @@ function App() {
     const cfg = loadAdminConfig();
     applyAdminTheme(cfg);
     applyAdminSeo(cfg);
+    // Real settings live server-side now (admin panel writes reach every
+    // visitor, not just the editing browser) — fetch the live copy and
+    // re-apply once it arrives; the line above still gives an instant paint
+    // from the local cache so there's no flash of unstyled defaults.
+    refreshAdminConfigFromServer().then((fresh) => {
+      applyAdminTheme(fresh);
+      applyAdminSeo(fresh);
+    });
   }, []);
 
   useEffect(() => {
