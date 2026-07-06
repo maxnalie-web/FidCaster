@@ -11,6 +11,7 @@
  *   [{"cloudName":"abc123","apiKey":"111","apiSecret":"secret1"},
  *    {"cloudName":"xyz789","apiKey":"222","apiSecret":"secret2"}]
  */
+import { getAdminSecrets } from "./admin-store";
 
 export interface CloudinaryAccount {
   /** Index into the configured list — stable identity for usage tracking,
@@ -21,8 +22,7 @@ export interface CloudinaryAccount {
   apiSecret: string;
 }
 
-function parseAccountsJson(): CloudinaryAccount[] | null {
-  const raw = process.env.CLOUDINARY_ACCOUNTS;
+function parseAccountsFromJsonString(raw: string | null | undefined, source: string): CloudinaryAccount[] | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Array<{ cloudName?: string; apiKey?: string; apiSecret?: string }>;
@@ -32,15 +32,22 @@ function parseAccountsJson(): CloudinaryAccount[] | null {
       .map((a, i) => ({ id: i, cloudName: a.cloudName!, apiKey: a.apiKey!, apiSecret: a.apiSecret! }));
     return accounts.length > 0 ? accounts : null;
   } catch (e) {
-    console.warn("[cloudinary] CLOUDINARY_ACCOUNTS is not valid JSON:", (e as Error).message);
+    console.warn(`[cloudinary] ${source} is not valid JSON:`, (e as Error).message);
     return null;
   }
 }
 
 /** Read lazily — see cloudinary-upload.ts for why (ESM import evaluation
- * order runs before server/index.ts's own .env-loading code). */
+ * order runs before server/index.ts's own .env-loading code).
+ *
+ * Priority: admin-panel-configured accounts (hot-reloadable, no redeploy) >
+ * CLOUDINARY_ACCOUNTS env var (JSON array) > single CLOUDINARY_CLOUD_NAME/
+ * API_KEY/API_SECRET env vars. */
 export function getCloudinaryAccounts(): CloudinaryAccount[] {
-  const fromJson = parseAccountsJson();
+  const fromAdmin = parseAccountsFromJsonString(getAdminSecrets().cloudinaryAccountsJson, "admin-configured Cloudinary accounts");
+  if (fromAdmin) return fromAdmin;
+
+  const fromJson = parseAccountsFromJsonString(process.env.CLOUDINARY_ACCOUNTS, "CLOUDINARY_ACCOUNTS");
   if (fromJson) return fromJson;
 
   const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
