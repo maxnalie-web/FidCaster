@@ -80,7 +80,7 @@ export async function renderCastToImage(cast: NeynarCast): Promise<Blob> {
   ctx.fillRect(0, 0, W, H);
 
   // FidCaster wordmark, top-right
-  const logo = await loadImage("/fidcaster-logo.png");
+  const logo = await loadImage("/fidcaster-logo-v2.png");
   const logoSize = 44;
   if (logo) ctx.drawImage(logo, W - PAD - logoSize, PAD - 10, logoSize, logoSize);
   ctx.fillStyle = "#1a1a1a";

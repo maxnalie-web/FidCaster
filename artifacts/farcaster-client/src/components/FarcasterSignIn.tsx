@@ -161,7 +161,7 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
           className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.25)" }}
         >
-          <img src="/fidcaster-logo.png" alt="" className="w-6 h-6 object-contain"
+          <img src="/fidcaster-logo-v2.png" alt="" className="w-6 h-6 object-contain"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         </div>
         <div>

@@ -220,7 +220,7 @@ function SupportPanel() {
         <div className="pointer-events-none absolute -bottom-16 -left-12 w-40 h-40 rounded-full bg-violet-600/15 blur-3xl" />
         <div className="relative space-y-3">
           <div className="w-20 h-20 mx-auto flex items-center justify-center">
-            <img src="/fidcaster-logo.png" alt="" className="w-20 h-20 object-contain drop-shadow-lg" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <img src="/fidcaster-logo-v2.png" alt="" className="w-20 h-20 object-contain drop-shadow-lg" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           </div>
           <h2 className="text-2xl font-black tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
             FidCaster
@@ -1189,7 +1189,7 @@ export function DashboardPage() {
         <div className="px-5 pt-5 pb-2">
           <div className="flex items-center gap-2">
             <img
-              src="/fidcaster-logo.png"
+              src="/fidcaster-logo-v2.png"
               alt="FidCaster"
               className="w-11 h-11 object-contain logo-animated shrink-0"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}

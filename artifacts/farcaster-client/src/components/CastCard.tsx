@@ -35,6 +35,23 @@ const IMAGE_DOMAINS = [
   "i.redd.it", "cdn.discordapp.com", "pbs.twimg.com", "0x0.st", "files.catbox.moe",
 ];
 
+/** Brand "F" mark used in place of the heart on casts that mention Fidcaster ·
+ * outline-only unliked, filled (via currentColor, toggled purple by the
+ * parent button's className) once liked — same on/off pattern as the heart. */
+function FMark({ className, filled }: { className?: string; filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none">
+      <path
+        d="M6 4 H18 V8 H10 V11 H16 V15 H10 V20 H6 Z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth={filled ? 0 : 1.5}
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?.*)?$/i;
 
 function isVideoEmbed(e: NeynarEmbed): boolean {
@@ -413,6 +430,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const linkEmbeds = cast.embeds.filter((e) => e.url && !isImageEmbed(e) && !isVideoEmbed(e) && !e.url.endsWith(".m3u8"));
   const castEmbeds = cast.embeds.filter((e) => !!e.cast);
   const noWriteTitle = !canWrite ? signerTooltip() : undefined;
+  const mentionsFidcaster = /fidcaster/i.test(cast.text ?? "");
 
   const replyCount = cast.replies.count;
   const viewCount = (cast as NeynarCast & { reactions?: { views_count?: number } }).reactions?.views_count;
@@ -659,12 +677,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               className={cn(
                 "flex items-center gap-1 px-2.5 py-2.5 rounded-full transition-colors",
                 likeError ? "text-destructive"
-                  : liked ? "text-rose-500 bg-rose-500/10"
-                  : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
+                  : liked
+                    ? mentionsFidcaster ? "text-primary bg-primary/10" : "text-rose-500 bg-rose-500/10"
+                    : mentionsFidcaster ? "text-muted-foreground hover:text-primary hover:bg-primary/10" : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
                 !canWrite && "opacity-40 cursor-default"
               )}
             >
-              <Heart className={cn("w-5 h-5", liked && "fill-current")} />
+              {mentionsFidcaster
+                ? <FMark className="w-5 h-5" filled={liked} />
+                : <Heart className={cn("w-5 h-5", liked && "fill-current")} />}
             </button>
             {/* ml-auto pushes Share to the far right, aligning it under the "..."
                 menu at the top of the card instead of sitting inline after Like. */}
@@ -941,12 +962,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 className={cn(
                   "flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors text-sm",
                   likeError ? "text-destructive"
-                    : liked ? "text-rose-500 bg-rose-500/10"
-                    : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
+                    : liked
+                      ? mentionsFidcaster ? "text-primary bg-primary/10" : "text-rose-500 bg-rose-500/10"
+                      : mentionsFidcaster ? "text-muted-foreground hover:text-primary hover:bg-primary/10" : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
                   !canWrite && "opacity-40 cursor-default"
                 )}
               >
-                <Heart className={cn("w-[18px] h-[18px]", liked && "fill-current")} />
+                {mentionsFidcaster
+                  ? <FMark className="w-[18px] h-[18px]" filled={liked} />
+                  : <Heart className={cn("w-[18px] h-[18px]", liked && "fill-current")} />}
                 {likeCount > 0 && <span className="text-[0.8125rem]">{formatCount(likeCount)}</span>}
               </button>
               {/* ml-auto pushes Share to the far right, aligning it under the "..."
