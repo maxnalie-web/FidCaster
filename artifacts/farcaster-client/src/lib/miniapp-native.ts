@@ -10,6 +10,13 @@ export function isNativeRuntime(): boolean {
   try { return Capacitor.isNativePlatform(); } catch { return false; }
 }
 
+/** True for the installed Capacitor app or an installed/standalone PWA —
+ * anything that isn't a plain browser tab landing on the marketing site. */
+export function isInstalledApp(): boolean {
+  if (isNativeRuntime()) return true;
+  try { return window.matchMedia("(display-mode: standalone)").matches; } catch { return false; }
+}
+
 /**
  * Injected at DOCUMENT-START inside each mini app's native WebView · before any
  * of the app's own JavaScript runs. Production mini apps refuse to render unless
