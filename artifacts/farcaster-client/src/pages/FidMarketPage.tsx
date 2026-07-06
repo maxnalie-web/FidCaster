@@ -8,6 +8,7 @@ import {
   ExternalLink, ChevronDown, ArrowUpDown, Copy, Check,
   Activity, ShoppingCart, ChevronRight, User, Wallet,
   HelpCircle, ShieldCheck, Zap, Lock, Loader2, Flame,
+  LayoutGrid, List as ListIcon,
 } from "lucide-react";
 import { useMarketWallet } from "@/hooks/useMarketWallet";
 import { BottomNav } from "@/components/BottomNav";
@@ -112,7 +113,8 @@ export default function FidMarketPage() {
   const [tab,            setTab]            = useState<"listings" | "activity">("listings");
   const [search,         setSearch]         = useState("");
   const [sortBy,         setSortBy]         = useState<SortKey>("price-asc");
-  // sort is now inline chips, no dropdown state needed
+  const [showSortMenu,   setShowSortMenu]   = useState(false);
+  const [viewMode,       setViewMode]       = useState<"grid" | "list">("grid");
   const ethUsd = useEthPrice();
   const [listingsVisible, setListingsVisible] = useState(PAGE_SIZE);
   const [activityVisible, setActivityVisible] = useState(PAGE_SIZE);
@@ -234,6 +236,14 @@ export default function FidMarketPage() {
     () => setActivityVisible(v => v + PAGE_SIZE),
     activity.length > activityVisible, false
   );
+
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showSortMenu) return;
+    const onOut = (e: MouseEvent) => { if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) setShowSortMenu(false); };
+    document.addEventListener("mousedown", onOut);
+    return () => document.removeEventListener("mousedown", onOut);
+  }, [showSortMenu]);
 
   const buyableCount = listings.filter(l => l.buyable).length;
 
@@ -605,24 +615,59 @@ export default function FidMarketPage() {
           )}
         </div>
 
-        {/* ── Sort chips (listings only) ── */}
+        {/* ── Sort dropdown + view toggle (listings only) ── */}
         {tab === "listings" && (
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mt-1">
-            {SORT_OPTIONS.map(opt => (
+          <div className="flex items-center justify-between -mt-1">
+            <div className="relative" ref={sortMenuRef}>
               <button
-                key={opt.value}
-                onClick={() => setSortBy(opt.value)}
+                onClick={() => setShowSortMenu(v => !v)}
                 className={cn(
-                  "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border whitespace-nowrap",
-                  sortBy === opt.value
-                    ? "bg-violet-500 text-white border-violet-500 shadow-sm shadow-violet-500/25"
-                    : "bg-card text-muted-foreground border-border/60 hover:border-violet-400/40 hover:text-foreground hover:bg-violet-500/5"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border",
+                  showSortMenu
+                    ? "border-violet-500/40 text-violet-500 bg-violet-500/5"
+                    : "bg-card text-muted-foreground border-border/60 hover:border-violet-400/40 hover:text-foreground"
                 )}
               >
-                {sortBy === opt.value && <Check className="w-3 h-3" />}
-                {opt.label}
+                <ArrowUpDown className="w-3 h-3" />
+                {SORT_OPTIONS.find(o => o.value === sortBy)?.label}
+                <ChevronDown className={cn("w-3 h-3 transition-transform", showSortMenu && "rotate-180")} />
               </button>
-            ))}
+              {showSortMenu && (
+                <div className="absolute top-full mt-1.5 left-0 z-20 bg-popover border border-border rounded-2xl shadow-xl overflow-hidden min-w-[190px] py-1">
+                  {SORT_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => { setSortBy(opt.value); setShowSortMenu(false); }}
+                      className={cn(
+                        "w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs hover:bg-accent transition-colors",
+                        sortBy === opt.value ? "text-violet-500 font-semibold" : "text-foreground"
+                      )}
+                    >
+                      {opt.label}
+                      {sortBy === opt.value && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Grid / list view toggle */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-full border border-border/60 bg-card">
+              <button
+                onClick={() => setViewMode("grid")}
+                title="Grid view"
+                className={cn("p-1.5 rounded-full transition-colors", viewMode === "grid" ? "bg-violet-500 text-white" : "text-muted-foreground hover:text-foreground")}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                title="List view"
+                className={cn("p-1.5 rounded-full transition-colors", viewMode === "list" ? "bg-violet-500 text-white" : "text-muted-foreground hover:text-foreground")}
+              >
+                <ListIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -643,7 +688,7 @@ export default function FidMarketPage() {
                 <p className="text-sm text-muted-foreground">{search ? "No listings match your search." : "No active listings yet."}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className={viewMode === "grid" ? "grid grid-cols-2 gap-2.5" : "flex flex-col gap-1.5"}>
                 {filteredListings.slice(0, listingsVisible).map(listing => {
                   const info      = fidInfoMap[listing.fid];
                   const priceEth  = parseFloat(listing.priceEth);
@@ -659,6 +704,63 @@ export default function FidMarketPage() {
                     : daysLeft > 0 ? `${daysLeft}d left` : `${hoursLeft}h left`;
                   const nearExpiry = deadlineDiff > 0 && deadlineDiff < 86400;
 
+                  const avatar = (sizeClass: string) => info?.pfpUrl ? (
+                    <img src={info.pfpUrl} alt="" className={cn(sizeClass, "rounded-full object-cover ring-2 ring-border/50 group-hover:ring-violet-500/20 transition-all")} />
+                  ) : (
+                    <div className={cn(sizeClass, "rounded-full bg-gradient-to-br from-violet-500/25 to-indigo-600/25 border border-violet-500/20 flex items-center justify-center")}>
+                      <span className="text-xs font-bold text-violet-400 font-mono">{listing.fid}</span>
+                    </div>
+                  );
+
+                  if (viewMode === "list") {
+                    return (
+                      <button
+                        key={listing.fid}
+                        onClick={() => navigate(`/market/${listing.fid}`)}
+                        className="group relative flex items-center gap-3 p-2.5 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 transition-all text-left"
+                      >
+                        <div className="shrink-0 relative w-fit">
+                          {avatar("w-10 h-10")}
+                          <div className={cn(
+                            "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background",
+                            listing.buyable ? "bg-emerald-400" : "bg-muted-foreground/30"
+                          )} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-sm text-foreground truncate leading-tight">
+                              {info?.displayName || `FID ${listing.fid}`}
+                            </p>
+                            {!listing.buyable && (
+                              <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold">
+                                {listing.sigExpired ? "Sig exp." : "Expired"}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {info?.username && <span className="text-xs text-violet-500 font-medium truncate">@{info.username}</span>}
+                            <span className="text-[10px] text-muted-foreground/60 font-mono shrink-0">#{listing.fid}</span>
+                            {expiresLabel && (
+                              <span className={cn(
+                                "text-[10px] font-medium shrink-0",
+                                deadlineDiff <= 0 ? "text-rose-400" : nearExpiry ? "text-amber-400" : "text-muted-foreground/50"
+                              )}>
+                                · {deadlineDiff <= 0 ? "Sig expired" : `Sig ${expiresLabel}`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="font-bold text-sm text-foreground font-mono tabular-nums leading-tight">
+                            {priceDisp}<span className="text-muted-foreground font-normal text-[10px] ml-0.5">ETH</span>
+                          </p>
+                          {usdVal && <p className="text-[10px] text-muted-foreground mt-0.5">${usdVal}</p>}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 shrink-0" />
+                      </button>
+                    );
+                  }
+
                   return (
                     <button
                       key={listing.fid}
@@ -673,13 +775,7 @@ export default function FidMarketPage() {
 
                       {/* Avatar */}
                       <div className="shrink-0 relative w-fit">
-                        {info?.pfpUrl ? (
-                          <img src={info.pfpUrl} alt="" className="w-12 h-12 rounded-full object-cover ring-2 ring-border/50 group-hover:ring-violet-500/20 transition-all" />
-                        ) : (
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500/25 to-indigo-600/25 border border-violet-500/20 flex items-center justify-center">
-                            <span className="text-xs font-bold text-violet-400 font-mono">{listing.fid}</span>
-                          </div>
-                        )}
+                        {avatar("w-12 h-12")}
                         <div className={cn(
                           "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background",
                           listing.buyable ? "bg-emerald-400 shadow-sm shadow-emerald-400/60" : "bg-muted-foreground/30"
@@ -729,7 +825,7 @@ export default function FidMarketPage() {
                   );
                 })}
                 {filteredListings.length > listingsVisible && (
-                  <div ref={listingsSentinelRef} className="col-span-2 flex justify-center py-4" />
+                  <div ref={listingsSentinelRef} className={cn("flex justify-center py-4", viewMode === "grid" && "col-span-2")} />
                 )}
               </div>
             )}

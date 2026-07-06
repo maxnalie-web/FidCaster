@@ -24,6 +24,9 @@ defaults:
   run:
     working-directory: artifacts/farcaster-client
 
+permissions:
+  contents: write
+
 jobs:
   # ── Android: produces an installable, sideloadable debug APK ────────────────
   # (signed with Gradle's auto-generated debug keystore — fine for testing,
@@ -80,6 +83,28 @@ jobs:
           name: fidcaster-debug-apk
           path: artifacts/farcaster-client/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # GitHub always wraps Actions-artifact downloads in a .zip, even for a
+      # single file — someone downloading "fidcaster-debug-apk" above and
+      # tapping the .zip directly on their phone gets exactly "file not
+      # recognized as installable" (Android needs a raw .apk, not a zip
+      # containing one). A GitHub Release attaches the .apk as a raw
+      # downloadable asset instead, so the browser fetches an actual
+      # installable file with no unzip step required.
+      - name: Publish latest sideloadable APK release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git tag -f latest-apk
+          git push -f origin latest-apk
+          gh release delete latest-apk --yes || true
+          gh release create latest-apk \
+            artifacts/farcaster-client/android/app/build/outputs/apk/debug/app-debug.apk \
+            --title "FidCaster (latest Android build)" \
+            --notes "Auto-built from the latest \`main\` branch — debug-signed, for sideloading only. To install: download \`app-debug.apk\` below, open it directly (do not unzip anything), and allow \"install unknown apps\" for your browser when prompted." \
+            --prerelease
 
   # ── iOS: builds for the Simulator (no Apple Developer signing configured) ──
   # A real, install-on-a-phone .ipa needs a signing certificate + provisioning
