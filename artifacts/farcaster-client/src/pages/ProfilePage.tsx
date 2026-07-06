@@ -26,6 +26,7 @@ import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
 import { cn, formatCompactCount } from "@/lib/utils";
+import { getRecentProfile } from "@/lib/recent-profile-cache";
 import { toast } from "sonner";
 
 type ProfileTab = "casts" | "replies" | "likes" | "recasts";
@@ -427,12 +428,23 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   useEffect(() => {
     if (!targetFid) return;
     profileGenRef.current += 1; // cancel any in-flight tab loads from previous profile
-    setLoading(true);
-    setUser(null);
     setProfileError(null);
     setFollowing(false);
     setActiveTab("casts");
     setTabs({ casts: BLANK_TAB, replies: BLANK_TAB, likes: BLANK_TAB, recasts: BLANK_TAB });
+
+    // Render instantly from an already-known copy of this profile (e.g. just
+    // tapped from a cast) while the authoritative one loads in the
+    // background, instead of always starting from a blank loading state.
+    const cached = getRecentProfile(targetFid);
+    if (cached) {
+      setUser(cached);
+      setFollowing(cached.viewer_context?.following ?? false);
+      setLoading(false);
+    } else {
+      setUser(null);
+      setLoading(true);
+    }
 
     getUserByFid(targetFid, myFidNum || targetFid, neynarKey)
       .then(res => {

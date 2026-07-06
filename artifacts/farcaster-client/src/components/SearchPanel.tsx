@@ -7,6 +7,7 @@ import { searchUsers, searchCasts, searchChannels, hasPowerBadge, type NeynarUse
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hubFollow } from "@/lib/hub-submit";
+import { setRecentProfile } from "@/lib/recent-profile-cache";
 import { CastCard } from "./CastCard";
 
 type SearchTab = "users" | "casts" | "channels";
@@ -109,11 +110,15 @@ function FollowButton({ user, viewerFid }: { user: NeynarUser; viewerFid: number
 function UserRow({ user, viewerFid, onViewProfile }: {
   user: NeynarUser; viewerFid: number; onViewProfile: (u: NeynarUser) => void;
 })  {
+  function goToProfile() {
+    setRecentProfile(user);
+    onViewProfile(user);
+  }
   return (
     <div className="flex items-center gap-3 px-5 py-4 border-b border-border/40 hover:bg-accent/20 transition-colors">
       <button
         className="w-10 h-10 rounded-full overflow-hidden bg-primary/10 shrink-0 hover:ring-2 hover:ring-primary/40 transition-all"
-        onClick={() => onViewProfile(user)}
+        onClick={goToProfile}
       >
         {user.pfp_url ? (
           <img src={user.pfp_url} alt={user.display_name} className="w-full h-full object-cover" />
@@ -123,7 +128,7 @@ function UserRow({ user, viewerFid, onViewProfile }: {
           </span>
         )}
       </button>
-      <button className="flex-1 min-w-0 text-left" onClick={() => onViewProfile(user)}>
+      <button className="flex-1 min-w-0 text-left" onClick={goToProfile}>
         <p className="text-sm font-semibold text-foreground truncate hover:text-primary transition-colors flex items-center gap-1">
           <span className="truncate">@{user.username}</span>
           {useIsPro(user.fid) && <ProBadge size={14} />}

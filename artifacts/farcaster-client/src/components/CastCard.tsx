@@ -11,6 +11,7 @@ import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { CastComposer } from "@/components/CastComposer";
 import { translateText, getPreferredLang } from "@/lib/translate";
 import { ShareButton } from "@/components/ShareButton";
+import { setRecentProfile } from "@/lib/recent-profile-cache";
 import { toast } from "sonner";
 
 function timeAgo(ts: string): string {
@@ -270,6 +271,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   }
 
   function goToProfile(user: NeynarUser) {
+    // Seed the recent-profile cache so ProfilePage can render this user
+    // instantly (avatar/name/bio/counts) instead of starting blank, since we
+    // already have the full profile object right here.
+    setRecentProfile(user);
     if (onViewProfile) onViewProfile(user);
     else navigate(`/profile/${user.fid}`);
   }
