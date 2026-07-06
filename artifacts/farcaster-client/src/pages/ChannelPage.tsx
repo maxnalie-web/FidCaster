@@ -7,6 +7,7 @@ import { CastCard } from "@/components/CastCard";
 import { ComposeModal } from "@/components/ComposeModal";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { isChannelFollowed, followChannel, unfollowChannel } from "@/lib/channel-follows";
+import { BottomNav } from "@/components/BottomNav";
 import { cn } from "@/lib/utils";
 
 export function ChannelPage() {
@@ -92,7 +93,7 @@ export function ChannelPage() {
         </div>
       </header>
 
-      <div className="max-w-[600px] mx-auto border-x border-border min-h-screen pb-24">
+      <div className="max-w-[600px] mx-auto border-x border-border min-h-screen pb-24 md:pb-8">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -105,6 +106,9 @@ export function ChannelPage() {
           </div>
         ) : channel ? (
           <>
+            {/* Banner and avatar never overlap — some channel banners already have their
+                own logo/wordmark baked into the image, which looked broken/doubled-up
+                whenever our avatar sat on top of it. */}
             <div className="relative h-28 w-full overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">
               {channel.header_image_url && (
                 <img src={channel.header_image_url} alt="" className="w-full h-full object-cover" />
@@ -112,16 +116,14 @@ export function ChannelPage() {
             </div>
             <div className="px-4 py-4 border-b border-border">
               <div className="flex items-start gap-3">
-                <div className="shrink-0 -mt-12 p-[3px] rounded-[20px] bg-background shadow-lg">
-                  <div className="w-16 h-16 rounded-2xl overflow-hidden bg-primary/10">
-                    {channel.image_url ? (
-                      <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="w-full h-full flex items-center justify-center text-xl font-bold text-primary bg-gradient-to-br from-primary/15 to-violet-500/15">
-                        {channel.name?.[0]?.toUpperCase()}
-                      </span>
-                    )}
-                  </div>
+                <div className="shrink-0 w-16 h-16 rounded-2xl overflow-hidden bg-primary/10 ring-1 ring-border">
+                  {channel.image_url ? (
+                    <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="w-full h-full flex items-center justify-center text-xl font-bold text-primary bg-gradient-to-br from-primary/15 to-violet-500/15">
+                      {channel.name?.[0]?.toUpperCase()}
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0 pt-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -200,6 +202,8 @@ export function ChannelPage() {
           onPublished={(c) => setCasts((prev) => [c, ...prev])}
         />
       )}
+
+      <BottomNav />
     </div>
   );
 }

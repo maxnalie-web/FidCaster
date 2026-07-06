@@ -4,6 +4,7 @@ import { ArrowLeft, Search, Loader2, Hash, ChevronRight, Users } from "lucide-re
 import { useWallet } from "@/hooks/useWallet";
 import { searchChannels, type NeynarChannel } from "@/lib/neynar";
 import { getFollowedChannels, type FollowedChannel } from "@/lib/channel-follows";
+import { BottomNav } from "@/components/BottomNav";
 import { formatCompactCount } from "@/lib/utils";
 
 function Row({ id, name, image_url, follower_count, onOpen }: {
@@ -83,7 +84,7 @@ export function ChannelsListPage() {
         </div>
       </header>
 
-      <div className="max-w-[600px] mx-auto border-x border-border min-h-screen pb-24">
+      <div className="max-w-[600px] mx-auto border-x border-border min-h-screen pb-24 md:pb-8">
         {query.trim() ? (
           loading ? (
             <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
@@ -111,6 +112,8 @@ export function ChannelsListPage() {
           </>
         )}
       </div>
+
+      <BottomNav />
     </div>
   );
 }

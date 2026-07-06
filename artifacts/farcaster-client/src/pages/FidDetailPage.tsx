@@ -8,6 +8,7 @@ import {
   DollarSign, Clock, Wallet, X,
 } from "lucide-react";
 import { useMarketWallet } from "@/hooks/useMarketWallet";
+import { BottomNav } from "@/components/BottomNav";
 import { cn } from "@/lib/utils";
 import {
   formatEther, parseEther,
@@ -1180,6 +1181,8 @@ export default function FidDetailPage() {
           </a>
         </div>
       </div>
+
+      <BottomNav active="market" />
     </div>
   );
 }

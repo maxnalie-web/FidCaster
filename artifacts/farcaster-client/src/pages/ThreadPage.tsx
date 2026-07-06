@@ -6,6 +6,7 @@ import { getCastConversation, type NeynarCast, type NeynarUser } from "@/lib/ney
 import { CastCard } from "@/components/CastCard";
 import { CastComposer } from "@/components/CastComposer";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { BottomNav } from "@/components/BottomNav";
 import { cn } from "@/lib/utils";
 
 // Module-level (survives unmount), keyed by cast hash · lets pressing back after
@@ -153,7 +154,7 @@ export function ThreadPage() {
         </div>
       </header>
 
-      <div className="max-w-[600px] mx-auto border-x border-border min-h-screen pb-24">
+      <div className="max-w-[600px] mx-auto border-x border-border min-h-screen pb-24 md:pb-8">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -249,6 +250,8 @@ export function ThreadPage() {
           </>
         ) : null}
       </div>
+
+      <BottomNav />
     </div>
   );
 }

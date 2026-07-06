@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * This renders the same bar there too, driving navigation via URL (dashboard
  * tabs are ?tab=-addressable) so active-state highlighting still works.
  */
-export function BottomNav({ active }: { active: "grow" | "market" }) {
+export function BottomNav({ active }: { active?: "grow" | "market" }) {
   const [, navigate] = useLocation();
   const { fid, neynarKey } = useWallet();
   const { unread: unreadNotifs } = useUnreadNotifications(Number(fid ?? 0), neynarKey ?? "");
