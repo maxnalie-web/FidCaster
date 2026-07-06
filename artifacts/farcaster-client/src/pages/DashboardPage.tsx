@@ -55,7 +55,6 @@ const BOTTOM_NAV: { id: MainTab; icon: typeof Home }[] = [
   { id: "feed",          icon: Home },
   { id: "search",        icon: Search },
   { id: "miniapps",      icon: Layers },
-  { id: "notifications", icon: Bell },
 ];
 
 
@@ -1436,6 +1435,23 @@ export function DashboardPage() {
             className="flex-1 flex items-center justify-center transition-colors"
           >
             <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+          </button>
+          {/* Notifications · sits right next to Profile */}
+          <button
+            onClick={() => setMainTab("notifications")}
+            className="flex-1 flex items-center justify-center transition-colors"
+          >
+            <span className="relative">
+              <Bell
+                className={cn("w-6 h-6", mainTab === "notifications" ? "text-primary" : "text-muted-foreground")}
+                strokeWidth={mainTab === "notifications" ? 2.5 : 2}
+              />
+              {unreadNotifs > 0 && (
+                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold leading-none flex items-center justify-center ring-2 ring-background">
+                  {unreadNotifs > 9 ? "9+" : unreadNotifs}
+                </span>
+              )}
+            </span>
           </button>
           {/* Profile · always last */}
           <button

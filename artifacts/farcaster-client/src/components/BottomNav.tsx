@@ -31,6 +31,14 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
       <button onClick={() => navigate("/dashboard?tab=miniapps")} className="flex-1 flex items-center justify-center transition-colors">
         <Layers className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
       </button>
+      {adminCfg.features.growEnabled !== false && (
+        <button onClick={() => navigate("/follow")} className="flex-1 flex items-center justify-center transition-colors">
+          <TrendingUp className={cn("w-6 h-6", active === "grow" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "grow" ? 2.5 : 2} />
+        </button>
+      )}
+      <button onClick={() => navigate("/market")} className="flex-1 flex items-center justify-center transition-colors">
+        <Tag className={cn("w-6 h-6", active === "market" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "market" ? 2.5 : 2} />
+      </button>
       <button onClick={() => navigate("/dashboard?tab=notifications")} className="flex-1 flex items-center justify-center transition-colors">
         <span className="relative">
           <Bell className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
@@ -40,14 +48,6 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
             </span>
           )}
         </span>
-      </button>
-      {adminCfg.features.growEnabled !== false && (
-        <button onClick={() => navigate("/follow")} className="flex-1 flex items-center justify-center transition-colors">
-          <TrendingUp className={cn("w-6 h-6", active === "grow" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "grow" ? 2.5 : 2} />
-        </button>
-      )}
-      <button onClick={() => navigate("/market")} className="flex-1 flex items-center justify-center transition-colors">
-        <Tag className={cn("w-6 h-6", active === "market" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "market" ? 2.5 : 2} />
       </button>
       <button onClick={() => navigate("/dashboard?tab=profile")} className="flex-1 flex items-center justify-center transition-colors">
         <User className="w-6 h-6 text-muted-foreground" strokeWidth={2} />

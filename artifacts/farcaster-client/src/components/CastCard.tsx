@@ -699,15 +699,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
         <div className="flex-1 min-w-0">
             {/* Author row */}
             <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
                 {/* Avatar inline with name */}
                 <button className="shrink-0" onClick={(e) => { e.stopPropagation(); goToProfile(cast.author); }}>
-                  <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center hover:opacity-90 transition-opacity">
+                  <div className="w-11 h-11 rounded-full overflow-hidden bg-muted flex items-center justify-center hover:opacity-90 transition-opacity">
                     {cast.author.pfp_url ? (
                       <img src={cast.author.pfp_url} alt={cast.author.display_name} className="w-full h-full object-cover" loading="lazy"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     ) : (
-                      <User className="w-4 h-4 text-muted-foreground" />
+                      <User className="w-5 h-5 text-muted-foreground" />
                     )}
                   </div>
                 </button>
@@ -796,6 +796,9 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               </div>
             </div>
 
+            {/* Body column · indented to align under the avatar+name row above,
+                instead of sitting flush at the card's left edge. */}
+            <div className="ml-[54px]">
             {/* Cast text · swapped in place with the translation when active */}
             {cast.text && (
               translation ? (
@@ -914,6 +917,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               {/* ml-auto pushes Share to the far right, aligning it under the "..."
                   menu at the top of the card instead of sitting inline after Like. */}
               <ShareButton cast={cast} menuDirection="up" iconSize={16} wrapperClassName="ml-auto" iconClassName="flex items-center gap-1 px-1.5 py-1.5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors text-sm" />
+            </div>
             </div>
           </div>
       </div>
