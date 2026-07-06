@@ -48,6 +48,10 @@ const extraOrigins = (process.env.ALLOWED_ORIGINS ?? "")
 const ALLOWED_ORIGINS = [
   /^https?:\/\/localhost(:\d+)?$/,
   /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+  // Native Capacitor shell's own WebView origin (locally-bundled app, see
+  // native-api-bridge.ts) · iOS defaults to the capacitor: scheme, Android
+  // to https:, both hosted at "localhost".
+  /^capacitor:\/\/localhost$/,
   /^https:\/\/[\w.-]+\.replit\.dev$/,
   /^https:\/\/[\w.-]+\.replit\.app$/,
   /^https:\/\/[\w.-]+\.repl\.co$/,
