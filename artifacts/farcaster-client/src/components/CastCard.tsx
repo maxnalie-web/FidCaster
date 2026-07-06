@@ -602,11 +602,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   "flex items-center gap-1 px-2.5 py-2.5 rounded-full transition-colors",
                   recastError ? "text-destructive"
                     : recasted ? "text-[hsl(145,63%,42%)] bg-[hsl(145,63%,42%)]/10"
-                    : "text-muted-foreground hover:text-[hsl(145,63%,42%)] hover:bg-[hsl(145,63%,42%)]/10",
-                  recastLoading && "opacity-40 cursor-default"
+                    : "text-muted-foreground hover:text-[hsl(145,63%,42%)] hover:bg-[hsl(145,63%,42%)]/10"
                 )}
               >
-                {recastLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Repeat2 className="w-5 h-5" />}
+                <Repeat2 className="w-5 h-5" />
               </button>
               {showRecastMenu && (
                 <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border rounded-xl shadow-2xl z-50 min-w-[140px] py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -636,10 +635,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                 likeError ? "text-destructive"
                   : liked ? "text-rose-500 bg-rose-500/10"
                   : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
-                (!canWrite || likeLoading) && "opacity-40 cursor-default"
+                !canWrite && "opacity-40 cursor-default"
               )}
             >
-              {likeLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Heart className={cn("w-5 h-5", liked && "fill-current")} />}
+              <Heart className={cn("w-5 h-5", liked && "fill-current")} />
             </button>
             {/* ml-auto pushes Share to the far right, aligning it under the "..."
                 menu at the top of the card instead of sitting inline after Like. */}
@@ -871,11 +870,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                     "flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors text-sm",
                     recastError ? "text-destructive"
                       : recasted ? "text-[hsl(145,63%,42%)] bg-[hsl(145,63%,42%)]/10"
-                      : "text-muted-foreground hover:text-[hsl(145,63%,42%)] hover:bg-[hsl(145,63%,42%)]/10",
-                    recastLoading && "opacity-40 cursor-default"
+                      : "text-muted-foreground hover:text-[hsl(145,63%,42%)] hover:bg-[hsl(145,63%,42%)]/10"
                   )}
                 >
-                  {recastLoading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Repeat2 className="w-[18px] h-[18px]" />}
+                  <Repeat2 className="w-[18px] h-[18px]" />
                   {recastCount > 0 && <span className="text-[0.8125rem]">{formatCount(recastCount)}</span>}
                 </button>
                 {showRecastMenu && (
@@ -907,10 +905,10 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   likeError ? "text-destructive"
                     : liked ? "text-rose-500 bg-rose-500/10"
                     : "text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10",
-                  (!canWrite || likeLoading) && "opacity-40 cursor-default"
+                  !canWrite && "opacity-40 cursor-default"
                 )}
               >
-                {likeLoading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Heart className={cn("w-[18px] h-[18px]", liked && "fill-current")} />}
+                <Heart className={cn("w-[18px] h-[18px]", liked && "fill-current")} />
                 {likeCount > 0 && <span className="text-[0.8125rem]">{formatCount(likeCount)}</span>}
               </button>
               {/* ml-auto pushes Share to the far right, aligning it under the "..."
