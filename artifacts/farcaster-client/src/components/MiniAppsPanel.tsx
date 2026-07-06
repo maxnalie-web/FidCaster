@@ -3,9 +3,52 @@ import { useLocation } from "wouter";
 import { fetchMiniApps, type MiniApp } from "@/lib/farcaster-api";
 import { isNativeRuntime, openNativeMiniApp } from "@/lib/miniapp-native";
 import { openWebMiniApp } from "@/lib/miniapp-web-state";
+import {
+  getAddedMiniApps, subscribeAddedMiniApps, removeMiniAppFromStore, type AddedMiniApp,
+} from "@/lib/miniapp-added-store";
 import { useWallet } from "@/hooks/useWallet";
-import { Loader2, RefreshCw, Layers, Search, UserCircle } from "lucide-react";
+import { Loader2, RefreshCw, Layers, Search, UserCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+function addedAppToMiniApp(a: AddedMiniApp): MiniApp {
+  return { id: a.origin, name: a.name, description: "", iconUrl: a.iconUrl ?? "", url: a.origin, category: "Added" };
+}
+
+/* ─── Your Apps row · apps added via sdk.actions.addMiniApp() ────────────── */
+function YourAppsRow({ apps, onOpen }: { apps: AddedMiniApp[]; onOpen: (app: MiniApp) => void }) {
+  if (apps.length === 0) return null;
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Your Apps</p>
+      <div className="flex gap-3 overflow-x-auto no-scrollbar">
+        {apps.map((a) => (
+          <div key={a.origin} className="relative shrink-0 w-14 group">
+            <button
+              onClick={() => onOpen(addedAppToMiniApp(a))}
+              className="w-14 h-14 rounded-2xl overflow-hidden bg-muted shadow-sm ring-1 ring-border/40"
+            >
+              {a.iconUrl ? (
+                <img src={a.iconUrl} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-primary/10">
+                  <Layers className="w-5 h-5 text-primary/40" />
+                </div>
+              )}
+            </button>
+            <button
+              onClick={() => removeMiniAppFromStore(a.origin)}
+              aria-label={`Remove ${a.name}`}
+              className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-background border border-border shadow flex items-center justify-center text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3 h-3" />
+            </button>
+            <p className="text-[10px] text-center text-muted-foreground mt-1 truncate">{a.name}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /* ─── App card ──────────────────────────────────────────────────────────────── */
 function AppCard({ app, index, opening, onClick }: { app: MiniApp; index: number; opening: boolean; onClick: () => void }) {
@@ -75,8 +118,11 @@ export function MiniAppsPanel() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [openingId, setOpeningId] = useState<string | null>(null);
-  const { profile, address } = useWallet();
+  const [addedApps, setAddedApps] = useState<AddedMiniApp[]>(getAddedMiniApps);
+  const { profile, address, walletClient } = useWallet();
   const [, navigate] = useLocation();
+
+  useEffect(() => subscribeAddedMiniApps(setAddedApps), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,13 +148,13 @@ export function MiniAppsPanel() {
     setOpeningId(app.id);
     try {
       if (isNativeRuntime()) {
-        try { if (await openNativeMiniApp(app, { profile, address, navigate })) return; } catch { /* fall back below */ }
+        try { if (await openNativeMiniApp(app, { profile, address, walletClient, navigate })) return; } catch { /* fall back below */ }
       }
       openWebMiniApp(app);
     } finally {
       setOpeningId(null);
     }
-  }, [profile, address, navigate, openingId]);
+  }, [profile, address, walletClient, navigate, openingId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -179,6 +225,8 @@ export function MiniAppsPanel() {
           })}
         </div>
       </div>
+
+      <YourAppsRow apps={addedApps} onOpen={(app) => void openApp(app)} />
 
       {/* App list */}
       <div className="flex-1 overflow-y-auto">

@@ -7,8 +7,15 @@ import {
 } from "@farcaster/miniapp-host";
 import type { Context } from "@farcaster/miniapp-core";
 type MiniAppContext = Context.MiniAppContext;
+// @farcaster/auth-client isn't a direct dependency, but @farcaster/auth-kit
+// (already used elsewhere for the real "Sign In With Farcaster" QR flow)
+// re-exports it wholesale, so buildSignInMessage is reached through there.
+import { buildSignInMessage } from "@farcaster/auth-kit";
+import type { Client as FarcasterAuthClient } from "@farcaster/auth-kit";
+import type { WalletClient } from "viem";
 import * as Provider from "ox/Provider";
 import type { FarcasterProfile } from "./farcaster-api";
+import { isMiniAppAdded, addMiniAppToStore } from "./miniapp-added-store";
 
 /**
  * Real host-side implementation of the Farcaster Mini App SDK protocol for
@@ -126,17 +133,59 @@ function createCapacitorEndpoint(webviewId: string): { endpoint: HostEndpoint; c
   };
 }
 
-export function toMiniAppContext(profile: FarcasterProfile | null): MiniAppContext {
+export function toMiniAppContext(profile: FarcasterProfile | null, added = false): MiniAppContext {
   return {
     client: {
       platformType: "mobile",
       clientFid: profile?.fid ?? 0,
-      added: false,
+      added,
     },
     user: profile
       ? { fid: profile.fid, username: profile.username, displayName: profile.displayName, pfpUrl: profile.pfpUrl }
       : { fid: 0 },
     location: { type: "launcher" },
+  };
+}
+
+/**
+ * Real "Sign In With Farcaster" (SIWF): builds the standard SIWE-compatible
+ * message (@farcaster/auth-client's buildSignInMessage, same message format
+ * Warpcast itself produces — domain/uri come from the mini app's own origin,
+ * matching how a real Farcaster client fills those in rather than trusting
+ * the mini app to supply them) and signs it with the user's own connected
+ * wallet (personal_sign). This lets mini apps that gate real functionality
+ * behind a verifiable identity (mints, allocations, etc. — context.user.fid
+ * alone isn't enough since a malicious host could fake it) actually work,
+ * instead of unconditionally rejecting sdk.actions.signIn() and leaving
+ * those apps stuck showing "please open this inside a real Farcaster
+ * client." Returns authMethod: "custody" since we sign with the account's
+ * own key, not a separate Farcaster Auth Address.
+ */
+export function createSignInHandler(
+  walletClient: WalletClient | null,
+  fid: number,
+  miniAppOrigin: string,
+): MiniAppHost["signIn"] {
+  return async (options) => {
+    const account = walletClient?.account;
+    if (!walletClient || !account || !fid) {
+      throw new Error("No signed-in Farcaster account to sign in with.");
+    }
+    const origin = new URL(miniAppOrigin);
+    const built = buildSignInMessage(undefined as unknown as FarcasterAuthClient, {
+      domain: origin.host,
+      address: account.address,
+      uri: miniAppOrigin,
+      nonce: options.nonce,
+      notBefore: options.notBefore ? new Date(options.notBefore) : undefined,
+      expirationTime: options.expirationTime ? new Date(options.expirationTime) : undefined,
+      fid,
+    });
+    if (built.isError) {
+      throw built.error ?? new Error("Failed to build the sign-in message.");
+    }
+    const signature = await walletClient.signMessage({ account, message: built.message });
+    return { message: built.message, signature, authMethod: "custody" };
   };
 }
 
@@ -147,19 +196,26 @@ export function toMiniAppContext(profile: FarcasterProfile | null): MiniAppConte
 export function attachMiniAppHost({
   webviewId,
   miniAppOrigin,
+  appName,
+  appIconUrl,
   profile,
   address,
+  walletClient,
   navigate,
 }: {
   webviewId: string;
   miniAppOrigin: string;
+  appName: string;
+  appIconUrl?: string;
   profile: FarcasterProfile | null;
   address: `0x${string}` | null;
+  walletClient: WalletClient | null;
   navigate: (path: string) => void;
 }): () => void {
   const { endpoint, cleanup: cleanupTransport } = createCapacitorEndpoint(webviewId);
-  const context = toMiniAppContext(profile);
+  const context = toMiniAppContext(profile, isMiniAppAdded(miniAppOrigin));
   const ethProvider = createEthProvider(address);
+  const signIn = createSignInHandler(walletClient, profile?.fid ?? 0, miniAppOrigin);
 
   const notSupported = (action: string) => Promise.reject(new Error(`${action} isn't supported yet`));
 
@@ -171,7 +227,7 @@ export function attachMiniAppHost({
     setPrimaryButton: () => {},
     updateBackState: async () => {},
     eip6963RequestProvider: () => {},
-    getCapabilities: async () => ["actions.ready", "actions.close", "actions.openUrl", "actions.viewCast", "actions.viewProfile", "wallet.getEthereumProvider"],
+    getCapabilities: async () => ["actions.ready", "actions.close", "actions.openUrl", "actions.viewCast", "actions.viewProfile", "actions.signIn", "actions.addMiniApp", "wallet.getEthereumProvider"],
     getChains: async () => SUPPORTED_CAIP2_CHAINS,
     viewCast: async ({ hash }) => { navigate(`/cast/${hash}`); },
     viewProfile: async ({ fid }) => { navigate(`/profile/${fid}`); },
@@ -181,9 +237,12 @@ export function attachMiniAppHost({
     selectionChanged: async () => {},
     ethProviderRequest: ethProvider.request,
     solanaProviderRequest: undefined,
-    signIn: () => notSupported("Sign in") as never,
+    signIn,
     signManifest: () => notSupported("Sign manifest") as never,
-    addMiniApp: () => notSupported("Add mini app") as never,
+    addMiniApp: async () => {
+      addMiniAppToStore({ origin: miniAppOrigin, name: appName, iconUrl: appIconUrl });
+      return {};
+    },
     openMiniApp: async ({ url }) => { void InAppBrowser.openWebView({ url, title: "" }); },
     composeCast: (async () => ({ cast: null })) as MiniAppHost["composeCast"],
     requestCameraAndMicrophoneAccess: () => notSupported("Camera/microphone access") as never,

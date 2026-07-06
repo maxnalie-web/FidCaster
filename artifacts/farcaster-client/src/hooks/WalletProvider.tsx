@@ -3,6 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { WalletContext, type WalletState } from "./useWallet";
 import { deriveAccount, signerFromBytes, signerFromPrivateKeyHex, signerPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { lookupFid, getSignerState, registerSignerOnchain, publicClient, hasSufficientBalanceForSignerRegistration } from "@/lib/contracts";
+import { isInstalledApp } from "@/lib/miniapp-native";
 import { fetchProfile } from "@/lib/farcaster-api";
 import type { FarcasterProfile } from "@/lib/farcaster-api";
 import { DEFAULT_API_KEY } from "@/lib/neynar";
@@ -786,7 +787,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [_applyAccount, loginWithFarcaster, loginWithWallet]);
 
   useEffect(() => {
-    if (!state.fid) return;
+    // Installed app / PWA storage is sandboxed to this device, unlike a
+    // shared browser tab — there's no "someone else picks up the logged-in
+    // tab" risk an inactivity re-lock is protecting against, so skip it
+    // there entirely instead of asking for the password again mid-session.
+    if (!state.fid || isInstalledApp()) return;
 
     function doLock() {
       _zeroAndLock();
@@ -829,7 +834,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [state.fid]);
 
   useEffect(() => {
-    if (!state.fid) return;
+    // Same reasoning as the inactivity-lock effect above: not applicable on
+    // an installed app / PWA.
+    if (!state.fid || isInstalledApp()) return;
     let hiddenSince: number | null = null;
 
     function onVisibility() {
