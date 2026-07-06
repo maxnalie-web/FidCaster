@@ -237,11 +237,27 @@ export function WalletPanel() {
         const value = parseEther(amount);
         const bal = sendToken === "op-eth" ? opEth : baseEth;
         if (bal !== null && value > bal) { setSendError("Insufficient ETH balance."); setSending(false); return; }
+        const chain = sendToken === "op-eth" ? optimism : base;
+        const chainPublicClient = sendToken === "op-eth" ? publicClient : basePublicClient;
+        // Without an explicit gas hint, some wallets (Rainbow/MetaMask over
+        // WalletConnect) run their own conservative client-side estimate on a
+        // plain unsimulated ETH transfer and show a false "likely to fail"
+        // warning even though it would succeed. Same pattern as contracts.ts.
+        let gas: bigint | undefined;
+        try {
+          const estimated = await chainPublicClient.estimateGas({
+            account: walletClient.account!,
+            to: toAddress as `0x${string}`,
+            value,
+          });
+          gas = (estimated * 130n) / 100n;
+        } catch { /* leave gas unset · wallet estimates on its own */ }
         hash = await activeClient.sendTransaction({
           account: walletClient.account!,
-          chain: sendToken === "op-eth" ? optimism : base,
+          chain,
           to: toAddress as `0x${string}`,
           value,
+          ...(gas !== undefined ? { gas } : {}),
         });
       }
 

@@ -5,6 +5,7 @@ import {
   getCustodyAddress,
   ID_REGISTRY_ADDRESS,
   ID_REGISTRY_ABI,
+  publicClient,
 } from "@/lib/contracts";
 import { Loader2, ShieldAlert, ShieldCheck, ExternalLink, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,20 @@ export function RecoveryPanel() {
     setTxHash(null);
 
     try {
+      // Explicit gas hint (see contracts.ts) avoids a false "likely to fail"
+      // warning some wallets show on an unsimulated writeContract call.
+      let gas: bigint | undefined;
+      try {
+        const estimated = await publicClient.estimateContractGas({
+          address: ID_REGISTRY_ADDRESS,
+          abi: ID_REGISTRY_ABI,
+          functionName: "changeRecoveryAddress",
+          args: [newRecovery as `0x${string}`],
+          account: address,
+        });
+        gas = (estimated * 130n) / 100n;
+      } catch { /* leave gas unset · wallet estimates on its own */ }
+
       const hash = await walletClient.writeContract({
         address: ID_REGISTRY_ADDRESS,
         abi: ID_REGISTRY_ABI,
@@ -56,6 +71,7 @@ export function RecoveryPanel() {
         args: [newRecovery as `0x${string}`],
         account: address,
         chain: undefined,
+        ...(gas !== undefined ? { gas } : {}),
       });
       setTxHash(hash);
       setNewRecovery("");

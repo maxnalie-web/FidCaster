@@ -479,11 +479,19 @@ export default function FidDetailPage() {
       if (isLocalWalletAuth) {
         txHash = await withTimeout(sendDirect({ to: FID_MARKET_ADDRESS, data: listData }));
       } else {
+        // Explicit gas hint avoids a false "likely to fail" warning some
+        // wallets show on an unsimulated call (see buy() above / contracts.ts).
+        let listGas: bigint | undefined;
+        try {
+          const estimated = await opClient.estimateGas({ account: listAddr, to: FID_MARKET_ADDRESS, data: listData });
+          listGas = (estimated * 130n) / 100n;
+        } catch { /* leave gas unset · wallet estimates on its own */ }
         txHash = await withTimeout(listWC.sendTransaction({
           account: listAddr,
           to: FID_MARKET_ADDRESS,
           data: listData,
           chain: optimism,
+          ...(listGas !== undefined ? { gas: listGas } : {}),
         }));
       }
 
@@ -529,11 +537,17 @@ export default function FidDetailPage() {
       if (isLocalWalletAuth) {
         txHash = await sendDirect({ to: FID_MARKET_ADDRESS, data: cancelData });
       } else {
+        let delistGas: bigint | undefined;
+        try {
+          const estimated = await opClient.estimateGas({ account: delistAddr, to: FID_MARKET_ADDRESS, data: cancelData });
+          delistGas = (estimated * 130n) / 100n;
+        } catch { /* leave gas unset · wallet estimates on its own */ }
         txHash = await delistWC.sendTransaction({
           account: delistAddr,
           to: FID_MARKET_ADDRESS,
           data: cancelData,
           chain: optimism,
+          ...(delistGas !== undefined ? { gas: delistGas } : {}),
         });
       }
       setSellTxHash(txHash);
