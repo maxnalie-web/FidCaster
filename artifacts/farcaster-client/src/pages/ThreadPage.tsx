@@ -63,6 +63,10 @@ export function ThreadPage() {
         .catch(() => { /* keep showing cached copy on background-refresh failure */ });
       return;
     }
+    // Brand-new thread (not a cached revisit) · start at the top. Without this the
+    // page keeps whatever scroll position the previous route (feed/profile) was at,
+    // cutting off the cast/author header until the user manually scrolls up.
+    window.scrollTo(0, 0);
     setLoading(true);
     setError(null);
     getCastConversation(hash, viewerFid, neynarKey)
