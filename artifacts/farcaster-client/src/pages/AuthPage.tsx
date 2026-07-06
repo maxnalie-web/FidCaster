@@ -97,14 +97,24 @@ function Particles() {
 
 const AUTH_METHODS = [
   {
+    id: "farcaster" as Step,
+    icon: QrCode,
+    title: "Sign In With Farcaster",
+    desc: "Scan a QR code in Farcaster. No seed phrase needed — browse your feed and notifications instantly.",
+    badge: "Fastest",
+    gradient: "linear-gradient(135deg, rgba(168,85,247,0.22), rgba(99,102,241,0.10))",
+    border: "rgba(168,85,247,0.35)",
+    iconBg: "linear-gradient(135deg, #a855f7, #6366f1)",
+  },
+  {
     id: "phrase" as Step,
     icon: KeySquare,
     title: "Recovery Phrase",
-    desc: "Sign in with your 12- or 24-word BIP39 seed phrase. Full access including posting.",
-    badge: null,
-    color: "rgba(124,58,237,0.15)",
+    desc: "Sign in with your 12- or 24-word BIP39 seed phrase. Full access, including posting.",
+    badge: "Full access",
+    gradient: "linear-gradient(135deg, rgba(124,58,237,0.18), rgba(139,92,246,0.06))",
     border: "rgba(124,58,237,0.3)",
-    iconColor: "text-violet-400",
+    iconBg: "linear-gradient(135deg, #7c3aed, #a855f7)",
   },
   {
     id: "wallet" as Step,
@@ -112,19 +122,9 @@ const AUTH_METHODS = [
     title: "Connect Wallet",
     desc: "Connect MetaMask or any WalletConnect wallet. Auto-detects your Farcaster ID.",
     badge: null,
-    color: "rgba(99,102,241,0.12)",
-    border: "rgba(99,102,241,0.25)",
-    iconColor: "text-indigo-400",
-  },
-  {
-    id: "farcaster" as Step,
-    icon: QrCode,
-    title: "Sign In With Farcaster",
-    desc: "Scan a QR code in Farcaster. No seed phrase needed. Browse your feed and notifications instantly.",
-    badge: null,
-    color: "rgba(139,92,246,0.1)",
-    border: "rgba(139,92,246,0.22)",
-    iconColor: "text-purple-400",
+    gradient: "linear-gradient(135deg, rgba(99,102,241,0.16), rgba(79,70,229,0.06))",
+    border: "rgba(99,102,241,0.28)",
+    iconBg: "linear-gradient(135deg, #6366f1, #4f46e5)",
   },
 ] as const;
 
@@ -331,44 +331,48 @@ export function AuthPage() {
               <motion.div key="choose"
                 initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}
-                className="space-y-3">
-                <p className="text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-4">
+                className="space-y-3.5">
+                <p className="text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-1">
                   Choose sign-in method
                 </p>
-                {AUTH_METHODS.map((m) => {
+                {AUTH_METHODS.map((m, i) => {
                   const Icon = m.icon;
                   return (
-                    <button
+                    <motion.button
                       key={m.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.35, delay: 0.05 * i }}
                       onClick={() => setStep(m.id)}
-                      className="w-full text-left rounded-xl p-4 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                      className="group w-full text-left rounded-2xl p-4 transition-all hover:scale-[1.015] active:scale-[0.985]"
                       style={{
-                        background: m.color,
+                        background: m.gradient,
                         border: `1px solid ${m.border}`,
+                        boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
                       }}
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-center gap-3.5">
                         <div
-                          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                          style={{ background: "rgba(255,255,255,0.05)" }}
+                          className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg"
+                          style={{ background: m.iconBg }}
                         >
-                          <Icon className={cn("w-4.5 h-4.5", m.iconColor)} style={{ width: "1.125rem", height: "1.125rem" }} />
+                          <Icon className="w-5 h-5 text-white" strokeWidth={2} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-white font-semibold text-sm">{m.title}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white font-bold text-[0.9375rem]">{m.title}</span>
                             {m.badge && (
-                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md text-white/40"
-                                style={{ background: "rgba(255,255,255,0.07)" }}>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white/80 uppercase tracking-wide"
+                                style={{ background: "rgba(255,255,255,0.12)" }}>
                                 {m.badge}
                               </span>
                             )}
                           </div>
-                          <p className="text-white/35 text-xs mt-0.5 leading-relaxed">{m.desc}</p>
+                          <p className="text-white/40 text-xs mt-1 leading-relaxed">{m.desc}</p>
                         </div>
-                        <ArrowRight className="w-4 h-4 text-white/20 shrink-0 mt-2.5" />
+                        <ArrowRight className="w-4 h-4 text-white/25 shrink-0 group-hover:text-white/50 group-hover:translate-x-0.5 transition-all" />
                       </div>
-                    </button>
+                    </motion.button>
                   );
                 })}
               </motion.div>
