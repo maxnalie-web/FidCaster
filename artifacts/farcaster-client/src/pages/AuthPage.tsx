@@ -100,7 +100,7 @@ const AUTH_METHODS = [
     id: "farcaster" as Step,
     icon: QrCode,
     title: "Sign In With Farcaster",
-    desc: "Scan a QR code in Farcaster. No seed phrase needed — full access instantly, including posting.",
+    desc: "Scan a QR code in Farcaster. No seed phrase needed, full access instantly, including posting.",
     badge: "Fastest",
     gradient: "linear-gradient(135deg, rgba(168,85,247,0.22), rgba(99,102,241,0.10))",
     border: "rgba(168,85,247,0.35)",
