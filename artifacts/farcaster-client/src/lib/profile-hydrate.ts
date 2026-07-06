@@ -40,22 +40,38 @@ async function fetchChunk(fids: number[]): Promise<void> {
   } catch { /* leave uncached · rows keep their stub placeholder */ }
 }
 
+// Bulk lookups used to await one 100-FID chunk at a time · fine for a couple
+// of chunks, but a 3,000-candidate smart-sort window meant 30 sequential
+// round-trips (visibly "scanning 100 at a time"). Fetch chunks with bounded
+// concurrency instead so a large candidate set resolves in a handful of
+// waves rather than one request per wave.
+const CHUNK_CONCURRENCY = 6;
+
+async function fetchChunksConcurrently(fids: number[]): Promise<void> {
+  const chunks: number[][] = [];
+  for (let i = 0; i < fids.length; i += 100) chunks.push(fids.slice(i, i + 100));
+  let next = 0;
+  async function worker() {
+    while (next < chunks.length) {
+      const chunk = chunks[next++];
+      await fetchChunk(chunk);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, chunks.length) }, worker));
+}
+
 async function flush(): Promise<void> {
   flushTimer = null;
   const fids = Array.from(pending);
   pending.clear();
-  for (let i = 0; i < fids.length; i += 100) {
-    await fetchChunk(fids.slice(i, i + 100));
-  }
+  await fetchChunksConcurrently(fids);
   waiters.forEach(w => w());
 }
 
-/** Await profiles for all given FIDs (chunked ×100). Returns the cache map. */
+/** Await profiles for all given FIDs (chunked ×100, fetched with bounded concurrency). Returns the cache map. */
 export async function hydrateProfiles(fids: number[]): Promise<Map<number, NeynarUser>> {
   const missing = fids.filter(f => f > 0 && !cache.has(f));
-  for (let i = 0; i < missing.length; i += 100) {
-    await fetchChunk(missing.slice(i, i + 100));
-  }
+  await fetchChunksConcurrently(missing);
   return cache;
 }
 

@@ -170,6 +170,34 @@ async function fastHubScan(opts: {
   return candidates.slice(0, filters.limit);
 }
 
+/**
+ * Batch-fetch Pro status for a candidate list. Used to run one 100-FID chunk
+ * at a time sequentially, which for a few-thousand-candidate scan meant
+ * dozens of back-to-back round-trips ("scanning 100 at a time"). Fetch
+ * chunks with bounded concurrency instead.
+ */
+async function fetchProStatusMap(fids: number[]): Promise<Record<number, boolean>> {
+  const proMap: Record<number, boolean> = {};
+  const chunks: number[][] = [];
+  for (let i = 0; i < fids.length; i += 100) chunks.push(fids.slice(i, i + 100));
+  const CONCURRENCY = 6;
+  let next = 0;
+  async function worker() {
+    while (next < chunks.length) {
+      const chunk = chunks[next++];
+      try {
+        const r = await fetch(`/api/pro-status?fids=${chunk.join(",")}`, { headers: { accept: "application/json" } });
+        if (r.ok) {
+          const data = await r.json() as Record<string, boolean>;
+          for (const fid of chunk) proMap[fid] = !!data[fid];
+        }
+      } catch { /* leave undefined → treated as false */ }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, worker));
+  return proMap;
+}
+
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function UserRow({
@@ -558,18 +586,7 @@ export function FollowPage() {
       );
       setScanProgress(p => ({ ...p, found: candidates.length }));
 
-      // Batch-fetch Pro status in chunks of 100
-      const proMap: Record<number, boolean> = {};
-      for (let i = 0; i < candidates.length; i += 100) {
-        const chunk = candidates.slice(i, i + 100).map(u => u.fid);
-        try {
-          const r = await fetch(`/api/pro-status?fids=${chunk.join(",")}`, { headers: { accept: "application/json" } });
-          if (r.ok) {
-            const data = await r.json() as Record<string, boolean>;
-            for (const fid of chunk) proMap[fid] = !!data[fid];
-          }
-        } catch { /* leave undefined → treated as false */ }
-      }
+      const proMap = await fetchProStatusMap(candidates.map(u => u.fid));
       finalResult = candidates.filter(u => proMap[u.fid] === true).slice(0, currentFilters.limit);
     } else {
       finalResult = applyFilters(collected, batchMode, currentFilters, currentExclusions, myFid);
@@ -633,17 +650,7 @@ export function FollowPage() {
     if (filters.onlyPro) {
       const candidates = applyFilters(collected, batchMode, { ...filters, onlyPro: false, limit: MAX_SCAN }, exclusions, myFid);
       setScanProgress(p => ({ ...p, found: candidates.length }));
-      const proMap: Record<number, boolean> = {};
-      for (let i = 0; i < candidates.length; i += 100) {
-        const chunk = candidates.slice(i, i + 100).map(u => u.fid);
-        try {
-          const r = await fetch(`/api/pro-status?fids=${chunk.join(",")}`, { headers: { accept: "application/json" } });
-          if (r.ok) {
-            const data = await r.json() as Record<string, boolean>;
-            for (const fid of chunk) proMap[fid] = !!data[fid];
-          }
-        } catch { /* leave undefined → treated as false */ }
-      }
+      const proMap = await fetchProStatusMap(candidates.map(u => u.fid));
       result = candidates.filter(u => proMap[u.fid] === true).slice(0, filters.limit);
     } else {
       result = applyFilters(collected, batchMode, filters, exclusions, myFid);
