@@ -76,8 +76,13 @@ app.use(helmet({
       // domain-verification iframe outright · both are real causes of "wallet
       // connect" issues, not just cosmetic.
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.reown.com"],
-      imgSrc: ["'self'", "data:", "https:"],
+      // blob: matters here specifically — the Reown/WalletConnect wallet-list
+      // modal loads wallet icons through blob URLs (fetched then re-rendered),
+      // and worker-src falls back to script-src ('self' only) unless set
+      // explicitly, which would silently break its QR/crypto web worker too.
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
       mediaSrc: ["'self'", "https:", "blob:"],
+      workerSrc: ["'self'", "blob:"],
       connectSrc: ["'self'", "https:", "wss:"],
       frameSrc: ["'self'", "https://verify.walletconnect.com", "https://verify.walletconnect.org"],
       objectSrc: ["'none'"],

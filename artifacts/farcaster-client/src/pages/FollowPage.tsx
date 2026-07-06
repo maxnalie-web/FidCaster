@@ -699,7 +699,12 @@ export function FollowPage() {
   }
 
   function applyPreset(presetFilters: Partial<BatchFilters>, id: Preset) {
-    setFilters({ ...DEFAULT_FILTERS, ...presetFilters });
+    // Presets reset everything to a known baseline EXCEPT the FID range —
+    // that's a simple universal constraint the user sets independently of
+    // which preset is active, and presets don't know about it, so folding it
+    // into DEFAULT_FILTERS here would silently wipe out a range typed in
+    // before picking a preset.
+    setFilters(f => ({ ...DEFAULT_FILTERS, minFid: f.minFid, maxFid: f.maxFid, ...presetFilters }));
     setActivePreset(id);
   }
 

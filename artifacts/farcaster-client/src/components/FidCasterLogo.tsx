@@ -68,7 +68,7 @@ export function FidCasterLogo({ size = 96, showName = false, className = "" }: F
         */}
         <img
           ref={imgRef}
-          src="/fidcaster-logo.png"
+          src="/fidcaster-logo-v2.png"
           alt="FidCaster"
           className="relative logo-animated logo-blend"
           style={{ width: size, height: size, objectFit: "contain", zIndex: 10 }}

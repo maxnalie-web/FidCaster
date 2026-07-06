@@ -136,6 +136,21 @@ function shortAddr(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
+/** WalletConnect v2 rejects a request with this exact message when the
+ * connected wallet's session never approved the address for Optimism
+ * (eip155:10) — e.g. it only approved mainnet at pairing time and a later
+ * `wallet_switchEthereumChain` call switched the wallet's active network
+ * client-side without extending the WC session's authorized accounts. The
+ * raw viem/RPC error ("Invalid parameters: must provide a permitted
+ * Ethereum address") gives no user-actionable next step, so rewrite it. */
+function friendlyTxError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/permitted ethereum address/i.test(msg)) {
+    return "Your wallet session doesn't currently authorize Optimism for this account. Disconnect and reconnect your wallet, making sure to approve the Optimism network (chain ID 10) when prompted.";
+  }
+  return msg || "Transaction failed";
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -369,7 +384,7 @@ export default function FidDetailPage() {
       setBuyPhase("done");
       setTimeout(() => load(), 5000);
     } catch (err: any) {
-      setBuyPhase({ error: err.message || "Transaction failed" });
+      setBuyPhase({ error: friendlyTxError(err) });
     }
   }
 
@@ -463,7 +478,7 @@ export default function FidDetailPage() {
       }).catch(() => {});
       setTimeout(() => load(), 5000);
     } catch (err: any) {
-      setSellPhase({ error: err.message || "Transaction failed" });
+      setSellPhase({ error: friendlyTxError(err) });
     }
   }
 
@@ -509,7 +524,7 @@ export default function FidDetailPage() {
       setData(prev => prev ? { ...prev, listing: { active: false }, buyable: false, sigExpired: false } : prev);
       setTimeout(() => load(), 6000);
     } catch (err: any) {
-      setSellPhase({ error: err.message || "Transaction failed" });
+      setSellPhase({ error: friendlyTxError(err) });
     }
   }
 
