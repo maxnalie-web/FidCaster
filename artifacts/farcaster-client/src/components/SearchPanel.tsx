@@ -125,11 +125,11 @@ function UserRow({ user, viewerFid, onViewProfile }: {
       </button>
       <button className="flex-1 min-w-0 text-left" onClick={() => onViewProfile(user)}>
         <p className="text-sm font-semibold text-foreground truncate hover:text-primary transition-colors flex items-center gap-1">
-          <span className="truncate">{user.display_name || user.username}</span>
+          <span className="truncate">@{user.username}</span>
           {useIsPro(user.fid) && <ProBadge size={14} />}
         </p>
         <div className="flex items-center gap-1">
-          <p className="text-xs text-muted-foreground">@{user.username}</p>
+          <p className="text-xs text-muted-foreground truncate">{user.display_name || user.username}</p>
           {hasPowerBadge(user) && (
             <span title="Purple badge" className="shrink-0 inline-flex">
               <PowerBadgeIcon size={15} />

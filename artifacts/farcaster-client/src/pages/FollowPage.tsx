@@ -248,12 +248,12 @@ function UserRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1 min-w-0">
           <p className="text-[13px] font-semibold text-foreground truncate">
-            {user.display_name || user.username}
+            @{user.username}
           </p>
           {isPro && <ProBadge size={13} />}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <p className="text-[11px] text-muted-foreground truncate">@{user.username}</p>
+          <p className="text-[11px] text-muted-foreground truncate">{user.display_name || user.username}</p>
           <span className="text-[10px] text-muted-foreground shrink-0">
             {formatCompactCount(user.follower_count ?? 0)} followers
           </span>
