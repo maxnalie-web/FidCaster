@@ -1172,6 +1172,7 @@ export function DashboardPage() {
         return (
           <ProfilePage
             embedded
+            showHeader
             fid={fidNum}
             onOpenSettings={(tab) => { setProfileSection("settings"); if (tab) setSettingsTab(tab); }}
           />
@@ -1349,6 +1350,12 @@ export function DashboardPage() {
       <div className="md:ml-[270px] flex-1 min-w-0 min-h-screen flex flex-col">
 
         {/* ── MOBILE HEADER ──────────────────────────────────── */}
+        {/* Hidden on the profile tab: ProfilePage renders its own banner-blur
+            sticky header there (showHeader below) so "my profile" looks the
+            same whether reached via the bottom nav or via tapping an avatar
+            elsewhere in the app — previously this generic bar and that richer
+            header were two different-looking headers for the same profile. */}
+        {mainTab !== "profile" && (
         <header className="md:hidden sticky top-0 z-30 bg-background/96 backdrop-blur-xl border-b border-border">
           <div className="h-[53px] flex items-center justify-between px-4">
             {/* Avatar with signer dot */}
@@ -1383,6 +1390,7 @@ export function DashboardPage() {
             </button>
           </div>
         </header>
+        )}
 
         {/* ── CONTENT ────────────────────────────────────────── */}
         <div className="flex-1 max-w-[600px] w-full mx-auto pb-24 md:pb-0">

@@ -51,6 +51,10 @@ const TAB_META: { id: ProfileTab; label: string; icon: React.ReactNode }[] = [
 type ProfilePageProps = {
   fid?: number;
   embedded?: boolean;
+  /** Show the banner-blur sticky header even when embedded (e.g. the bottom
+   *  nav's own-profile tab) so "my profile" looks consistent no matter how
+   *  it was reached. Defaults to `!embedded` (standalone routes always show it). */
+  showHeader?: boolean;
   onOpenSettings?: (tab?: "username" | "signer" | "profile") => void;
 };
 
@@ -311,7 +315,7 @@ function EditSheet({
   );
 }
 
-export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: ProfilePageProps = {}) {
+export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpenSettings }: ProfilePageProps = {}) {
   const [, params] = useRoute("/profile/:fid");
   const [, navigate] = useLocation();
   const { fid: myFid, localSigner, signerUuid, signerApproved, neynarKey, profile: myProfile } = useWallet();
@@ -541,7 +545,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           legibility) so scrolling down doesn't leave a plain bar with just a
           name · matches the profile's own identity the way the full banner
           does further down the page. */}
-      {!embedded && (
+      {(showHeader ?? !embedded) && (
         <header className="sticky top-0 z-40 border-b border-border/50 overflow-hidden">
           {user?.profile?.banner?.url && (
             <div className="absolute inset-0 -z-10">
@@ -550,12 +554,16 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
             </div>
           )}
           <div className={cn("max-w-2xl mx-auto px-4 h-14 flex items-center", !user?.profile?.banner?.url && "glass")}>
-            <button
-              onClick={() => { if (window.history.length > 1) window.history.back(); else navigate("/"); }}
-              className="p-2 -ml-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+            {/* No back button when embedded: this is a bottom-nav tab, not a
+                pushed route, so there's nothing to "go back" from. */}
+            {!embedded && (
+              <button
+                onClick={() => { if (window.history.length > 1) window.history.back(); else navigate("/"); }}
+                className="p-2 -ml-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
             {user && (
               <div className="ml-2 min-w-0">
                 <p className="font-semibold text-foreground text-[15px] truncate leading-tight">
