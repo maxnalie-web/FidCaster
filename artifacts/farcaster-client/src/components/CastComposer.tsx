@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, X, ImagePlus, Upload, Hash, ChevronDown, Play } from "lucide-react";
+import { Loader2, X, ImagePlus, Upload, Hash, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { hubPublishCast, neynarAction } from "@/lib/hub-submit";
 import type { NeynarCast } from "@/lib/neynar";
 import { getFollowedChannels, type FollowedChannel } from "@/lib/channel-follows";
+import { getLocalDraft, saveDraft, clearDraft, syncDraftFromServer } from "@/lib/cast-drafts";
 
 const MAX_CHARS = 640;
 const MAX_IMAGES = 4;
@@ -12,6 +13,11 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 type Media = { url: string; kind: "image" | "video" };
+
+const VIDEO_URL_RE = /\.(mp4|webm|mov|m4v)(\?.*)?$/i;
+function mediaFromUrl(url: string): Media {
+  return { url, kind: VIDEO_URL_RE.test(url) ? "video" : "image" };
+}
 
 /** Read a file as a raw base64 data URL · works for ANY file, never decode-fails. */
 function readAsDataUrl(file: File): Promise<string> {
@@ -137,15 +143,23 @@ type Props = {
 
 export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, placeholder, defaultChannel }: Props) {
   const { fid, localSigner, signerUuid, signerApproved, neynarKey, profile, autoSignerLoading, authMethod } = useWallet();
-  const [text, setText] = useState("");
-  const [channel, setChannel] = useState<FollowedChannel | null>(defaultChannel ?? null);
-  const [showChannelPicker, setShowChannelPicker] = useState(false);
   const followedChannels = fid ? getFollowedChannels(Number(fid)) : [];
+
+  // Drafts only apply to a plain new cast — replies/quotes are short-lived and
+  // tied to whatever cast is open right now, not worth persisting.
+  const isDraftable = !replyTo && !quoteCast;
+  const localDraft = isDraftable && fid ? getLocalDraft(Number(fid)) : null;
+
+  const [text, setText] = useState(localDraft?.text ?? "");
+  const [channel, setChannel] = useState<FollowedChannel | null>(
+    defaultChannel ?? (localDraft?.channelId ? followedChannels.find((c) => c.id === localDraft.channelId) ?? null : null),
+  );
+  const [showChannelPicker, setShowChannelPicker] = useState(false);
   const quoteUrl = quoteCast
     ? `https://farcaster.xyz/${quoteCast.author.username}/${quoteCast.hash.slice(0, 10)}`
     : "";
   const [embedUrl] = useState(quoteUrl);
-  const [media, setMedia] = useState<Media[]>([]);
+  const [media, setMedia] = useState<Media[]>((localDraft?.embeds ?? []).map(mediaFromUrl));
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +175,36 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
     el.style.height = `${next}px`;
     el.style.overflowY = el.scrollHeight > 240 ? "auto" : "hidden";
   }, [text]);
+
+  // Pull the server copy of the draft on mount — this is what actually
+  // survives logout/reinstall (local storage alone would not), so a draft
+  // started before those may still show up here.
+  useEffect(() => {
+    if (!isDraftable || !fid) return;
+    let cancelled = false;
+    void syncDraftFromServer(Number(fid)).then((draft) => {
+      if (cancelled || !draft) return;
+      setText((cur) => (cur ? cur : draft.text));
+      setMedia((cur) => (cur.length > 0 ? cur : draft.embeds.map(mediaFromUrl)));
+      if (draft.channelId && !channel) {
+        const match = followedChannels.find((c) => c.id === draft.channelId);
+        if (match) setChannel(match);
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDraftable, fid]);
+
+  // Debounced autosave — keeps the draft current as the user types/attaches
+  // media, without hammering the server on every keystroke.
+  useEffect(() => {
+    if (!isDraftable || !fid) return;
+    if (!text.trim() && media.length === 0) return;
+    const t = setTimeout(() => {
+      saveDraft(Number(fid), { text, embeds: media.map((m) => m.url), channelId: channel?.id ?? null });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [isDraftable, fid, text, media, channel]);
 
   const canCast = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(fid);
   const charCount = text.length;
@@ -257,6 +301,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
       };
       setText("");
       setMedia([]);
+      if (isDraftable && fid) clearDraft(Number(fid));
       onPublished(fake);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to publish cast");
@@ -376,25 +421,26 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
             <div className="relative">
               <button
                 onClick={() => setShowChannelPicker((v) => !v)}
+                title={channel ? `Casting in ${channel.name}` : "Choose a channel"}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
-                  channel ? "text-primary border-primary/30 bg-primary/8" : "text-muted-foreground border-border hover:text-foreground"
+                  "p-1.5 rounded-lg transition-colors",
+                  channel ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"
                 )}
               >
-                {channel ? (
-                  <>
-                    <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
-                      {channel.image_url && <img src={channel.image_url} alt="" className="w-full h-full object-cover" />}
-                    </div>
-                    {channel.name}
-                  </>
+                {channel?.image_url ? (
+                  <div className="w-4 h-4 rounded-full overflow-hidden bg-primary/10 shrink-0">
+                    <img src={channel.image_url} alt="" className="w-full h-full object-cover" />
+                  </div>
                 ) : (
-                  <><Hash className="w-3.5 h-3.5" /> Channel</>
+                  <Hash className="w-4 h-4" />
                 )}
-                <ChevronDown className="w-3 h-3" />
               </button>
               {showChannelPicker && (
                 <div className="absolute bottom-full mb-1 left-0 z-20 bg-popover border border-border rounded-xl shadow-xl overflow-hidden min-w-[200px] py-1">
+                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                    {channel ? `Casting in ${channel.name}` : "Cast to your main feed"}
+                  </div>
+                  <div className="border-t border-border" />
                   <button
                     onClick={() => { setChannel(null); setShowChannelPicker(false); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
