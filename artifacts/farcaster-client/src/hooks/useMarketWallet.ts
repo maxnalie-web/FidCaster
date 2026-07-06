@@ -80,12 +80,15 @@ export function useMarketWallet() {
   const [chainId, setChainId] = useState<number | null>(null);
   const providerTypeRef = useRef<ProviderType | null>(null);
 
-  // Restore WalletConnect session after page refresh
+  // Restore WalletConnect session after page refresh · @walletconnect/
+  // keyvaluestorage migrates ALL its actual session data into IndexedDB on
+  // first use and deletes the localStorage copies once that's done (see its
+  // source: a one-time migration keyed on "wc_storage_version"), so a
+  // localStorage-based "does a session exist" check here always came back
+  // empty after the very first connect — this unconditionally attempts
+  // restoration instead; EthereumProvider.init() itself checks its real
+  // (IndexedDB) storage and is a cheap no-op when there's nothing to restore.
   useEffect(() => {
-    const hasWCSession = Object.keys(localStorage).some(
-      (k) => k.startsWith("wc@2:") && k.includes("session"),
-    );
-    if (!hasWCSession) return;
     getWCProvider().then(async (provider) => {
       if (!provider.connected || !provider.accounts?.[0]) return;
       const addr = provider.accounts[0] as Address;
