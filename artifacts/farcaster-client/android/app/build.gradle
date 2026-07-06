@@ -18,7 +18,15 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
+            // Shrinks + obfuscates the native shell (Java/Kotlin bridge code) so a
+            // decompiled release APK doesn't hand out readable class/method names.
+            // Capacitor's own AAR bundles the consumer ProGuard rules its bridge
+            // needs, so this doesn't require extra -keep rules for it to keep
+            // working. Note: this does NOT touch the web bundle in assets/public
+            // (that's JS, R8 only processes JVM bytecode) — see vite.config.ts's
+            // build.minify/sourcemap settings for that side of the hardening.
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }

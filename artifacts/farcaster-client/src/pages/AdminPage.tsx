@@ -14,7 +14,7 @@ import {
   type Announcement, type FeaturedChannel, type LandingFeature, type FooterLink,
 } from "@/lib/admin-config";
 import {
-  adminLogin, adminLogout, checkAdminSession, fetchAdminSecrets, pushAdminSecrets,
+  adminLogin, adminLogout, checkAdminSession, fetchAdminSecrets, pushAdminSecrets, fetchLoginConfig,
   type AdminSecrets,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -330,26 +330,69 @@ function ApiKeysSection() {
 // the form and reflects what the server decides — it has no authority of
 // its own.
 
+// Cloudflare Turnstile widget — only ever loaded/rendered if the server says
+// a site key is configured. `window.turnstile` is injected by the script we
+// load on demand; typed loosely since there's no official types package.
+declare global {
+  interface Window { turnstile?: { render: (el: HTMLElement, opts: { sitekey: string; callback: (token: string) => void }) => void } }
+}
+
+function TurnstileWidget({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    function render() {
+      if (cancelled || !containerRef.current || !window.turnstile) return;
+      window.turnstile.render(containerRef.current, { sitekey: siteKey, callback: onToken });
+    }
+    if (window.turnstile) {
+      render();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.onload = render;
+      document.head.appendChild(script);
+    }
+    return () => { cancelled = true; };
+  }, [siteKey, onToken]);
+
+  return <div ref={containerRef} className="flex justify-center" />;
+}
+
 function AdminLoginGate({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [captchaSiteKey, setCaptchaSiteKey] = useState<string | null>(null);
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    inputRef.current?.focus();
+    fetchLoginConfig().then(cfg => {
+      setCaptchaSiteKey(cfg.captchaSiteKey);
+      setCaptchaRequired(cfg.captchaRequired);
+    });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!password) return;
+    if (captchaRequired && !captchaToken) { setError("Please complete the verification check."); return; }
     setLoading(true);
     setError("");
-    const result = await adminLogin(password);
+    const result = await adminLogin(password, captchaToken ?? undefined);
     setLoading(false);
     if (result.ok) {
       onLoggedIn();
     } else {
       setError(result.error ?? "Invalid password");
       setPassword("");
+      setCaptchaToken(null);
+      if (result.captchaRequired) setCaptchaRequired(true);
     }
   }
 
@@ -378,11 +421,15 @@ function AdminLoginGate({ onLoggedIn }: { onLoggedIn: () => void }) {
             className="w-full px-4 py-3 rounded-xl border border-border bg-muted/20 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/60 text-center text-lg transition-colors disabled:opacity-50"
           />
 
+          {captchaRequired && captchaSiteKey && (
+            <TurnstileWidget siteKey={captchaSiteKey} onToken={setCaptchaToken} />
+          )}
+
           {error && <p className="text-[12px] text-destructive text-center">{error}</p>}
 
           <button
             type="submit"
-            disabled={loading || password.length === 0}
+            disabled={loading || password.length === 0 || (captchaRequired && !captchaToken)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-white font-bold text-[15px] transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><LogIn className="w-4 h-4" /> Sign in</>}

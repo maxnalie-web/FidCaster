@@ -20,14 +20,39 @@ async function parseError(r: Response, fallback: string): Promise<string> {
   }
 }
 
-export async function adminLogin(password: string): Promise<{ ok: boolean; error?: string }> {
+export interface LoginConfig {
+  captchaSiteKey: string | null;
+  captchaRequired: boolean;
+}
+
+/** Public — tells the login form whether a CAPTCHA (Cloudflare Turnstile) is
+ * configured server-side at all, and whether this IP already needs to solve
+ * one (after repeated failed attempts). Returns an inert default if the
+ * feature isn't configured, so the login form behaves exactly as before. */
+export async function fetchLoginConfig(): Promise<LoginConfig> {
+  try {
+    const r = await fetch("/api/admin/login-config");
+    if (!r.ok) return { captchaSiteKey: null, captchaRequired: false };
+    return await r.json() as LoginConfig;
+  } catch {
+    return { captchaSiteKey: null, captchaRequired: false };
+  }
+}
+
+export async function adminLogin(
+  password: string,
+  captchaToken?: string,
+): Promise<{ ok: boolean; error?: string; captchaRequired?: boolean }> {
   try {
     const r = await fetch("/api/admin/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, captchaToken }),
     });
-    if (!r.ok) return { ok: false, error: await parseError(r, "Invalid password") };
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({})) as { error?: string; captchaRequired?: boolean };
+      return { ok: false, error: data.error ?? "Invalid password", captchaRequired: data.captchaRequired };
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Login failed" };
