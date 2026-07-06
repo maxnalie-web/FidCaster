@@ -496,8 +496,12 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
 
   const extUser = user as NeynarUser & {
     profile?: { location?: { description?: string }; bio?: { text?: string } };
-    verified_addresses?: { eth_addresses?: string[] };
+    verified_addresses?: { eth_addresses?: string[]; sol_addresses?: string[] };
   };
+  const connectedWallets = [
+    ...(extUser.verified_addresses?.eth_addresses ?? []).map((address) => ({ address, chain: "ETH" as const })),
+    ...(extUser.verified_addresses?.sol_addresses ?? []).map((address) => ({ address, chain: "SOL" as const })),
+  ];
 
   const currentTab = tabs[activeTab];
 
@@ -665,6 +669,23 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                                 </span>
                               </div>
                             )}
+                            {connectedWallets.length > 0 && (
+                              <>
+                                <div className="my-1 border-t border-border" />
+                                {connectedWallets.map(({ address, chain }) => (
+                                  <button
+                                    key={address}
+                                    onClick={() => { navigator.clipboard.writeText(address).then(() => toast.success("Address copied")); setShowMoreMenu(false); }}
+                                    className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
+                                  >
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                      {chain} · {address.slice(0, 6)}…{address.slice(-4)}
+                                    </span>
+                                    <Copy className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                                  </button>
+                                ))}
+                              </>
+                            )}
                             <div className="my-1 border-t border-border" />
                             <button
                               onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/profile/${targetFid}`).then(() => toast.success("Link copied")); setShowMoreMenu(false); }}
@@ -735,21 +756,21 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                                 </span>
                               </div>
                             )}
-                            {extUser.verified_addresses?.eth_addresses?.[0] && (
+                            {connectedWallets.map(({ address, chain }) => (
                               <button
+                                key={address}
                                 onClick={() => {
-                                  const addr = extUser.verified_addresses!.eth_addresses![0];
-                                  navigator.clipboard.writeText(addr).then(() => toast.success("Address copied"));
+                                  navigator.clipboard.writeText(address).then(() => toast.success("Address copied"));
                                   setShowMoreMenu(false);
                                 }}
                                 className="w-full flex items-center justify-between gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
                               >
                                 <span className="font-mono text-xs text-muted-foreground">
-                                  {extUser.verified_addresses.eth_addresses[0].slice(0, 6)}…{extUser.verified_addresses.eth_addresses[0].slice(-4)}
+                                  {chain} · {address.slice(0, 6)}…{address.slice(-4)}
                                 </span>
                                 <Copy className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                               </button>
-                            )}
+                            ))}
                             <div className="my-1 border-t border-border" />
                             <button
                               onClick={() => {
