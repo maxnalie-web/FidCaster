@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, type ReactNode } from "react"
 import { Capacitor } from "@capacitor/core";
 import { WalletContext, type WalletState } from "./useWallet";
 import { deriveAccount, signerFromBytes, signerFromPrivateKeyHex, signerPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
-import { lookupFid, getSignerState, registerSignerOnchain, publicClient } from "@/lib/contracts";
+import { lookupFid, getSignerState, registerSignerOnchain, publicClient, hasSufficientBalanceForSignerRegistration } from "@/lib/contracts";
 import { fetchProfile } from "@/lib/farcaster-api";
 import type { FarcasterProfile } from "@/lib/farcaster-api";
 import { DEFAULT_API_KEY } from "@/lib/neynar";
@@ -232,7 +232,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       const NEEDS_FUNDS_MSG =
-        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nThen tap Retry below.`;
+        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nWe'll retry automatically once it arrives — no need to tap anything.`;
 
       try {
         // Safety net: if the wallet hangs indefinitely on the signature/tx
@@ -408,6 +408,25 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, signerError: null }));
     await _autoActivateSigner(fid, address, wc, signer);
   }, [_autoActivateSigner]);
+
+  // While the signer popup is showing an error (most commonly "you need a
+  // tiny amount of ETH"), poll the balance in the background and auto-retry
+  // once it's enough to cover gas · so funding the wallet is all the user
+  // has to do, instead of also having to remember to come back and tap Retry.
+  useEffect(() => {
+    if (!state.signerError || state.autoSignerLoading) return;
+    const address = addressRef.current;
+    if (!address) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      const ok = await hasSufficientBalanceForSignerRegistration(address).catch(() => false);
+      if (ok && !cancelled) retrySignerSetup();
+    }, 8000);
+
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [state.signerError, state.autoSignerLoading, retrySignerSetup]);
 
   /**
    * Flow 2: Connect an external wallet (MetaMask / WalletConnect).
