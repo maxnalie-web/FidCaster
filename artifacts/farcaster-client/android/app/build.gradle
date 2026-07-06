@@ -19,12 +19,27 @@ android {
     buildTypes {
         release {
             // Shrinks + obfuscates the native shell (Java/Kotlin bridge code) so a
-            // decompiled release APK doesn't hand out readable class/method names.
-            // Capacitor's own AAR bundles the consumer ProGuard rules its bridge
-            // needs, so this doesn't require extra -keep rules for it to keep
-            // working. Note: this does NOT touch the web bundle in assets/public
-            // (that's JS, R8 only processes JVM bytecode) — see vite.config.ts's
+            // decompiled APK doesn't hand out readable class/method names.
+            // proguard-rules.pro carries explicit -keep rules for anything reached
+            // via reflection (Capacitor plugins, the WebView JS-interface bridge),
+            // on top of the consumer rules Capacitor's own AAR already bundles.
+            // Note: this does NOT touch the web bundle in assets/public (that's
+            // JS, R8 only processes JVM bytecode) — see vite.config.ts's
             // build.minify/sourcemap settings for that side of the hardening.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        // CI (.github/workflows/mobile-builds.yml) currently builds assembleDebug
+        // for sideload distribution — there's no release-signing keystore set up
+        // yet, so `debug` IS the artifact real users install. Apply the same
+        // shrink/obfuscate treatment here too (debuggable + minified can coexist);
+        // otherwise the release-only config above would protect an APK nobody
+        // actually ships. Proper release signing (a real keystore, stored as a
+        // CI secret) would let this move to a true `release` build — ask if you
+        // want that set up; it's a separate, bigger change since it needs you to
+        // generate and hold onto a signing key.
+        debug {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
