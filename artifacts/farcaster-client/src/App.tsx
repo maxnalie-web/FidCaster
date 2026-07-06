@@ -1,5 +1,7 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { Toaster } from "sonner";
+import { Capacitor } from "@capacitor/core";
+import { StatusBar, Style } from "@capacitor/status-bar";
 import { WalletProvider } from "@/hooks/WalletProvider";
 import { BatchOperationProvider } from "@/hooks/BatchOperationContext";
 import { useWallet } from "@/hooks/useWallet";
@@ -113,6 +115,18 @@ function App() {
     applyAdminTheme(cfg);
     applyAdminSeo(cfg);
   }, []);
+
+  useEffect(() => {
+    // Native only · match the status bar to the app's own header background
+    // (white in light mode, near-black in dark mode) instead of the OS
+    // default gray scrim, and reserve its own space (overlay: false) so app
+    // content never paints a mismatched color underneath it.
+    if (!Capacitor.isNativePlatform()) return;
+    const isDark = theme === "dark";
+    StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+    StatusBar.setBackgroundColor({ color: isDark ? "#0e111b" : "#ffffff" }).catch(() => {});
+    StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light }).catch(() => {});
+  }, [theme]);
 
   return (
     <WalletProvider>
