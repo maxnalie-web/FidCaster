@@ -1,0 +1,48 @@
+What the devs are working on this week:
+-Protocol: channels + blocks moving onto the protocol + Degen validator onboarded
+-Account security: automating account recovery + fixing passkey edge cases + smoother seed-phrase sign-in on mobile
+-Clanker: working through v5 security-audit follow-ups + ecosystem integrations
+-Feed quality: a round of Neynar score improvements to better catch coordinated rings + richer data for feed experiments + groundwork for translated posts across languages
+-Spaces: working on adding recording in Spaces + a fail-safe against accidentally closing your room
+-Wallet: limit orders are live, now expanding to more tokens + networks, with fill notifications coming
+---smarter trade routing for better prices + improved token search + letting verified tokens bypass an overly aggressive spam filter
+-In-App payments: monthly plan option for Farcaster Pro + paying for storage with your in-app wallet instead of the app store
+-Rish is heads down working on shipping something, so might not be as responsive as usual for a bit
+
+Known issues we're working on (not an exhaustive list, just what the intern has seen the most of):
+Sign-in
+-iOS: passkey sign-in failing for some users, with the recovery-phrase fallback stalling (one recovery blocker already fixed)
+-Duplicate passkeys showing after account recovery (fix in review)
+
+Wallet
+-Scattered token issues: a token missing from holdings, a user unable to sell a token they hold, swaps failing on BSC
+-Secondary wallet seed phrase loading forever (fix shipped)
+
+Mobile
+-App freezing / force-closing when opening a DM on iOS + Android
+-iOS: posts saving as drafts without being saved (fix shipped)
+-Quote casting with a video attached failing
+-Android: back button intermittently not working (again) + first tap on side-menu items not registering
+
+Mini apps
+-Brief pop-up flashing when opening mini apps (fixed)
+
+Neynar Developer
+-Free tier wrongly telling some devs to upgrade to a paid plan (fixed)
+
+Current mobile version: v2.1.10 (556)
+
+What did I miss? 👇
+
+12:07 AM · 7/7/2026
+5recasts
+9replies
+22likes
+
+
+
+
+
+Reply to @farcaster…
+Reply
+9 Replies
