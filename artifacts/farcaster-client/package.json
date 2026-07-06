@@ -14,7 +14,7 @@
     "cap:sync": "npm run build && cap sync",
     "cap:ios": "npm run build && cap sync ios && cap open ios",
     "cap:android": "npm run build && cap sync android && cap open android",
-    "start": "vite build --config vite.config.ts && NODE_ENV=production tsx server/index.ts",
+    "start": "NODE_ENV=production tsx server/index.ts",
     "pm2:start": "pm2 start ecosystem.config.cjs --env production",
     "pm2:stop": "pm2 stop fidcaster-server",
     "pm2:restart": "pm2 restart fidcaster-server",
