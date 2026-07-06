@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { X, ChevronDown, Loader2 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
+import { useMarketWallet } from "@/hooks/useMarketWallet";
 import { attachMiniAppIframeHost } from "@/lib/miniapp-iframe-host";
 import {
   getWebMiniAppState, subscribeWebMiniAppState, closeWebMiniApp, minimizeWebMiniApp,
@@ -21,6 +22,13 @@ export function MiniAppIframeModal() {
   const [state, setState] = useState<WebMiniAppState | null>(getWebMiniAppState);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { profile, address, walletClient } = useWallet();
+  // Same ad-hoc fallback as MiniAppsPanel's ConnectWalletBanner: if the
+  // user's actual login never linked a wallet (Sign In With Farcaster),
+  // reuse whatever they connected there instead of handing the iframe a
+  // null address.
+  const { wallet: extWallet } = useMarketWallet();
+  const effectiveAddress = address ?? extWallet?.address ?? null;
+  const effectiveWalletClient = walletClient ?? extWallet?.walletClient ?? null;
   const [, navigate] = useLocation();
   const [loaded, setLoaded] = useState(false);
 
@@ -41,8 +49,8 @@ export function MiniAppIframeModal() {
         appName: app!.name,
         appIconUrl: app!.iconUrl,
         profile,
-        address,
-        walletClient,
+        address: effectiveAddress,
+        walletClient: effectiveWalletClient,
         navigate,
         onClose: closeWebMiniApp,
       });
