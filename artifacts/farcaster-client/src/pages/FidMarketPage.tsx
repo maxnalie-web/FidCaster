@@ -303,7 +303,7 @@ export default function FidMarketPage() {
                 { icon: <Tag className="w-3.5 h-3.5 text-violet-500" />,    color: "bg-violet-500/10",  title: "Sell your current FID",       desc: "Sign in to FidCaster → tap the left card → set a price → List. Your FID goes on-chain." },
                 { icon: <ShoppingCart className="w-3.5 h-3.5 text-emerald-500" />, color: "bg-emerald-500/10", title: "Buy any listed FID", desc: "Connect a browser wallet (MetaMask, Rainbow…) → browse listings → tap a FID → confirm." },
                 { icon: <Wallet className="w-3.5 h-3.5 text-indigo-400" />, color: "bg-indigo-500/10",  title: "Sell a FID from another wallet", desc: "Connect that wallet → find the FID page → list it for sale." },
-                { icon: <Zap className="w-3.5 h-3.5 text-amber-500" />,    color: "bg-amber-500/10",   title: "9% platform fee",              desc: "Buyers pay 9% on top. Sellers receive the full listed amount." },
+                { icon: <Zap className="w-3.5 h-3.5 text-amber-500" />,    color: "bg-amber-500/10",   title: "9% platform fee",              desc: "Buyers pay exactly the listed price. Sellers receive that price minus our 9% fee — about 91% of it." },
                 { icon: <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />, color: "bg-blue-500/10", title: "Non-custodial & on-chain",     desc: "All trades settle on Optimism. No intermediary holds your FID or funds." },
               ].map((s, i) => (
                 <div key={i} className="flex gap-3 items-start">
