@@ -151,8 +151,14 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+  uuid: '>=11.1.1'
   vite: ^7.3.5
   ws: '>=8.21.0'
+
+patchedDependencies:
+  elliptic@6.6.1:
+    hash: 5c1ee9cbf0a1e34557a1c4ad8dc31674656badb24dae300fd254ad3aacf4aac3
+    path: patches/elliptic@6.6.1.patch
 
 importers:
 
@@ -4773,11 +4779,6 @@ packages:
     resolution: {integrity: sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==}
     hasBin: true
 
-  uuid@8.3.2:
-    resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
-    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
-    hasBin: true
-
   valtio@2.1.7:
     resolution: {integrity: sha512-DwJhCDpujuQuKdJ2H84VbTjEJJteaSmqsuUltsfbfdbotVfNeTE4K/qc/Wi57I9x8/2ed4JNdjEna7O6PfavRg==}
     engines: {node: '>=12.20.0'}
@@ -8350,7 +8351,7 @@ snapshots:
       browserify-rsa: 4.1.1
       create-hash: 1.2.0
       create-hmac: 1.1.7
-      elliptic: 6.6.1
+      elliptic: 6.6.1(patch_hash=5c1ee9cbf0a1e34557a1c4ad8dc31674656badb24dae300fd254ad3aacf4aac3)
       inherits: 2.0.4
       parse-asn1: 5.1.9
       readable-stream: 2.3.8
@@ -8548,7 +8549,7 @@ snapshots:
   create-ecdh@4.0.4:
     dependencies:
       bn.js: 4.12.4
-      elliptic: 6.6.1
+      elliptic: 6.6.1(patch_hash=5c1ee9cbf0a1e34557a1c4ad8dc31674656badb24dae300fd254ad3aacf4aac3)
 
   create-hash@1.2.0:
     dependencies:
@@ -8734,7 +8735,7 @@ snapshots:
     dependencies:
       sax: 1.1.4
 
-  elliptic@6.6.1:
+  elliptic@6.6.1(patch_hash=5c1ee9cbf0a1e34557a1c4ad8dc31674656badb24dae300fd254ad3aacf4aac3):
     dependencies:
       bn.js: 4.12.4
       brorand: 1.1.0
@@ -9396,7 +9397,7 @@ snapshots:
       isomorphic-ws: 4.0.1(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       json-stringify-safe: 5.0.1
       stream-json: 1.9.1
-      uuid: 8.3.2
+      uuid: 14.0.1
       ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
@@ -10743,8 +10744,6 @@ snapshots:
       which-typed-array: 1.1.22
 
   uuid@14.0.1: {}
-
-  uuid@8.3.2: {}
 
   valtio@2.1.7(@types/react@19.2.14)(react@19.1.0):
     dependencies:

@@ -139,5 +139,9 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+  uuid: '>=11.1.1'
   vite: ^7.3.5
   ws: '>=8.21.0'
+
+patchedDependencies:
+  elliptic@6.6.1: patches/elliptic@6.6.1.patch

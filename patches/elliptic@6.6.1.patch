@@ -1,0 +1,22 @@
+diff --git a/lib/elliptic/ec/index.js b/lib/elliptic/ec/index.js
+index a3fe37e3a5f33f1519dbd605c9c8a47a14155deb..531ba18a23094922ec728d4919d7278668b2bad3 100644
+--- a/lib/elliptic/ec/index.js
++++ b/lib/elliptic/ec/index.js
+@@ -154,7 +154,16 @@ EC.prototype.sign = function sign(msg, key, enc, options) {
+     var k = options.k ?
+       options.k(iter) :
+       new BN(drbg.generate(this.n.byteLength()));
+-    k = this._truncateToN(k, true);
++    // Security fix (GHSA-848j-6mx2-7j84 / CVE-2025-14505): `k` is generated
++    // as a fixed-width buffer of `this.n.byteLength()` bytes, but once it is
++    // wrapped in a `BN` its own `byteLength()` silently drops leading zero
++    // bytes. `_truncateToN` previously trusted that (possibly truncated)
++    // byteLength when computing the bit length to shift by, which can
++    // truncate `k` incorrectly and leak information about the private key.
++    // Explicitly pass the true bit length (based on the curve order, not the
++    // BN's own trimmed byte length) so leading-zero bytes in `k` can't cause
++    // an incorrect truncation.
++    k = this._truncateToN(k, true, this.n.byteLength() * 8);
+     if (k.cmpn(1) <= 0 || k.cmp(ns1) >= 0)
+       continue;
+ 
