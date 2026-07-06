@@ -77,6 +77,7 @@ app.use(helmet({
       // connect" issues, not just cosmetic.
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.reown.com"],
       imgSrc: ["'self'", "data:", "https:"],
+      mediaSrc: ["'self'", "https:", "blob:"],
       connectSrc: ["'self'", "https:", "wss:"],
       frameSrc: ["'self'", "https://verify.walletconnect.com", "https://verify.walletconnect.org"],
       objectSrc: ["'none'"],
@@ -111,7 +112,7 @@ app.use(cors({
 }));
 
 app.use(compression());
-app.use(express.json({ limit: "20mb" })); // large limit for base64 image upload route (10MB file ≈ 13.3MB base64)
+app.use(express.json({ limit: "70mb" })); // base64 upload route: images ≤10MB (~13.3MB base64) + video ≤50MB (~66.7MB base64)
 
 // Global limiter — skip follow/following list endpoints (already protected by Neynar throttle)
 // and skip Neynar read proxy endpoints (caching + throttle handle them).
@@ -566,8 +567,18 @@ app.post("/api/farcaster/sign-message", actionLimiter, async (req, res) => {
   }
 });
 
-// ── Image upload proxy (avoids exposing Imgur client ID in client bundle) ──
-const uploadLimiter = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
+// ── Media upload proxy (fallback for when the client can't upload directly) ──
+// Primary path is client → catbox.moe direct (no key, scales independently of
+// this server); this route only exists as a same-origin fallback for
+// environments where the direct browser upload fails (CORS quirks, extensions,
+// etc.), and for Imgur when a client ID happens to be configured.
+//
+// freeimage.host's old fallback used a hardcoded public demo API key shared
+// across countless unrelated projects for years — exactly the kind of shared
+// credential that gets globally rate-limited or revoked without notice, which
+// is almost certainly why uploads stopped working app-wide. catbox.moe needs
+// no key at all, so there's no shared credential to die.
+const uploadLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
   try {
@@ -579,9 +590,10 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
     // Strip optional data URL prefix — keep only raw base64
     const base64 = imageDataUrl.includes(",") ? imageDataUrl.split(",")[1] : imageDataUrl;
     const buffer = Buffer.from(base64, "base64");
+    const isVideo = mimeType.startsWith("video/");
 
     const imgurClientId = process.env.IMGUR_CLIENT_ID || process.env.VITE_IMGUR_CLIENT_ID;
-    if (imgurClientId) {
+    if (imgurClientId && !isVideo) {
       try {
         const imgurParams = new URLSearchParams({ image: base64, type: "base64" });
         const upstream = await fetch("https://api.imgur.com/3/image", {
@@ -600,32 +612,28 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
             return;
           }
         }
-        console.warn("[upload] Imgur failed, falling back to freeimage.host");
+        console.warn("[upload] Imgur failed, falling back to catbox.moe");
       } catch {
-        console.warn("[upload] Imgur error, falling back to freeimage.host");
+        console.warn("[upload] Imgur error, falling back to catbox.moe");
       }
     }
 
-    // Fallback: freeimage.host — free, permanent, no account required
-    const params = new URLSearchParams({
-      key: "6d207e02198a847aa98d0a2a901485a5",
-      action: "upload",
-      source: base64,
-      format: "json",
-    });
-    const fihRes = await fetch("https://freeimage.host/api/1/upload", {
+    // Universal fallback: catbox.moe — free, permanent, no API key, images + video.
+    const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
+    const form = new FormData();
+    form.append("reqtype", "fileupload");
+    form.append("fileToUpload", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
+    const catboxRes = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params.toString(),
-      signal: AbortSignal.timeout(30_000),
+      body: form,
+      signal: AbortSignal.timeout(60_000),
     });
-    const fihData = await fihRes.json() as { status_code?: number; image?: { url: string }; error?: { message?: string } };
-    if (fihData.status_code === 200 && fihData.image?.url) {
-      res.json({ url: fihData.image.url });
+    const text = (await catboxRes.text()).trim();
+    if (catboxRes.ok && text.startsWith("http")) {
+      res.json({ url: text });
       return;
     }
-    const fihErr = fihData.error?.message ?? "unknown error";
-    res.status(502).json({ error: `Image upload failed: ${fihErr}` });
+    res.status(502).json({ error: `Upload failed: ${text || "unknown error"}` });
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Upload failed" });
   }
