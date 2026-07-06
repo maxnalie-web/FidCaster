@@ -37,3 +37,27 @@ export function applyStoredAppSettings(): void {
   applyFontSize(getFontSize());
   applyReduceMotion(getReduceMotion());
 }
+
+// ── Notification type visibility ────────────────────────────────────────────
+// Simple client-side mute per notification kind · hides that kind from the
+// notifications list and from the unread badge count without needing any
+// server-side preference (there's no push infra yet, this is purely local).
+export type NotifKind = "reactions" | "replies" | "follows";
+const NOTIF_MUTE_KEY = "fc_notif_muted";
+
+export function getMutedNotifKinds(): Set<NotifKind> {
+  try {
+    const raw = localStorage.getItem(NOTIF_MUTE_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as NotifKind[]);
+  } catch {
+    return new Set();
+  }
+}
+
+export function setNotifKindMuted(kind: NotifKind, muted: boolean): Set<NotifKind> {
+  const cur = getMutedNotifKinds();
+  if (muted) cur.add(kind); else cur.delete(kind);
+  try { localStorage.setItem(NOTIF_MUTE_KEY, JSON.stringify([...cur])); } catch {}
+  return cur;
+}
