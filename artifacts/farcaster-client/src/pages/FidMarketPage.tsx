@@ -339,30 +339,43 @@ export default function FidMarketPage() {
       <div className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
 
         {/* ── Hero banner ── */}
-        <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 via-indigo-500/5 to-background p-5">
+        <div className="relative overflow-hidden rounded-3xl border border-violet-500/25 bg-gradient-to-br from-violet-600/15 via-indigo-600/8 to-background p-6">
           {/* Glow orbs */}
-          <div className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full bg-violet-600/15 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-indigo-600/10 blur-2xl" />
+          <div className="pointer-events-none absolute -top-20 -right-20 w-56 h-56 rounded-full bg-violet-600/20 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-10 -left-10 w-40 h-40 rounded-full bg-indigo-600/15 blur-2xl" />
+          <div className="pointer-events-none absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)", backgroundSize: "18px 18px" }} />
 
-          <div className="relative">
-            <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/60" />
-              Live · Optimism
-            </p>
+          <div className="relative space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/60" />
+                Live · Optimism
+              </p>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-muted-foreground font-semibold">Non-custodial</span>
+            </div>
+
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-foreground leading-tight">
+                Own a piece of Farcaster
+              </h1>
+              <p className="text-xs text-muted-foreground mt-1">
+                Buy and sell FIDs directly on-chain. No middleman ever holds your funds.
+              </p>
+            </div>
 
             {/* Stats grid */}
             <div className="grid grid-cols-4 gap-2">
               {[
-                { label: "Listed",   value: listings.length,                              icon: Tag,         color: "text-violet-500",  glow: "shadow-violet-500/20" },
-                { label: "Buyable",  value: buyableCount,                                  icon: ShoppingCart, color: "text-emerald-500", glow: "shadow-emerald-500/20" },
-                { label: "Trades",   value: trades.length,                                icon: Flame,       color: "text-amber-500",   glow: "shadow-amber-500/20" },
-                { label: "Vol. ETH", value: parseFloat(totalTradedEth).toFixed(3),        icon: TrendingUp,  color: "text-indigo-400",  glow: "shadow-indigo-500/20" },
+                { label: "Listed",   value: listings.length,                              icon: Tag,         color: "text-violet-500" },
+                { label: "Buyable",  value: buyableCount,                                  icon: ShoppingCart, color: "text-emerald-500" },
+                { label: "Trades",   value: trades.length,                                icon: Flame,       color: "text-amber-500" },
+                { label: "Vol. ETH", value: parseFloat(totalTradedEth).toFixed(3),        icon: TrendingUp,  color: "text-indigo-400" },
               ].map(s => {
                 const Icon = s.icon;
                 return (
-                  <div key={s.label} className="flex flex-col gap-1">
+                  <div key={s.label} className="flex flex-col gap-1.5 rounded-xl bg-background/50 border border-border/40 p-2.5">
                     <Icon className={cn("w-3.5 h-3.5", s.color)} />
-                    <p className={cn("text-lg font-bold font-mono tracking-tight text-foreground leading-none")}>
+                    <p className={cn("text-base font-bold font-mono tracking-tight text-foreground leading-none")}>
                       {loading ? <span className="inline-block w-8 h-4 bg-muted/50 rounded animate-pulse" /> : s.value}
                     </p>
                     <p className="text-[10px] text-muted-foreground">{s.label}</p>
@@ -617,9 +630,9 @@ export default function FidMarketPage() {
         {tab === "listings" && (
           <>
             {loading ? (
-              <div className="space-y-2">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="h-[72px] rounded-2xl bg-muted/30 animate-pulse border border-border/30" />
+              <div className="grid grid-cols-2 gap-2.5">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-[168px] rounded-2xl bg-muted/30 animate-pulse border border-border/30" />
                 ))}
               </div>
             ) : filteredListings.length === 0 ? (
@@ -630,7 +643,7 @@ export default function FidMarketPage() {
                 <p className="text-sm text-muted-foreground">{search ? "No listings match your search." : "No active listings yet."}</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 {filteredListings.slice(0, listingsVisible).map(listing => {
                   const info      = fidInfoMap[listing.fid];
                   const priceEth  = parseFloat(listing.priceEth);
@@ -650,14 +663,20 @@ export default function FidMarketPage() {
                     <button
                       key={listing.fid}
                       onClick={() => navigate(`/market/${listing.fid}`)}
-                      className="group w-full flex items-center gap-3.5 p-4 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 hover:shadow-lg hover:shadow-violet-500/5 hover:-translate-y-px transition-all text-left"
+                      className="group relative flex flex-col gap-2 p-3.5 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 hover:shadow-lg hover:shadow-violet-500/5 hover:-translate-y-px transition-all text-left overflow-hidden"
                     >
+                      {!listing.buyable && (
+                        <span className="absolute top-2.5 right-2.5 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold z-10">
+                          {listing.sigExpired ? "Sig exp." : "Expired"}
+                        </span>
+                      )}
+
                       {/* Avatar */}
-                      <div className="shrink-0 relative">
+                      <div className="shrink-0 relative w-fit">
                         {info?.pfpUrl ? (
-                          <img src={info.pfpUrl} alt="" className="w-11 h-11 rounded-full object-cover ring-2 ring-border/50 group-hover:ring-violet-500/20 transition-all" />
+                          <img src={info.pfpUrl} alt="" className="w-12 h-12 rounded-full object-cover ring-2 ring-border/50 group-hover:ring-violet-500/20 transition-all" />
                         ) : (
-                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-violet-500/25 to-indigo-600/25 border border-violet-500/20 flex items-center justify-center">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500/25 to-indigo-600/25 border border-violet-500/20 flex items-center justify-center">
                             <span className="text-xs font-bold text-violet-400 font-mono">{listing.fid}</span>
                           </div>
                         )}
@@ -668,28 +687,20 @@ export default function FidMarketPage() {
                       </div>
 
                       {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-sm text-foreground truncate leading-tight">
-                            {info?.displayName || `FID ${listing.fid}`}
-                          </span>
-                          {!listing.buyable && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold shrink-0">
-                              {listing.sigExpired ? "Sig exp." : "Expired"}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-foreground truncate leading-tight">
+                          {info?.displayName || `FID ${listing.fid}`}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
                           {info?.username && (
-                            <span className="text-xs text-violet-500 font-medium">@{info.username}</span>
+                            <span className="text-xs text-violet-500 font-medium truncate">@{info.username}</span>
                           )}
-                          <span className="text-[10px] text-muted-foreground/60 font-mono">#{listing.fid}</span>
+                          <span className="text-[10px] text-muted-foreground/60 font-mono shrink-0">#{listing.fid}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1">
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           {listing.listedAt > 0 && (
                             <span className="text-[10px] text-muted-foreground/50">{timeAgo(listing.listedAt)}</span>
                           )}
-                          {listing.listedAt > 0 && expiresLabel && <span className="text-[10px] text-muted-foreground/30">·</span>}
                           {expiresLabel && (
                             <span className={cn(
                               "text-[10px] font-medium",
@@ -702,22 +713,23 @@ export default function FidMarketPage() {
                       </div>
 
                       {/* Price */}
-                      <div className="text-right shrink-0">
-                        <p className="font-bold text-sm text-foreground font-mono tabular-nums leading-tight">
-                          {priceDisp}
-                          <span className="text-muted-foreground font-normal text-xs ml-0.5">ETH</span>
-                        </p>
-                        {usdVal && (
-                          <p className="text-[11px] text-muted-foreground mt-0.5">${usdVal}</p>
-                        )}
+                      <div className="flex items-end justify-between mt-auto pt-2 border-t border-border/40">
+                        <div>
+                          <p className="font-bold text-sm text-foreground font-mono tabular-nums leading-tight">
+                            {priceDisp}
+                            <span className="text-muted-foreground font-normal text-[10px] ml-0.5">ETH</span>
+                          </p>
+                          {usdVal && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">${usdVal}</p>
+                          )}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
                       </div>
-
-                      <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
                     </button>
                   );
                 })}
                 {filteredListings.length > listingsVisible && (
-                  <div ref={listingsSentinelRef} className="flex justify-center py-4" />
+                  <div ref={listingsSentinelRef} className="col-span-2 flex justify-center py-4" />
                 )}
               </div>
             )}
