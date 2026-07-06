@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from "fs";
-import { resolve, dirname } from "path";
+import { resolve, dirname, sep } from "path";
 import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
@@ -727,15 +727,24 @@ if (process.env.NODE_ENV === "production") {
   const __dir = dirname(fileURLToPath(import.meta.url));
   const distPath = resolve(__dir, "../dist/public");
   if (existsSync(distPath)) {
-    // Static assets (JS/CSS/images) have content-hashed names → safe to cache 1y
+    // Only files under assets/ have content-hashed names (safe to cache for a
+    // year — a changed file gets a new filename). Everything else served from
+    // the public root (logo, icons, manifest, service worker, robots.txt) keeps
+    // its filename across deploys, so a long maxAge here means a browser that
+    // ever cached a bad response for one of these (e.g. hitting the SPA
+    // fallback below because the file was briefly missing/stale on a previous
+    // deploy) would keep serving that broken copy for up to a year. Cache
+    // those short instead so a fix actually reaches users promptly.
     app.use(express.static(distPath, {
       maxAge: "1y",
       index: false, // handled explicitly below
       etag: true,
       setHeaders: (res: express.Response, filePath: string) => {
-        // HTML files must never be cached — they reference hashed assets
         if (filePath.endsWith(".html")) {
+          // HTML files must never be cached — they reference hashed assets
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        } else if (!filePath.includes(`${sep}assets${sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
         }
       },
     }));
