@@ -6,6 +6,7 @@ import { WalletProvider } from "@/hooks/WalletProvider";
 import { BatchOperationProvider } from "@/hooks/BatchOperationContext";
 import { useWallet } from "@/hooks/useWallet";
 import { LoginPage } from "@/pages/LoginPage";
+import { NativeWelcomePage } from "@/pages/NativeWelcomePage";
 import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProfilePage } from "@/pages/ProfilePage";
@@ -66,9 +67,11 @@ function AuthRedirect() {
     if (isCheckingSession) return;
     if (fid && (location === "/" || location === "/login")) navigate("/dashboard");
     // The installed app (Capacitor/PWA) never shows the marketing landing
-    // page — a real app opens straight to sign-in, not a "Client / FID
-    // Market / Features" scroll page meant for a browser tab.
-    else if (!fid && !isLocked && location === "/" && isInstalledApp()) navigate("/login");
+    // page's "Client / FID Market / Features" scroll page meant for a
+    // browser tab — but it also shouldn't snap straight into the sign-in
+    // form with zero transition. "/" itself forks in Router() below: an
+    // installed app renders NativeWelcomePage there instead of LoginPage,
+    // so no redirect is needed at all for that case anymore.
     // Auto-locked from anywhere in the app → unlock screen, never the landing page.
     else if (!fid && isLocked && location !== "/login") navigate("/login");
     // A shared cast/profile/channel link opened by someone with no FidCaster
@@ -84,7 +87,7 @@ function Router() {
     <>
       <AuthRedirect />
       <Switch>
-        <Route path="/" component={LoginPage} />
+        <Route path="/" component={isInstalledApp() ? NativeWelcomePage : LoginPage} />
         <Route path="/login" component={AuthPage} />
         <Route path="/dashboard" component={DashboardPage} />
         <Route path="/profile/:fid">{() => <ProfilePage />}</Route>
