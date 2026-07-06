@@ -123,7 +123,7 @@ function EditSheet({
       const res = await fetch("/api/farcaster/upload-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl, type: file.type }),
+        body: JSON.stringify({ image: dataUrl, type: file.type, fid: fid ? Number(fid) : undefined }),
       });
       if (!res.ok) throw new Error("Upload failed");
       const { url } = await res.json() as { url: string };
