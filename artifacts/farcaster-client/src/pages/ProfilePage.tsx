@@ -953,7 +953,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
             )}
 
             {/* ── Tabs ── */}
-            <div className="flex border-b border-border/40 sticky top-14 z-30 bg-background/95 backdrop-blur-sm">
+            <div className="flex border-b border-border/40 sticky top-14 z-30 bg-background">
               {TAB_META.map(t => (
                 <button
                   key={t.id}

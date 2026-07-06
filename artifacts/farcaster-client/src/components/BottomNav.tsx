@@ -22,7 +22,7 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
   const [adminCfg] = useAdminConfig();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background/96 backdrop-blur-xl border-t border-border z-30 flex h-[54px]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-30 flex h-[54px]">
       <button onClick={() => navigate("/dashboard?tab=feed")} className="flex-1 flex items-center justify-center transition-colors">
         <Home className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
       </button>

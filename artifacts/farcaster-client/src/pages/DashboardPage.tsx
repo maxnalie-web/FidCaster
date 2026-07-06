@@ -1373,7 +1373,7 @@ export function DashboardPage() {
             elsewhere in the app — previously this generic bar and that richer
             header were two different-looking headers for the same profile. */}
         {mainTab !== "profile" && (
-        <header className="md:hidden sticky top-0 z-30 bg-background/96 backdrop-blur-xl border-b border-border">
+        <header className="md:hidden sticky top-0 z-30 bg-background border-b border-border">
           <div className="h-[53px] flex items-center justify-between px-4">
             {/* Avatar with signer dot */}
             <button onClick={() => setShowDrawer(true)} className="relative shrink-0">
@@ -1448,7 +1448,7 @@ export function DashboardPage() {
         </div>
 
         {/* ── MOBILE BOTTOM NAV ──────────────────────────────── */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background/96 backdrop-blur-xl border-t border-border z-30 flex h-[54px]">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-30 flex h-[54px]">
           {bottomNavItems.map((item) => {
             const Icon = item.icon;
             const active = mainTab === item.id;

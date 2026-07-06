@@ -511,7 +511,7 @@ export function AdminPage() {
     <div className="min-h-screen bg-background flex flex-col" style={{ fontFamily: "inherit" }}>
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60 bg-background/95 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60 bg-background">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate("/dashboard")}

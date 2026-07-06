@@ -733,7 +733,7 @@ export function FollowPage() {
     <div className="min-h-screen bg-background flex flex-col pb-[54px] md:pb-0">
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 bg-background/96 backdrop-blur-xl border-b border-border relative overflow-hidden">
+      <header className="sticky top-0 z-30 bg-background border-b border-border relative overflow-hidden">
         <div className={cn(
           "absolute inset-0 opacity-[0.07] pointer-events-none",
           mode === "follow"
@@ -1406,7 +1406,7 @@ export function FollowPage() {
 
               {/* Action bar · sits above the mobile bottom nav (54px), flush to the
                   viewport edge on desktop where there's no bottom nav to clear. */}
-              <div className="sticky bottom-[54px] md:bottom-0 px-4 py-3 border-t border-border bg-background/98 backdrop-blur-md flex items-center gap-3">
+              <div className="sticky bottom-[54px] md:bottom-0 px-4 py-3 border-t border-border bg-background flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-semibold text-foreground">
                     {selectedCount} user{selectedCount !== 1 ? "s" : ""} selected

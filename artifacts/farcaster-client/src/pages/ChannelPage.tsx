@@ -84,7 +84,7 @@ export function ChannelPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 bg-background/96 backdrop-blur-xl border-b border-border">
+      <header className="sticky top-0 z-40 bg-background border-b border-border">
         <div className="max-w-[600px] mx-auto h-14 flex items-center gap-3 px-4">
           <button
             onClick={() => window.history.back()}
