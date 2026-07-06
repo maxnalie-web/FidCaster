@@ -9,9 +9,12 @@ import { cn } from "@/lib/utils";
 /* ─── App card ──────────────────────────────────────────────────────────────── */
 function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick: () => void }) {
   return (
-    <button
+    <div
       onClick={onClick}
-      className="group w-full text-left flex items-center gap-3 px-3 py-3.5 border-b border-border last:border-0 hover:bg-accent/40 transition-colors"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
+      className="group w-full flex items-center gap-3 px-3 py-3.5 border-b border-border last:border-0 hover:bg-accent/40 transition-colors cursor-pointer"
     >
       {/* Rank */}
       <span className="w-6 shrink-0 text-xs text-muted-foreground/50 font-mono text-right">
@@ -35,7 +38,7 @@ function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick
       </div>
 
       {/* Info */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 text-left">
         <p className="text-sm font-semibold text-foreground truncate">{app.name}</p>
         {app.description && (
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{app.description}</p>
@@ -51,7 +54,15 @@ function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick
           </div>
         )}
       </div>
-    </button>
+
+      {/* Open button · explicit affordance instead of relying on the whole row being tappable */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        className="shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold bg-muted text-foreground hover:bg-accent-foreground/10 border border-border/60 transition-colors"
+      >
+        Open
+      </button>
+    </div>
   );
 }
 

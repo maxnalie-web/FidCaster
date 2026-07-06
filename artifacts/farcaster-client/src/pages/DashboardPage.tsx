@@ -26,7 +26,7 @@ import {
   LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash, Type, Wind, Trash2,
 } from "lucide-react";
 import { getUserByFid, type NeynarUser } from "@/lib/neynar";
-import { NeynarScoreBadge } from "@/components/NeynarScoreBadge";
+import { NeynarScoreBadge, XLogo, TelegramLogo } from "@/components/NeynarScoreBadge";
 import {
   SUPPORTED_LANGS, getLangSetting, setPreferredLang, defaultTargetLang,
   type LangCode, type LangSetting,
@@ -204,6 +204,7 @@ const PILLARS: { icon: typeof Zap; title: string; desc: string }[] = [
 function SupportPanel() {
   const [founder, setFounder] = useState<NeynarUser | null>(null);
   const [, navigate] = useLocation();
+  const [adminCfg] = useAdminConfig();
 
   useEffect(() => {
     getUserByFid(ADMIN_FID, ADMIN_FID, "").then(res => setFounder(res.users?.[0] ?? null)).catch(() => {});
@@ -291,6 +292,32 @@ function SupportPanel() {
           </p>
         </div>
       </div>
+
+      {/* ── Social links ── */}
+      {(adminCfg.social.twitter || adminCfg.social.telegram) && (
+        <div className="flex items-center gap-2.5">
+          {adminCfg.social.twitter && (
+            <a
+              href={adminCfg.social.twitter}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
+            >
+              <XLogo size={14} /> Follow on X
+            </a>
+          )}
+          {adminCfg.social.telegram && (
+            <a
+              href={adminCfg.social.telegram}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
+            >
+              <TelegramLogo size={14} /> Join Telegram
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

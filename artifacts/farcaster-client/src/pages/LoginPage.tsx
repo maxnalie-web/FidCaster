@@ -2,11 +2,12 @@ import { motion, useInView, AnimatePresence } from "framer-motion";
 import { useRef, useMemo, useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { FidCasterLogo } from "@/components/FidCasterLogo";
+import { XLogo, TelegramLogo } from "@/components/NeynarScoreBadge";
 import {
   ArrowRight, TrendingUp, Zap, Shield, Globe, MessageCircle,
   Heart, Repeat2, Tag, Activity, Star, ChevronRight,
   BarChart2, Wallet, Users, Layers, Search, Bell,
-  CheckCircle2, ExternalLink, Twitter, Send, Github, MessageSquare,
+  CheckCircle2, ExternalLink, Github, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLandingStats, formatVolume, formatCount, formatUserCount, type MarketListing, type MarketActivity } from "@/hooks/useLandingStats";
@@ -924,12 +925,12 @@ export function LoginPage() {
             <div className="flex items-center gap-3" style={{ color: "rgba(255,255,255,0.25)" }}>
               {cfg.social.twitter && (
                 <a href={cfg.social.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
-                  <Twitter className="w-3.5 h-3.5" />
+                  <XLogo size={14} />
                 </a>
               )}
               {cfg.social.telegram && (
                 <a href={cfg.social.telegram} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
-                  <Send className="w-3.5 h-3.5" />
+                  <TelegramLogo size={14} />
                 </a>
               )}
               {cfg.social.github && (
