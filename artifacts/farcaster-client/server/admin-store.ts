@@ -12,6 +12,7 @@
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { encryptSecret, decryptSecret } from "./secret-crypto.js";
 
 const requireCjs = createRequire(import.meta.url);
 
@@ -76,13 +77,13 @@ function initDb(): Db | null {
         const out = { ...EMPTY_SECRETS };
         for (const key of Object.keys(out) as (keyof AdminSecrets)[]) {
           const row = stmtGetSecret.get(key);
-          if (row) out[key] = row.value;
+          if (row) out[key] = decryptSecret(row.value);
         }
         return out;
       },
       setSecrets(partial) {
         for (const [key, value] of Object.entries(partial)) {
-          if (value !== undefined) stmtSetSecret.run(key, value);
+          if (value !== undefined) stmtSetSecret.run(key, encryptSecret(value));
         }
       },
     };

@@ -73,7 +73,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      // challenges.cloudflare.com is the CAPTCHA widget shown on the admin
+      // login form after repeated failed attempts (see TURNSTILE_SITE_KEY /
+      // TURNSTILE_SECRET_KEY below) — allowed unconditionally since it's a
+      // fixed, narrow, trusted addition; the widget script itself is only
+      // ever loaded client-side if TURNSTILE_SITE_KEY is actually configured.
+      scriptSrc: ["'self'", "https://challenges.cloudflare.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       // This HTTP header and index.html's CSP <meta> tag both apply · a
       // browser enforces their INTERSECTION, so any directive missing here
@@ -92,7 +97,7 @@ app.use(helmet({
       mediaSrc: ["'self'", "https:", "blob:"],
       workerSrc: ["'self'", "blob:"],
       connectSrc: ["'self'", "https:", "wss:"],
-      frameSrc: ["'self'", "https://verify.walletconnect.com", "https://verify.walletconnect.org"],
+      frameSrc: ["'self'", "https://verify.walletconnect.com", "https://verify.walletconnect.org", "https://challenges.cloudflare.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
     },
@@ -826,18 +831,84 @@ const adminWriteLimiter = rateLimit({
   message: { error: "Too many admin writes, please slow down." },
 });
 
-app.post("/api/admin/login", adminLoginLimiter, (req, res) => {
+// Optional CAPTCHA gate (Cloudflare Turnstile) after repeated failed admin
+// login attempts — entirely inert unless TURNSTILE_SITE_KEY/SECRET_KEY are
+// both set, so existing deployments that haven't configured Turnstile see no
+// behavior change at all. Failure counts are per-IP, in-memory, and reset on
+// a successful login or after the same window the rate limiter itself uses.
+const CAPTCHA_AFTER_FAILURES = 3;
+const failedLoginCounts = new Map<string, { count: number; resetAt: number }>();
+
+function recordFailedLogin(ip: string): void {
+  const now = Date.now();
+  const entry = failedLoginCounts.get(ip);
+  if (!entry || entry.resetAt < now) {
+    failedLoginCounts.set(ip, { count: 1, resetAt: now + 15 * 60_000 });
+  } else {
+    entry.count++;
+  }
+}
+
+function captchaRequired(ip: string): boolean {
+  const entry = failedLoginCounts.get(ip);
+  return !!entry && entry.resetAt >= Date.now() && entry.count >= CAPTCHA_AFTER_FAILURES;
+}
+
+function getTurnstileKeys(): { siteKey: string; secretKey: string } | null {
+  const siteKey = process.env.TURNSTILE_SITE_KEY;
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
+  return siteKey && secretKey ? { siteKey, secretKey } : null;
+}
+
+async function verifyTurnstile(token: string, secretKey: string, ip: string): Promise<boolean> {
+  try {
+    const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ secret: secretKey, response: token, remoteip: ip }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await r.json() as { success?: boolean };
+    return !!data.success;
+  } catch {
+    return false;
+  }
+}
+
+// Public — the Turnstile site key is meant to be embedded in client HTML
+// (it's not a secret, only TURNSTILE_SECRET_KEY is); this just tells the
+// login form whether to render the widget and with which key.
+app.get("/api/admin/login-config", (req, res) => {
+  const keys = getTurnstileKeys();
+  res.json({
+    captchaSiteKey: keys?.siteKey ?? null,
+    captchaRequired: keys ? captchaRequired(req.ip ?? "") : false,
+  });
+});
+
+app.post("/api/admin/login", adminLoginLimiter, async (req, res) => {
   if (!isAdminConfigured()) {
     res.status(503).json({ error: "Admin panel is not configured (ADMIN_PASSWORD unset on the server)." });
     return;
+  }
+  const ip = req.ip ?? "";
+  const keys = getTurnstileKeys();
+  if (keys && captchaRequired(ip)) {
+    const { captchaToken } = req.body as { captchaToken?: string };
+    if (!captchaToken || typeof captchaToken !== "string" || !(await verifyTurnstile(captchaToken, keys.secretKey, ip))) {
+      res.status(401).json({ error: "Captcha verification failed", captchaRequired: true });
+      return;
+    }
   }
   const { password } = req.body as { password?: string };
   if (!password || typeof password !== "string" || !checkAdminPassword(password)) {
     // Deliberately identical response/timing-shape for "wrong password" and
     // "no such thing" — nothing here reveals whether admin is configured.
-    res.status(401).json({ error: "Invalid password" });
+    recordFailedLogin(ip);
+    res.status(401).json({ error: "Invalid password", captchaRequired: keys ? captchaRequired(ip) : undefined });
     return;
   }
+  failedLoginCounts.delete(ip);
   const token = issueSessionToken();
   if (!token) { res.status(503).json({ error: "Admin session signing is not configured." }); return; }
   setSessionCookie(res, token);
