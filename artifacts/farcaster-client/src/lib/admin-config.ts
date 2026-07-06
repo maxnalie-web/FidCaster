@@ -179,8 +179,8 @@ export const DEFAULT_CONFIG: AdminConfig = {
     ogUrl: "",
   },
   social: {
-    twitter: "",
-    telegram: "",
+    twitter: "https://x.com/fidcaster",
+    telegram: "https://t.me/Fidcaster",
     github: "",
     discord: "",
     website: "",

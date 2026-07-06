@@ -19,6 +19,15 @@ export function XLogo({ size = 12, className }: { size?: number; className?: str
   );
 }
 
+/** Telegram's paper-plane-in-circle mark. */
+export function TelegramLogo({ size = 12, className }: { size?: number; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className={className} fill="currentColor" aria-hidden>
+      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0Zm5.568 8.16-1.61 8.63c-.036.19-.185.243-.376.183-.19-.06-.94-.53-1.48-.923-.253-.185-.61-.402-.976-.634-.53-.34-.85-.55-1.34-.878-.548-.365-.19-.567.117-.895.08-.086 1.474-1.35 1.502-1.464.004-.014.007-.067-.025-.095-.032-.028-.08-.018-.114-.01-.049.011-.826.526-2.33 1.545-.221.15-.42.224-.598.22-.197-.004-.575-.108-.856-.198-.345-.11-.62-.169-.596-.357.012-.098.148-.198.407-.301 1.596-.694 2.66-1.152 3.19-1.372 1.52-.632 1.834-.741 2.04-.744.045 0 .146.01.211.062.055.043.07.101.077.142.007.041.016.134.009.207Z" />
+    </svg>
+  );
+}
+
 /**
  * Compact Neynar quality-score pill (0–100). Tone reflects reputation:
  * green = high/human, amber = middling, rose = likely spam/low quality.

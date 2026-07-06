@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { Capacitor } from "@capacitor/core";
 import { WalletContext, type WalletState } from "./useWallet";
 import { deriveAccount, signerFromBytes, signerFromPrivateKeyHex, signerPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { lookupFid, getSignerState, registerSignerOnchain, publicClient } from "@/lib/contracts";
@@ -824,6 +825,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [state.fid]);
 
   useEffect(() => {
+    // On the web, "pagehide" means the tab is genuinely closing/navigating away
+    // (or entering the bfcache) · zeroing in-memory secrets there is a real
+    // security win. In the native Capacitor shell, though, the SAME event fires
+    // just from backgrounding the app (switching apps, opening a mini app,
+    // pressing home) — cases where the JS context typically stays alive and
+    // the user expects to come right back to where they were. Zeroing here
+    // unconditionally used to leave fidRef/localSignerRef/walletClientRef out
+    // of sync with the (still "logged in") React state for the rest of that
+    // session, which is a plausible contributor to needing to sign in again
+    // after merely switching away and back. Skip it on native; the timed
+    // 5-minute hidden-tab lock above already covers the real "left it alone
+    // for a while" case deliberately, with an actual state update to match.
+    if (Capacitor.isNativePlatform()) return;
     function onPageHide() { _zeroAndLock(); }
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
