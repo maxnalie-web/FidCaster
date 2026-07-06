@@ -77,7 +77,9 @@ export async function openNativeMiniApp(
   const { id } = await InAppBrowser.openWebView({
     url: app.url,
     title: app.name,
-    toolbarType: ToolBarType.ACTIVITY, // minimal: close button, no URL bar
+    // COMPACT = close button only · no share action, no overflow ("...") menu,
+    // no URL bar — reads as a native modal, not a browser tab.
+    toolbarType: ToolBarType.COMPACT,
     visibleTitle: true,
     showReloadButton: false,
     isPresentAfterPageLoad: true,
