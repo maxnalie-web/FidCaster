@@ -365,17 +365,38 @@ export default function FidDetailPage() {
       setBuyPhase("sending");
       const priceWei = BigInt(data.listing.priceWei || "0");
       const feePaid = priceWei + (priceWei * BigInt(FEE_BPS)) / BigInt(10000);
+      const buyCallData = encodeFunctionData({
+        abi: fidMarketAbi,
+        functionName: "buy",
+        args: [BigInt(fid), data.listing.seller as Address, toDeadline, toSig],
+      });
+
+      // Without an explicit gas limit, some wallets (seen with Rainbow/
+      // MetaMask over WalletConnect) run their own conservative client-side
+      // simulation on this call and show a false "this transaction is likely
+      // to fail" warning even though it would succeed once broadcast — same
+      // false-positive documented in lib/contracts.ts's signer-registration
+      // flow. A real on-chain gas estimate with headroom avoids that; if the
+      // estimate itself fails, fall through and let the wallet decide (its
+      // own simulation result is then at least based on nothing on our end).
+      let gas: bigint | undefined;
+      try {
+        const estimated = await opClient.estimateGas({
+          account: signAccount,
+          to: FID_MARKET_ADDRESS,
+          value: feePaid,
+          data: buyCallData,
+        });
+        gas = (estimated * 130n) / 100n;
+      } catch { /* leave gas unset · wallet estimates on its own */ }
 
       const txHash = await buyerWc.sendTransaction({
         account: signAccount,
         to: FID_MARKET_ADDRESS,
         value: feePaid,
-        data: encodeFunctionData({
-          abi: fidMarketAbi,
-          functionName: "buy",
-          args: [BigInt(fid), data.listing.seller as Address, toDeadline, toSig],
-        }),
+        data: buyCallData,
         chain: optimism,
+        ...(gas !== undefined ? { gas } : {}),
       });
 
       setBuyTxHash(txHash as string);

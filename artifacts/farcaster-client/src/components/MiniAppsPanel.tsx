@@ -2,41 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { fetchMiniApps, type MiniApp } from "@/lib/farcaster-api";
 import { isNativeRuntime, openNativeMiniApp } from "@/lib/miniapp-native";
+import { openWebMiniApp } from "@/lib/miniapp-web-state";
 import { useWallet } from "@/hooks/useWallet";
-import { Loader2, RefreshCw, Layers, Search, UserCircle, Sparkles, ArrowUpRight } from "lucide-react";
+import { Loader2, RefreshCw, Layers, Search, UserCircle, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/* ─── Featured card · top-ranked apps get a bigger, richer treatment ────────── */
-function FeaturedCard({ app, rank, onClick }: { app: MiniApp; rank: number; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="group relative shrink-0 w-40 flex flex-col items-start gap-2.5 p-3.5 rounded-2xl border border-border/60 bg-gradient-to-b from-muted/40 to-transparent hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all text-left"
-    >
-      <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-background/80 border border-border/60 flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-        {rank}
-      </span>
-      <div className="w-14 h-14 rounded-xl overflow-hidden bg-muted shrink-0 shadow-sm ring-1 ring-border/40">
-        {app.iconUrl ? (
-          <img src={app.iconUrl} alt="" className="w-full h-full object-cover"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-primary/10">
-            <Layers className="w-6 h-6 text-primary/40" />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 w-full">
-        <p className="text-sm font-bold text-foreground truncate">{app.name}</p>
-        <p className="text-[11px] text-muted-foreground truncate">{app.category}</p>
-      </div>
-      <ArrowUpRight className="absolute bottom-3 right-3 w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors" />
-    </button>
-  );
-}
-
 /* ─── App card ──────────────────────────────────────────────────────────────── */
-function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick: () => void }) {
+function AppCard({ app, index, opening, onClick }: { app: MiniApp; index: number; opening: boolean; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
@@ -87,9 +59,10 @@ function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick
       {/* Open button · explicit affordance instead of relying on the whole row being tappable */}
       <button
         onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold btn-luxury text-primary-foreground shadow-sm"
+        disabled={opening}
+        className="shrink-0 w-[68px] flex items-center justify-center px-4 py-1.5 rounded-full text-xs font-semibold btn-luxury text-primary-foreground shadow-sm disabled:opacity-60"
       >
-        Open
+        {opening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Open"}
       </button>
     </div>
   );
@@ -101,6 +74,7 @@ export function MiniAppsPanel() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const { profile, address } = useWallet();
   const [, navigate] = useLocation();
 
@@ -115,15 +89,26 @@ export function MiniAppsPanel() {
     }
   }, []);
 
-  // Native (Capacitor APK/iOS) opens the app in a native WebView. On web there is
-  // no in-app mini-app browser · apps run only in the native/PWA build · so a tap
-  // just opens the app in a new tab.
+  // Native (Capacitor APK/iOS) opens the app in a native WebView with a real
+  // SDK bridge. On web/PWA, opens it in an in-app iframe modal with the same
+  // real Farcaster context + wallet exposed (see miniapp-iframe-host.ts) —
+  // previously a bare window.open() with nothing injected, indistinguishable
+  // from just visiting the site.
   const openApp = useCallback(async (app: MiniApp) => {
-    if (isNativeRuntime()) {
-      try { if (await openNativeMiniApp(app, { profile, address, navigate })) return; } catch { /* fall back to new tab */ }
+    // Guards against a slow-loading remote mini-app site making a repeated tap
+    // stack a second openWebView() call (and a second SDK bridge/listener) on
+    // top of the first one before it's finished opening.
+    if (openingId) return;
+    setOpeningId(app.id);
+    try {
+      if (isNativeRuntime()) {
+        try { if (await openNativeMiniApp(app, { profile, address, navigate })) return; } catch { /* fall back below */ }
+      }
+      openWebMiniApp(app);
+    } finally {
+      setOpeningId(null);
     }
-    window.open(app.url, "_blank", "noopener,noreferrer");
-  }, [profile, address, navigate]);
+  }, [profile, address, navigate, openingId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -136,10 +121,6 @@ export function MiniAppsPanel() {
   const displayed = activeCategory === "All"
     ? filtered
     : filtered.filter((a) => a.category === activeCategory);
-
-  const showFeatured = !search && activeCategory === "All" && apps.length >= 3;
-  const featured = showFeatured ? apps.slice(0, 5) : [];
-  const rest = showFeatured ? displayed.slice(featured.length) : displayed;
 
   return (
     <div className="flex flex-col h-full">
@@ -211,24 +192,11 @@ export function MiniAppsPanel() {
             <p className="text-sm">No apps found</p>
           </div>
         ) : (
-          <>
-            {featured.length > 0 && (
-              <div className="px-4 pt-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Featured</p>
-                <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-0.5 px-0.5">
-                  {featured.map((app, i) => (
-                    <FeaturedCard key={app.id} app={app} rank={i + 1} onClick={() => void openApp(app)} />
-                  ))}
-                </div>
-                <div className="border-b border-border/60 mt-3.5" />
-              </div>
-            )}
-            <div className="px-2 py-1.5">
-              {rest.map((app, i) => (
-                <AppCard key={app.id} app={app} index={featured.length + i} onClick={() => void openApp(app)} />
-              ))}
-            </div>
-          </>
+          <div className="px-2 py-1.5">
+            {displayed.map((app, i) => (
+              <AppCard key={app.id} app={app} index={i} opening={openingId === app.id} onClick={() => void openApp(app)} />
+            ))}
+          </div>
         )}
       </div>
     </div>

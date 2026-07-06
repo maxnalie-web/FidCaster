@@ -22,6 +22,8 @@ import { applyAdminTheme, applyAdminSeo, loadAdminConfig, refreshAdminConfigFrom
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
 import { SignerSetupPopup } from "@/components/SignerSetupPopup";
+import { MinimizedMiniAppBar } from "@/components/MinimizedMiniAppBar";
+import { MiniAppIframeModal } from "@/components/MiniAppIframeModal";
 import { isNativeRuntime } from "@/lib/miniapp-native";
 
 /** True for the installed Capacitor app or an installed/standalone PWA —
@@ -160,6 +162,8 @@ function App() {
           </ErrorBoundary>
         </WouterRouter>
         <SignerSetupPopup />
+        <MinimizedMiniAppBar />
+        <MiniAppIframeModal />
         <Toaster
         position="bottom-right"
         theme={theme === "dark" ? "dark" : "light"}
