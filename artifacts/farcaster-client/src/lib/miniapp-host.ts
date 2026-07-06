@@ -42,7 +42,7 @@ import type { FarcasterProfile } from "./farcaster-api";
 const DEFAULT_CHAIN_ID_HEX = "0x2105"; // Base — the default chain most mini apps expect
 const SUPPORTED_CAIP2_CHAINS = ["eip155:8453"]; // Base only, for now
 
-function createEthProvider(address: `0x${string}` | null): Provider.Provider<undefined, true> {
+export function createEthProvider(address: `0x${string}` | null): Provider.Provider<undefined, true> {
   const emitter = Provider.createEmitter();
   const provider = Provider.from({
     ...emitter,
@@ -126,7 +126,7 @@ function createCapacitorEndpoint(webviewId: string): { endpoint: HostEndpoint; c
   };
 }
 
-function toMiniAppContext(profile: FarcasterProfile | null): MiniAppContext {
+export function toMiniAppContext(profile: FarcasterProfile | null): MiniAppContext {
   return {
     client: {
       platformType: "mobile",

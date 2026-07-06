@@ -97,7 +97,13 @@ app.use(helmet({
       mediaSrc: ["'self'", "https:", "blob:"],
       workerSrc: ["'self'", "blob:"],
       connectSrc: ["'self'", "https:", "wss:"],
-      frameSrc: ["'self'", "https://verify.walletconnect.com", "https://verify.walletconnect.org", "https://challenges.cloudflare.com"],
+      // "https:" (not a fixed allowlist) — mini apps embedded via
+      // MiniAppIframeModal are, by design, arbitrary third-party origins;
+      // same reasoning already applied to imgSrc/connectSrc for arbitrary
+      // Farcaster content. The iframe itself never gets our own origin's
+      // cookies/storage (cross-origin), and postMessage-based communication
+      // (miniapp-iframe-host.ts) validates the origin on every message.
+      frameSrc: ["'self'", "https:", "https://verify.walletconnect.com", "https://verify.walletconnect.org", "https://challenges.cloudflare.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
     },

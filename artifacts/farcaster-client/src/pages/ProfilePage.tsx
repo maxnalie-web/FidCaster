@@ -25,6 +25,7 @@ import { hubFollow, neynarAction, hubUpdateUserData } from "@/lib/hub-submit";
 import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
+import { BottomNav } from "@/components/BottomNav";
 import { cn, formatCompactCount } from "@/lib/utils";
 import { getRecentProfile } from "@/lib/recent-profile-cache";
 import { toast } from "sonner";
@@ -1088,6 +1089,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           }}
         />
       )}
+
+      {/* Standalone route (e.g. /profile/:fid reached from a followers/
+          following list, search, or a cast author) has no surrounding chrome
+          of its own — unlike the "own profile" tab embedded in DashboardPage,
+          which already supplies a bottom nav. Without this, navigating into
+          someone else's profile left mobile/tablet users with no way back to
+          the main tabs short of the browser/hardware back button. */}
+      {!embedded && <BottomNav />}
     </div>
   );
 }

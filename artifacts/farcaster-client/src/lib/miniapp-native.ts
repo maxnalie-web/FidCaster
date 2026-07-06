@@ -3,6 +3,7 @@ import { InAppBrowser, ToolBarType } from "@capgo/capacitor-inappbrowser";
 import type { MiniApp } from "./farcaster-api";
 import { attachMiniAppHost } from "./miniapp-host";
 import type { FarcasterProfile } from "./farcaster-api";
+import { setMinimizedMiniApp } from "./miniapp-minimize-state";
 
 /** True only when running inside the Capacitor native shell (iOS/Android). */
 export function isNativeRuntime(): boolean {
@@ -77,15 +78,32 @@ export async function openNativeMiniApp(
   const { id } = await InAppBrowser.openWebView({
     url: app.url,
     title: app.name,
-    // COMPACT = close button only · no share action, no overflow ("...") menu,
-    // no URL bar — reads as a native modal, not a browser tab.
+    // COMPACT = close button only (+ our own minimize button below) · no
+    // share action, no overflow ("...") menu, no URL bar — reads as a native
+    // modal, not a browser tab.
     toolbarType: ToolBarType.COMPACT,
     visibleTitle: true,
     showReloadButton: false,
-    isPresentAfterPageLoad: true,
+    // false = show the webview immediately instead of blocking until the
+    // remote mini-app site finishes loading. Previously `true`, which made
+    // the whole "tap Open" gesture feel like it did nothing for however long
+    // the third-party site took to load — the top complaint about mini apps.
+    // preShowScriptInjectionTime: "documentStart" (below) injects the
+    // anti-detection shim before the page's own JS regardless of this flag;
+    // it isn't tied to isPresentAfterPageLoad the way the older preShowScript
+    // (pageLoad-time-only) behavior was.
+    isPresentAfterPageLoad: false,
     isInspectable: false,
     preShowScript: DOCUMENT_START_SCRIPT,
     preShowScriptInjectionTime: "documentStart",
+    // Minimize affordance next to the close button — hides the webview
+    // (keeping its JS/state alive) instead of destroying it; the user can
+    // resume via the floating pill (MinimizedMiniAppBar.tsx) shown while a
+    // mini app is minimized.
+    buttonNearDone: {
+      ios: { iconType: "sf-symbol", icon: "chevron.down" },
+      android: { iconType: "asset", icon: "public/minimize.svg", width: 22, height: 22 },
+    },
   });
 
   let cleanedUp = false;
@@ -100,7 +118,14 @@ export async function openNativeMiniApp(
     if (event.id !== id || cleanedUp) return;
     cleanedUp = true;
     cleanup();
+    setMinimizedMiniApp(null);
     void closeHandle.remove();
+    void minimizeHandle.remove();
+  });
+  const minimizeHandle = await InAppBrowser.addListener("buttonNearDoneClick", (event) => {
+    if ((event as { id?: string }).id !== id) return;
+    void InAppBrowser.hide({ id });
+    setMinimizedMiniApp({ webviewId: id, name: app.name, iconUrl: app.iconUrl });
   });
 
   return true;
