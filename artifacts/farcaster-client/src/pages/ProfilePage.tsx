@@ -508,14 +508,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
     }
   }
 
-  const extUser = user as NeynarUser & {
+  const extUser = user as (NeynarUser & {
     profile?: { location?: { description?: string }; bio?: { text?: string } };
     verified_addresses?: { eth_addresses?: string[]; sol_addresses?: string[] };
-  };
-  const connectedWallets = [
+  }) | null;
+  const connectedWallets = extUser ? [
     ...(extUser.verified_addresses?.eth_addresses ?? []).map((address) => ({ address, chain: "ETH" as const })),
     ...(extUser.verified_addresses?.sol_addresses ?? []).map((address) => ({ address, chain: "SOL" as const })),
-  ];
+  ] : [];
 
   const currentTab = tabs[activeTab];
 
@@ -848,7 +848,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                     </p>
 
                     {/* Bio */}
-                    {extUser.profile?.bio?.text && (
+                    {extUser?.profile?.bio?.text && (
                       <p className="text-sm text-foreground/80 leading-relaxed mb-2.5">
                         {extUser.profile.bio.text}
                       </p>
