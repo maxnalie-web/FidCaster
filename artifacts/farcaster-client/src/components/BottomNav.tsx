@@ -3,6 +3,7 @@ import { Home, Search, Layers, Bell, TrendingUp, Tag, User } from "lucide-react"
 import { useWallet } from "@/hooks/useWallet";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
+import { isInstalledApp } from "@/lib/miniapp-native";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,9 +29,11 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
       <button onClick={() => navigate("/dashboard?tab=search")} className="flex-1 flex items-center justify-center transition-colors">
         <Search className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
       </button>
-      <button onClick={() => navigate("/dashboard?tab=miniapps")} className="flex-1 flex items-center justify-center transition-colors">
-        <Layers className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-      </button>
+      {isInstalledApp() && (
+        <button onClick={() => navigate("/dashboard?tab=miniapps")} className="flex-1 flex items-center justify-center transition-colors">
+          <Layers className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+        </button>
+      )}
       {adminCfg.features.growEnabled !== false && (
         <button onClick={() => navigate("/follow")} className="flex-1 flex items-center justify-center transition-colors">
           <TrendingUp className={cn("w-6 h-6", active === "grow" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "grow" ? 2.5 : 2} />

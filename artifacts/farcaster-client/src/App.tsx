@@ -24,14 +24,7 @@ import { applyStoredAppSettings } from "@/lib/app-settings";
 import { SignerSetupPopup } from "@/components/SignerSetupPopup";
 import { MinimizedMiniAppBar } from "@/components/MinimizedMiniAppBar";
 import { MiniAppIframeModal } from "@/components/MiniAppIframeModal";
-import { isNativeRuntime } from "@/lib/miniapp-native";
-
-/** True for the installed Capacitor app or an installed/standalone PWA —
- * anything that isn't a plain browser tab landing on the marketing site. */
-function isInstalledApp(): boolean {
-  if (isNativeRuntime()) return true;
-  try { return window.matchMedia("(display-mode: standalone)").matches; } catch { return false; }
-}
+import { isInstalledApp } from "@/lib/miniapp-native";
 
 export type Theme = "light" | "dark";
 

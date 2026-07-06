@@ -15,6 +15,7 @@ import { FarcasterSignIn } from "@/components/FarcasterSignIn";
 import { CastComposer } from "@/components/CastComposer";
 import { useTheme } from "@/App";
 import { getFontSize, applyFontSize, getReduceMotion, applyReduceMotion, type FontSize } from "@/lib/app-settings";
+import { isInstalledApp } from "@/lib/miniapp-native";
 import { clearAllCaches } from "@/lib/farcaster-db";
 import {
   Home, Bell, Search, User, LogOut, AtSign,
@@ -1023,7 +1024,11 @@ export function DashboardPage() {
     }
   }, [walletError]);
 
-  const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile", "miniapps"];
+  // Mini Apps is native/PWA-only: a plain web tab has no in-app browser or
+  // SDK bridge to run them in, so the tab/nav entry and the ?tab= deep link
+  // are both hidden there rather than showing a feature that can't work.
+  const miniAppsAllowed = isInstalledApp();
+  const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile", ...(miniAppsAllowed ? (["miniapps"] as MainTab[]) : [])];
   const [mainTab, setMainTab] = useState<MainTab>(() => {
     try {
       const p = new URLSearchParams(window.location.search);
@@ -1046,12 +1051,14 @@ export function DashboardPage() {
   const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
-  const sidebarItems = authMethod === "mnemonic"
+  const sidebarItems = (authMethod === "mnemonic"
     ? SIDEBAR_ITEMS
-    : SIDEBAR_ITEMS.filter((i) => i.id !== "wallet");
-  const bottomNavItems = authMethod === "mnemonic"
+    : SIDEBAR_ITEMS.filter((i) => i.id !== "wallet")
+  ).filter((i) => miniAppsAllowed || i.id !== "miniapps");
+  const bottomNavItems = (authMethod === "mnemonic"
     ? BOTTOM_NAV
-    : BOTTOM_NAV.filter((i) => i.id !== "wallet");
+    : BOTTOM_NAV.filter((i) => i.id !== "wallet")
+  ).filter((i) => miniAppsAllowed || i.id !== "miniapps");
 
   const { unread: unreadNotifs, markSeen: markNotifsSeen } = useUnreadNotifications(Number(fid), neynarKey);
 
