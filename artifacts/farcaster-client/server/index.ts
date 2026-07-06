@@ -772,6 +772,17 @@ const adminLoginLimiter = rateLimit({
   message: { error: "Too many login attempts. Try again later." },
 });
 
+// Tighter than the 600/min global cap — a stolen/leaked session token
+// shouldn't be able to hammer config/secret writes at the same rate as
+// ordinary read traffic.
+const adminWriteLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many admin writes, please slow down." },
+});
+
 app.post("/api/admin/login", adminLoginLimiter, (req, res) => {
   if (!isAdminConfigured()) {
     res.status(503).json({ error: "Admin panel is not configured (ADMIN_PASSWORD unset on the server)." });
@@ -814,7 +825,7 @@ app.get("/api/admin/config", requireAdminSession, (_req, res) => {
   res.json({ config: json ? JSON.parse(json) : null });
 });
 
-app.put("/api/admin/config", requireAdminSession, (req, res) => {
+app.put("/api/admin/config", requireAdminSession, adminWriteLimiter, (req, res) => {
   const { config } = req.body as { config?: unknown };
   if (!config || typeof config !== "object") { res.status(400).json({ error: "config object required" }); return; }
   const json = JSON.stringify(config);
@@ -829,7 +840,7 @@ app.get("/api/admin/secrets", requireAdminSession, (_req, res) => {
 
 const VALID_SECRET_KEYS = new Set(["neynarApiKey", "imgurClientId", "cloudinaryAccountsJson"]);
 
-app.put("/api/admin/secrets", requireAdminSession, (req, res) => {
+app.put("/api/admin/secrets", requireAdminSession, adminWriteLimiter, (req, res) => {
   const body = req.body as Record<string, unknown>;
   if (!body || typeof body !== "object") { res.status(400).json({ error: "body required" }); return; }
   const partial: Record<string, string> = {};

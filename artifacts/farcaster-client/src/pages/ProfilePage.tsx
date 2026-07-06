@@ -446,8 +446,11 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
       setLoading(true);
     }
 
+    const gen = profileGenRef.current; // stale-response guard: bail if a newer profile switch happened first
+
     getUserByFid(targetFid, myFidNum || targetFid, neynarKey)
       .then(res => {
+        if (gen !== profileGenRef.current) return;
         const u = res.users?.[0] ?? null;
         if (!u) setProfileError("User not found on Farcaster.");
         setUser(u);
@@ -455,20 +458,24 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         setLoading(false);
       })
       .catch((e: unknown) => {
+        if (gen !== profileGenRef.current) return;
         const msg = e instanceof Error ? e.message : "Failed to load profile";
         // Auto-retry once after 1.5s (handles transient rate-limit errors)
         setTimeout(() => {
+          if (gen !== profileGenRef.current) return;
           getUserByFid(targetFid, myFidNum || targetFid, neynarKey)
             .then(res => {
+              if (gen !== profileGenRef.current) return;
               const u = res.users?.[0] ?? null;
               if (!u) setProfileError("User not found on Farcaster.");
               setUser(u);
               setFollowing(u?.viewer_context?.following ?? false);
             })
             .catch((e2: unknown) => {
+              if (gen !== profileGenRef.current) return;
               setProfileError((e2 instanceof Error ? e2.message : msg) + " · try refreshing.");
             })
-            .finally(() => setLoading(false));
+            .finally(() => { if (gen === profileGenRef.current) setLoading(false); });
         }, 1500);
       });
 
@@ -898,8 +905,8 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   onClick={() => setFollowSheet("followers")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
                 >
-                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={user.follower_count.toLocaleString()}>
-                    {formatCompactCount(user.follower_count)}
+                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={(user.follower_count ?? 0).toLocaleString()}>
+                    {formatCompactCount(user.follower_count ?? 0)}
                   </span>
                   <span className="text-muted-foreground text-xs">followers</span>
                 </button>
@@ -907,8 +914,8 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                   onClick={() => setFollowSheet("following")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
                 >
-                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={user.following_count.toLocaleString()}>
-                    {formatCompactCount(user.following_count)}
+                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={(user.following_count ?? 0).toLocaleString()}>
+                    {formatCompactCount(user.following_count ?? 0)}
                   </span>
                   <span className="text-muted-foreground text-xs">following</span>
                 </button>
@@ -987,7 +994,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
         <FollowListSheet
           fid={targetFid}
           type={followSheet}
-          count={followSheet === "followers" ? user.follower_count : user.following_count}
+          count={(followSheet === "followers" ? user.follower_count : user.following_count) ?? 0}
           onClose={() => setFollowSheet(null)}
           zIndex="z-50"
         />

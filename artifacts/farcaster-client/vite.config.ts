@@ -159,11 +159,12 @@ export default defineConfig({
       "/api/mini-apps": { target: "http://localhost:3001", changeOrigin: true },
       "/api/warpcast":  { target: "http://localhost:3001", changeOrigin: true },
       "/api/pro-status": { target: "http://localhost:3001", changeOrigin: true },
-      "/api/miniapp-embed": { target: "http://localhost:3001", changeOrigin: true },
       "/api/translate": { target: "http://localhost:3001", changeOrigin: true },
       "/api/rpc":       { target: "http://localhost:3001", changeOrigin: true },
       "/api/spam-labels": { target: "http://localhost:3001", changeOrigin: true },
       "/api/user-prefs": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/admin":     { target: "http://localhost:3001", changeOrigin: true },
+      "/api/public-config": { target: "http://localhost:3001", changeOrigin: true },
     },
   },
   preview: {

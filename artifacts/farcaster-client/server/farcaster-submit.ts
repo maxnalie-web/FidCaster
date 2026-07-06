@@ -19,13 +19,21 @@ import {
 // zero-credit writes with no Neynar dependency. A hub runs for free forever on an
 // Oracle Cloud "Always Free" ARM instance (4 cores / 24 GB). When set it's raced
 // FIRST — if it accepts, no credits are spent and Neynar is never touched.
-const FREE_HUB_URLS = [
-  ...(process.env.CUSTOM_HUB_URL ? [process.env.CUSTOM_HUB_URL.replace(/\/$/, "")] : []),
+const STATIC_FREE_HUB_URLS = [
   "https://api.hub.wevm.dev",                      // wevm/viem team (HTTPS 443)
   "https://hub.pinata.cloud",                       // Pinata public hub (HTTPS 443)
   "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281 — may be blocked)
   "https://hub.farcaster.standardcrypto.vc:2281",  // Standard Crypto (port 2281)
 ];
+
+// Read lazily, not at module top level — ESM import evaluation order runs
+// this before server/index.ts's own .env-loading code, which would silently
+// capture undefined for a CUSTOM_HUB_URL set only via the .env file (same
+// bug class already fixed in cloudinary-upload.ts and neynar-limit.ts).
+function getFreeHubUrls(): string[] {
+  const custom = process.env.CUSTOM_HUB_URL;
+  return custom ? [custom.replace(/\/$/, ""), ...STATIC_FREE_HUB_URLS] : STATIC_FREE_HUB_URLS;
+}
 
 // Neynar hub — costs credits per submission; used only when ALL free hubs fail.
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
@@ -103,9 +111,10 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
   // many networks and would otherwise hang the whole Promise.any for 8s before we
   // fall through to Neynar. A reachable free hub responds well under 2.5s anyway.
   const FREE_HUB_TIMEOUT_MS = 1_500;
+  const freeHubUrls = getFreeHubUrls();
   const freeAbort = new AbortController();
   const freeResult = await Promise.any(
-    FREE_HUB_URLS.map(async url => {
+    freeHubUrls.map(async url => {
       const hash = await tryHubOnce(url, msgBytes, msgHash, undefined, freeAbort.signal, FREE_HUB_TIMEOUT_MS);
       freeAbort.abort("free hub won"); // cancel any still-pending sibling requests
       return hash;
@@ -163,7 +172,7 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
       "Please try again in 1–2 minutes.",
     );
   }
-  throw new Error(`All ${FREE_HUB_URLS.length + n} hub targets failed: ${errs.join(" | ")}`);
+  throw new Error(`All ${freeHubUrls.length + n} hub targets failed: ${errs.join(" | ")}`);
 }
 
 // Round-robin cursor so consecutive submits start on a different Neynar key.
