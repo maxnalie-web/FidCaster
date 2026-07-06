@@ -243,24 +243,50 @@ function persistTrackedFids() {
   }
 }
 
+// Chunks fetched with bounded concurrency, not one-at-a-time. The initial
+// discovery scan now covers up to 1.3M blocks (30-day listings, see
+// INITIAL_SCAN_RANGE) — that's ~260 chunks per topic at the old fully
+// sequential pace, several minutes of wall-clock time against free public
+// RPC nodes. In practice that was slow/fragile enough (timeouts, rate
+// limits) to leave trackedFids empty and the whole market page blank.
+// Fetching a bounded number of chunks in parallel, with one retry per
+// chunk, cuts wall-clock time by roughly the concurrency factor while
+// staying gentle enough not to trip rate limits itself.
+const LOG_FETCH_CONCURRENCY = 8;
+
 async function getLogsRaw(fromBlock: bigint, toBlock: bigint, chunkSize: bigint, topic: `0x${string}`) {
-  const logs: any[] = [];
-  let from = fromBlock;
-  while (from <= toBlock) {
+  const ranges: Array<{ from: bigint; to: bigint }> = [];
+  for (let from = fromBlock; from <= toBlock; ) {
     const to = from + chunkSize - 1n > toBlock ? toBlock : from + chunkSize - 1n;
+    ranges.push({ from, to });
+    from = to + 1n;
+  }
+
+  const logs: any[] = [];
+  async function fetchOne(range: { from: bigint; to: bigint }, retried = false): Promise<void> {
     try {
       const chunk = await optimismClient.getLogs({
         address: FID_MARKET_ADDRESS,
         topics: [[topic]],
-        fromBlock: from,
-        toBlock: to,
+        fromBlock: range.from,
+        toBlock: range.to,
       });
       logs.push(...chunk);
-    } catch(err: any) {
-      console.error(`[FidMarket] getLogsRaw chunk ${from}-${to} topic=${topic.slice(0,10)} err:`, err?.shortMessage || err?.message);
+    } catch (err: any) {
+      if (!retried) return fetchOne(range, true);
+      console.error(`[FidMarket] getLogsRaw chunk ${range.from}-${range.to} topic=${topic.slice(0, 10)} err:`, err?.shortMessage || err?.message);
     }
-    from = to + 1n;
   }
+
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < ranges.length) {
+      const range = ranges[cursor++];
+      await fetchOne(range);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(LOG_FETCH_CONCURRENCY, ranges.length) }, worker));
+
   return logs;
 }
 
