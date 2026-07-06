@@ -4,11 +4,12 @@ import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
-  AlignLeft, MessageSquare, Heart, Repeat2, X,
+  AlignLeft, MessageSquare, Heart, Repeat2, X, Search,
   Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge, PenSquare,
 } from "lucide-react";
 import { ComposeModal } from "@/components/ComposeModal";
 import { SpamAnalyzerSheet } from "@/components/SpamAnalyzerSheet";
+import { ProfileCastSearchSheet } from "@/components/ProfileCastSearchSheet";
 import { getSpamLabelsFor, type SpamLabelValue } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
@@ -327,6 +328,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [showSpamAnalyzer, setShowSpamAnalyzer] = useState(false);
+  const [showCastSearch, setShowCastSearch] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
   // Open every profile scrolled to the very top · with manual scroll restoration
   // the browser no longer does this for us.
@@ -541,6 +543,15 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
                 </p>
                 <p className="text-[12px] text-muted-foreground truncate leading-tight">@{user.username}</p>
               </div>
+            )}
+            {user && (
+              <button
+                onClick={() => setShowCastSearch(true)}
+                className="ml-auto p-2 -mr-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
+                title={`Search ${isOwnProfile ? "your" : "their"} casts`}
+              >
+                <Search className="w-5 h-5" />
+              </button>
             )}
           </div>
         </header>
@@ -993,6 +1004,17 @@ export function ProfilePage({ fid: fidProp, embedded = false, onOpenSettings }: 
           myFid={myFidNum}
           neynarKey={neynarKey ?? ""}
           onClose={() => setShowSpamAnalyzer(false)}
+        />
+      )}
+
+      {/* ── Cast Search Sheet ── */}
+      {showCastSearch && user && (
+        <ProfileCastSearchSheet
+          authorFid={targetFid}
+          viewerFid={myFidNum}
+          neynarKey={neynarKey ?? ""}
+          onClose={() => setShowCastSearch(false)}
+          onViewProfile={(u) => { setShowCastSearch(false); navigate(`/profile/${u.fid}`); }}
         />
       )}
 

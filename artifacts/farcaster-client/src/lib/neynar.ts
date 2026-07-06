@@ -358,9 +358,11 @@ export async function searchCasts(
   viewerFid: number,
   key: string,
   cursor?: string,
+  authorFid?: number,
 ): Promise<{ result: { casts: NeynarCast[]; next?: { cursor?: string } } }> {
   const params = new URLSearchParams({ q, viewer_fid: String(viewerFid), limit: "25" });
   if (cursor) params.set("cursor", cursor);
+  if (authorFid) params.set("author_fid", String(authorFid));
   return neynar(`/farcaster/cast/search?${params}`, "GET", key);
 }
 
