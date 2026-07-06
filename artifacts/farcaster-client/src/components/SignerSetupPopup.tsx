@@ -31,7 +31,7 @@ export function SignerSetupPopup() {
 
   function handleClose() {
     if (autoSignerLoading) {
-      toast.warning("Setup isn't finished — approve the remaining wallet prompt(s) to finish, or retry later from Settings → Signer.");
+      toast.warning("Setup isn't finished. Approve the remaining wallet prompt(s) to finish, or retry later from Settings → Signer.");
     }
     setDismissed(true);
   }

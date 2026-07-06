@@ -106,7 +106,7 @@ async function uploadMedia(file: File, isVideo: boolean): Promise<string> {
   if (isVideo) {
     // Videos are too large for a comfortable base64/JSON round trip · catbox
     // direct upload is the only path, so surface a clear retry message.
-    throw new Error("Video upload failed — check your connection and try again.");
+    throw new Error("Video upload failed, check your connection and try again.");
   }
 
   const { base64, mime } = await fileToUploadPayload(file);
