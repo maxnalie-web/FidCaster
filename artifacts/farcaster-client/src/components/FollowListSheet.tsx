@@ -6,6 +6,7 @@ import { getFollowers, getFollowing, hasPowerBadge, type NeynarUser } from "@/li
 import { PowerBadgeIcon } from "@/components/PowerBadgeIcon";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { hubFollow } from "@/lib/hub-submit";
+import { setRecentProfile } from "@/lib/recent-profile-cache";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
@@ -46,7 +47,7 @@ function FollowRow({
     <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border hover:bg-accent/30 transition-colors">
       {/* Avatar */}
       <button
-        onClick={() => onViewProfile(user)}
+        onClick={() => { setRecentProfile(user); onViewProfile(user); }}
         className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0 hover:opacity-90 transition-opacity"
       >
         {user.pfp_url ? (
@@ -59,7 +60,7 @@ function FollowRow({
       </button>
 
       {/* Info */}
-      <button className="flex-1 min-w-0 text-left" onClick={() => onViewProfile(user)}>
+      <button className="flex-1 min-w-0 text-left" onClick={() => { setRecentProfile(user); onViewProfile(user); }}>
         <p className="text-[0.9375rem] font-semibold text-foreground truncate hover:underline flex items-center gap-1">
           <span className="truncate">@{user.username}</span>
           {useIsPro(user.fid) && <ProBadge size={14} />}

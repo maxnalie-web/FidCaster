@@ -6,6 +6,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { getNotifications, type NeynarNotification, type NeynarUser } from "@/lib/neynar";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useProStatus, ProBadge } from "./ProBadge";
+import { setRecentProfile } from "@/lib/recent-profile-cache";
 
 function notifPrimaryFid(n: FlatNotif): number {
   if (n.kind === "follow-group" || n.kind === "like-group" || n.kind === "recast-group") return n.users[0]?.fid ?? 0;
@@ -113,6 +114,7 @@ function Avatar({
       <button
         onClick={(e) => {
           e.stopPropagation();
+          setRecentProfile(user);
           onClick();
         }}
         className={cn(base, "hover:ring-2 hover:ring-primary/30 transition-all")}
@@ -165,7 +167,7 @@ function FollowGroupRow({
         {/* Text */}
         <p className="text-sm leading-snug text-foreground">
           <button
-            onClick={() => navigate(`/profile/${first.fid}`)}
+            onClick={() => { setRecentProfile(first); navigate(`/profile/${first.fid}`); }}
             className="font-semibold hover:text-primary transition-colors"
           >
             @{first.username}
@@ -177,7 +179,7 @@ function FollowGroupRow({
             <>
               <span className="text-muted-foreground"> and </span>
               <button
-                onClick={() => navigate(`/profile/${n.users[1].fid}`)}
+                onClick={() => { setRecentProfile(n.users[1]); navigate(`/profile/${n.users[1].fid}`); }}
                 className="font-semibold hover:text-primary transition-colors"
               >
                 @{n.users[1].username}
@@ -251,7 +253,7 @@ function ReactionGroupRow({
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm leading-snug text-foreground">
             <button
-              onClick={(e) => { e.stopPropagation(); navigate(`/profile/${first.fid}`); }}
+              onClick={(e) => { e.stopPropagation(); setRecentProfile(first); navigate(`/profile/${first.fid}`); }}
               className="font-semibold hover:text-primary transition-colors"
             >
               @{first.username}
@@ -315,6 +317,7 @@ function ConversationRow({
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                setRecentProfile(n.author);
                 navigate(`/profile/${n.author.fid}`);
               }}
               className="font-semibold hover:text-primary transition-colors"
