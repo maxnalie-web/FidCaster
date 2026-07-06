@@ -4,7 +4,7 @@ import { fetchMiniApps, type MiniApp } from "@/lib/farcaster-api";
 import { isNativeRuntime, openNativeMiniApp } from "@/lib/miniapp-native";
 import { openWebMiniApp } from "@/lib/miniapp-web-state";
 import { useWallet } from "@/hooks/useWallet";
-import { Loader2, RefreshCw, Layers, Search, UserCircle, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, Layers, Search, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ─── App card ──────────────────────────────────────────────────────────────── */
@@ -128,7 +128,7 @@ export function MiniAppsPanel() {
       <div className="px-4 py-3.5 border-b border-border bg-gradient-to-b from-primary/[0.04] to-transparent">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold text-foreground flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-primary" />
+            <Layers className="w-4 h-4 text-primary" />
             Mini Apps
           </h2>
           <button
