@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, X, Link2, ImagePlus, Upload, Quote, Hash, ChevronDown } from "lucide-react";
+import { Loader2, X, ImagePlus, Upload, Hash, ChevronDown, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { hubPublishCast, neynarAction } from "@/lib/hub-submit";
@@ -7,6 +7,11 @@ import type { NeynarCast } from "@/lib/neynar";
 import { getFollowedChannels, type FollowedChannel } from "@/lib/channel-follows";
 
 const MAX_CHARS = 640;
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+
+type Media = { url: string; kind: "image" | "video" };
 
 /** Read a file as a raw base64 data URL · works for ANY file, never decode-fails. */
 function readAsDataUrl(file: File): Promise<string> {
@@ -61,27 +66,19 @@ async function fileToUploadPayload(file: File): Promise<{ base64: string; mime: 
   }
 }
 
-async function uploadImage(file: File): Promise<string> {
-  const { base64, mime } = await fileToUploadPayload(file);
+/** Direct browser → catbox.moe upload — free, no API key, scales independently
+ * of our own server (critical for video, which can run tens of MB per file). */
+async function uploadToCatbox(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("reqtype", "fileupload");
+  form.append("fileToUpload", file);
+  const res = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: form });
+  const text = (await res.text()).trim();
+  if (!res.ok || !text.startsWith("http")) throw new Error(text || "Upload failed");
+  return text;
+}
 
-  const clientId = (import.meta.env.VITE_IMGUR_CLIENT_ID ?? "") as string;
-  if (clientId) {
-    const form = new FormData();
-    form.append("image", base64);
-    form.append("type", "base64");
-    const res = await fetch("https://api.imgur.com/3/image", {
-      method: "POST",
-      headers: { Authorization: `Client-ID ${clientId}` },
-      body: form,
-    });
-    if (res.ok) {
-      const data = await res.json() as { data: { link: string } };
-      return data.data.link;
-    }
-    // fall through to server proxy on Imgur failure
-  }
-
-  // Server-proxy fallback · server uploads to freeimage.host (free, no key needed)
+async function uploadViaServer(base64: string, mime: string): Promise<string> {
   const res = await fetch("/api/farcaster/upload-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -93,6 +90,39 @@ async function uploadImage(file: File): Promise<string> {
   }
   const data = await res.json() as { url: string };
   return data.url;
+}
+
+async function uploadMedia(file: File, isVideo: boolean): Promise<string> {
+  try {
+    return await uploadToCatbox(file);
+  } catch { /* fall through to a same-origin proxy below */ }
+
+  if (isVideo) {
+    // Videos are too large for a comfortable base64/JSON round trip · catbox
+    // direct upload is the only path, so surface a clear retry message.
+    throw new Error("Video upload failed — check your connection and try again.");
+  }
+
+  const { base64, mime } = await fileToUploadPayload(file);
+  const clientId = (import.meta.env.VITE_IMGUR_CLIENT_ID ?? "") as string;
+  if (clientId) {
+    try {
+      const form = new FormData();
+      form.append("image", base64);
+      form.append("type", "base64");
+      const res = await fetch("https://api.imgur.com/3/image", {
+        method: "POST",
+        headers: { Authorization: `Client-ID ${clientId}` },
+        body: form,
+      });
+      if (res.ok) {
+        const data = await res.json() as { data: { link: string } };
+        return data.data.link;
+      }
+    } catch { /* fall through to server proxy */ }
+  }
+
+  return uploadViaServer(base64, mime);
 }
 
 type Props = {
@@ -114,9 +144,8 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
   const quoteUrl = quoteCast
     ? `https://farcaster.xyz/${quoteCast.author.username}/${quoteCast.hash.slice(0, 10)}`
     : "";
-  const [embedUrl, setEmbedUrl] = useState(quoteUrl);
-  const [showEmbedInput, setShowEmbedInput] = useState(false);
-  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [embedUrl] = useState(quoteUrl);
+  const [media, setMedia] = useState<Media[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,27 +168,45 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
   const canSubmit = text.trim().length > 0 && remaining >= 0 && canCast && !submitting && !uploading;
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("Please select an image file."); return; }
-    if (file.size > 10 * 1024 * 1024) { setError("Image must be smaller than 10 MB."); return; }
-    setUploading(true);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     setError(null);
-    try {
-      const url = await uploadImage(file);
-      setUploadedImages((prev) => [...prev, url]);
-    } catch (err: unknown) {
-      // Show the embed URL input so the user can paste an image URL as a fallback
-      setShowEmbedInput(true);
-      setError(err instanceof Error ? err.message : "Image upload failed · paste a URL in the link field below");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+
+    // Track additions locally within this batch · setMedia is async, so
+    // reading `media` mid-loop would let a single multi-select batch blow
+    // past the 4-photo/1-video cap.
+    let pending = [...media];
+
+    for (const file of files) {
+      const isVideo = file.type.startsWith("video/");
+      const isImage = file.type.startsWith("image/");
+      if (!isVideo && !isImage) { setError("Please select an image or video file."); break; }
+
+      const hasVideo = pending.some((m) => m.kind === "video");
+      const imageCount = pending.filter((m) => m.kind === "image").length;
+      if (isVideo && pending.length > 0) { setError("A cast can include either up to 4 photos or 1 video, not both."); break; }
+      if (isImage && hasVideo) { setError("Remove the video before adding photos."); break; }
+      if (isImage && imageCount >= MAX_IMAGES) { setError(`Up to ${MAX_IMAGES} photos per cast.`); break; }
+      if (isVideo && file.size > MAX_VIDEO_BYTES) { setError("Video must be smaller than 50 MB."); continue; }
+      if (isImage && file.size > MAX_IMAGE_BYTES) { setError("Image must be smaller than 10 MB."); continue; }
+
+      setUploading(true);
+      try {
+        const url = await uploadMedia(file, isVideo);
+        const entry: Media = { url, kind: isVideo ? "video" : "image" };
+        pending = [...pending, entry];
+        setMedia(pending);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Upload failed");
+      } finally {
+        setUploading(false);
+      }
     }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function removeImage(url: string) {
-    setUploadedImages((prev) => prev.filter((u) => u !== url));
+  function removeMedia(url: string) {
+    setMedia((prev) => prev.filter((m) => m.url !== url));
   }
 
   async function handleSubmit() {
@@ -168,7 +215,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
     setError(null);
     try {
       const allEmbeds = [
-        ...uploadedImages,
+        ...media.map((m) => m.url),
         ...(embedUrl.trim() ? [embedUrl.trim()] : []),
       ];
       const parentUrl = !replyTo && channel?.url ? channel.url : undefined;
@@ -209,9 +256,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
         replies: { count: 0 },
       };
       setText("");
-      setEmbedUrl("");
-      setShowEmbedInput(false);
-      setUploadedImages([]);
+      setMedia([]);
       onPublished(fake);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to publish cast");
@@ -237,55 +282,12 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
     );
   }
 
-  return (
-    <div className="border-b border-border/40 px-5 py-4">
-      {!replyTo && followedChannels.length > 0 && (
-        <div className="relative mb-3">
-          <button
-            onClick={() => setShowChannelPicker((v) => !v)}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
-              channel ? "text-primary border-primary/30 bg-primary/8" : "text-muted-foreground border-border hover:text-foreground"
-            )}
-          >
-            {channel ? (
-              <>
-                <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
-                  {channel.image_url && <img src={channel.image_url} alt="" className="w-full h-full object-cover" />}
-                </div>
-                {channel.name}
-              </>
-            ) : (
-              <><Hash className="w-3.5 h-3.5" /> Channel</>
-            )}
-            <ChevronDown className="w-3 h-3" />
-          </button>
-          {showChannelPicker && (
-            <div className="absolute top-full mt-1 left-0 z-20 bg-popover border border-border rounded-xl shadow-xl overflow-hidden min-w-[200px] py-1">
-              <button
-                onClick={() => { setChannel(null); setShowChannelPicker(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
-              >
-                None · your main feed
-              </button>
-              <div className="my-1 border-t border-border" />
-              {followedChannels.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => { setChannel(c); setShowChannelPicker(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
-                >
-                  <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
-                    {c.image_url && <img src={c.image_url} alt="" className="w-full h-full object-cover" />}
-                  </div>
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+  const hasVideo = media.some((m) => m.kind === "video");
+  const imageCount = media.filter((m) => m.kind === "image").length;
+  const mediaFull = hasVideo || imageCount >= MAX_IMAGES;
 
+  return (
+    <div className="border-b border-border/40 px-5 py-4 bg-gradient-to-b from-primary/[0.03] to-transparent">
       {replyTo && (
         <div className="flex items-center justify-between mb-3 px-3 py-2 rounded-lg bg-muted/30 border border-border/40">
           <div className="text-xs text-muted-foreground truncate">
@@ -303,7 +305,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
       )}
 
       <div className="flex gap-3">
-        <div className="w-9 h-9 shrink-0 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center ring-1 ring-border/50">
+        <div className="w-10 h-10 shrink-0 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center ring-2 ring-primary/15">
           {profile?.pfpUrl ? (
             <img src={profile.pfpUrl} alt="" className="w-full h-full object-cover" />
           ) : (
@@ -313,14 +315,14 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
           )}
         </div>
 
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder ?? (quoteCast ? "Add your thoughts…" : replyTo ? "Write your reply…" : "Share a cast…")}
-            className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none leading-relaxed min-h-[96px]"
+            className="w-full bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground/50 resize-none outline-none leading-relaxed min-h-[96px]"
             style={{ overflowY: "hidden" }}
           />
 
@@ -336,65 +338,102 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
             </div>
           )}
 
-          {uploadedImages.length > 0 && (
-            <div className={cn("mt-2 grid gap-1.5", uploadedImages.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
-              {uploadedImages.map((url) => (
-                <div key={url} className="relative rounded-xl overflow-hidden bg-muted/20 border border-border/40 flex items-center justify-center" style={{ maxHeight: 320 }}>
-                  <img src={url} alt="" className="max-w-full max-h-[320px] object-contain" />
+          {media.length > 0 && (
+            <div className={cn("mt-2.5 grid gap-2", media.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+              {media.map((m) => (
+                <div key={m.url} className="relative rounded-2xl overflow-hidden bg-muted/20 border border-border/40 flex items-center justify-center shadow-sm" style={{ maxHeight: 320 }}>
+                  {m.kind === "video" ? (
+                    <div className="relative w-full">
+                      <video src={m.url} className="w-full max-h-[320px] object-contain" muted playsInline />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
+                        <div className="w-9 h-9 rounded-full bg-black/50 flex items-center justify-center">
+                          <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <img src={m.url} alt="" className="max-w-full max-h-[320px] object-contain" />
+                  )}
                   <button
-                    onClick={() => removeImage(url)}
-                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+                    onClick={() => removeMedia(m.url)}
+                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))}
             </div>
           )}
 
-          {showEmbedInput && (
-            <input
-              type="url"
-              value={embedUrl}
-              onChange={(e) => setEmbedUrl(e.target.value)}
-              placeholder="https://…"
-              className="input-luxury w-full py-2 px-3 text-xs mt-2"
-            />
-          )}
-
-          {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+          {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
         </div>
       </div>
 
       {/* Toolbar · full width, aligned to left edge */}
-      <div className="flex items-center justify-between mt-3">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between mt-3.5">
+        <div className="flex items-center gap-1.5">
+          {!replyTo && followedChannels.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowChannelPicker((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
+                  channel ? "text-primary border-primary/30 bg-primary/8" : "text-muted-foreground border-border hover:text-foreground"
+                )}
+              >
+                {channel ? (
+                  <>
+                    <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
+                      {channel.image_url && <img src={channel.image_url} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    {channel.name}
+                  </>
+                ) : (
+                  <><Hash className="w-3.5 h-3.5" /> Channel</>
+                )}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showChannelPicker && (
+                <div className="absolute bottom-full mb-1 left-0 z-20 bg-popover border border-border rounded-xl shadow-xl overflow-hidden min-w-[200px] py-1">
+                  <button
+                    onClick={() => { setChannel(null); setShowChannelPicker(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
+                  >
+                    None · your main feed
+                  </button>
+                  <div className="my-1 border-t border-border" />
+                  {followedChannels.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setChannel(c); setShowChannelPicker(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-accent transition-colors"
+                    >
+                      <div className="w-4 h-4 rounded-md overflow-hidden bg-primary/10 shrink-0">
+                        {c.image_url && <img src={c.image_url} alt="" className="w-full h-full object-cover" />}
+                      </div>
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
+            multiple
             className="hidden"
             onChange={handleFileSelect}
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || uploadedImages.length >= 4}
-            title="Upload image"
+            disabled={uploading || mediaFull}
+            title="Add photo or video · up to 4 photos or 1 video"
             className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={() => setShowEmbedInput((v) => !v)}
-            title="Add link"
-            className={cn(
-              "p-1.5 rounded-lg transition-colors",
-              showEmbedInput
-                ? "text-primary bg-primary/10"
-                : "text-muted-foreground hover:text-primary hover:bg-primary/10"
-            )}
-          >
-            <Link2 className="w-4 h-4" />
           </button>
           {uploading && (
             <span className="text-[10px] text-muted-foreground ml-1 flex items-center gap-1">
@@ -414,7 +453,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="px-4 py-1.5 rounded-lg text-xs font-semibold btn-luxury text-primary-foreground"
+            className="px-5 py-1.5 rounded-full text-xs font-semibold btn-luxury text-primary-foreground shadow-sm"
           >
             {submitting ? (
               <span className="flex items-center gap-1.5">

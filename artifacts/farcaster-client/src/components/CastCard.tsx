@@ -35,9 +35,20 @@ const IMAGE_DOMAINS = [
   "i.redd.it", "cdn.discordapp.com", "pbs.twimg.com", "0x0.st", "files.catbox.moe",
 ];
 
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?.*)?$/i;
+
+function isVideoEmbed(e: NeynarEmbed): boolean {
+  const url = e.url ?? "";
+  if (!url) return false;
+  if (VIDEO_EXT_RE.test(url)) return true;
+  const ct = e.metadata?.content_type ?? "";
+  return ct.startsWith("video/");
+}
+
 function isImageEmbed(e: NeynarEmbed): boolean {
   const url = e.url ?? "";
   if (!url) return false;
+  if (isVideoEmbed(e)) return false;
   if (IMAGE_EXT_RE.test(url)) return true;
   const ct = e.metadata?.content_type ?? "";
   if (ct.startsWith("image/")) return true;
@@ -398,7 +409,8 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
   const imageEmbeds = cast.embeds.filter(isImageEmbed);
   const imageUrls = imageEmbeds.flatMap((e) => (e.url ? [e.url] : []));
-  const linkEmbeds = cast.embeds.filter((e) => e.url && !isImageEmbed(e) && !e.url.endsWith(".m3u8"));
+  const videoEmbeds = cast.embeds.filter(isVideoEmbed);
+  const linkEmbeds = cast.embeds.filter((e) => e.url && !isImageEmbed(e) && !isVideoEmbed(e) && !e.url.endsWith(".m3u8"));
   const castEmbeds = cast.embeds.filter((e) => !!e.cast);
   const noWriteTitle = !canWrite ? signerTooltip() : undefined;
 
@@ -522,6 +534,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                   <img src={e.url} alt="" className="w-full h-full object-cover hover:opacity-95 transition-opacity" loading="lazy"
                     onError={(el) => { const p = (el.target as HTMLImageElement).parentElement; if (p) p.style.display = "none"; }} />
                 </div>
+              ))}
+            </div>
+          )}
+
+          {/* Videos */}
+          {videoEmbeds.length > 0 && (
+            <div className="mb-3 rounded-2xl overflow-hidden bg-black">
+              {videoEmbeds.slice(0, 1).map((e, i) => (
+                <video key={i} src={e.url} controls playsInline className="w-full max-h-[420px]" style={{ maxHeight: 420 }} />
               ))}
             </div>
           )}
@@ -832,6 +853,15 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
                     <img src={e.url} alt="" className="w-full h-full object-cover hover:opacity-95 transition-opacity" loading="lazy"
                       onError={(el) => { const p = (el.target as HTMLImageElement).parentElement; if (p) p.style.display = "none"; }} />
                   </div>
+                ))}
+              </div>
+            )}
+
+            {/* Videos */}
+            {videoEmbeds.length > 0 && (
+              <div className="mb-2.5 rounded-2xl overflow-hidden bg-black" onClick={(ev) => ev.stopPropagation()}>
+                {videoEmbeds.slice(0, 1).map((e, i) => (
+                  <video key={i} src={e.url} controls playsInline className="w-full max-h-[360px]" style={{ maxHeight: 360 }} />
                 ))}
               </div>
             )}
