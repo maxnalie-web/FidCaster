@@ -41,6 +41,9 @@ export function ChannelsListPage() {
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Open scrolled to the very top (manual scroll restoration is on app-wide).
+  useEffect(() => { window.scrollTo(0, 0); }, []);
+
   useEffect(() => { if (myFid) setFollowed(getFollowedChannels(myFid)); }, [myFid]);
 
   useEffect(() => {
