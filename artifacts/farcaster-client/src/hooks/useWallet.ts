@@ -14,6 +14,10 @@ export type WalletState = {
   signerApproved: boolean;
   autoSignerLoading: boolean;
   signerError: string | null;
+  /** Non-error progress text shown while autoSignerLoading is true (e.g. "Confirming
+   *  on Optimism… TX: 0x123"). Kept separate from signerError so a normal in-progress
+   *  update never makes the setup popup render as if something failed. */
+  signerStatus: string | null;
   neynarKey: string;
   isLoading: boolean;
   error: string | null;
