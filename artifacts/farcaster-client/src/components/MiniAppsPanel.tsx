@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation } from "wouter";
 import { fetchMiniApps, type MiniApp } from "@/lib/farcaster-api";
 import { isNativeRuntime, openNativeMiniApp } from "@/lib/miniapp-native";
+import { useWallet } from "@/hooks/useWallet";
 import { Loader2, RefreshCw, Layers, Search, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +61,8 @@ export function MiniAppsPanel() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const { profile, address } = useWallet();
+  const [, navigate] = useLocation();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,10 +80,10 @@ export function MiniAppsPanel() {
   // just opens the app in a new tab.
   const openApp = useCallback(async (app: MiniApp) => {
     if (isNativeRuntime()) {
-      try { if (await openNativeMiniApp(app)) return; } catch { /* fall back to new tab */ }
+      try { if (await openNativeMiniApp(app, { profile, address, navigate })) return; } catch { /* fall back to new tab */ }
     }
     window.open(app.url, "_blank", "noopener,noreferrer");
-  }, []);
+  }, [profile, address, navigate]);
 
   useEffect(() => { void load(); }, [load]);
 
