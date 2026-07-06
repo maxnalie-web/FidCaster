@@ -1,0 +1,2 @@
+- [FID Market scroll rendering bug](android-backdrop-blur-scroll-glitch.md) — sticky/fixed backdrop-blur bars over scrolling content caused Android WebView noise artifacts; fix is solid bg, no blur.
+- [Gamification/points roadmap](gamification-airdrop-roadmap.md) — planned points/badges/quests system explicitly meant to later gate a token airdrop; needs anti-sybil design before launch.
