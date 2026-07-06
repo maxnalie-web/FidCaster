@@ -29,7 +29,7 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
       <button onClick={() => navigate("/dashboard?tab=search")} className="flex-1 flex items-center justify-center transition-colors">
         <Search className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
       </button>
-      {isInstalledApp() && (
+      {isInstalledApp() && adminCfg.features.miniAppsEnabled && (
         <button onClick={() => navigate("/dashboard?tab=miniapps")} className="flex-1 flex items-center justify-center transition-colors">
           <Layers className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
         </button>

@@ -146,7 +146,7 @@ async function getSignerStateWithRetry(fid: bigint, pubKey: `0x${string}`): Prom
 function buildInitial(): WalletState {
   return {
     address: null, fid: null, profile: null, walletClient: null, localSigner: null,
-    signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
+    signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null, signerStatus: null,
     neynarKey: loadNeynarKey(), isLoading: false, error: null,
     accounts: loadAccountsMeta(), sessionPassword: null,
     hasStoredSession: false, isCheckingSession: true,
@@ -196,9 +196,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       // Cache hit → unblock UI immediately; verify silently in background
       if (cached) {
-        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null, signerStatus: null }));
       } else {
-        setState((s) => ({ ...s, autoSignerLoading: true, signerError: null }));
+        setState((s) => ({ ...s, autoSignerLoading: true, signerError: null, signerStatus: null }));
       }
 
       let onChainState: number;
@@ -247,9 +247,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setTimeout(() => reject(new Error("WALLET_TIMEOUT")), 60_000)
           ),
         ]);
+        // Progress update, not an error — kept out of signerError so the
+        // popup doesn't render its "Setup didn't finish" / Retry-button state
+        // for a transaction that's confirming completely normally.
         setState((s) => ({
           ...s,
-          signerError: `Registering signer on-chain... TX: ${txHash.slice(0, 12)}...`,
+          signerStatus: `Confirming on Optimism… TX: ${txHash.slice(0, 12)}...`,
         }));
         const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000 });
         if (receipt.status !== "success") {
@@ -260,7 +263,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           throw new Error(`Transaction confirmed but KeyRegistry still shows state=${postState}. Please retry.`);
         }
         markSignerApproved(fidNum);
-        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+        setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null, signerStatus: null }));
       } catch (e: unknown) {
         const raw = e instanceof Error ? e.message : String(e);
         console.error("Signer registration failed");
@@ -275,14 +278,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           const recheckState = await getSignerStateWithRetry(fid, signer.publicKeyHex).catch(() => 0);
           if (recheckState === 1) {
             markSignerApproved(fidNum);
-            setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+            setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null, signerStatus: null }));
             return;
           }
           msg = NEEDS_FUNDS_MSG;
         } else {
           msg = `Signer registration failed. Tap Retry to try again.`;
         }
-        setState((s) => ({ ...s, autoSignerLoading: false, signerError: msg }));
+        setState((s) => ({ ...s, autoSignerLoading: false, signerError: msg, signerStatus: null }));
       }
   }, []);
 
@@ -406,7 +409,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setState((s) => ({ ...s, signerError: null }));
+    setState((s) => ({ ...s, signerError: null, signerStatus: null }));
     await _autoActivateSigner(fid, address, wc, signer);
   }, [_autoActivateSigner]);
 

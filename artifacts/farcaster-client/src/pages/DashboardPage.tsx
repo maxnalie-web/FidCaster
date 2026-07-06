@@ -1034,10 +1034,11 @@ export function DashboardPage() {
     }
   }, [walletError]);
 
-  // Mini Apps is native/PWA-only: a plain web tab has no in-app browser or
-  // SDK bridge to run them in, so the tab/nav entry and the ?tab= deep link
-  // are both hidden there rather than showing a feature that can't work.
-  const miniAppsAllowed = isInstalledApp();
+  // Mini Apps is native/PWA-only (a plain web tab has no in-app browser or
+  // SDK bridge to run them in) AND admin-togglable (adminCfg.features.
+  // miniAppsEnabled, off by default) — the tab/nav entry and the ?tab= deep
+  // link are all hidden whenever either condition says no.
+  const miniAppsAllowed = isInstalledApp() && adminCfg.features.miniAppsEnabled;
   const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile", ...(miniAppsAllowed ? (["miniapps"] as MainTab[]) : [])];
   const [mainTab, setMainTab] = useState<MainTab>(() => {
     try {
