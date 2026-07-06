@@ -20,7 +20,7 @@ import {
 export function MiniAppIframeModal() {
   const [state, setState] = useState<WebMiniAppState | null>(getWebMiniAppState);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const { profile, address } = useWallet();
+  const { profile, address, walletClient } = useWallet();
   const [, navigate] = useLocation();
   const [loaded, setLoaded] = useState(false);
 
@@ -38,8 +38,11 @@ export function MiniAppIframeModal() {
       cleanup = attachMiniAppIframeHost({
         iframe: iframe!,
         miniAppOrigin: new URL(app!.url).origin,
+        appName: app!.name,
+        appIconUrl: app!.iconUrl,
         profile,
         address,
+        walletClient,
         navigate,
         onClose: closeWebMiniApp,
       });

@@ -1,6 +1,8 @@
 import { exposeToIframe } from "@farcaster/miniapp-host";
 import type { MiniAppHost } from "@farcaster/miniapp-core";
-import { createEthProvider, toMiniAppContext } from "./miniapp-host";
+import type { WalletClient } from "viem";
+import { createEthProvider, toMiniAppContext, createSignInHandler } from "./miniapp-host";
+import { isMiniAppAdded, addMiniAppToStore } from "./miniapp-added-store";
 import type { FarcasterProfile } from "./farcaster-api";
 
 /**
@@ -28,20 +30,27 @@ import type { FarcasterProfile } from "./farcaster-api";
 export function attachMiniAppIframeHost({
   iframe,
   miniAppOrigin,
+  appName,
+  appIconUrl,
   profile,
   address,
+  walletClient,
   navigate,
   onClose,
 }: {
   iframe: HTMLIFrameElement;
   miniAppOrigin: string;
+  appName: string;
+  appIconUrl?: string;
   profile: FarcasterProfile | null;
   address: `0x${string}` | null;
+  walletClient: WalletClient | null;
   navigate: (path: string) => void;
   onClose: () => void;
 }): () => void {
-  const context = toMiniAppContext(profile);
+  const context = toMiniAppContext(profile, isMiniAppAdded(miniAppOrigin));
   const ethProvider = createEthProvider(address);
+  const signIn = createSignInHandler(walletClient, profile?.fid ?? 0, miniAppOrigin);
   const notSupported = (action: string) => Promise.reject(new Error(`${action} isn't supported yet`));
 
   const sdk: Omit<MiniAppHost, "ethProviderRequestV2"> = {
@@ -52,7 +61,7 @@ export function attachMiniAppIframeHost({
     setPrimaryButton: () => {},
     updateBackState: async () => {},
     eip6963RequestProvider: () => {},
-    getCapabilities: async () => ["actions.ready", "actions.close", "actions.openUrl", "actions.viewCast", "actions.viewProfile", "wallet.getEthereumProvider"],
+    getCapabilities: async () => ["actions.ready", "actions.close", "actions.openUrl", "actions.viewCast", "actions.viewProfile", "actions.signIn", "actions.addMiniApp", "wallet.getEthereumProvider"],
     getChains: async () => ["eip155:8453"],
     viewCast: async ({ hash }) => { navigate(`/cast/${hash}`); },
     viewProfile: async ({ fid }) => { navigate(`/profile/${fid}`); },
@@ -62,9 +71,12 @@ export function attachMiniAppIframeHost({
     selectionChanged: async () => {},
     ethProviderRequest: ethProvider.request,
     solanaProviderRequest: undefined,
-    signIn: () => notSupported("Sign in") as never,
+    signIn,
     signManifest: () => notSupported("Sign manifest") as never,
-    addMiniApp: () => notSupported("Add mini app") as never,
+    addMiniApp: async () => {
+      addMiniAppToStore({ origin: miniAppOrigin, name: appName, iconUrl: appIconUrl });
+      return {};
+    },
     addFrame: () => notSupported("Add frame") as never,
     openMiniApp: async ({ url }) => { window.open(url, "_blank", "noopener,noreferrer"); },
     composeCast: (async () => ({ cast: null })) as MiniAppHost["composeCast"],

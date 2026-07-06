@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { InAppBrowser, ToolBarType } from "@capgo/capacitor-inappbrowser";
+import type { WalletClient } from "viem";
 import type { MiniApp } from "./farcaster-api";
 import { attachMiniAppHost } from "./miniapp-host";
 import type { FarcasterProfile } from "./farcaster-api";
@@ -79,7 +80,12 @@ const DOCUMENT_START_SCRIPT = `
  */
 export async function openNativeMiniApp(
   app: MiniApp,
-  host: { profile: FarcasterProfile | null; address: `0x${string}` | null; navigate: (path: string) => void },
+  host: {
+    profile: FarcasterProfile | null;
+    address: `0x${string}` | null;
+    walletClient: WalletClient | null;
+    navigate: (path: string) => void;
+  },
 ): Promise<boolean> {
   if (!isNativeRuntime()) return false;
   const { id } = await InAppBrowser.openWebView({
@@ -117,8 +123,11 @@ export async function openNativeMiniApp(
   const cleanup = attachMiniAppHost({
     webviewId: id,
     miniAppOrigin: new URL(app.url).origin,
+    appName: app.name,
+    appIconUrl: app.iconUrl,
     profile: host.profile,
     address: host.address,
+    walletClient: host.walletClient,
     navigate: host.navigate,
   });
   const closeHandle = await InAppBrowser.addListener("closeEvent", (event) => {
