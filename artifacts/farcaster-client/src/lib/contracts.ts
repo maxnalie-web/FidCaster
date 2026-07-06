@@ -212,6 +212,22 @@ export async function getSignerState(
  * KeyGateway (0x...caadf0b). metadataType=1 requires a SignedKeyRequest EIP-712
  * signature from the FID custody wallet to authorise the key addition.
  */
+/**
+ * Whether `address` has at least enough ETH on Optimism to cover gas for
+ * registerSignerOnchain's "add" call. ~150k gas is a safe overestimate
+ * (actual usage is far lower); +30% headroom matches the margin used
+ * elsewhere in this file. Shared by the pre-flight check below and by
+ * WalletProvider's background poller (auto-retries once funds land).
+ */
+export async function hasSufficientBalanceForSignerRegistration(address: `0x${string}`): Promise<boolean> {
+  const [balance, gasPrice] = await Promise.all([
+    publicClient.getBalance({ address }),
+    publicClient.getGasPrice(),
+  ]);
+  const estimatedCost = (150_000n * gasPrice * 130n) / 100n;
+  return balance >= estimatedCost;
+}
+
 export async function registerSignerOnchain(
   walletClient: WalletClient,
   fid: bigint,
@@ -227,14 +243,7 @@ export async function registerSignerOnchain(
   // promise pending forever · so if we can already tell the balance can't
   // cover gas, fail fast here with a clear message instead of ever prompting.
   try {
-    const [balance, gasPrice] = await Promise.all([
-      publicClient.getBalance({ address }),
-      publicClient.getGasPrice(),
-    ]);
-    // ~150k gas is a safe overestimate for this call (actual usage is far
-    // lower); +30% headroom matches the margin used elsewhere in this file.
-    const estimatedCost = (150_000n * gasPrice * 130n) / 100n;
-    if (balance < estimatedCost) {
+    if (!(await hasSufficientBalanceForSignerRegistration(address))) {
       throw new Error(`INSUFFICIENT_FUNDS:${address}`);
     }
   } catch (preflightErr) {
