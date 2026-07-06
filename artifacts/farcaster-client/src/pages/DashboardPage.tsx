@@ -1488,6 +1488,20 @@ export function DashboardPage() {
           >
             <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
           </button>
+          {/* Wallet · mnemonic auth only (same gating as the desktop sidebar) ·
+              was previously missing from the mobile bottom nav entirely, so
+              mnemonic users had no way to reach their wallet on phone/tablet. */}
+          {authMethod === "mnemonic" && (
+            <button
+              onClick={() => setMainTab("wallet")}
+              className="flex-1 flex items-center justify-center transition-colors"
+            >
+              <Wallet
+                className={cn("w-6 h-6", mainTab === "wallet" ? "text-primary" : "text-muted-foreground")}
+                strokeWidth={mainTab === "wallet" ? 2.5 : 2}
+              />
+            </button>
+          )}
           {/* Notifications · sits right next to Profile */}
           <button
             onClick={() => setMainTab("notifications")}

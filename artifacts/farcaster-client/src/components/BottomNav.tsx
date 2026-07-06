@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Home, Search, Layers, Bell, TrendingUp, Tag, User } from "lucide-react";
+import { Home, Search, Layers, Bell, TrendingUp, Tag, User, Wallet } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
  */
 export function BottomNav({ active }: { active?: "grow" | "market" }) {
   const [, navigate] = useLocation();
-  const { fid, neynarKey } = useWallet();
+  const { fid, neynarKey, authMethod } = useWallet();
   const { unread: unreadNotifs } = useUnreadNotifications(Number(fid ?? 0), neynarKey ?? "");
   const [adminCfg] = useAdminConfig();
 
@@ -42,6 +42,11 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
       <button onClick={() => navigate("/market")} className="flex-1 flex items-center justify-center transition-colors">
         <Tag className={cn("w-6 h-6", active === "market" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "market" ? 2.5 : 2} />
       </button>
+      {authMethod === "mnemonic" && (
+        <button onClick={() => navigate("/dashboard?tab=wallet")} className="flex-1 flex items-center justify-center transition-colors">
+          <Wallet className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+        </button>
+      )}
       <button onClick={() => navigate("/dashboard?tab=notifications")} className="flex-1 flex items-center justify-center transition-colors">
         <span className="relative">
           <Bell className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
