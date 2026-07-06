@@ -231,8 +231,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setState((s) => ({ ...s, signerApproved: false, autoSignerLoading: true }));
       }
 
+      const NEEDS_FUNDS_MSG =
+        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nThen tap Retry below.`;
+
       try {
-        const txHash = await registerSignerOnchain(wc, fid, address, signer.publicKeyHex);
+        // Safety net: if the wallet hangs indefinitely on the signature/tx
+        // prompt (some mobile wallets show their own low-balance warning with
+        // no explicit reject, leaving this promise pending forever), surface
+        // a real error after 60s instead of spinning "Waiting for your
+        // wallet…" with no way out other than force-closing the app.
+        const txHash = await Promise.race([
+          registerSignerOnchain(wc, fid, address, signer.publicKeyHex),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("WALLET_TIMEOUT")), 60_000)
+          ),
+        ]);
         setState((s) => ({
           ...s,
           signerError: `Registering signer on-chain... TX: ${txHash.slice(0, 12)}...`,
@@ -251,8 +264,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const raw = e instanceof Error ? e.message : String(e);
         console.error("Signer registration failed");
         let msg: string;
-        if (raw.toLowerCase().includes("insufficient") || raw.toLowerCase().includes("gas") || raw.toLowerCase().includes("funds")) {
-          msg = `Your signer key is not registered on Farcaster.\n\nTo fix this, you need a tiny amount of ETH on Optimism (< $0.01) for a one-time gas fee.\n\n• Go to the Wallet tab → Receive to get your address\n• Send ~0.001 ETH on Optimism to that address\n• Then come back here and tap Retry`;
+        if (raw.startsWith("INSUFFICIENT_FUNDS:") || raw.toLowerCase().includes("insufficient") || raw.toLowerCase().includes("gas") || raw.toLowerCase().includes("funds")) {
+          msg = NEEDS_FUNDS_MSG;
+        } else if (raw === "WALLET_TIMEOUT") {
+          msg = `Your wallet didn't respond in time. This usually means it's stuck on a low-balance warning.\n\n${NEEDS_FUNDS_MSG}\n\nIf you already have enough ETH, just tap Retry.`;
         } else if (raw.toLowerCase().includes("user rejected") || raw.toLowerCase().includes("denied")) {
           msg = "Transaction cancelled. Tap Retry to try again.";
         } else if (raw.toLowerCase().includes("already") || raw.toLowerCase().includes("invalid key state")) {
@@ -262,7 +277,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
             return;
           }
-          msg = `Your signer key is not registered on Farcaster.\n\nTo fix this, you need a tiny amount of ETH on Optimism (< $0.01) for a one-time gas fee.\n\n• Go to the Wallet tab → Receive to get your address\n• Send ~0.001 ETH on Optimism to that address\n• Then come back here and tap Retry`;
+          msg = NEEDS_FUNDS_MSG;
         } else {
           msg = `Signer registration failed. Tap Retry to try again.`;
         }

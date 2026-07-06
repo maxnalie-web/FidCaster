@@ -54,7 +54,7 @@ export function SignerSetupPopup() {
             <p className="text-sm font-semibold text-foreground">
               {signerError ? "Setup didn't finish" : "Finishing setup"}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed whitespace-pre-wrap break-words">
               {signerError
                 ? signerError
                 : "2 steps left in your wallet: sign a key request, then confirm one transaction. This closes automatically once you're done."}

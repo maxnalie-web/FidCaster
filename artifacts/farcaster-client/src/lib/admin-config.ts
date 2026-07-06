@@ -69,6 +69,7 @@ export interface AdminConfig {
   social: {
     twitter: string;
     telegram: string;
+    farcaster: string;
     github: string;
     discord: string;
     website: string;
@@ -191,6 +192,7 @@ export const DEFAULT_CONFIG: AdminConfig = {
   social: {
     twitter: "https://x.com/fidcaster",
     telegram: "https://t.me/Fidcaster",
+    farcaster: "https://farcaster.xyz/fidcaster",
     github: "",
     discord: "",
     website: "",
