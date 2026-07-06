@@ -45,12 +45,16 @@ export function isAdminConfigured(): boolean {
 export function checkAdminPassword(password: string): boolean {
   const real = process.env.ADMIN_PASSWORD;
   if (!real || !password) return false;
-  // Constant-time compare, but only once lengths are known equal (padding
-  // both to the same length first avoids leaking length via timingSafeEqual
-  // throwing on mismatched buffer sizes).
-  const a = Buffer.from(password.padEnd(128, "\0"));
-  const b = Buffer.from(real.padEnd(128, "\0"));
-  return timingSafeEqual(a, b) && password.length === real.length;
+  // Constant-time compare of fixed-size buffers. The actual length is baked
+  // into the compared bytes (as a prefix) rather than checked separately
+  // with a plain `===` afterward — a trailing non-constant-time length check
+  // would leak length via its own timing, defeating the point of using
+  // timingSafeEqual in the first place. Padding both to 128 bytes first
+  // also avoids timingSafeEqual throwing on mismatched buffer sizes.
+  const lenPrefix = (n: number) => String(n).padStart(8, "0");
+  const a = Buffer.from(lenPrefix(password.length) + password.padEnd(128, "\0"));
+  const b = Buffer.from(lenPrefix(real.length) + real.padEnd(128, "\0"));
+  return timingSafeEqual(a, b);
 }
 
 export function issueSessionToken(): string | null {

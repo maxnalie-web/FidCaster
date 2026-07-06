@@ -104,6 +104,17 @@ app.use(helmet({
     : false,
 }));
 
+// The app never uses camera/mic/geolocation/USB/payment APIs — deny them by
+// default so an XSS or a compromised third-party script embedded anywhere
+// couldn't invoke a permission prompt for capabilities we never asked for.
+app.use((_req, res, next) => {
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+  );
+  next();
+});
+
 app.use(cors({
   origin: (origin, callback) => {
     // No Origin header = non-browser client (curl, server-to-server). Allow GET,
@@ -125,7 +136,26 @@ app.use(cors({
 }));
 
 app.use(compression());
-app.use(express.json({ limit: "70mb" })); // base64 upload route: images ≤10MB (~13.3MB base64) + video ≤50MB (~66.7MB base64)
+// Small default body limit for every route — the 70MB base64 upload payload
+// is the exception, not the norm, and applying it globally meant any cheap
+// endpoint (e.g. /api/translate) would accept a 70MB body from an
+// unauthenticated caller, letting a handful of requests exhaust server
+// memory/bandwidth well before the request-count rate limiter ever kicks in.
+// Dispatched by path (rather than two stacked app.use(express.json(...))
+// calls) so the request body stream is only ever consumed once.
+const smallJsonParser = express.json({ limit: "256kb" });
+const uploadJsonParser = express.json({ limit: "70mb" }); // images ≤10MB (~13.3MB base64) + video ≤50MB (~66.7MB base64)
+// Admin config saves (custom CSS, copy text, etc.) are capped at 2MB by
+// MAX_CONFIG_BYTES below, and user-prefs values (custom feed logo data-URLs)
+// are capped at 3MB by MAX_VALUE_BYTES in user-prefs.ts — give these routes
+// enough room, but nowhere near the upload route's 70MB.
+const mediumJsonParser = express.json({ limit: "3mb" });
+const MEDIUM_BODY_PATHS = new Set(["/api/admin/config", "/api/admin/secrets", "/api/user-prefs"]);
+app.use((req, res, next) => {
+  if (req.path === "/api/farcaster/upload-image") return uploadJsonParser(req, res, next);
+  if (MEDIUM_BODY_PATHS.has(req.path)) return mediumJsonParser(req, res, next);
+  return smallJsonParser(req, res, next);
+});
 
 // Global limiter — skip follow/following list endpoints (already protected by Neynar throttle)
 // and skip Neynar read proxy endpoints (caching + throttle handle them).
@@ -220,7 +250,20 @@ const VALID_ACTIONS = new Set<string>([
 // ── Internal observability ─────────────────────────────────────────────────────
 // Not proxied to the public — only reachable directly on the server port.
 // Shows cache hit/miss ratio, SWR refreshes, hub success/fail, SQLite queue peak.
-app.get("/internal/metrics", (_req, res) => {
+// Defense in depth: this is meant to be reachable only by whoever can hit the
+// server port directly (not proxied to the public per the comment below),
+// but that's an infrastructure assumption, not something this file can
+// verify — a reverse-proxy misconfiguration that forwards everything would
+// otherwise leak internal cache/health stats to any visitor. Check the raw
+// socket address (not req.ip, which honors X-Forwarded-For and is therefore
+// spoofable by anyone who can already reach this route) and require loopback.
+function isLoopback(req: express.Request): boolean {
+  const addr = req.socket.remoteAddress ?? "";
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+}
+
+app.get("/internal/metrics", (req, res) => {
+  if (!isLoopback(req)) { res.status(404).json({ error: "Not found" }); return; }
   const health = healthSnapshot();
   res.json({ ...metrics.snapshot(), cache_store: cacheStats(), health });
 });
@@ -911,6 +954,12 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   const msg = err.message || "Internal server error";
   if (msg.startsWith("CORS:")) {
     res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  // body-parser (express.json) throws this for a body over the configured
+  // limit — surface it as the 413 it actually is, not a generic 500.
+  if ((err as { type?: string }).type === "entity.too.large" || (err as { status?: number }).status === 413) {
+    res.status(413).json({ error: "Request body too large" });
     return;
   }
   console.error("[server] unhandled error:", msg);
