@@ -7,7 +7,8 @@ import {
   getAddedMiniApps, subscribeAddedMiniApps, removeMiniAppFromStore, type AddedMiniApp,
 } from "@/lib/miniapp-added-store";
 import { useWallet } from "@/hooks/useWallet";
-import { Loader2, RefreshCw, Layers, Search, UserCircle, X } from "lucide-react";
+import { useMarketWallet } from "@/hooks/useMarketWallet";
+import { Loader2, RefreshCw, Layers, Search, UserCircle, X, Wallet, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function addedAppToMiniApp(a: AddedMiniApp): MiniApp {
@@ -45,6 +46,70 @@ function YourAppsRow({ apps, onOpen }: { apps: AddedMiniApp[]; onOpen: (app: Min
             <p className="text-[10px] text-center text-muted-foreground mt-1 truncate">{a.name}</p>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Connect-wallet banner ─────────────────────────────────────────────────
+ * Shown when there's no wallet address to hand mini apps at all — e.g. a
+ * "Sign In With Farcaster" (Warpcast QR) login, which is read-only and never
+ * links an EVM wallet. Per Farcaster's own mini-app spec, the HOST is
+ * responsible for getting the user connected before a mini app even asks
+ * (mini apps aren't supposed to show their own wallet-selector dialog) — so
+ * rather than silently handing mini apps a null address and letting every
+ * wallet-dependent feature in them quietly fail, this offers the same
+ * ad-hoc "connect a wallet without changing your Farcaster login" flow FID
+ * Market's buy button already uses (useMarketWallet), independent of
+ * whatever authMethod actually signed the user in. Dismissible per session
+ * (not persisted) since plenty of mini apps don't need a wallet at all. */
+function ConnectWalletBanner({
+  onConnect, onConnectWalletConnect, hasInjected, connecting, error, onDismiss,
+}: {
+  /** Auto-picks MetaMask if available, else WalletConnect (useMarketWallet's connect()). */
+  onConnect: () => void;
+  onConnectWalletConnect: () => void;
+  hasInjected: boolean;
+  connecting: boolean;
+  error: string | null;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mx-4 mt-3 p-3 rounded-2xl border border-primary/20 bg-primary/[0.04]">
+      <div className="flex items-start gap-2.5">
+        <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <Wallet className="w-4 h-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-foreground">No wallet connected</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+            Some mini apps need a wallet to detect your account or complete an action.
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={onConnect}
+              disabled={connecting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold btn-luxury text-primary-foreground disabled:opacity-60"
+            >
+              {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wallet className="w-3.5 h-3.5" />}
+              {hasInjected ? "MetaMask" : "Connect"}
+            </button>
+            {hasInjected && (
+              <button
+                onClick={onConnectWalletConnect}
+                disabled={connecting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-border text-foreground hover:bg-accent transition-colors disabled:opacity-60"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                WalletConnect
+              </button>
+            )}
+          </div>
+          {error && <p className="text-[11px] text-red-500 mt-1.5">{error}</p>}
+        </div>
+        <button onClick={onDismiss} aria-label="Dismiss" className="p-1 text-muted-foreground hover:text-foreground shrink-0">
+          <X className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );
@@ -120,7 +185,17 @@ export function MiniAppsPanel() {
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [addedApps, setAddedApps] = useState<AddedMiniApp[]>(getAddedMiniApps);
   const { profile, address, walletClient } = useWallet();
+  const {
+    wallet: extWallet, connect: connectWallet, connectWalletConnect, connecting: extConnecting,
+    hasInjected, error: extWalletError,
+  } = useMarketWallet();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [, navigate] = useLocation();
+
+  // Falls back to an ad-hoc-connected wallet (useMarketWallet) when the
+  // user's actual login has none — see ConnectWalletBanner above for why.
+  const effectiveAddress = address ?? extWallet?.address ?? null;
+  const effectiveWalletClient = walletClient ?? extWallet?.walletClient ?? null;
 
   useEffect(() => subscribeAddedMiniApps(setAddedApps), []);
 
@@ -148,13 +223,15 @@ export function MiniAppsPanel() {
     setOpeningId(app.id);
     try {
       if (isNativeRuntime()) {
-        try { if (await openNativeMiniApp(app, { profile, address, walletClient, navigate })) return; } catch { /* fall back below */ }
+        try {
+          if (await openNativeMiniApp(app, { profile, address: effectiveAddress, walletClient: effectiveWalletClient, navigate })) return;
+        } catch { /* fall back below */ }
       }
       openWebMiniApp(app);
     } finally {
       setOpeningId(null);
     }
-  }, [profile, address, walletClient, navigate, openingId]);
+  }, [profile, effectiveAddress, effectiveWalletClient, navigate, openingId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -225,6 +302,17 @@ export function MiniAppsPanel() {
           })}
         </div>
       </div>
+
+      {!effectiveAddress && !bannerDismissed && (
+        <ConnectWalletBanner
+          onConnect={() => void connectWallet()}
+          onConnectWalletConnect={() => void connectWalletConnect()}
+          hasInjected={hasInjected}
+          connecting={extConnecting}
+          error={extWalletError}
+          onDismiss={() => setBannerDismissed(true)}
+        />
+      )}
 
       <YourAppsRow apps={addedApps} onOpen={(app) => void openApp(app)} />
 
