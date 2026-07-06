@@ -21,6 +21,14 @@ import { applyAdminTheme, applyAdminSeo, loadAdminConfig } from "@/lib/admin-con
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
 import { SignerSetupPopup } from "@/components/SignerSetupPopup";
+import { isNativeRuntime } from "@/lib/miniapp-native";
+
+/** True for the installed Capacitor app or an installed/standalone PWA —
+ * anything that isn't a plain browser tab landing on the marketing site. */
+function isInstalledApp(): boolean {
+  if (isNativeRuntime()) return true;
+  try { return window.matchMedia("(display-mode: standalone)").matches; } catch { return false; }
+}
 
 export type Theme = "light" | "dark";
 
@@ -57,6 +65,10 @@ function AuthRedirect() {
     // snapping back to /dashboard, losing the deep link's destination.
     if (isCheckingSession) return;
     if (fid && (location === "/" || location === "/login")) navigate("/dashboard");
+    // The installed app (Capacitor/PWA) never shows the marketing landing
+    // page — a real app opens straight to sign-in, not a "Client / FID
+    // Market / Features" scroll page meant for a browser tab.
+    else if (!fid && !isLocked && location === "/" && isInstalledApp()) navigate("/login");
     // Auto-locked from anywhere in the app → unlock screen, never the landing page.
     else if (!fid && isLocked && location !== "/login") navigate("/login");
     // A shared cast/profile/channel link opened by someone with no FidCaster

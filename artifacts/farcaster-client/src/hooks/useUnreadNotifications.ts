@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getNotifications } from "@/lib/neynar";
+import { getMutedNotifKinds, type NotifKind } from "@/lib/app-settings";
+
+function notifKindOf(type: string): NotifKind | null {
+  if (type === "likes" || type === "recasts") return "reactions";
+  if (type === "reply" || type === "mention" || type === "quote") return "replies";
+  if (type === "follows") return "follows";
+  return null;
+}
 
 /**
  * Tracks the number of notifications newer than the last time the user opened
@@ -29,9 +37,12 @@ export function useUnreadNotifications(fid: number, neynarKey: string) {
     if (!fid) return;
     try {
       const data = await getNotifications(fid, neynarKey);
+      const muted = getMutedNotifKinds();
       let latest = 0;
       let count = 0;
       for (const n of data.notifications ?? []) {
+        const kind = notifKindOf(n.type);
+        if (kind && muted.has(kind)) continue;
         const t = Date.parse(n.most_recent_timestamp ?? n.timestamp ?? "") || 0;
         if (t > latest) latest = t;
         if (t > seenRef.current) count++;

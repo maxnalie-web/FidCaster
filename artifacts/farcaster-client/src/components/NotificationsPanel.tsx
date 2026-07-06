@@ -1,12 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Heart, Repeat2, MessageCircle, UserPlus, Bell, User, Quote, AtSign } from "lucide-react";
+import { Loader2, Heart, Repeat2, MessageCircle, UserPlus, Bell, User, Quote, AtSign, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
 import { getNotifications, type NeynarNotification, type NeynarUser } from "@/lib/neynar";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useProStatus, ProBadge } from "./ProBadge";
 import { setRecentProfile } from "@/lib/recent-profile-cache";
+import { getMutedNotifKinds, setNotifKindMuted, type NotifKind } from "@/lib/app-settings";
+
+function notifKindOf(n: FlatNotif): NotifKind {
+  if (n.kind === "follow-group") return "follows";
+  if (n.kind === "like-group" || n.kind === "recast-group") return "reactions";
+  return "replies";
+}
 
 function notifPrimaryFid(n: FlatNotif): number {
   if (n.kind === "follow-group" || n.kind === "like-group" || n.kind === "recast-group") return n.users[0]?.fid ?? 0;
@@ -379,6 +386,71 @@ const FILTER_TABS: { id: FilterTab; label: string }[] = [
   { id: "follows", label: "Follows" },
 ];
 
+const MUTE_OPTIONS: { id: NotifKind; label: string; desc: string }[] = [
+  { id: "reactions", label: "Likes & recasts", desc: "Hide reaction notifications from the list and unread count" },
+  { id: "replies", label: "Replies & mentions", desc: "Hide replies, mentions, and quote casts" },
+  { id: "follows", label: "New followers", desc: "Hide follow notifications" },
+];
+
+/* ─── Notification management popover ─── */
+function NotifSettingsMenu({ muted, setMuted }: { muted: Set<NotifKind>; setMuted: (s: Set<NotifKind>) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onOut = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onOut);
+    return () => document.removeEventListener("mousedown", onOut);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Manage notifications"
+        className={cn(
+          "p-1.5 rounded-lg transition-colors",
+          open ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+        )}
+      >
+        <Settings2 className="w-4 h-4" />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1.5 z-20 w-64 bg-popover border border-border rounded-2xl shadow-xl overflow-hidden py-1.5">
+          <p className="px-3.5 pt-1.5 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Notification types
+          </p>
+          {MUTE_OPTIONS.map((opt) => {
+            const isMuted = muted.has(opt.id);
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setMuted(setNotifKindMuted(opt.id, !isMuted))}
+                className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 hover:bg-accent transition-colors text-left"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-foreground">{opt.label}</p>
+                  <p className="text-[10.5px] text-muted-foreground mt-0.5 leading-snug">{opt.desc}</p>
+                </div>
+                <span className={cn(
+                  "shrink-0 w-8 h-[18px] rounded-full relative transition-colors",
+                  !isMuted ? "bg-primary" : "bg-muted-foreground/25"
+                )}>
+                  <span className={cn(
+                    "absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform",
+                    !isMuted ? "translate-x-[18px]" : "translate-x-[2px]"
+                  )} />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main panel ─── */
 export function NotificationsPanel() {
   const { fid, neynarKey } = useWallet();
@@ -386,6 +458,7 @@ export function NotificationsPanel() {
   const fidNum = fid ? Number(fid) : 0;
 
   const [allFlat, setAllFlat] = useState<FlatNotif[]>([]);
+  const [muted, setMuted] = useState<Set<NotifKind>>(() => getMutedNotifKinds());
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -493,6 +566,7 @@ export function NotificationsPanel() {
   }
 
   const filtered = allFlat.filter((n) => {
+    if (muted.has(notifKindOf(n))) return false;
     if (filter === "reactions") return n.kind === "like-group" || n.kind === "recast-group";
     if (filter === "replies") return n.kind === "reply" || n.kind === "mention" || n.kind === "quote";
     if (filter === "follows") return n.kind === "follow-group";
@@ -522,8 +596,15 @@ export function NotificationsPanel() {
 
   return (
     <div>
-      {/* ── Filter tabs ── */}
-      <div className="px-4 py-2.5 border-b border-border/40">
+      {/* ── Header ── */}
+      <div className="px-4 pt-3.5 pb-2.5 border-b border-border/40 bg-gradient-to-b from-primary/[0.04] to-transparent">
+        <div className="flex items-center justify-between mb-2.5">
+          <h2 className="text-base font-bold text-foreground flex items-center gap-1.5">
+            <Bell className="w-4 h-4 text-primary" />
+            Notifications
+          </h2>
+          <NotifSettingsMenu muted={muted} setMuted={setMuted} />
+        </div>
         <div className="flex gap-1 overflow-x-auto no-scrollbar">
           {FILTER_TABS.map((t) => (
             <button

@@ -3,8 +3,37 @@ import { useLocation } from "wouter";
 import { fetchMiniApps, type MiniApp } from "@/lib/farcaster-api";
 import { isNativeRuntime, openNativeMiniApp } from "@/lib/miniapp-native";
 import { useWallet } from "@/hooks/useWallet";
-import { Loader2, RefreshCw, Layers, Search, UserCircle } from "lucide-react";
+import { Loader2, RefreshCw, Layers, Search, UserCircle, Sparkles, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/* ─── Featured card · top-ranked apps get a bigger, richer treatment ────────── */
+function FeaturedCard({ app, rank, onClick }: { app: MiniApp; rank: number; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="group relative shrink-0 w-40 flex flex-col items-start gap-2.5 p-3.5 rounded-2xl border border-border/60 bg-gradient-to-b from-muted/40 to-transparent hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all text-left"
+    >
+      <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-background/80 border border-border/60 flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+        {rank}
+      </span>
+      <div className="w-14 h-14 rounded-xl overflow-hidden bg-muted shrink-0 shadow-sm ring-1 ring-border/40">
+        {app.iconUrl ? (
+          <img src={app.iconUrl} alt="" className="w-full h-full object-cover"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-primary/10">
+            <Layers className="w-6 h-6 text-primary/40" />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 w-full">
+        <p className="text-sm font-bold text-foreground truncate">{app.name}</p>
+        <p className="text-[11px] text-muted-foreground truncate">{app.category}</p>
+      </div>
+      <ArrowUpRight className="absolute bottom-3 right-3 w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+    </button>
+  );
+}
 
 /* ─── App card ──────────────────────────────────────────────────────────────── */
 function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick: () => void }) {
@@ -14,15 +43,15 @@ function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
-      className="group w-full flex items-center gap-3 px-3 py-3.5 border-b border-border last:border-0 hover:bg-accent/40 transition-colors cursor-pointer"
+      className="group w-full flex items-center gap-3 p-3 rounded-2xl border border-transparent hover:border-border/60 hover:bg-accent/30 transition-colors cursor-pointer"
     >
       {/* Rank */}
-      <span className="w-6 shrink-0 text-xs text-muted-foreground/50 font-mono text-right">
-        #{index + 1}
+      <span className="w-5 shrink-0 text-xs text-muted-foreground/40 font-mono text-right">
+        {index + 1}
       </span>
 
       {/* Icon */}
-      <div className="w-11 h-11 rounded-xl overflow-hidden bg-muted shrink-0">
+      <div className="w-12 h-12 rounded-2xl overflow-hidden bg-muted shrink-0 shadow-sm ring-1 ring-border/40">
         {app.iconUrl ? (
           <img
             src={app.iconUrl}
@@ -58,7 +87,7 @@ function AppCard({ app, index, onClick }: { app: MiniApp; index: number; onClick
       {/* Open button · explicit affordance instead of relying on the whole row being tappable */}
       <button
         onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold bg-muted text-foreground hover:bg-accent-foreground/10 border border-border/60 transition-colors"
+        className="shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold btn-luxury text-primary-foreground shadow-sm"
       >
         Open
       </button>
@@ -108,84 +137,100 @@ export function MiniAppsPanel() {
     ? filtered
     : filtered.filter((a) => a.category === activeCategory);
 
-  return (
-    <>
-      {/* Panel */}
-      <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-foreground">Mini Apps</h2>
-            <button
-              onClick={() => void load()}
-              disabled={loading}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
-            >
-              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-            </button>
-          </div>
-          {/* Search */}
-          <div className="relative mb-2.5">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search apps…"
-              className="w-full pl-8 pr-3 py-2 text-sm bg-muted/40 border border-border rounded-xl text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
-            />
-          </div>
-          {/* Category tabs */}
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-            {CATEGORIES.map((cat) => {
-              const count = cat === "All" ? apps.length : apps.filter(a => a.category === cat).length;
-              const isActive = activeCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={cn(
-                    "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap",
-                    isActive
-                      ? "bg-primary text-white shadow-sm shadow-primary/30"
-                      : "text-muted-foreground border border-border/60 hover:border-primary/30 hover:text-foreground hover:bg-primary/5"
-                  )}
-                >
-                  {cat}
-                  {count > 0 && (
-                    <span className={cn(
-                      "text-[10px] font-bold leading-none px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
-                      isActive ? "bg-white/25 text-white" : "bg-muted text-muted-foreground"
-                    )}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+  const showFeatured = !search && activeCategory === "All" && apps.length >= 3;
+  const featured = showFeatured ? apps.slice(0, 5) : [];
+  const rest = showFeatured ? displayed.slice(featured.length) : displayed;
 
-        {/* App list */}
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            </div>
-          ) : displayed.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-2 text-muted-foreground">
-              <Layers className="w-8 h-8 opacity-30" />
-              <p className="text-sm">No apps found</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {displayed.map((app, i) => (
-                <AppCard key={app.id} app={app} index={i} onClick={() => void openApp(app)} />
-              ))}
-            </div>
-          )}
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-4 py-3.5 border-b border-border bg-gradient-to-b from-primary/[0.04] to-transparent">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-foreground flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-primary" />
+            Mini Apps
+          </h2>
+          <button
+            onClick={() => void load()}
+            disabled={loading}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+          >
+            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+          </button>
+        </div>
+        {/* Search */}
+        <div className="relative mb-2.5">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search apps…"
+            className="w-full pl-8 pr-3 py-2.5 text-sm bg-muted/40 border border-border rounded-2xl text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
+          />
+        </div>
+        {/* Category tabs */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+          {CATEGORIES.map((cat) => {
+            const count = cat === "All" ? apps.length : apps.filter(a => a.category === cat).length;
+            const isActive = activeCategory === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap",
+                  isActive
+                    ? "btn-luxury text-primary-foreground shadow-sm shadow-primary/30"
+                    : "text-muted-foreground border border-border/60 hover:border-primary/30 hover:text-foreground hover:bg-primary/5"
+                )}
+              >
+                {cat}
+                {count > 0 && (
+                  <span className={cn(
+                    "text-[10px] font-bold leading-none px-1.5 py-0.5 rounded-full min-w-[18px] text-center",
+                    isActive ? "bg-white/25 text-white" : "bg-muted text-muted-foreground"
+                  )}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-    </>
+      {/* App list */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
+          </div>
+        ) : displayed.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-2 text-muted-foreground">
+            <Layers className="w-8 h-8 opacity-30" />
+            <p className="text-sm">No apps found</p>
+          </div>
+        ) : (
+          <>
+            {featured.length > 0 && (
+              <div className="px-4 pt-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Featured</p>
+                <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar -mx-0.5 px-0.5">
+                  {featured.map((app, i) => (
+                    <FeaturedCard key={app.id} app={app} rank={i + 1} onClick={() => void openApp(app)} />
+                  ))}
+                </div>
+                <div className="border-b border-border/60 mt-3.5" />
+              </div>
+            )}
+            <div className="px-2 py-1.5">
+              {rest.map((app, i) => (
+                <AppCard key={app.id} app={app} index={featured.length + i} onClick={() => void openApp(app)} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
