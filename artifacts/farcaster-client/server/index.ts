@@ -15,7 +15,7 @@ import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { initSignPool } from "./sign-pool.js";
 import { healthSnapshot } from "./health.js";
-import { getSpamLabels, scheduleSpamLabelRefresh } from "./spam-labels.js";
+import { getSpamLabels, scheduleSpamLabelRefresh, awaitInitialSpamLabels } from "./spam-labels.js";
 import { getUserPref, setUserPref } from "./user-prefs.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
@@ -685,12 +685,16 @@ registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no COR
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.
 // GET /api/spam-labels?fids=1,2,3 -> { "1": 0, "2": 2 } (absent fid = unknown)
-app.get("/api/spam-labels", (req: express.Request, res: express.Response) => {
+app.get("/api/spam-labels", async (req: express.Request, res: express.Response) => {
   const fids = String(req.query.fids ?? "")
     .split(",")
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n) && n > 0)
     .slice(0, 200);
+  // On a fresh (e.g. autoscale cold-start) instance the on-disk cache is empty
+  // until the initial download finishes · wait for it (bounded) instead of
+  // answering with {} and having the client permanently cache these as unknown.
+  await awaitInitialSpamLabels();
   res.json(getSpamLabels(fids));
 });
 

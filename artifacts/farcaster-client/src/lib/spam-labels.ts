@@ -21,13 +21,26 @@ export function matchesSpamLabelFilter(filter: SpamLabelFilter, label: SpamLabel
 }
 
 const cache = new Map<number, SpamLabelValue | null>();
+// "Unknown" results (fid absent from the dataset, or the server's cache was
+// still cold when we asked) get a short expiry instead of being cached
+// forever · the server can take a while to finish its initial dataset
+// download after a cold start, and without this a FID looked up during that
+// window would show as "no label" for the rest of the session even after the
+// server catches up.
+const missExpiresAt = new Map<number, number>();
+const MISS_TTL_MS = 45_000;
 
 export async function getSpamLabelsFor(fids: number[]): Promise<Record<number, SpamLabelValue>> {
   const result: Record<number, SpamLabelValue> = {};
   const misses: number[] = [];
+  const now = Date.now();
   for (const fid of fids) {
     const hit = cache.get(fid);
-    if (hit !== undefined) { if (hit !== null) result[fid] = hit; continue; }
+    if (hit !== undefined) {
+      if (hit !== null) { result[fid] = hit; continue; }
+      const expiresAt = missExpiresAt.get(fid);
+      if (expiresAt !== undefined && now < expiresAt) continue;
+    }
     misses.push(fid);
   }
   if (misses.length === 0) return result;
@@ -38,7 +51,8 @@ export async function getSpamLabelsFor(fids: number[]): Promise<Record<number, S
       for (const fid of misses) {
         const label = data[String(fid)];
         cache.set(fid, label ?? null);
-        if (label !== undefined) result[fid] = label;
+        if (label !== undefined) { missExpiresAt.delete(fid); result[fid] = label; }
+        else missExpiresAt.set(fid, now + MISS_TTL_MS);
       }
     }
   } catch { /* leave misses unresolved this round · treated as unknown */ }

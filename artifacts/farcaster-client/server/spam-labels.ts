@@ -176,13 +176,35 @@ export async function refreshSpamLabels(): Promise<void> {
   }
 }
 
+// On an ephemeral host (e.g. Replit autoscale) the SQLite cache doesn't survive
+// a cold start, so every fresh instance boots with an EMPTY dataset until this
+// finishes. Requests answered in that window used to get {} back (no labels
+// ever showing up, since the client then permanently caches that FID as
+// "unknown" · see src/lib/spam-labels.ts). Track the initial refresh so the
+// route can await it instead of racing it.
+let initialRefreshPromise: Promise<void> | null = null;
+
 /** Kicks off an initial refresh (if stale/missing) and a weekly recheck timer. Non-blocking. */
 export function scheduleSpamLabelRefresh(): void {
   const store = db();
   if (!store) return;
   const lastRefreshed = Number(store.getMeta("refreshed_at") ?? 0);
-  if (Date.now() - lastRefreshed > REFRESH_INTERVAL_MS) void refreshSpamLabels();
+  if (Date.now() - lastRefreshed > REFRESH_INTERVAL_MS) initialRefreshPromise = refreshSpamLabels();
   setInterval(() => void refreshSpamLabels(), REFRESH_INTERVAL_MS);
+}
+
+/**
+ * Resolves once the initial refresh finishes (or immediately if the cache was
+ * already warm / refresh isn't needed). Bounded by timeoutMs so a slow/stuck
+ * download can't hang requests forever · callers get whatever's in the DB
+ * (possibly partial, since rows are upserted in streaming batches) at that point.
+ */
+export async function awaitInitialSpamLabels(timeoutMs = 12_000): Promise<void> {
+  if (!initialRefreshPromise) return;
+  await Promise.race([
+    initialRefreshPromise,
+    new Promise<void>((r) => setTimeout(r, timeoutMs)),
+  ]);
 }
 
 /** Returns { fid: label } only for FIDs present in the dataset · absent = unknown. */
