@@ -2,6 +2,8 @@ import { motion } from "framer-motion";
 import { useLocation } from "wouter";
 import { ArrowRight } from "lucide-react";
 import { FidCasterLogo } from "@/components/FidCasterLogo";
+import { XLogo, TelegramLogo, FarcasterLogo } from "@/components/NeynarScoreBadge";
+import { useAdminConfig } from "@/hooks/useAdminConfig";
 
 /**
  * First screen an installed app (Capacitor native, or an installed/standalone
@@ -15,6 +17,8 @@ import { FidCasterLogo } from "@/components/FidCasterLogo";
  */
 export function NativeWelcomePage() {
   const [, navigate] = useLocation();
+  const [adminCfg] = useAdminConfig();
+  const social = adminCfg.social;
 
   return (
     <div
@@ -46,7 +50,7 @@ export function NativeWelcomePage() {
           transition={{ duration: 0.5, delay: 0.4 }}
           className="mt-2 text-white/45 text-[15px] text-center max-w-[280px]"
         >
-          Your Farcaster identity, casts, and FID — all in one place.
+          Your Farcaster identity, casts, and FID, all in one place.
         </motion.p>
       </motion.div>
 
@@ -65,6 +69,44 @@ export function NativeWelcomePage() {
         <p className="text-center text-white/25 text-xs mt-4">
           A Farcaster client · built on Optimism
         </p>
+
+        {(social.twitter || social.telegram || social.farcaster) && (
+          <div className="flex items-center justify-center gap-4 mt-7">
+            {social.twitter && (
+              <a
+                href={social.twitter}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Follow on X"
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <XLogo size={16} />
+              </a>
+            )}
+            {social.telegram && (
+              <a
+                href={social.telegram}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Join Telegram"
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10 hover:bg-white/10 transition-colors"
+              >
+                <TelegramLogo size={18} />
+              </a>
+            )}
+            {social.farcaster && (
+              <a
+                href={social.farcaster}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Follow on Farcaster"
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10 hover:bg-white/10 transition-colors"
+              >
+                <FarcasterLogo size={18} />
+              </a>
+            )}
+          </div>
+        )}
       </motion.div>
     </div>
   );

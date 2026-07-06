@@ -27,7 +27,7 @@ import {
   LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash, Type, Wind, Trash2,
 } from "lucide-react";
 import { getUserByFid, type NeynarUser } from "@/lib/neynar";
-import { NeynarScoreBadge, XLogo, TelegramLogo } from "@/components/NeynarScoreBadge";
+import { NeynarScoreBadge, XLogo, TelegramLogo, FarcasterLogo } from "@/components/NeynarScoreBadge";
 import {
   SUPPORTED_LANGS, getLangSetting, setPreferredLang, defaultTargetLang,
   type LangCode, type LangSetting,
@@ -295,7 +295,7 @@ function SupportPanel() {
       </div>
 
       {/* ── Social links ── */}
-      {(adminCfg.social.twitter || adminCfg.social.telegram) && (
+      {(adminCfg.social.twitter || adminCfg.social.telegram || adminCfg.social.farcaster) && (
         <div className="flex items-center gap-2.5">
           {adminCfg.social.twitter && (
             <a
@@ -315,6 +315,16 @@ function SupportPanel() {
               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
             >
               <TelegramLogo size={14} /> Join Telegram
+            </a>
+          )}
+          {adminCfg.social.farcaster && (
+            <a
+              href={adminCfg.social.farcaster}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
+            >
+              <FarcasterLogo size={14} /> Follow on Farcaster
             </a>
           )}
         </div>

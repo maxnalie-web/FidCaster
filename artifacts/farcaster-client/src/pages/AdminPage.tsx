@@ -17,6 +17,7 @@ import {
   adminLogin, adminLogout, checkAdminSession, fetchAdminSecrets, pushAdminSecrets, fetchLoginConfig,
   type AdminSecrets,
 } from "@/lib/admin-api";
+import { FarcasterLogo } from "@/components/NeynarScoreBadge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -248,7 +249,7 @@ function ApiKeysSection() {
       cloudinaryAccountsJson: JSON.stringify(validAccounts),
     });
     setSaving(false);
-    if (result.ok) toast.success("API keys saved — live immediately, no redeploy needed");
+    if (result.ok) toast.success("API keys saved, live immediately, no redeploy needed");
     else toast.error(result.error ?? "Save failed");
   }
 
@@ -264,7 +265,7 @@ function ApiKeysSection() {
     <>
       <Card title="Neynar & Image Hosting">
         <InfoBox>
-          Stored server-side and applied immediately — no redeploy. When set here, these override
+          Stored server-side and applied immediately, no redeploy. When set here, these override
           the server's own environment variables. Leave blank to keep using the server's env vars.
         </InfoBox>
         <Field>
@@ -279,11 +280,11 @@ function ApiKeysSection() {
 
       <Card title="Cloudinary Accounts (image/video upload pool)" className="mt-4">
         <InfoBox>
-          Add one or more Cloudinary accounts to expand upload capacity — the server load-balances
+          Add one or more Cloudinary accounts to expand upload capacity. The server load-balances
           across all of them and fails over automatically on error. Free credentials at cloudinary.com/console.
         </InfoBox>
         {accounts.length === 0 && (
-          <p className="text-[12px] text-muted-foreground mb-3">No accounts configured yet — uploads fall back to the server's env vars, then Imgur, then catbox.moe.</p>
+          <p className="text-[12px] text-muted-foreground mb-3">No accounts configured yet. Uploads fall back to the server's env vars, then Imgur, then catbox.moe.</p>
         )}
         <div className="space-y-3">
           {accounts.map((acc, i) => (
@@ -405,7 +406,7 @@ function AdminLoginGate({ onLoggedIn }: { onLoggedIn: () => void }) {
           </div>
           <h1 className="font-bold text-xl text-foreground">Admin Access</h1>
           <p className="text-sm text-muted-foreground mt-1.5">
-            Enter the admin password to continue. Verified on the server — nothing here can be bypassed from the browser.
+            Enter the admin password to continue. Verified on the server, nothing here can be bypassed from the browser.
           </p>
         </div>
 
@@ -463,7 +464,7 @@ export function AdminPage() {
     const result = await pushAdminConfigToServer(cfg);
     if (result.ok) {
       setSaveState("saved");
-      toast.success("Saved — now live for every visitor");
+      toast.success("Saved, now live for every visitor");
     } else {
       setSaveState("error");
       toast.error(result.error ?? "Save failed");
@@ -806,11 +807,12 @@ export function AdminPage() {
               <Card title="Social & Community Links">
                 <InfoBox>These links appear in the landing page footer and anywhere social icons are shown.</InfoBox>
                 {([
-                  { key: "twitter",  label: "Twitter / X",  Icon: Twitter,       placeholder: "https://twitter.com/fidcaster" },
-                  { key: "telegram", label: "Telegram",      Icon: Send,          placeholder: "https://t.me/fidcaster" },
-                  { key: "github",   label: "GitHub",        Icon: Github,        placeholder: "https://github.com/..." },
-                  { key: "discord",  label: "Discord",       Icon: MessageSquare, placeholder: "https://discord.gg/..." },
-                  { key: "website",  label: "Website",       Icon: Globe,         placeholder: "https://fidcaster.app" },
+                  { key: "twitter",   label: "Twitter / X",  Icon: Twitter,       placeholder: "https://twitter.com/fidcaster" },
+                  { key: "telegram",  label: "Telegram",      Icon: Send,          placeholder: "https://t.me/fidcaster" },
+                  { key: "farcaster", label: "Farcaster",     Icon: FarcasterLogo, placeholder: "https://farcaster.xyz/fidcaster" },
+                  { key: "github",    label: "GitHub",        Icon: Github,        placeholder: "https://github.com/..." },
+                  { key: "discord",   label: "Discord",       Icon: MessageSquare, placeholder: "https://discord.gg/..." },
+                  { key: "website",   label: "Website",       Icon: Globe,         placeholder: "https://fidcaster.app" },
                 ] as const).map(({ key, label, Icon, placeholder }) => (
                   <Field key={key}>
                     <Label>
@@ -1052,7 +1054,7 @@ export function AdminPage() {
               <>
                 <ApiKeysSection />
                 <Card title="Rate Limits" className="mt-4">
-                  <InfoBox variant="warn">Display-only reference — actual enforcement lives in the server's rate limiters (server/index.ts) and isn't yet wired to these values.</InfoBox>
+                  <InfoBox variant="warn">Display-only reference. Actual enforcement lives in the server's rate limiters (server/index.ts) and isn't yet wired to these values.</InfoBox>
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label sub="Max actions per minute">Action Rate Limit</Label>
@@ -1118,7 +1120,7 @@ export function AdminPage() {
                 <Card title="Admin Access">
                   <InfoBox>
                     The admin password is set via the server's <code className="font-mono">ADMIN_PASSWORD</code> environment
-                    variable, not from this panel — changing it requires updating the server config and restarting the process.
+                    variable, not from this panel. Changing it requires updating the server config and restarting the process.
                     Sessions expire automatically after 12 hours.
                   </InfoBox>
                 </Card>

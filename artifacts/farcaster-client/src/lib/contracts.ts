@@ -220,6 +220,29 @@ export async function registerSignerOnchain(
 ): Promise<`0x${string}`> {
   const localAccount = walletClient.account!;
 
+  // Pre-flight balance check, before any wallet popup: registering a signer
+  // costs a small amount of gas on Optimism. Some wallets (seen with mobile
+  // WalletConnect sessions) show their own "insufficient funds" warning
+  // internally with no explicit reject, leaving the signTypedData/writeContract
+  // promise pending forever · so if we can already tell the balance can't
+  // cover gas, fail fast here with a clear message instead of ever prompting.
+  try {
+    const [balance, gasPrice] = await Promise.all([
+      publicClient.getBalance({ address }),
+      publicClient.getGasPrice(),
+    ]);
+    // ~150k gas is a safe overestimate for this call (actual usage is far
+    // lower); +30% headroom matches the margin used elsewhere in this file.
+    const estimatedCost = (150_000n * gasPrice * 130n) / 100n;
+    if (balance < estimatedCost) {
+      throw new Error(`INSUFFICIENT_FUNDS:${address}`);
+    }
+  } catch (preflightErr) {
+    if (preflightErr instanceof Error && preflightErr.message.startsWith("INSUFFICIENT_FUNDS:")) throw preflightErr;
+    // Any other pre-flight error (RPC hiccup) · don't block, let the normal
+    // simulate/estimate/send path below try for real.
+  }
+
   // Build EIP-712 SignedKeyRequest signed by the custody wallet (self-registration).
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400 * 365); // 1 year
   const domain = {
