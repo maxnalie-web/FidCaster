@@ -152,9 +152,10 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="transition-colors p-1" style={{ color: "rgba(255,255,255,0.4)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.85)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}>
+        <button
+          onClick={onBack}
+          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+        >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div
@@ -165,16 +166,15 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         </div>
         <div>
-          <h2 className="text-white font-bold text-base">Sign In With Farcaster</h2>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>Full read &amp; write access · no seed phrase needed</p>
+          <h2 className="text-foreground font-bold text-base">Sign In With Farcaster</h2>
+          <p className="text-xs text-muted-foreground">Full read &amp; write access · no seed phrase needed</p>
         </div>
       </div>
 
       {/* IDLE */}
       {phase === "idle" && (
         <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3.5 rounded-xl text-xs leading-relaxed"
-            style={{ background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.18)", color: "rgba(255,255,255,0.55)" }}>
+          <div className="flex items-start gap-3 p-3.5 rounded-xl border border-violet-500/20 bg-violet-500/5 text-xs text-muted-foreground leading-relaxed">
             <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-violet-400" />
             <span>
               Scan one QR code with Farcaster and approve · that single approval signs you in
@@ -193,22 +193,22 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
       {phase === "creating" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
-          <p className="text-white/40 text-sm">Preparing sign-in…</p>
+          <p className="text-muted-foreground text-sm">Preparing sign-in…</p>
         </div>
       )}
 
       {/* AWAITING · scan + approve in Warpcast */}
       {phase === "awaiting" && deeplinkUrl && (
         <div className="space-y-4">
-          <p className="text-xs text-center px-2" style={{ color: "rgba(255,255,255,0.5)" }}>
-            Scan with <strong className="text-white">Farcaster</strong> · then approve
-            <span className="text-white"> Cast as you</span> &amp;
-            <span className="text-white"> Read</span> to finish.
+          <p className="text-xs text-center px-2 text-muted-foreground">
+            Scan with <strong className="text-foreground">Farcaster</strong> · then approve
+            <span className="text-foreground"> Cast as you</span> &amp;
+            <span className="text-foreground"> Read</span> to finish.
           </p>
 
           {!isMobile && (
             <div className="flex flex-col items-center gap-3">
-              <div className="p-3 rounded-2xl" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <div className="p-3 rounded-2xl bg-muted/40 border border-border">
                 <QRCode uri={deeplinkUrl} size={196} />
               </div>
             </div>
@@ -223,14 +223,16 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
             </span>
           </a>
 
-          <div className="flex items-center justify-center gap-2 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
             Waiting for approval in Farcaster…
           </div>
-          <button onClick={cancel} className="w-full text-xs transition-colors"
-            style={{ color: "rgba(255,255,255,0.35)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.35)")}>Cancel</button>
+          <button
+            onClick={cancel}
+            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       )}
 
@@ -238,21 +240,20 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
       {phase === "finishing" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
-          <p className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>Approved! Signing you in…</p>
+          <p className="text-sm text-muted-foreground">Approved! Signing you in…</p>
         </div>
       )}
 
       {/* DONE */}
       {phase === "done" && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2 p-3 rounded-xl text-sm text-emerald-300 leading-relaxed"
-            style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)" }}>
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          <div className="flex items-center gap-2 p-3 rounded-xl text-sm text-emerald-600 dark:text-emerald-300 leading-relaxed border border-emerald-500/25 bg-emerald-500/10">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
             Signed in with full read &amp; write access!
           </div>
           {profile?.username && (
-            <p className="text-xs text-center" style={{ color: "rgba(255,255,255,0.45)" }}>
-              Welcome, <strong className="text-white">@{profile.username}</strong>
+            <p className="text-xs text-center text-muted-foreground">
+              Welcome, <strong className="text-foreground">@{profile.username}</strong>
             </p>
           )}
         </div>
@@ -261,9 +262,8 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
       {/* ERROR */}
       {showError && (
         <div className="space-y-3">
-          <div className="flex items-start gap-2 p-3 rounded-xl text-sm text-red-300 leading-relaxed"
-            style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)" }}>
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+          <div className="flex items-start gap-2 p-3 rounded-xl text-sm text-red-600 dark:text-red-300 leading-relaxed border border-red-500/25 bg-red-500/10">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
             {errorMsg}
           </div>
           <button onClick={start} className="lp-cta-btn w-full">Try Again</button>
