@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Home, Bell, Search, Wallet, User, TrendingUp, Tag, Hash, Shield, Sun, Moon,
-  MoreHorizontal, UserCircle, PenSquare, Layers,
+  MoreHorizontal, UserCircle, PenSquare, Layers, Settings,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useAdminConfig } from "@/hooks/useAdminConfig";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 export type DesktopSidebarActive =
   | "feed" | "notifications" | "search" | "miniapps" | "wallet" | "profile"
-  | "grow" | "market" | "channels";
+  | "grow" | "market" | "channels" | "settings";
 
 /**
  * Persistent left nav for md+ viewports, shared by every top-level page.
@@ -117,6 +117,11 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
           <button onClick={() => navigate("/channels")} className={cn("sidebar-item", active === "channels" && "active")}>
             <Hash className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
             <span className="text-[1.0625rem] text-foreground/85">Channels</span>
+          </button>
+
+          <button onClick={() => navigate("/dashboard?tab=profile&section=settings")} className={cn("sidebar-item", active === "settings" && "active")}>
+            <Settings className={cn("w-[26px] h-[26px] shrink-0", active === "settings" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "settings" ? 2.5 : 2} />
+            <span className={cn("text-[1.0625rem]", active === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
           </button>
 
           {isAdmin && (
