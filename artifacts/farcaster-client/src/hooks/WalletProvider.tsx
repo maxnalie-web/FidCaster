@@ -3,7 +3,6 @@ import { Capacitor } from "@capacitor/core";
 import { WalletContext, type WalletState } from "./useWallet";
 import { deriveAccount, signerFromBytes, signerFromPrivateKeyHex, signerPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { lookupFid, getSignerState, registerSignerOnchain, publicClient, hasSufficientBalanceForSignerRegistration } from "@/lib/contracts";
-import { isInstalledApp } from "@/lib/miniapp-native";
 import { fetchProfile } from "@/lib/farcaster-api";
 import type { FarcasterProfile } from "@/lib/farcaster-api";
 import { DEFAULT_API_KEY } from "@/lib/neynar";
@@ -45,8 +44,6 @@ import {
 
 const NEYNAR_KEY_STORAGE = "fc_neynar_key";
 const SESSION_PWD_KEY = "fc_spwd";
-const INACTIVITY_MS = 30 * 60 * 1000;
-const HIDDEN_LOCK_MS = 5 * 60 * 1000;
 
 function loadNeynarKey(): string {
   try { return localStorage.getItem(NEYNAR_KEY_STORAGE) ?? DEFAULT_API_KEY; } catch { return DEFAULT_API_KEY; }
@@ -789,84 +786,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [_applyAccount, loginWithFarcaster, loginWithWallet]);
 
-  useEffect(() => {
-    // Installed app / PWA storage is sandboxed to this device, unlike a
-    // shared browser tab — there's no "someone else picks up the logged-in
-    // tab" risk an inactivity re-lock is protecting against, so skip it
-    // there entirely instead of asking for the password again mid-session.
-    if (!state.fid || isInstalledApp()) return;
-
-    function doLock() {
-      _zeroAndLock();
-      markSessionLocked();
-      // Do NOT clearLightSession() here · keep the profile metadata so that on the
-      // next page load (even after a refresh) the user sees their feed in
-      // read-only locked mode instead of being bounced to the marketing landing.
-      // markSessionLocked() above is what makes that stick across a refresh ·
-      // it blocks the mount-restore effect's no-password auto-decrypt, so the
-      // only way back in is re-entering the seed password.
-      //
-      // Keep fid/profile in state (not null) · this mirrors exactly what the
-      // mount-restore effect does when reloading an already-locked session, so
-      // locking mid-session behaves the same as locking-then-refreshing: the
-      // user stays on whatever page they're on in read-only mode instead of
-      // AuthRedirect's "!fid && isLocked" branch bouncing them to /login.
-      setState((s) => ({
-        ...s,
-        address: null, walletClient: null, localSigner: null,
-        signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
-        sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
-        isLocked: true,
-      }));
-      hasStoredSession().then((found) => setState((s) => ({ ...s, hasStoredSession: found })));
-    }
-
-    function resetTimer() {
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = setTimeout(doLock, INACTIVITY_MS);
-    }
-
-    const events = ["mousemove", "keydown", "click", "touchstart", "scroll"] as const;
-    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
-    resetTimer();
-
-    return () => {
-      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    };
-  }, [state.fid]);
-
-  useEffect(() => {
-    // Same reasoning as the inactivity-lock effect above: not applicable on
-    // an installed app / PWA.
-    if (!state.fid || isInstalledApp()) return;
-    let hiddenSince: number | null = null;
-
-    function onVisibility() {
-      if (document.hidden) {
-        hiddenSince = Date.now();
-      } else {
-        if (hiddenSince !== null && Date.now() - hiddenSince >= HIDDEN_LOCK_MS) {
-          _zeroAndLock();
-          markSessionLocked();
-          // Keep fid/profile · see doLock() above for why (stay on current page,
-          // read-only, instead of bouncing to /login).
-          setState((s) => ({
-            ...s,
-            address: null, walletClient: null, localSigner: null,
-            signerUuid: null, signerApproved: false, autoSignerLoading: false, signerError: null,
-            sessionPassword: null, isLoading: false, error: null, isCheckingSession: false,
-            isLocked: true,
-          }));
-          hasStoredSession().then((found) => setState((s) => ({ ...s, hasStoredSession: found })));
-        }
-        hiddenSince = null;
-      }
-    }
-
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [state.fid]);
+  // Auto-lock (inactivity timer + backgrounding/tab-hidden re-lock) was
+  // previously applied on the plain web version only (already skipped on
+  // native/PWA). It kept firing during normal use — a few minutes away from
+  // the tab, or just being idle reading a long feed, was enough to force a
+  // password re-entry mid-session ("Posting locked · tap to re-enter
+  // password") — with no real attacker model it was actually protecting
+  // against here (this app has no shared-workstation / kiosk use case), so
+  // it's removed entirely rather than just tuned. The encrypted vault and
+  // password are still required for the very first login and still protect
+  // the mnemonic at rest; there's just no more automatic re-lock mid-session
+  // on any platform now.
 
   useEffect(() => {
     // On the web, "pagehide" means the tab is genuinely closing/navigating away
