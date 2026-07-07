@@ -1,1 +1,3 @@
 - [Bezoar YAML bug](bezoar-yaml-bug.md) — inline python3 -c with zero-indented lines breaks YAML block scalar → 0-steps failure
+- [FidCaster logo structure](fidcaster-logo-structure.md) — logo has dark navy bg (29,0,112) + light lavender F; use color-key to extract
+- [FidCaster video upload](fidcaster-video-upload.md) — catbox.moe for video CDN; tmpfiles.org needs /dl/ prefix for direct URL

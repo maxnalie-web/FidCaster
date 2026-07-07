@@ -698,8 +698,35 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
       }
     }
 
-    // Last-resort fallback: tmpfiles.org — free, no API key, images + video.
     const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
+
+    // For videos: try catbox.moe first — returns a permanent CDN URL (files.catbox.moe/xxx.mp4)
+    // that Farcaster clients (Warpcast etc.) can detect and play inline.
+    if (isVideo) {
+      try {
+        const catboxForm = new FormData();
+        catboxForm.append("reqtype", "fileupload");
+        catboxForm.append("fileToUpload", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
+        const catboxRes = await fetch("https://catbox.moe/user/api.php", {
+          method: "POST",
+          body: catboxForm,
+          signal: AbortSignal.timeout(90_000),
+        });
+        if (catboxRes.ok) {
+          const catboxUrl = (await catboxRes.text()).trim();
+          if (catboxUrl.startsWith("https://files.catbox.moe/")) {
+            if (typeof fid === "number" && fid > 0) recordUpload(fid);
+            res.json({ url: catboxUrl });
+            return;
+          }
+        }
+        console.warn("[upload] catbox.moe failed, falling back to tmpfiles.org");
+      } catch (e) {
+        console.warn("[upload] catbox.moe error:", (e as Error).message);
+      }
+    }
+
+    // Last-resort fallback: tmpfiles.org — free, no API key, images + video.
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
     const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
@@ -709,7 +736,12 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
     });
     if (tmpRes.ok) {
       const tmpData = await tmpRes.json().catch(() => null) as { status?: string; data?: { url?: string } } | null;
-      const tmpUrl = tmpData?.data?.url;
+      const rawUrl = tmpData?.data?.url;
+      // tmpfiles.org returns page URLs like https://tmpfiles.org/1234/file.mp4
+      // The direct download URL requires /dl/ prefix for Farcaster clients to detect media.
+      const tmpUrl = rawUrl
+        ? rawUrl.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/")
+        : undefined;
       if (tmpUrl) {
         if (typeof fid === "number" && fid > 0) recordUpload(fid);
         res.json({ url: tmpUrl });
