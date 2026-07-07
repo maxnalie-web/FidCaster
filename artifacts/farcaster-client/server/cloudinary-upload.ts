@@ -82,8 +82,15 @@ export async function uploadToCloudinary(
       return url;
     } catch (e) {
       lastErr = e as Error;
-      markAccountFailure(account.id);
-      console.warn(`[cloudinary] account #${account.id} (${account.cloudName}) failed, trying next:`, lastErr.message);
+      // Only put an account into cooldown for server-side or auth failures
+      // (401 Unauthorized, 403 Forbidden, 429 Rate Limited, 5xx).
+      // A 400 Bad Request means the file itself is invalid — the account is
+      // fine and cooling it down would unnecessarily block future uploads.
+      const statusMatch = lastErr.message.match(/\((\d+)\)/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+      const isAccountFault = status === 0 || status === 401 || status === 403 || status === 429 || status >= 500;
+      if (isAccountFault) markAccountFailure(account.id);
+      console.warn(`[cloudinary] account #${account.id} (${account.cloudName}) failed (${isAccountFault ? "cooldown" : "no cooldown"}):`, lastErr.message);
     }
   }
   throw lastErr ?? new Error("All Cloudinary accounts failed");
