@@ -1,11 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Loader2, ChevronLeft, X, KeyRound, Wallet, QrCode, Plus, LogOut, CheckCircle2, UserCircle,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
+import { useMarketWallet } from "@/hooks/useMarketWallet";
 import { FarcasterSignIn } from "@/components/FarcasterSignIn";
-import { createWalletClient, custom } from "viem";
-import { optimism } from "viem/chains";
 import { cn } from "@/lib/utils";
 
 /**
@@ -21,11 +20,16 @@ type AddMethod = "pick" | "mnemonic" | "wallet" | "farcaster";
 
 export function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd: (m: string) => Promise<void> }) {
   const { loginWithWallet } = useWallet();
+  const {
+    wallet: extWallet, connectMetaMask, connectWalletConnect, connecting: walletConnecting,
+    error: walletHookError, hasInjected,
+  } = useMarketWallet();
   const [method, setMethod] = useState<AddMethod>("pick");
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [words, setWords] = useState<string[]>(Array(12).fill(""));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   function handleWordCountChange(n: 12 | 24) {
     setWordCount(n); setWords(Array(n).fill("")); setError(null);
@@ -51,21 +55,31 @@ export function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd
     finally { setLoading(false); }
   }
 
+  // Connecting an external wallet is two steps: first get the wallet itself
+  // (injected/MetaMask if present, else a WalletConnect QR — this is the
+  // only option that works at all on native/PWA, where there's never a
+  // window.ethereum to detect), then hand it to loginWithWallet(). The
+  // second step only fires once `extWallet` actually becomes available.
+  useEffect(() => {
+    if (!extWallet || !loggingIn) return;
+    loginWithWallet(extWallet.walletClient, extWallet.address)
+      .then(() => onClose())
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Wallet connection failed."))
+      .finally(() => setLoggingIn(false));
+  }, [extWallet, loggingIn, loginWithWallet, onClose]);
+
   const handleAddWallet = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ethereum = (window as any)?.ethereum;
-      if (!ethereum?.request) throw new Error("No wallet found. Install MetaMask.");
-      const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
-      if (!accounts.length) throw new Error("No accounts returned.");
-      const wc = createWalletClient({ account: accounts[0] as `0x${string}`, chain: optimism, transport: custom(ethereum) });
-      await loginWithWallet(wc, accounts[0] as `0x${string}`);
-      onClose();
+      if (hasInjected) await connectMetaMask();
+      else await connectWalletConnect();
+      setLoggingIn(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Wallet connection failed.");
-    } finally { setLoading(false); }
-  }, [loginWithWallet, onClose]);
+    }
+  }, [hasInjected, connectMetaMask, connectWalletConnect]);
+
+  const walletBusy = walletConnecting || loggingIn;
 
   const cols = wordCount === 24 ? 4 : 3;
 
@@ -147,12 +161,14 @@ export function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd
         {/* WALLET */}
         {method === "wallet" && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Connect your MetaMask wallet to add this account.</p>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <button onClick={handleAddWallet} disabled={loading}
+            <p className="text-sm text-muted-foreground">
+              {hasInjected ? "Connect your browser wallet to add this account." : "Scan a QR code with any WalletConnect-compatible wallet to add this account."}
+            </p>
+            {(error || walletHookError) && <p className="text-xs text-destructive">{error || walletHookError}</p>}
+            <button onClick={handleAddWallet} disabled={walletBusy}
               className="w-full py-2.5 rounded-full btn-luxury text-white text-sm font-semibold flex items-center justify-center gap-2">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
-              {loading ? "Connecting…" : "Connect Wallet"}
+              {walletBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+              {walletBusy ? "Connecting…" : hasInjected ? "Connect Wallet" : "Connect via WalletConnect"}
             </button>
           </div>
         )}

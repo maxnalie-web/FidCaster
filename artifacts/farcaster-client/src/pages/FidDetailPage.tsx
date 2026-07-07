@@ -139,6 +139,22 @@ function shortAddr(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
+const WALLET_TIMEOUT_MS = 90_000;
+
+/** Wraps a wallet request (sign/send) with a timeout · WalletConnect sessions
+ * in particular can hang forever with no rejection event if the user just
+ * backs out of the wallet app instead of explicitly tapping "Reject" — this
+ * turns that into a normal, recoverable error instead of a spinner stuck on
+ * "Sign transfer…" indefinitely. */
+function withWalletTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Wallet did not respond in time. If you closed the wallet without signing, please try again.")), WALLET_TIMEOUT_MS)
+    ),
+  ]);
+}
+
 /** WalletConnect v2 rejects a request with this exact message when the
  * connected wallet's session never approved the address for Optimism
  * (eip155:10) — e.g. it only approved mainnet at pairing time and a later
@@ -151,7 +167,15 @@ function friendlyTxError(err: unknown): string {
   if (/permitted ethereum address/i.test(msg)) {
     return "Your wallet session doesn't currently authorize Optimism for this account. Disconnect and reconnect your wallet, making sure to approve the Optimism network (chain ID 10) when prompted.";
   }
-  return msg || "Transaction failed";
+  if (/wallet did not respond in time/i.test(msg)) return msg;
+  if (/user rejected|rejected the request|denied transaction|request rejected/i.test(msg)) {
+    return "Request rejected in your wallet.";
+  }
+  // Wallet/viem errors are frequently multi-paragraph (raw message data,
+  // details, docs links, version strings) — show only the first line, and
+  // cap its length, so the error card never overflows its container.
+  const firstLine = (msg || "Transaction failed").split("\n")[0].trim();
+  return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -359,13 +383,13 @@ export default function FidDetailPage() {
       const nonce = await fetchAddressNonce(buyerAddress);
       const toDeadline = BigInt(Math.floor(Date.now() / 1000) + 86400);
 
-      const toSig = await buyerWc.signTypedData({
+      const toSig = await withWalletTimeout(buyerWc.signTypedData({
         account: signAccount,
         domain: ID_REGISTRY_EIP712_DOMAIN,
         types: TRANSFER_TYPES,
         primaryType: "Transfer",
         message: { fid: BigInt(fid), to: buyerAddress, nonce, deadline: toDeadline },
-      });
+      }));
 
       setBuyPhase("sending");
       const priceWei = BigInt(data.listing.priceWei || "0");
@@ -395,14 +419,14 @@ export default function FidDetailPage() {
         gas = (estimated * 130n) / 100n;
       } catch { /* leave gas unset · wallet estimates on its own */ }
 
-      const txHash = await buyerWc.sendTransaction({
+      const txHash = await withWalletTimeout(buyerWc.sendTransaction({
         account: signAccount,
         to: FID_MARKET_ADDRESS,
         value: feePaid,
         data: buyCallData,
         chain: optimism,
         ...(gas !== undefined ? { gas } : {}),
-      });
+      }));
 
       setBuyTxHash(txHash as string);
       setBuyPhase("confirming");
@@ -439,14 +463,14 @@ export default function FidDetailPage() {
 
       // Sign Transfer: seller authorises FID Market to receive the FID via IdRegistry.transferFor()
       // The sig is stored in the listing and used at buy() time · NOT verified at list() time.
-      const fromSig = await listWC.signTypedData({
+      const fromSig = await withWalletTimeout(listWC.signTypedData({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         account: sigAccount as any,
         domain: ID_REGISTRY_EIP712_DOMAIN,
         types: TRANSFER_TYPES,
         primaryType: "Transfer",
         message: { fid: BigInt(fid), to: FID_MARKET_ADDRESS as Address, nonce, deadline: fromDeadline },
-      });
+      }));
 
       setSellPhase("sending");
       // list(fid, priceWei, durationSecs[600-2592000], fromDeadline[≤block.ts+duration], fromSig)
@@ -455,16 +479,6 @@ export default function FidDetailPage() {
         functionName: "list",
         args: [BigInt(fid), priceWei, durationSecs, fromDeadline, fromSig],
       });
-
-      const SEND_TIMEOUT_MS = 90_000;
-      function withTimeout<T>(p: Promise<T>): Promise<T> {
-        return Promise.race([
-          p,
-          new Promise<T>((_, reject) =>
-            setTimeout(() => reject(new Error("Wallet did not respond in 90 seconds. Please try again.")), SEND_TIMEOUT_MS)
-          ),
-        ]);
-      }
 
       // For wallet-auth (MetaMask injected): explicitly switch to Optimism before sendTransaction.
       // mnemonic accounts use a LocalAccount with a public RPC · no chain switch needed.
@@ -484,7 +498,7 @@ export default function FidDetailPage() {
 
       let txHash: `0x${string}`;
       if (isLocalWalletAuth) {
-        txHash = await withTimeout(sendDirect({ to: FID_MARKET_ADDRESS, data: listData }));
+        txHash = await withWalletTimeout(sendDirect({ to: FID_MARKET_ADDRESS, data: listData }));
       } else {
         // Explicit gas hint avoids a false "likely to fail" warning some
         // wallets show on an unsimulated call (see buy() above / contracts.ts).
@@ -493,7 +507,7 @@ export default function FidDetailPage() {
           const estimated = await opClient.estimateGas({ account: listAddr, to: FID_MARKET_ADDRESS, data: listData });
           listGas = (estimated * 130n) / 100n;
         } catch { /* leave gas unset · wallet estimates on its own */ }
-        txHash = await withTimeout(listWC.sendTransaction({
+        txHash = await withWalletTimeout(listWC.sendTransaction({
           account: listAddr,
           to: FID_MARKET_ADDRESS,
           data: listData,
@@ -1059,7 +1073,7 @@ export default function FidDetailPage() {
                 </div>
               )}
               {typeof sellPhase === "object" && "error" in sellPhase && (
-                <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive">
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive break-words min-w-0">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   {sellPhase.error}
                 </div>
@@ -1094,7 +1108,7 @@ export default function FidDetailPage() {
                   </div>
                 )}
                 {typeof sellPhase === "object" && "error" in sellPhase && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive">
+                  <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive break-words min-w-0">
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{sellPhase.error}
                   </div>
                 )}
@@ -1133,7 +1147,7 @@ export default function FidDetailPage() {
                     </div>
                   )}
                   {typeof buyPhase === "object" && "error" in buyPhase && (
-                    <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive">
+                    <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive break-words min-w-0">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{buyPhase.error}
                     </div>
                   )}
@@ -1201,7 +1215,7 @@ export default function FidDetailPage() {
                     </div>
                   )}
                   {typeof buyPhase === "object" && "error" in buyPhase && (
-                    <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive">
+                    <div className="flex items-start gap-2 p-3 rounded-xl border border-destructive/20 bg-destructive/5 text-xs text-destructive break-words min-w-0">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{buyPhase.error}
                     </div>
                   )}
