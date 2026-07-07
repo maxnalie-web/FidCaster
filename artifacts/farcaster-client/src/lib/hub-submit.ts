@@ -51,7 +51,7 @@ type FarcasterAction =
   | { type: "unrecast";         castHash: string; castAuthorFid: number }
   | { type: "follow";           targetFid: number }
   | { type: "unfollow";         targetFid: number }
-  | { type: "cast";             text: string; parentHash?: string; parentFid?: number; parentUrl?: string }
+  | { type: "cast";             text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string }
   | { type: "delete-cast";      castHash: string }
   | { type: "update-user-data"; dataType: "pfp" | "display" | "bio" | "banner"; value: string };
 
@@ -110,11 +110,12 @@ async function buildAndSignLocal(
     };
     result = await makeUserDataAdd({ type: typeMap[action.dataType], value: action.value }, opts, signer);
   } else {
-    const cast = action as { type: "cast"; text: string; parentHash?: string; parentFid?: number; parentUrl?: string };
+    const cast = action as { type: "cast"; text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string };
     result = await makeCastAdd({
       type: 1, // CastType.CAST
       text: cast.text,
-      embeds: [], embedsDeprecated: [], mentions: [], mentionsPositions: [],
+      embeds: (cast.embeds ?? []).map((url) => ({ url })),
+      embedsDeprecated: [], mentions: [], mentionsPositions: [],
       ...(cast.parentHash && cast.parentFid
         ? { parentCastId: { fid: cast.parentFid, hash: hexToBytes(cast.parentHash) } }
         : cast.parentUrl ? { parentUrl: cast.parentUrl } : {}),
@@ -355,6 +356,7 @@ export async function hubPublishCast(
   const action: FarcasterAction = {
     type: "cast",
     text,
+    ...(opts?.embeds && opts.embeds.length > 0 ? { embeds: opts.embeds } : {}),
     ...(opts?.parentHash && opts.parentFid
       ? { parentHash: opts.parentHash, parentFid: opts.parentFid }
       : opts?.parentUrl ? { parentUrl: opts.parentUrl } : {}),

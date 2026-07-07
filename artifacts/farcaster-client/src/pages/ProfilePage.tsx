@@ -1080,7 +1080,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
         <button
           onClick={() => setShowComposer(true)}
           aria-label="New cast"
-          className="fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          className="md:hidden fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
           style={{ marginBottom: "env(safe-area-inset-bottom)" }}
         >
           <PenSquare className="w-[22px] h-[22px]" />
