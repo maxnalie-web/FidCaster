@@ -528,6 +528,7 @@ export function LoginPage() {
           <a href="#client" className="hover:text-white/70 transition-colors">Client</a>
           <a href="#market" className="hover:text-white/70 transition-colors">FID Market</a>
           <a href="#features" className="hover:text-white/70 transition-colors">Features</a>
+          <button onClick={() => navigate("/download")} className="hover:text-white/70 transition-colors">Download</button>
         </div>
         <button
           onClick={() => navigate("/login")}
@@ -913,6 +914,7 @@ export function LoginPage() {
             )}
           </div>
           <div className="flex items-center gap-6 text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
+            <a href="/download" className="hover:text-white/50 transition-colors">Download</a>
             {cfg.landingFooter.links.map((lnk, i) => (
               <a key={i} href={lnk.url} className="hover:text-white/50 transition-colors">{lnk.label}</a>
             ))}
