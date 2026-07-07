@@ -26,6 +26,7 @@ import {
   NobleEd25519Signer,
   FarcasterNetwork,
   UserDataType,
+  CastType,
   Message,
 } from "@farcaster/core";
 import type { LocalSigner } from "./wallet";
@@ -112,7 +113,7 @@ async function buildAndSignLocal(
   } else {
     const cast = action as { type: "cast"; text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string };
     result = await makeCastAdd({
-      type: 1, // CastType.CAST
+      type: CastType.CAST,
       text: cast.text,
       embeds: (cast.embeds ?? []).map((url) => ({ url })),
       embedsDeprecated: [], mentions: [], mentionsPositions: [],
