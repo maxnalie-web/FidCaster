@@ -25,10 +25,12 @@ import {
   storeLightSession,
   loadLightSession,
   clearLightSession,
+  patchLightSessionProfile,
 } from "@/lib/session-crypto";
 import {
   loadAccountsMeta,
   upsertAccountMeta,
+  updateAccountMetaProfile,
   removeAccountFromStore,
   setActiveFid,
   getActiveFid,
@@ -162,6 +164,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const addressRef = useRef<`0x${string}` | null>(null);
   const walletClientRef = useRef<WalletClient | null>(null);
   const localSignerRef = useRef<LocalSigner | null>(null);
+
+  /**
+   * Session restore for wallet/farcaster/locked-mnemonic auth shows the
+   * profile straight from the light-session cache (instant paint, no
+   * fetch). If that cache was itself written from a network-failure
+   * placeholder — fetchProfile() never throws, it just falls back to a
+   * bare { displayName: "FID {n}", pfpUrl: "" } — it would otherwise stay
+   * a placeholder forever, since nothing else ever re-fetches it. This
+   * runs once per normal restore (not a network/visibility-triggered
+   * retry loop): get the real profile in the background, and if it's
+   * better than what's cached, update the live state plus the persisted
+   * caches so future restores start from good data too.
+   */
+  function _revalidateProfile(fid: bigint, cached: FarcasterProfile | null) {
+    const looksLikePlaceholder = !cached || (!cached.pfpUrl && cached.displayName === `FID ${Number(fid)}`);
+    if (!looksLikePlaceholder) return;
+    fetchProfile(fid).then((profile) => {
+      if (!profile.pfpUrl && profile.displayName === `FID ${Number(fid)}`) return; // still failing
+      const fidNum = Number(fid);
+      updateAccountMetaProfile(fidNum, { username: profile.username, displayName: profile.displayName, pfpUrl: profile.pfpUrl });
+      patchLightSessionProfile(fidNum, { username: profile.username, displayName: profile.displayName, pfpUrl: profile.pfpUrl });
+      if (fidRef.current === fid) {
+        setState((s) => ({ ...s, profile, accounts: loadAccountsMeta() }));
+      }
+    }).catch(() => {});
+  }
 
   function _zeroAndLock() {
     if (localSignerRef.current) {
@@ -637,6 +665,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             try { restoredSigner = signerFromPrivateKeyHex(storedPrivKey); } catch { restoredSigner = null; }
           }
           await loginWithFarcaster(light.fid, profile, restoredSigner, light.signerUuid ?? null);
+          _revalidateProfile(BigInt(light.fid), profile);
           if (!cancelled) setState((s) => ({ ...s, isCheckingSession: false }));
           return;
         }
@@ -682,6 +711,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 accounts: loadAccountsMeta(), neynarKey: neynarKeyRef.current,
                 fidSold: false, autoSignerLoading: false, signerError: null,
               }));
+              _revalidateProfile(BigInt(light.fid), restoredProfile);
               autoReconnected = true;
             } catch { /* fall through to MetaMask sign */ }
           }
@@ -739,6 +769,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
               accounts: loadAccountsMeta(), neynarKey: neynarKeyRef.current,
               fidSold: false, autoSignerLoading: false, signerError: null,
             }));
+            _revalidateProfile(BigInt(light.fid), restoredProfile);
           }
           return;
         }
@@ -777,6 +808,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             accounts: loadAccountsMeta(), neynarKey: neynarKeyRef.current,
             fidSold: false, autoSignerLoading: false, signerError: null,
           }));
+          _revalidateProfile(BigInt(light.fid), restoredProfile);
           return;
         }
       }

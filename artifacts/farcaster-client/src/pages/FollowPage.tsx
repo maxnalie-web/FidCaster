@@ -313,7 +313,7 @@ type Phase = "idle" | "searching" | "loading" | "loaded" | "empty";
 
 export function FollowPage() {
   const [, navigate] = useLocation();
-  useEffect(() => { window.scrollTo(0, 0); }, []);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }, []);
   const { fid, localSigner, neynarKey, profile } = useWallet();
   const batchOp = useBatchOperation();
   const myFid = fid ? Number(fid) : 0;
@@ -726,10 +726,7 @@ export function FollowPage() {
     ? "bg-primary text-white hover:bg-primary/90"
     : "bg-rose-500 text-white hover:bg-rose-500/90";
 
-  const pageTitle = mode === "follow" ? "Follow from Profile" : "Clean Up Following";
-  const pageSubtitle = mode === "follow"
-    ? "Browse any profile's community and follow them"
-    : "Review and remove people from your following list";
+  const pageTitle = mode === "follow" ? "Follow" : "Clean Up";
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -764,7 +761,6 @@ export function FollowPage() {
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="font-bold text-[15px] text-foreground">{pageTitle}</h1>
-            <p className="text-[11px] text-muted-foreground leading-none mt-0.5">{pageSubtitle}</p>
           </div>
         </div>
       </header>

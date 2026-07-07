@@ -42,6 +42,19 @@ type TabData = {
 
 const BLANK_TAB: TabData = { items: [], cursor: undefined, loaded: false, loading: false };
 
+// Module-level (survives unmount) so pressing back after opening a reply/cast
+// from this profile's tabs returns here instantly — same tab, same scroll
+// position — instead of remounting fresh and landing back on "Casts" at the
+// top. Keyed by viewer+target since viewer-specific state (following, liked)
+// differs per account.
+const _profileCache = new Map<string, {
+  user: NeynarUser | null;
+  following: boolean;
+  activeTab: ProfileTab;
+  tabs: Record<ProfileTab, TabData>;
+  scrollY: number;
+}>();
+
 const TAB_META: { id: ProfileTab; label: string; icon: React.ReactNode }[] = [
   { id: "casts",   label: "Casts",   icon: <AlignLeft    className="w-3.5 h-3.5" /> },
   { id: "replies", label: "Replies", icon: <MessageSquare className="w-3.5 h-3.5" /> },
@@ -324,12 +337,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
   const myFidNum = myFid ? Number(myFid) : 0;
   const isOwnProfile = targetFid === myFidNum;
   const isPro = useIsPro(targetFid);
-  const [user, setUser] = useState<NeynarUser | null>(null);
+  const cacheKey = `${myFidNum}:${targetFid}`;
+  const cachedProfile = _profileCache.get(cacheKey);
+  const [user, setUser] = useState<NeynarUser | null>(() => cachedProfile?.user ?? null);
   const [spamLabel, setSpamLabel] = useState<SpamLabelValue | undefined>(undefined);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cachedProfile);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [following, setFollowing] = useState(false);
+  const [following, setFollowing] = useState(() => cachedProfile?.following ?? false);
   const [followLoading, setFollowLoading] = useState(false);
   const [followSheet, setFollowSheet] = useState<"followers" | "following" | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -337,16 +352,19 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
   const [showSpamAnalyzer, setShowSpamAnalyzer] = useState(false);
   const [showCastSearch, setShowCastSearch] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
-  // Open every profile scrolled to the very top · with manual scroll restoration
-  // the browser no longer does this for us.
-  useEffect(() => { window.scrollTo(0, 0); }, [targetFid]);
+  const scrollYRef = useRef(typeof window !== "undefined" ? window.scrollY : 0);
+  // True only across this component INSTANCE's very first effect run · lets
+  // the data-loading effect below tell "just mounted, maybe cached" apart
+  // from "still mounted, targetFid changed to a different profile" (which
+  // must always do a fresh load, never reuse a stale cache entry).
+  const mountedOnceRef = useRef(false);
   // Price (ETH string) if this FID is actively listed on the FID market, else null.
   const [marketListing, setMarketListing] = useState<string | null>(null);
   const ethUsd = useEthPrice(); // live ETH→USD (CoinGecko, refreshes) for USD price display
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>("casts");
-  const [tabs, setTabs] = useState<Record<ProfileTab, TabData>>({
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() => cachedProfile?.activeTab ?? "casts");
+  const [tabs, setTabs] = useState<Record<ProfileTab, TabData>>(() => cachedProfile?.tabs ?? {
     casts: BLANK_TAB, replies: BLANK_TAB, likes: BLANK_TAB, recasts: BLANK_TAB,
   });
 
@@ -433,11 +451,36 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
 
   useEffect(() => {
     if (!targetFid) return;
+    const isInitialMount = !mountedOnceRef.current;
+    mountedOnceRef.current = true;
+
+    // A cache hit on the component's very first effect run means this is a
+    // "came back to a profile I was already on" remount (e.g. browser back
+    // from a cast opened out of the Replies tab) — restore state (tab,
+    // scroll, data) instantly instead of resetting to Casts/top, then just
+    // refresh in the background so it doesn't go stale.
+    if (isInitialMount) {
+      const cached = _profileCache.get(cacheKey);
+      if (cached) {
+        requestAnimationFrame(() => window.scrollTo({ top: cached.scrollY, left: 0, behavior: "auto" }));
+        const gen = profileGenRef.current;
+        getUserByFid(targetFid, myFidNum || targetFid, neynarKey)
+          .then(res => {
+            if (gen !== profileGenRef.current) return;
+            const u = res.users?.[0] ?? null;
+            if (u) { setUser(u); setFollowing(u.viewer_context?.following ?? false); }
+          })
+          .catch(() => { /* keep showing cached copy on background-refresh failure */ });
+        return;
+      }
+    }
+
     profileGenRef.current += 1; // cancel any in-flight tab loads from previous profile
     setProfileError(null);
     setFollowing(false);
     setActiveTab("casts");
     setTabs({ casts: BLANK_TAB, replies: BLANK_TAB, likes: BLANK_TAB, recasts: BLANK_TAB });
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
 
     // Render instantly from an already-known copy of this profile (e.g. just
     // tapped from a cast) while the authoritative one loads in the
@@ -493,6 +536,24 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
     if (tabs[activeTab].loaded || tabs[activeTab].loading) return;
     loadTab(activeTab);
   }, [activeTab, targetFid]);
+
+  // Track scroll continuously so it can be captured the instant this profile
+  // is left (either navigating into a cast, or away entirely).
+  useEffect(() => {
+    const onScroll = () => { scrollYRef.current = window.scrollY; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Persist this profile's tab/scroll state on unmount/target-change so
+  // returning to it (e.g. browser back from a cast) is instant.
+  useEffect(() => {
+    if (!targetFid) return;
+    return () => {
+      _profileCache.set(cacheKey, { user, following, activeTab, tabs, scrollY: scrollYRef.current });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetFid, cacheKey, user, following, activeTab, tabs]);
 
   async function handleFollow() {
     if (!canWrite || !myFid) return;
@@ -970,16 +1031,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
                 >
                   {t.icon}
                   {t.label}
-                  {t.id === "casts" && isOwnProfile && canWrite && (
-                    <span
-                      role="button"
-                      aria-label="New cast"
-                      onClick={e => { e.stopPropagation(); setShowComposer(true); }}
-                      className="ml-1 flex items-center justify-center w-5 h-5 rounded-full hover:bg-primary/15 active:scale-95 transition-all text-primary"
-                    >
-                      <PenSquare className="w-3.5 h-3.5" />
-                    </span>
-                  )}
                   {activeTab === t.id && (
                     <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />
                   )}
@@ -1079,6 +1130,22 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Floating compose button (own profile) · same placement as Home.
+          bottom-[70px], not bottom-6: this component also renders embedded
+          inside DashboardPage's own "profile" tab, which has its own 54px
+          bottom nav bar · bottom-6 sat the button right on top of the nav's
+          Profile icon instead of above it. ── */}
+      {isOwnProfile && canWrite && (
+        <button
+          onClick={() => setShowComposer(true)}
+          aria-label="New cast"
+          className="md:hidden fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <PenSquare className="w-[22px] h-[22px]" />
+        </button>
       )}
 
       {/* ── Compose popup — the sidebar's persistent Cast button can open this

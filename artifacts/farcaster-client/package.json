@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^8.4.1",
+    "@capacitor/haptics": "^8.0.2",
     "@capacitor/status-bar": "^8.0.2",
     "@capgo/capacitor-inappbrowser": "^8.6.34",
     "@farcaster/auth-kit": "^0.8.2",
