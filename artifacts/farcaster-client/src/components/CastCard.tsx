@@ -13,6 +13,7 @@ import { translateText, getPreferredLang } from "@/lib/translate";
 import { ShareButton } from "@/components/ShareButton";
 import { setRecentProfile } from "@/lib/recent-profile-cache";
 import { toast } from "sonner";
+import { hapticTap } from "@/lib/haptics";
 
 function timeAgo(ts: string): string {
   const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -356,6 +357,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
       return;
     }
     const wasLiked = liked;
+    hapticTap();
     setLiked(!wasLiked); setLikeCount((c) => c + (wasLiked ? -1 : 1));
     setLikeLoading(true); setLikeError(false);
     try {
@@ -379,6 +381,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
       return;
     }
     const wasRecasted = recasted;
+    hapticTap();
     setRecasted(!wasRecasted); setRecastCount((c) => c + (wasRecasted ? -1 : 1));
     setRecastLoading(true); setRecastError(false);
     try {
