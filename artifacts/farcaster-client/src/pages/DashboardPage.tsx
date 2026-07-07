@@ -845,7 +845,12 @@ export function DashboardPage() {
     navigate(`/dashboard?tab=${mainTab}`, { replace: true });
   }, [mainTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [profileSection, setProfileSection] = useState<ProfileSection>("posts");
+  const [profileSection, setProfileSection] = useState<ProfileSection>(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return p.get("section") === "settings" ? "settings" : "posts";
+    } catch { return "posts"; }
+  });
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("username");
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -1065,6 +1070,18 @@ export function DashboardPage() {
           >
             <Hash className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
             <span className="text-[1.0625rem] text-foreground/85">Channels</span>
+          </button>
+
+          {/* Settings */}
+          <button
+            onClick={() => openSettings()}
+            className={cn("sidebar-item", mainTab === "profile" && profileSection === "settings" && "active")}
+          >
+            <Settings
+              className={cn("w-[26px] h-[26px] shrink-0", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/75")}
+              strokeWidth={mainTab === "profile" && profileSection === "settings" ? 2.5 : 2}
+            />
+            <span className={cn("text-[1.0625rem]", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
           </button>
 
           {/* Admin panel link · only for @m-- */}
