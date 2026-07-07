@@ -822,6 +822,38 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const authMethodRef = useRef<AuthMethod | null>(null);
   useEffect(() => { authMethodRef.current = state.authMethod; }, [state.authMethod]);
 
+  // fetchProfile() never throws — if the network is down when signing in or
+  // restoring a session, it silently falls back to a bare placeholder
+  // ({ displayName: "FID {n}", pfpUrl: "" }) instead of the real profile, so
+  // the side nav shows no avatar/name. Nothing was ever left pending to
+  // retry once connectivity returns, so it stayed stuck like that until the
+  // user signed in again from scratch. Detect that placeholder shape and
+  // retry whenever the network reports back online, or whenever the app is
+  // foregrounded again (the more reliable signal on native — "went to fix
+  // wifi and came back" is a backgrounding/foregrounding cycle there, not a
+  // browser 'online' event).
+  const profileRef = useRef<FarcasterProfile | null>(null);
+  useEffect(() => { profileRef.current = state.profile; }, [state.profile]);
+  useEffect(() => {
+    function looksLikePlaceholder(p: FarcasterProfile | null, fid: bigint): boolean {
+      return !!p && !p.pfpUrl && p.displayName === `FID ${Number(fid)}`;
+    }
+    async function retryIfNeeded() {
+      if (document.visibilityState === "hidden") return;
+      const fid = fidRef.current;
+      if (!fid || !looksLikePlaceholder(profileRef.current, fid)) return;
+      const profile = await fetchProfile(fid);
+      if (looksLikePlaceholder(profile, fid)) return; // still failing · nothing to update yet
+      if (fidRef.current === fid) setState((s) => ({ ...s, profile }));
+    }
+    window.addEventListener("online", retryIfNeeded);
+    document.addEventListener("visibilitychange", retryIfNeeded);
+    return () => {
+      window.removeEventListener("online", retryIfNeeded);
+      document.removeEventListener("visibilitychange", retryIfNeeded);
+    };
+  }, []);
+
   // When the user is signed in via wallet-auth and switches accounts in MetaMask,
   // automatically re-derive the signer for the new address.
   useEffect(() => {
