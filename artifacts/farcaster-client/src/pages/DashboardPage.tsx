@@ -1334,7 +1334,7 @@ export function DashboardPage() {
           </button>
           {/* Profile · always last */}
           <button
-            onClick={() => setMainTab("profile")}
+            onClick={() => fidNum ? navigate(`/profile/${fidNum}`) : setMainTab("profile")}
             className="flex-1 flex items-center justify-center transition-colors"
           >
             <User

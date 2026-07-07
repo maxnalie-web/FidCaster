@@ -57,7 +57,7 @@ export function BottomNav({ active }: { active?: "grow" | "market" }) {
           )}
         </span>
       </button>
-      <button onClick={() => navigate("/dashboard?tab=profile")} className="flex-1 flex items-center justify-center transition-colors">
+      <button onClick={() => fid ? navigate(`/profile/${fid}`) : navigate("/dashboard?tab=profile")} className="flex-1 flex items-center justify-center transition-colors">
         <User className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
       </button>
     </nav>
