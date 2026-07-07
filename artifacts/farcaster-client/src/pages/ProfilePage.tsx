@@ -26,6 +26,7 @@ import type { LocalSigner } from "@/lib/wallet";
 import { CastCard } from "@/components/CastCard";
 import { FollowListSheet } from "@/components/FollowListSheet";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { cn, formatCompactCount } from "@/lib/utils";
 import { getRecentProfile } from "@/lib/recent-profile-cache";
 import { toast } from "sonner";
@@ -539,6 +540,8 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
 
   return (
     <div className={embedded ? "" : "min-h-screen bg-background"}>
+      {!embedded && <DesktopSidebar active="profile" onCast={() => setShowComposer(true)} />}
+      <div className={embedded ? "" : "md:ml-[270px]"}>
 
       {/* ── Sticky Header ──
           Carries a sliver of the banner behind it (blurred + darkened for
@@ -1084,16 +1087,20 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
         </button>
       )}
 
-      {/* ── Compose popup (own profile) ── */}
-      {isOwnProfile && showComposer && (
+      {/* ── Compose popup — the sidebar's persistent Cast button can open this
+          from anyone's profile, but the optimistic "add to my casts tab"
+          update below only makes sense when it's actually your own. ── */}
+      {showComposer && (
         <ComposeModal
           onClose={() => setShowComposer(false)}
           onPublished={(c) => {
-            setTabs((prev) => ({
-              ...prev,
-              casts: { ...prev.casts, items: [c, ...prev.casts.items] },
-            }));
-            setActiveTab("casts");
+            if (isOwnProfile) {
+              setTabs((prev) => ({
+                ...prev,
+                casts: { ...prev.casts, items: [c, ...prev.casts.items] },
+              }));
+              setActiveTab("casts");
+            }
           }}
         />
       )}
@@ -1105,6 +1112,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
           someone else's profile left mobile/tablet users with no way back to
           the main tabs short of the browser/hardware back button. */}
       {!embedded && <BottomNav />}
+      </div>
     </div>
   );
 }

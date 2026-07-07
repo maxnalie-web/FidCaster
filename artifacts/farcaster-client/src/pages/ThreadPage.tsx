@@ -7,6 +7,7 @@ import { CastCard } from "@/components/CastCard";
 import { CastComposer } from "@/components/CastComposer";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { cn } from "@/lib/utils";
 
 // Module-level (survives unmount), keyed by cast hash · lets pressing back after
@@ -145,6 +146,8 @@ export function ThreadPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <DesktopSidebar active="feed" onCast={() => setShowComposer(true)} />
+      <div className="md:ml-[270px]">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background border-b border-border">
         <div className="max-w-[600px] mx-auto h-14 flex items-center gap-3 px-4">
@@ -256,6 +259,7 @@ export function ThreadPage() {
       </div>
 
       <BottomNav />
+      </div>
     </div>
   );
 }

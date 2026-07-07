@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useMarketWallet } from "@/hooks/useMarketWallet";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
+import { ComposeModal } from "@/components/ComposeModal";
 import { cn } from "@/lib/utils";
 
 interface Listing {
@@ -119,6 +121,7 @@ export default function FidMarketPage() {
   const [listingsVisible, setListingsVisible] = useState(PAGE_SIZE);
   const [activityVisible, setActivityVisible] = useState(PAGE_SIZE);
   const [showHowTo,      setShowHowTo]      = useState(false);
+  const [showComposer,   setShowComposer]   = useState(false);
 
   const { address: myAddress, fid: myFid, profile, authMethod } = useWallet();
   const myFidNum = myFid ? Number(myFid) : null;
@@ -255,6 +258,8 @@ export default function FidMarketPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28 md:pb-8">
+      <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />
+      <div className="md:ml-[270px]">
 
       {/* ── Header ── */}
       <header className="sticky top-0 z-40 bg-background border-b border-border">
@@ -939,6 +944,11 @@ export default function FidMarketPage() {
       </div>
 
       <BottomNav active="market" />
+      </div>
+
+      {showComposer && (
+        <ComposeModal onClose={() => setShowComposer(false)} onPublished={() => setShowComposer(false)} />
+      )}
     </div>
   );
 }
