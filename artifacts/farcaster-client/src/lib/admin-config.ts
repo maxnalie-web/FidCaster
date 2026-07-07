@@ -245,7 +245,7 @@ export const DEFAULT_CONFIG: AdminConfig = {
     marketEnabled: true,
     notificationsEnabled: true,
     searchEnabled: true,
-    miniAppsEnabled: true,
+    miniAppsEnabled: false,
     proChannelEnabled: true,
     castComposerEnabled: true,
     darkModeToggleEnabled: true,

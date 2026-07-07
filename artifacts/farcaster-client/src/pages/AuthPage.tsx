@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { isInstalledApp } from "@/lib/miniapp-native";
 
 type InputMode = "grid" | "text";
 type Step = "choose" | "phrase" | "setPassword" | "unlock" | "wallet" | "farcaster";
@@ -194,6 +195,17 @@ export function AuthPage() {
     if (!isPhraseValid || isLoading) return;
     const phrase = mode === "grid" ? gridMnemonic : textWords.join(" ");
     if (!validateMnemonic(phrase, wordlist)) return;
+    if (isInstalledApp()) {
+      // The encrypted vault's derived key is cached (non-extractable) for
+      // silent auto-unlock on every future launch — see decryptStoredAuto()
+      // in session-crypto.ts — so on native/PWA this password is truly
+      // write-once-never-read-again. Skip asking the user to invent and
+      // remember one that they'll never actually need to type back in;
+      // generate a random one instead. Still asked for on the plain web
+      // version, where storage isn't sandboxed to a single device install.
+      void login(phrase, `${crypto.randomUUID()}${crypto.randomUUID()}`);
+      return;
+    }
     setPendingMnemonic(phrase);
     setPassword(""); setConfirmPassword("");
     setStep("setPassword");

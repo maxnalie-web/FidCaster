@@ -16,9 +16,17 @@ import { toast } from "sonner";
  * just the first connect screen.
  */
 export function SignerSetupPopup() {
-  const { fid, autoSignerLoading, signerApproved, signerError, retrySignerSetup } = useWallet();
+  const { fid, autoSignerLoading, signerApproved, signerError, signerStatus, authMethod, retrySignerSetup } = useWallet();
   const [dismissed, setDismissed] = useState(false);
   const [retrying, setRetrying] = useState(false);
+
+  // Mnemonic (seed phrase) accounts sign locally — there's no external wallet
+  // app to wait on, just the Optimism transaction confirming. The generic
+  // "Waiting for your wallet…" copy was misleading there (and made a slow-
+  // but-normal confirmation look stuck), so it's worded per auth method.
+  const waitingCopy = authMethod === "mnemonic"
+    ? "Confirming your registration on Optimism…"
+    : "Waiting for your wallet…";
 
   // A fresh registration attempt (retry, or a new login) always starts with
   // autoSignerLoading flipping true · un-dismiss so the popup can reappear.
@@ -57,6 +65,10 @@ export function SignerSetupPopup() {
             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed whitespace-pre-wrap break-words">
               {signerError
                 ? signerError
+                : signerStatus
+                ? signerStatus
+                : authMethod === "mnemonic"
+                ? "Registering your key: signing a key request, then confirming one transaction. This closes automatically once you're done."
                 : "2 steps left in your wallet: sign a key request, then confirm one transaction. This closes automatically once you're done."}
             </p>
           </div>
@@ -81,7 +93,7 @@ export function SignerSetupPopup() {
           ) : (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-              Waiting for your wallet…
+              {signerStatus ?? waitingCopy}
             </div>
           )}
         </div>

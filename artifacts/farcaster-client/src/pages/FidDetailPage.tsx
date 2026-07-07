@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { useMarketWallet } from "@/hooks/useMarketWallet";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
+import { ComposeModal } from "@/components/ComposeModal";
 import { cn } from "@/lib/utils";
 import {
   formatEther, parseEther,
@@ -232,6 +234,7 @@ export default function FidDetailPage() {
   const [sellTxHash, setSellTxHash] = useState("");
   const [buyTxHash, setBuyTxHash] = useState("");
   const [confirmPending, setConfirmPending] = useState<null | { action: "buy" | "list" | "delist"; label: string; detail: string; onConfirm: () => void }>(null);
+  const [showComposer, setShowComposer] = useState(false);
 
   // Derived ETH price regardless of input mode
   const sellPriceEth = useMemo(() => {
@@ -649,6 +652,11 @@ export default function FidDetailPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28 md:pb-0">
+      <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />
+      <div className="md:ml-[270px]">
+      {showComposer && (
+        <ComposeModal onClose={() => setShowComposer(false)} onPublished={() => setShowComposer(false)} />
+      )}
       {/* ── Confirmation Dialog ── */}
       {confirmPending && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1233,6 +1241,7 @@ export default function FidDetailPage() {
       </div>
 
       <BottomNav active="market" />
+      </div>
     </div>
   );
 }
