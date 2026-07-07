@@ -668,7 +668,10 @@ function ProfileEditPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataUrl, type: file.type, fid: fid ? Number(fid) : undefined }),
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? "Upload failed");
+      }
       const { url } = await res.json() as { url: string };
       setPfpUrl(url);
       await saveField("pfp", url);
