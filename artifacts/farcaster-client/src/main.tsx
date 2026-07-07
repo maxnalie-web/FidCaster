@@ -11,6 +11,17 @@ import "./index.css";
 // locally-bundled app rather than the live site (see native-api-bridge.ts).
 installNativeFetchBridge();
 
+// iOS Safari/WebKit quirk: any element with a CSS :hover rule (Tailwind's
+// hover: utility — used on nearly every button/card in this app) requires
+// TWO taps on a touch device to fire its click — the first tap only applies
+// the hover state, the second tap is what actually clicks. This is why
+// reply cards and the back button needed a second tap. A single no-op
+// touchstart listener on the document is the standard fix: it makes WebKit
+// treat every element as directly tappable instead of routing the first
+// touch through hover-state handling. Harmless everywhere else (Android/
+// desktop don't have this quirk).
+document.addEventListener("touchstart", () => {}, { passive: true });
+
 // The native shell's own WebView origin (https://localhost / capacitor://localhost)
 // isn't a real domain · always present the actual service domain in the Sign
 // In With Farcaster message, matching where /login and the API really live.
