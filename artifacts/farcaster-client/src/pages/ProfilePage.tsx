@@ -970,6 +970,16 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
                 >
                   {t.icon}
                   {t.label}
+                  {t.id === "casts" && isOwnProfile && canWrite && (
+                    <span
+                      role="button"
+                      aria-label="New cast"
+                      onClick={e => { e.stopPropagation(); setShowComposer(true); }}
+                      className="ml-1 flex items-center justify-center w-5 h-5 rounded-full hover:bg-primary/15 active:scale-95 transition-all text-primary"
+                    >
+                      <PenSquare className="w-3.5 h-3.5" />
+                    </span>
+                  )}
                   {activeTab === t.id && (
                     <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />
                   )}
@@ -1069,22 +1079,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
             </button>
           </div>
         </div>
-      )}
-
-      {/* ── Floating compose button (own profile) · same placement as Home.
-          bottom-[70px], not bottom-6: this component also renders embedded
-          inside DashboardPage's own "profile" tab, which has its own 54px
-          bottom nav bar · bottom-6 sat the button right on top of the nav's
-          Profile icon instead of above it. ── */}
-      {isOwnProfile && canWrite && (
-        <button
-          onClick={() => setShowComposer(true)}
-          aria-label="New cast"
-          className="md:hidden fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
-          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
-        >
-          <PenSquare className="w-[22px] h-[22px]" />
-        </button>
       )}
 
       {/* ── Compose popup — the sidebar's persistent Cast button can open this
