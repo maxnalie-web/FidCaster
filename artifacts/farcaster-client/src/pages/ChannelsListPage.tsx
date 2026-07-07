@@ -5,6 +5,8 @@ import { useWallet } from "@/hooks/useWallet";
 import { searchChannels, type NeynarChannel } from "@/lib/neynar";
 import { getFollowedChannels, type FollowedChannel } from "@/lib/channel-follows";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
+import { ComposeModal } from "@/components/ComposeModal";
 import { formatCompactCount } from "@/lib/utils";
 
 function Row({ id, name, image_url, follower_count, onOpen }: {
@@ -39,6 +41,7 @@ export function ChannelsListPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<NeynarChannel[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showComposer, setShowComposer] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Open scrolled to the very top (manual scroll restoration is on app-wide).
@@ -64,6 +67,8 @@ export function ChannelsListPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <DesktopSidebar active="channels" onCast={() => setShowComposer(true)} />
+      <div className="md:ml-[270px]">
       <header className="sticky top-0 z-30 bg-background border-b border-border">
         <div className="max-w-[600px] mx-auto h-14 flex items-center gap-3 px-4">
           <button
@@ -117,6 +122,14 @@ export function ChannelsListPage() {
       </div>
 
       <BottomNav />
+      </div>
+
+      {showComposer && (
+        <ComposeModal
+          onClose={() => setShowComposer(false)}
+          onPublished={() => setShowComposer(false)}
+        />
+      )}
     </div>
   );
 }

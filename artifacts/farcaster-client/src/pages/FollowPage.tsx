@@ -20,6 +20,8 @@ import { getSpamLabelsFor, type SpamLabelFilter } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
+import { ComposeModal } from "@/components/ComposeModal";
 import { toast } from "sonner";
 import type { BatchFilters, SortOrder, Preset } from "@/lib/batch-follow-utils";
 import {
@@ -325,6 +327,8 @@ export function FollowPage() {
   const [showActive, setShowActive] = useState(
     () => new URLSearchParams(window.location.search).get("tab") === "active"
   );
+
+  const [showComposer, setShowComposer] = useState(false);
 
   // Search state (follow mode)
   const [searchQuery, setSearchQuery] = useState("");
@@ -731,6 +735,11 @@ export function FollowPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col pb-[54px] md:pb-0">
+      <DesktopSidebar active="grow" onCast={() => setShowComposer(true)} />
+      <div className="md:ml-[270px]">
+      {showComposer && (
+        <ComposeModal onClose={() => setShowComposer(false)} onPublished={() => setShowComposer(false)} />
+      )}
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 bg-background border-b border-border relative overflow-hidden">
@@ -1437,6 +1446,7 @@ export function FollowPage() {
         )}
       </div>
       <BottomNav active="grow" />
+      </div>
     </div>
   );
 }

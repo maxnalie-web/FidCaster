@@ -8,6 +8,7 @@ import { ComposeModal } from "@/components/ComposeModal";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { isChannelFollowed, followChannel, unfollowChannel } from "@/lib/channel-follows";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { cn } from "@/lib/utils";
 
 export function ChannelPage() {
@@ -84,6 +85,8 @@ export function ChannelPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <DesktopSidebar active="channels" onCast={() => setShowComposer(true)} />
+      <div className="md:ml-[270px]">
       <header className="sticky top-0 z-40 bg-background border-b border-border">
         <div className="max-w-[600px] mx-auto h-14 flex items-center gap-3 px-4">
           <button
@@ -184,14 +187,15 @@ export function ChannelPage() {
           </>
         ) : null}
       </div>
+      </div>
 
-      {/* ── Floating compose button · same placement as Home (bottom-[70px]
-          clears a 54px bottom nav bar when one is present) ── */}
+      {/* ── Floating compose button (mobile only · desktop uses the sidebar's
+          Cast button instead) · bottom-[70px] clears the 54px bottom nav ── */}
       {channel && viewerFid > 0 && (
         <button
           onClick={() => setShowComposer(true)}
           aria-label="Cast in channel"
-          className="fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          className="md:hidden fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
           style={{ marginBottom: "env(safe-area-inset-bottom)" }}
         >
           <PenSquare className="w-[22px] h-[22px]" />
