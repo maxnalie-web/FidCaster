@@ -29,7 +29,7 @@ export function ChannelPage() {
   const loadedKeyRef = useRef<string>("");
 
   // Open the channel scrolled to the very top (manual scroll restoration is on).
-  useEffect(() => { window.scrollTo(0, 0); }, [id]);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }, [id]);
 
   useEffect(() => {
     // Wait for the wallet's own fid to be ready · fetching with viewer_fid=0

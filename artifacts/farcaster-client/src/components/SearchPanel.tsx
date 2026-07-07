@@ -181,7 +181,7 @@ export function SearchPanel() {
     _searchCache = { viewerFid: fidNum, query, tab, users, casts, channels, scrollY: window.scrollY };
   }, [fidNum, query, tab, users, casts, channels]);
   useEffect(() => {
-    if (restored?.scrollY) requestAnimationFrame(() => window.scrollTo(0, restored.scrollY));
+    if (restored?.scrollY) requestAnimationFrame(() => window.scrollTo({ top: restored.scrollY, left: 0, behavior: "auto" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
