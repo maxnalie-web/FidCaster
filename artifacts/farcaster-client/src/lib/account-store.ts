@@ -50,6 +50,24 @@ export function upsertAccountMeta(meta: AccountMeta): void {
   saveAccountsMeta(accounts);
 }
 
+/** Patches just the profile fields (username/displayName/pfpUrl) for an
+ * account, leaving address/signerUuid/authMethod untouched — used to
+ * self-heal a cached account entry that was written with a network-failure
+ * placeholder once the real profile is fetched successfully. */
+export function updateAccountMetaProfile(
+  fid: number,
+  profile: { username: string; displayName: string; pfpUrl: string },
+): void {
+  const accounts = loadAccountsMeta();
+  const acc = accounts.find((a) => a.fid === fid);
+  if (acc) {
+    acc.username = profile.username;
+    acc.displayName = profile.displayName;
+    acc.pfpUrl = profile.pfpUrl;
+    saveAccountsMeta(accounts);
+  }
+}
+
 export function updateAccountSignerUuid(fid: number, signerUuid: string): void {
   const accounts = loadAccountsMeta();
   const acc = accounts.find((a) => a.fid === fid);

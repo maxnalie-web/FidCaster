@@ -339,6 +339,19 @@ export function loadLightSession(): LightSession | null {
   }
 }
 
+/** Patches just the profile fields of the current light session (if it's
+ * still for the same fid), leaving everything else as-is — used to self-heal
+ * a session that was cached with a network-failure placeholder once the
+ * real profile is fetched successfully. */
+export function patchLightSessionProfile(
+  fid: number,
+  profile: { username: string; displayName: string; pfpUrl: string },
+): void {
+  const current = loadLightSession();
+  if (!current || current.fid !== fid) return;
+  storeLightSession({ ...current, ...profile });
+}
+
 export function clearLightSession(): void {
   try { localStorage.removeItem(LIGHT_SESSION_KEY); } catch {}
 }
