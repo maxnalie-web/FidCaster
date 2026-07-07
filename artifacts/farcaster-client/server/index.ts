@@ -700,33 +700,37 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
 
     const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
 
-    // For videos: try catbox.moe first — returns a permanent CDN URL (files.catbox.moe/xxx.mp4)
-    // that Farcaster clients (Warpcast etc.) can detect and play inline.
+    // For videos: use litterbox.catbox.moe — temporary CDN (up to 72h), returns direct
+    // litter.catbox.moe/xxx.mp4 URL that Warpcast detects as video and plays inline.
+    // (catbox.moe permanent endpoint blocks cloud server IPs; litterbox does not.)
     if (isVideo) {
       try {
-        const catboxForm = new FormData();
-        catboxForm.append("reqtype", "fileupload");
-        catboxForm.append("fileToUpload", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
-        const catboxRes = await fetch("https://catbox.moe/user/api.php", {
+        const litboxForm = new FormData();
+        litboxForm.append("reqtype", "fileupload");
+        litboxForm.append("time", "72h");
+        litboxForm.append("fileToUpload", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
+        const litboxRes = await fetch("https://litterbox.catbox.moe/resources/internals/api.php", {
           method: "POST",
-          body: catboxForm,
+          body: litboxForm,
           signal: AbortSignal.timeout(90_000),
         });
-        if (catboxRes.ok) {
-          const catboxUrl = (await catboxRes.text()).trim();
-          if (catboxUrl.startsWith("https://files.catbox.moe/")) {
+        if (litboxRes.ok) {
+          const litboxUrl = (await litboxRes.text()).trim();
+          if (litboxUrl.startsWith("https://litter.catbox.moe/")) {
             if (typeof fid === "number" && fid > 0) recordUpload(fid);
-            res.json({ url: catboxUrl });
+            res.json({ url: litboxUrl });
             return;
           }
         }
-        console.warn("[upload] catbox.moe failed, falling back to tmpfiles.org");
+        console.warn("[upload] litterbox.catbox.moe failed, falling back to tmpfiles.org");
       } catch (e) {
-        console.warn("[upload] catbox.moe error:", (e as Error).message);
+        console.warn("[upload] litterbox error:", (e as Error).message);
       }
     }
 
     // Last-resort fallback: tmpfiles.org — free, no API key, images + video.
+    // Note: tmpfiles.org serves HTML pages for video URLs so Warpcast won't show
+    // a video preview; this is only a last-ditch fallback so the upload doesn't fail.
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
     const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
@@ -736,12 +740,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
     });
     if (tmpRes.ok) {
       const tmpData = await tmpRes.json().catch(() => null) as { status?: string; data?: { url?: string } } | null;
-      const rawUrl = tmpData?.data?.url;
-      // tmpfiles.org returns page URLs like https://tmpfiles.org/1234/file.mp4
-      // The direct download URL requires /dl/ prefix for Farcaster clients to detect media.
-      const tmpUrl = rawUrl
-        ? rawUrl.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/")
-        : undefined;
+      const tmpUrl = tmpData?.data?.url;
       if (tmpUrl) {
         if (typeof fid === "number" && fid > 0) recordUpload(fid);
         res.json({ url: tmpUrl });
