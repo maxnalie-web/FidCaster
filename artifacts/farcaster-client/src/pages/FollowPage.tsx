@@ -313,7 +313,7 @@ type Phase = "idle" | "searching" | "loading" | "loaded" | "empty";
 
 export function FollowPage() {
   const [, navigate] = useLocation();
-  useEffect(() => { window.scrollTo(0, 0); }, []);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }, []);
   const { fid, localSigner, neynarKey, profile } = useWallet();
   const batchOp = useBatchOperation();
   const myFid = fid ? Number(fid) : 0;

@@ -79,8 +79,11 @@ export function FeedPanel() {
   }, [showFeedMenu]);
 
   // Restore scroll position once, right after a cache-restored mount paints.
+  // behavior: "auto" overrides the global `html { scroll-behavior: smooth }`
+  // (index.css) so this jumps instantly instead of visibly animating from
+  // the top down to the restored position.
   useEffect(() => {
-    if (initialCache) window.scrollTo(0, initialCache.scrollY);
+    if (initialCache) window.scrollTo({ top: initialCache.scrollY, left: 0, behavior: "auto" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -203,7 +203,7 @@ export default function FidDetailPage() {
   const params = useParams<{ id: string }>();
   const fid = parseInt(params.id || "0", 10);
   const [, navigate] = useLocation();
-  useEffect(() => { window.scrollTo(0, 0); }, [fid]);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }, [fid]);
 
   const { fid: myFid, address: myAddress, walletClient, authMethod } = useWallet();
   const {
@@ -1121,11 +1121,6 @@ export default function FidDetailPage() {
                     {(buyPhase === "signing" || buyPhase === "sending" || buyPhase === "confirming") && <Loader2 className="w-4 h-4 animate-spin" />}
                     {buyPhase === "signing" ? "Sign transfer…" : buyPhase === "sending" ? "Sending…" : buyPhase === "confirming" ? "Confirming…" : "Buy FID"}
                   </button>
-                  {buyPhase === "signing" && (
-                    <p className="text-[11px] text-muted-foreground leading-snug px-0.5">
-                      Your wallet may warn it can't simulate this request — that's expected. This first step is just a signature (required by Farcaster's ID Registry to confirm you want the FID), not a transaction, so no funds move and no gas is spent.
-                    </p>
-                  )}
                   {buyPhase === "done" && (
                     <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-400">
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
@@ -1194,11 +1189,6 @@ export default function FidDetailPage() {
                     {(buyPhase === "signing" || buyPhase === "sending" || buyPhase === "confirming") && <Loader2 className="w-4 h-4 animate-spin" />}
                     {buyPhase === "signing" ? "Sign transfer…" : buyPhase === "sending" ? "Sending…" : buyPhase === "confirming" ? "Confirming…" : "Buy FID"}
                   </button>
-                  {buyPhase === "signing" && (
-                    <p className="text-[11px] text-muted-foreground leading-snug px-0.5">
-                      Your wallet may warn it can't simulate this request — that's expected. This first step is just a signature (required by Farcaster's ID Registry to confirm you want the FID), not a transaction, so no funds move and no gas is spent.
-                    </p>
-                  )}
                   {buyPhase === "done" && (
                     <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-400">
                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />

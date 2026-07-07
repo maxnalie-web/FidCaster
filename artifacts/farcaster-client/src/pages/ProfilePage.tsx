@@ -339,7 +339,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
   const [showComposer, setShowComposer] = useState(false);
   // Open every profile scrolled to the very top · with manual scroll restoration
   // the browser no longer does this for us.
-  useEffect(() => { window.scrollTo(0, 0); }, [targetFid]);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }, [targetFid]);
   // Price (ETH string) if this FID is actively listed on the FID market, else null.
   const [marketListing, setMarketListing] = useState<string | null>(null);
   const ethUsd = useEthPrice(); // live ETH→USD (CoinGecko, refreshes) for USD price display

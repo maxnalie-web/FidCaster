@@ -54,7 +54,11 @@ export function ThreadPage() {
     const cached = _threadCache.get(cacheKeyBase);
     if (cached) {
       setLoading(false);
-      requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
+      // behavior: "auto" is required here — the global `html { scroll-behavior:
+      // smooth }` (index.css) would otherwise animate this restore, making a
+      // cached revisit visibly scroll down from the top instead of just
+      // already being at the right spot.
+      requestAnimationFrame(() => window.scrollTo({ top: cached.scrollY, left: 0, behavior: "auto" }));
       getCastConversation(hash, viewerFid, neynarKey)
         .then((res) => {
           setCast(res.conversation.cast);
@@ -67,7 +71,7 @@ export function ThreadPage() {
     // Brand-new thread (not a cached revisit) · start at the top. Without this the
     // page keeps whatever scroll position the previous route (feed/profile) was at,
     // cutting off the cast/author header until the user manually scrolls up.
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setLoading(true);
     setError(null);
     getCastConversation(hash, viewerFid, neynarKey)

@@ -227,6 +227,14 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Tracks where a touch/click gesture started (position + page scrollY) so
+  // openThread() can tell a real tap apart from a scroll/drag that merely
+  // ends over this card. A plain onClick alone isn't reliable here — some
+  // WebViews (seen on the native Android build) fire a click even when the
+  // touch moved a fair distance as part of a scroll, especially on a
+  // "touch to stop momentum scrolling" gesture · which made every reply in a
+  // scrolling list feel like a hair-trigger into its own thread.
+  const gestureStartRef = useRef<{ x: number; y: number; scrollY: number } | null>(null);
   // In-place translation: when set, the cast body is REPLACED by the translated
   // text (device-locale language); tapping the header globe again restores it.
   const [translation, setTranslation] = useState<string | null>(null);
@@ -308,10 +316,28 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
     else navigate(`/profile/${user.fid}`);
   }
 
+  function trackGestureStart(e: React.PointerEvent) {
+    gestureStartRef.current = { x: e.clientX, y: e.clientY, scrollY: window.scrollY };
+  }
+
   function openThread(e: React.MouseEvent) {
     if (expanded) return;
     const target = e.target as HTMLElement;
     if (target.closest("button") || target.closest("a")) return;
+    // Ignore this "click" if the gesture that produced it actually moved —
+    // either the finger travelled a real distance, or the page scrolled
+    // between touch-down and touch-up (e.g. a "touch to stop scrolling" tap).
+    // Without this, scrolling through a reply list on the native app felt
+    // hair-trigger: any touch that grazed a card while the list was moving
+    // opened that reply's own thread.
+    const start = gestureStartRef.current;
+    gestureStartRef.current = null;
+    if (start) {
+      const dx = Math.abs(e.clientX - start.x);
+      const dy = Math.abs(e.clientY - start.y);
+      const scrollDelta = Math.abs(window.scrollY - start.scrollY);
+      if (dx > 8 || dy > 8 || scrollDelta > 4) return;
+    }
     // Always open THIS cast's own thread · so clicking a comment opens the
     // comment itself (its replies + mentions), not the parent it replied to.
     navigate(`/cast/${cast.hash}`);
@@ -744,6 +770,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
         className={cn(
           "group border-b border-border hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors duration-150 cursor-pointer px-4 py-3"
         )}
+        onPointerDown={trackGestureStart}
         onClick={openThread}
       >
         <div className="flex-1 min-w-0">
