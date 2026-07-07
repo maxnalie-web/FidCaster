@@ -692,29 +692,32 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
             return;
           }
         }
-        console.warn("[upload] Imgur failed, falling back to catbox.moe");
+        console.warn("[upload] Imgur failed, falling back to tmpfiles.org");
       } catch {
-        console.warn("[upload] Imgur error, falling back to catbox.moe");
+        console.warn("[upload] Imgur error, falling back to tmpfiles.org");
       }
     }
 
-    // Last-resort fallback: catbox.moe — free, no API key, images + video.
+    // Last-resort fallback: tmpfiles.org — free, no API key, images + video.
     const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
     const form = new FormData();
-    form.append("reqtype", "fileupload");
-    form.append("fileToUpload", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
-    const catboxRes = await fetch("https://catbox.moe/user/api.php", {
+    form.append("file", new Blob([buffer], { type: mimeType }), `upload.${ext}`);
+    const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
       method: "POST",
       body: form,
       signal: AbortSignal.timeout(60_000),
     });
-    const text = (await catboxRes.text()).trim();
-    if (catboxRes.ok && text.startsWith("http")) {
-      if (typeof fid === "number" && fid > 0) recordUpload(fid);
-      res.json({ url: text });
-      return;
+    if (tmpRes.ok) {
+      const tmpData = await tmpRes.json().catch(() => null) as { status?: string; data?: { url?: string } } | null;
+      const tmpUrl = tmpData?.data?.url;
+      if (tmpUrl) {
+        if (typeof fid === "number" && fid > 0) recordUpload(fid);
+        res.json({ url: tmpUrl });
+        return;
+      }
     }
-    res.status(502).json({ error: `Upload failed: ${text || "unknown error"}` });
+    const errText = await tmpRes.text().catch(() => "");
+    res.status(502).json({ error: `Upload failed: ${errText.slice(0, 200) || "all upload services unavailable"}` });
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Upload failed" });
   }
