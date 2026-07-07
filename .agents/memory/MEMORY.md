@@ -1,4 +1,1 @@
-- [FID Market scroll rendering bug](android-backdrop-blur-scroll-glitch.md) — sticky/fixed backdrop-blur bars over scrolling content caused Android WebView noise artifacts; fix is solid bg, no blur.
-- [Gamification/points roadmap](gamification-airdrop-roadmap.md) — planned points/badges/quests system explicitly meant to later gate a token airdrop; needs anti-sybil design before launch.
-- [FarcasterSignIn white-text-on-light-background](farcaster-signin-theme.md) — component was hardcoded with rgba(255,255,255,...) for AuthPage dark background; invisible in AddAccountModal's light bg.
-- [GitHub push via REST API](github-push-rest-api.md) — git add/commit blocked by gitsafe sandbox; push files to GitHub using curl PUT to /repos/{owner}/{repo}/contents/{path} with GITHUB_TOKEN available in bash env.
+- [Bezoar YAML bug](bezoar-yaml-bug.md) — inline python3 -c with zero-indented lines breaks YAML block scalar → 0-steps failure
