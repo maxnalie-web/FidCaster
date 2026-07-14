@@ -15,6 +15,10 @@ import { BottomNav } from "@/components/BottomNav";
 import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { ComposeModal } from "@/components/ComposeModal";
 import { cn } from "@/lib/utils";
+import { Bookmark, BookmarkCheck, Star, Bell } from "lucide-react";
+import { useWatchlistStore } from "@/hooks/useWatchlistStore";
+import { loadActivityFeed, EVENT_LABEL } from "@/lib/activity-feed";
+import { startWatchlistMonitor } from "@/lib/watchlist-monitor";
 
 interface Listing {
   fid: number;
@@ -112,7 +116,7 @@ export default function FidMarketPage() {
   const [activity,       setActivity]       = useState<ActivityItem[]>(_cachedActivity);
   const [fidInfoMap,     setFidInfoMap]     = useState<Record<number, FidInfo>>(_cachedFidInfoMap);
   const [loading,        setLoading]        = useState(_cachedListings.length === 0);
-  const [tab,            setTab]            = useState<"listings" | "activity">("listings");
+  const [tab,            setTab]            = useState<"listings" | "activity" | "watchlist">("listings");
   const [search,         setSearch]         = useState("");
   const [sortBy,         setSortBy]         = useState<SortKey>("price-asc");
   const [showSortMenu,   setShowSortMenu]   = useState(false);
@@ -124,6 +128,8 @@ export default function FidMarketPage() {
   const [showComposer,   setShowComposer]   = useState(false);
 
   const { address: myAddress, fid: myFid, profile, authMethod } = useWallet();
+  const watchlist = useWatchlistStore();
+  const watchlistActivity = loadActivityFeed();
   const myFidNum = myFid ? Number(myFid) : null;
   const {
     wallet: extWallet,
@@ -197,6 +203,10 @@ export default function FidMarketPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    return startWatchlistMonitor(myFidNum);
+  }, [myFidNum]);
 
 
   const filteredListings = listings
@@ -584,22 +594,48 @@ export default function FidMarketPage() {
         {/* ── Tabs row ── */}
         <div className="flex items-center gap-2">
           <div className="flex gap-0.5 p-1 rounded-xl bg-muted/40 border border-border/40">
-            {(["listings", "activity"] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap",
-                  tab === t
-                    ? "bg-background text-foreground shadow-sm border border-border/40"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t === "listings"
-                  ? `Listings${!loading ? ` (${filteredListings.length})` : ""}`
-                  : `Activity${!loading ? ` (${activity.length})` : ""}`}
-              </button>
-            ))}
+            <button
+              onClick={() => setTab("listings")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap",
+                tab === "listings"
+                  ? "bg-background text-foreground shadow-sm border border-border/40"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {`Listings${!loading ? ` (${filteredListings.length})` : ""}`}
+            </button>
+            <button
+              onClick={() => setTab("activity")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap",
+                tab === "activity"
+                  ? "bg-background text-foreground shadow-sm border border-border/40"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {`Activity${!loading ? ` (${activity.length})` : ""}`}
+            </button>
+            <button
+              onClick={() => setTab("watchlist")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1",
+                tab === "watchlist"
+                  ? "bg-background text-foreground shadow-sm border border-border/40"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Star className="w-3 h-3" />
+              Watch
+              {watchlist.watchedFids().length > 0 && (
+                <span className={cn(
+                  "text-[10px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center leading-none",
+                  tab === "watchlist" ? "bg-violet-500/15 text-violet-500" : "bg-muted-foreground/20"
+                )}>
+                  {watchlist.watchedFids().length}
+                </span>
+              )}
+            </button>
           </div>
 
           {tab === "listings" && (
@@ -719,10 +755,10 @@ export default function FidMarketPage() {
 
                   if (viewMode === "list") {
                     return (
-                      <button
+                      <div
                         key={listing.fid}
                         onClick={() => navigate(`/market/${listing.fid}`)}
-                        className="group relative flex items-center gap-3 p-2.5 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 transition-all text-left"
+                        className="group relative flex items-center gap-3 p-2.5 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 transition-all cursor-pointer"
                       >
                         <div className="shrink-0 relative w-fit">
                           {avatar("w-10 h-10")}
@@ -761,16 +797,28 @@ export default function FidMarketPage() {
                           </p>
                           {usdVal && <p className="text-[10px] text-muted-foreground mt-0.5">${usdVal}</p>}
                         </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); watchlist.toggleWatched(listing.fid); }}
+                          title={watchlist.isWatched(listing.fid) ? "Unwatch" : "Watch"}
+                          className={cn(
+                            "p-1 rounded-lg transition-colors shrink-0",
+                            watchlist.isWatched(listing.fid)
+                              ? "text-violet-500 hover:text-rose-400"
+                              : "text-muted-foreground/30 hover:text-violet-400"
+                          )}
+                        >
+                          <Star className={cn("w-3.5 h-3.5", watchlist.isWatched(listing.fid) && "fill-current")} />
+                        </button>
                         <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 shrink-0" />
-                      </button>
+                      </div>
                     );
                   }
 
                   return (
-                    <button
+                    <div
                       key={listing.fid}
                       onClick={() => navigate(`/market/${listing.fid}`)}
-                      className="group relative flex flex-col gap-2 p-3.5 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 hover:shadow-lg hover:shadow-violet-500/5 hover:-translate-y-px transition-all text-left overflow-hidden"
+                      className="group relative flex flex-col gap-2 p-3.5 rounded-2xl border border-border/50 bg-card hover:border-violet-500/25 hover:bg-accent/20 hover:shadow-lg hover:shadow-violet-500/5 hover:-translate-y-px transition-all cursor-pointer overflow-hidden"
                     >
                       {!listing.buyable && (
                         <span className="absolute top-2.5 right-2.5 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold z-10">
@@ -824,9 +872,21 @@ export default function FidMarketPage() {
                             <p className="text-[10px] text-muted-foreground mt-0.5">${usdVal}</p>
                           )}
                         </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); watchlist.toggleWatched(listing.fid); }}
+                          title={watchlist.isWatched(listing.fid) ? "Unwatch" : "Watch"}
+                          className={cn(
+                            "p-1 rounded-lg transition-colors",
+                            watchlist.isWatched(listing.fid)
+                              ? "text-violet-500 hover:text-rose-400"
+                              : "text-muted-foreground/30 hover:text-violet-400"
+                          )}
+                        >
+                          <Star className={cn("w-3.5 h-3.5", watchlist.isWatched(listing.fid) && "fill-current")} />
+                        </button>
                         <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
                 {filteredListings.length > listingsVisible && (
@@ -921,6 +981,122 @@ export default function FidMarketPage() {
             {activity.length > activityVisible && (
               <div ref={activitySentinelRef} className="flex justify-center py-4" />
             )}
+          </div>
+        )}
+
+        {/* ── Watchlist ── */}
+        {tab === "watchlist" && (
+          <div className="space-y-4">
+            {/* Recent events */}
+            {watchlistActivity.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Bell className="w-3 h-3" /> Recent updates
+                </p>
+                {watchlistActivity.slice(0, 5).map(ev => (
+                  <div key={ev.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-card">
+                    <div className={cn(
+                      "w-7 h-7 rounded-lg flex items-center justify-center shrink-0",
+                      ev.kind === "listed" || ev.kind === "available_again" ? "bg-violet-500/10" :
+                      ev.kind === "price_drop" ? "bg-emerald-500/10" :
+                      ev.kind === "ownership_changed" ? "bg-amber-500/10" : "bg-muted/50"
+                    )}>
+                      <Star className={cn(
+                        "w-3.5 h-3.5",
+                        ev.kind === "listed" || ev.kind === "available_again" ? "text-violet-500" :
+                        ev.kind === "price_drop" ? "text-emerald-500" :
+                        ev.kind === "ownership_changed" ? "text-amber-500" : "text-muted-foreground"
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">{ev.message}</p>
+                      <p className="text-[10px] text-muted-foreground">{EVENT_LABEL[ev.kind]}</p>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/market/${ev.fid}`)}
+                      className="text-[10px] font-semibold text-violet-500 hover:text-violet-400 transition-colors shrink-0 flex items-center gap-0.5"
+                    >
+                      View <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Watched FIDs */}
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <BookmarkCheck className="w-3 h-3" /> Watching
+                <span className="text-muted-foreground/50 normal-case tracking-normal font-normal text-[10px]">— tap a listing to add</span>
+              </p>
+              {watchlist.watchedFids().length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-muted/40 flex items-center justify-center">
+                    <Bookmark className="w-5 h-5 text-muted-foreground/40" />
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">No FIDs watched yet.</p>
+                  <p className="text-xs text-muted-foreground/60 text-center max-w-[220px]">
+                    Tap the ★ on any listing to track its price and get notified of updates.
+                  </p>
+                  <button
+                    onClick={() => setTab("listings")}
+                    className="mt-1 px-4 py-2 rounded-xl bg-violet-500 text-white text-xs font-semibold hover:bg-violet-600 transition-colors"
+                  >
+                    Browse listings
+                  </button>
+                </div>
+              ) : (
+                watchlist.watchedFids().map(fid => {
+                  const listing = listings.find(l => l.fid === fid);
+                  const info = fidInfoMap[fid];
+                  return (
+                    <div
+                      key={fid}
+                      onClick={() => navigate(`/market/${fid}`)}
+                      className="group flex items-center gap-3 p-3.5 rounded-2xl border border-border/40 bg-card hover:border-violet-500/30 hover:bg-violet-500/3 transition-all cursor-pointer"
+                    >
+                      {info?.pfpUrl ? (
+                        <img src={info.pfpUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500/20 to-indigo-600/20 border border-violet-500/15 flex items-center justify-center shrink-0">
+                          <span className="text-xs font-bold text-violet-400 font-mono">{fid}</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {info?.displayName || info?.username || `FID ${fid}`}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {info?.username ? `@${info.username}` : ""} #{fid}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                        {listing?.active ? (
+                          <>
+                            <span className="text-xs font-bold text-emerald-500 font-mono">{parseFloat(listing.priceEth).toFixed(4)} ETH</span>
+                            <span className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
+                              listing.buyable ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
+                            )}>
+                              {listing.buyable ? "Buyable" : "Listed"}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/40">Not listed</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); watchlist.toggleWatched(fid); }}
+                        className="p-1.5 rounded-lg text-violet-500 hover:bg-rose-500/10 hover:text-rose-500 transition-colors shrink-0"
+                        title="Remove from watchlist"
+                      >
+                        <Star className="w-3.5 h-3.5 fill-current" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 

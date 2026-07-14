@@ -25,6 +25,7 @@ import { applyStoredAppSettings } from "@/lib/app-settings";
 import { SignerSetupPopup } from "@/components/SignerSetupPopup";
 import { MinimizedMiniAppBar } from "@/components/MinimizedMiniAppBar";
 import { MiniAppIframeModal } from "@/components/MiniAppIframeModal";
+import { BatchProgressPill } from "@/components/BatchProgressPill";
 import { isInstalledApp } from "@/lib/miniapp-native";
 
 export type Theme = "light" | "dark";
@@ -156,6 +157,7 @@ function App() {
             <Router />
           </ErrorBoundary>
         </WouterRouter>
+        <BatchProgressPill />
         <SignerSetupPopup />
         <MinimizedMiniAppBar />
         <MiniAppIframeModal />
