@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { WalletProvider } from "@/hooks/WalletProvider";
 import { BatchOperationProvider } from "@/hooks/BatchOperationContext";
+import { CleanupOpProvider } from "@/hooks/CleanupOpContext";
 import { useWallet } from "@/hooks/useWallet";
 import { LoginPage } from "@/pages/LoginPage";
 import { NativeWelcomePage } from "@/pages/NativeWelcomePage";
@@ -138,6 +139,7 @@ function App() {
   return (
     <WalletProvider>
       <BatchOperationProvider>
+        <CleanupOpProvider>
         <WouterRouter base={base}>
           <ErrorBoundary>
             <Router />
@@ -166,6 +168,7 @@ function App() {
           },
         }}
         />
+        </CleanupOpProvider>
       </BatchOperationProvider>
     </WalletProvider>
   );

@@ -5,7 +5,7 @@ import {
   ArrowLeft, Search, UserPlus, UserMinus, Users, Loader2,
   X, ChevronDown, CheckSquare, Square,
   Heart, Ban, Check, AlertCircle, Scissors, ChevronRight,
-  ListChecks, XCircle, Clock, Eye, Award, Sparkles,
+  ListChecks, XCircle, Clock, Eye, Award, Sparkles, Trash2,
 } from "lucide-react";
 import { cn, formatCompactCount } from "@/lib/utils";
 import {
@@ -19,6 +19,8 @@ import { getCachedFollowList, setCachedFollowList } from "@/lib/farcaster-db";
 import { getSpamLabelsFor, type SpamLabelFilter } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
 import { useBatchOperation } from "@/hooks/BatchOperationContext";
+import { useCleanupOp, type CleanupOp } from "@/hooks/CleanupOpContext";
+import { CleanupCastsPanel } from "@/components/CleanupCastsPanel";
 import { BottomNav } from "@/components/BottomNav";
 import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { ComposeModal } from "@/components/ComposeModal";
@@ -29,16 +31,19 @@ import {
   LIMIT_PRESETS, MAX_SCAN, parseExclusions, applyFilters, smartScore, etaStr, AVG_ACTION_SECS,
 } from "@/lib/batch-follow-utils";
 import type { BatchOp } from "@/hooks/BatchOperationContext";
+import type { CleanupKind } from "@/lib/cast-cleanup";
 
 // ─── Mode ──────────────────────────────────────────────────────────────────────
 // "follow"  → browse someone else's followers/following and follow them
 // "cleanup" → browse YOUR OWN following list and unfollow
+// "purge"   → bulk delete casts/replies, unlike, un-recast
 
-type PageMode = "follow" | "cleanup";
+type PageMode = "follow" | "cleanup" | "purge";
 
 function readUrlParams(): { mode: PageMode; preloadFid: number | null } {
   const p = new URLSearchParams(window.location.search);
-  const mode: PageMode = p.get("mode") === "cleanup" ? "cleanup" : "follow";
+  const modeParam = p.get("mode");
+  const mode: PageMode = modeParam === "cleanup" ? "cleanup" : modeParam === "purge" ? "purge" : "follow";
   const fid = p.get("fid") ? Number(p.get("fid")) : null;
   return { mode, preloadFid: fid && fid > 0 ? fid : null };
 }
@@ -316,6 +321,7 @@ export function FollowPage() {
   useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }, []);
   const { fid, localSigner, neynarKey, profile } = useWallet();
   const batchOp = useBatchOperation();
+  const cleanupOp = useCleanupOp();
   const myFid = fid ? Number(fid) : 0;
 
   // ── Init from URL params ──────────────────────────────────────────────────
@@ -381,6 +387,9 @@ export function FollowPage() {
     setActivePreset("custom");
     if (next === "cleanup") {
       setListType("following");
+    } else if (next === "purge") {
+      setTargetUser(null);
+      setSearchQuery("");
     } else {
       setTargetUser(null);
       setSearchQuery("");
@@ -720,13 +729,19 @@ export function FollowPage() {
 
   const canLoad = mode === "cleanup"
     ? ownProfile !== null && myFid > 0
-    : targetUser !== null && myFid > 0;
+    : mode === "purge"
+      ? false
+      : targetUser !== null && myFid > 0;
 
   const accentCls = mode === "follow"
     ? "bg-primary text-white hover:bg-primary/90"
-    : "bg-rose-500 text-white hover:bg-rose-500/90";
+    : mode === "purge"
+      ? "bg-primary text-white hover:bg-primary/90"
+      : "bg-rose-500 text-white hover:bg-rose-500/90";
 
-  const pageTitle = mode === "follow" ? "Follow" : "Clean Up";
+  const pageTitle = mode === "follow" ? "Follow" : mode === "purge" ? "Purge" : "Clean Up";
+
+  const allCleanupRunning = cleanupOp.ops.filter(o => o.phase === "running").length > 0;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -742,7 +757,7 @@ export function FollowPage() {
       <header className="sticky top-0 z-30 bg-background border-b border-border relative overflow-hidden">
         <div className={cn(
           "absolute inset-0 opacity-[0.07] pointer-events-none",
-          mode === "follow"
+          mode === "follow" || mode === "purge"
             ? "bg-gradient-to-r from-primary via-violet-500 to-transparent"
             : "bg-gradient-to-r from-rose-500 via-orange-400 to-transparent"
         )} />
@@ -755,9 +770,13 @@ export function FollowPage() {
           </button>
           <div className={cn(
             "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center",
-            mode === "follow" ? "bg-primary/10 text-primary" : "bg-rose-500/10 text-rose-500",
+            mode === "follow" ? "bg-primary/10 text-primary"
+            : mode === "purge" ? "bg-primary/10 text-primary"
+            : "bg-rose-500/10 text-rose-500",
           )}>
-            {mode === "follow" ? <UserPlus className="w-4 h-4" /> : <Scissors className="w-4 h-4" />}
+            {mode === "follow" ? <UserPlus className="w-4 h-4" />
+              : mode === "purge" ? <Trash2 className="w-4 h-4" />
+              : <Scissors className="w-4 h-4" />}
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="font-bold text-[15px] text-foreground">{pageTitle}</h1>
@@ -798,6 +817,18 @@ export function FollowPage() {
                 Clean Up
               </button>
               <button
+                onClick={() => switchMode("purge")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
+                  mode === "purge" && !showActive
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Purge
+              </button>
+              <button
                 onClick={() => { setShowActive(true); navigate("/follow?tab=active", { replace: true }); }}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
@@ -808,7 +839,7 @@ export function FollowPage() {
               >
                 <ListChecks className="w-3.5 h-3.5" />
                 Active
-                {batchOp.ops.filter(o => o.phase === "running").length > 0 && (
+                {(batchOp.ops.filter(o => o.phase === "running").length > 0 || allCleanupRunning) && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 )}
               </button>
@@ -816,9 +847,21 @@ export function FollowPage() {
           </div>
 
           {showActive ? (
-            <ActiveGrowsView ops={batchOp.ops} onCancel={batchOp.cancelOp} onDismiss={batchOp.clearOp} onUnhide={batchOp.unhideOp} />
+            <ActiveGrowsView
+              ops={batchOp.ops}
+              cleanupOps={cleanupOp.ops}
+              onCancel={batchOp.cancelOp}
+              onDismiss={batchOp.clearOp}
+              onUnhide={batchOp.unhideOp}
+              onCancelCleanup={cleanupOp.cancelOp}
+              onDismissCleanup={cleanupOp.clearOp}
+              onUnhideCleanup={cleanupOp.unhideOp}
+            />
           ) : (
           <>
+          {/* ── PURGE MODE: bulk cast cleanup ── */}
+          {mode === "purge" && <CleanupCastsPanel />}
+
           {/* ── FOLLOW MODE: search for a target profile ── */}
           {mode === "follow" && (
             <div className="px-4 lg:px-0 space-y-3">
@@ -1448,23 +1491,32 @@ export function FollowPage() {
 }
 
 // ─── Active Grows · every running/finished op across every account, as a plain
-// scrollable list (not floating pills). Persists across account switches since
-// it just reads straight from BatchOperationContext, which isn't scoped to
-// "whichever account is currently active" in the first place. ──────────────────
-function ActiveGrowsView({ ops, onCancel, onDismiss, onUnhide }: {
+// scrollable list (not floating pills). Shows both follow/unfollow batch ops
+// (from BatchOperationContext) and cast cleanup ops (from CleanupOpContext)
+// side-by-side so the user gets one unified view of all running work. ──────────
+function ActiveGrowsView({
+  ops, cleanupOps,
+  onCancel, onDismiss, onUnhide,
+  onCancelCleanup, onDismissCleanup, onUnhideCleanup,
+}: {
   ops: BatchOp[];
+  cleanupOps: CleanupOp[];
   onCancel: (myFid: number, mode: "follow" | "unfollow") => void;
   onDismiss: (myFid: number, mode: "follow" | "unfollow") => void;
   onUnhide: (myFid: number, mode: "follow" | "unfollow") => void;
+  onCancelCleanup: (myFid: number, kind: CleanupKind) => void;
+  onDismissCleanup: (myFid: number, kind: CleanupKind) => void;
+  onUnhideCleanup: (myFid: number, kind: CleanupKind) => void;
 }) {
-  if (ops.length === 0) {
+  const totalOps = ops.length + cleanupOps.length;
+  if (totalOps === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground px-6 text-center">
         <ListChecks className="w-10 h-10 opacity-15" />
-        <p className="text-sm">No grows running right now.</p>
+        <p className="text-sm">Nothing running right now.</p>
         <p className="text-[12px] text-muted-foreground/70">
-          Each account can run one Follow and one Unfollow grow at the same time.
-          Start one from the Follow or Clean Up tab.
+          Follow/unfollow grows and Purge cleanups all show up here while (and after) they run.
+          Start one from the Follow, Clean Up, or Purge tab.
         </p>
       </div>
     );
@@ -1544,6 +1596,89 @@ function ActiveGrowsView({ ops, onCancel, onDismiss, onUnhide }: {
               >
                 <Eye className="w-3.5 h-3.5" /> Show floating pill again
               </button>
+            )}
+          </div>
+        );
+      })}
+
+      {/* ── Cleanup ops ── */}
+      {cleanupOps.map(op => {
+        const isRunning = op.phase === "running";
+        const isDone = op.phase === "done" || op.phase === "cancelled";
+        const kindLabel: Record<string, string> = {
+          casts: "Casts", replies: "Comments", likes: "Likes", recasts: "Recasts",
+        };
+        const pct = op.total > 0 ? Math.round((op.done / op.total) * 100) : isRunning ? 0 : 100;
+        return (
+          <div key={op.id} className="rounded-xl border border-border bg-card px-4 py-3.5 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className={cn(
+                "shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
+                isRunning ? "bg-primary/10 text-primary" : isDone ? "bg-muted/50 text-muted-foreground" : "bg-muted/50 text-muted-foreground"
+              )}>
+                <Trash2 className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] font-semibold text-foreground">
+                    Purge {kindLabel[op.kind] ?? op.kind}
+                  </span>
+                  <span className={cn(
+                    "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                    isRunning
+                      ? "bg-emerald-500/10 text-emerald-500"
+                      : isDone
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-amber-500/10 text-amber-500"
+                  )}>
+                    {op.phase === "running" ? "Running" : op.phase === "done" ? "Done" : op.phase === "cancelled" ? "Cancelled" : "Idle"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {op.done.toLocaleString()} / {op.total > 0 ? op.total.toLocaleString() : "…"} deleted
+                  {op.phase === "done" && ` · ${op.done.toLocaleString()} removed`}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isRunning && (
+                  <button
+                    onClick={() => onCancelCleanup(op.myFid, op.kind)}
+                    className="w-7 h-7 flex items-center justify-center rounded-full border border-border bg-muted/30 hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-500 text-muted-foreground transition-all"
+                    title="Cancel"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {isDone && (
+                  <button
+                    onClick={() => onDismissCleanup(op.myFid, op.kind)}
+                    className="w-7 h-7 flex items-center justify-center rounded-full border border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground transition-all"
+                    title="Dismiss"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground font-medium">Progress</span>
+                <span className="text-[10px] font-bold text-foreground tabular-nums">{pct}%</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    isRunning ? "bg-primary" : isDone ? "bg-emerald-500" : "bg-muted-foreground/40"
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+            {op.log.length > 0 && (
+              <p className="text-[10px] text-muted-foreground font-mono bg-muted/20 rounded-lg px-2.5 py-1.5 truncate border border-border/50">
+                {op.log[op.log.length - 1]}
+              </p>
             )}
           </div>
         );
