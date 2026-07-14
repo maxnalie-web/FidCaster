@@ -1258,7 +1258,7 @@ export default function FidDetailPage() {
         </div>
       </div>
 
-      <BottomNav active="market" />
+      <BottomNav />
       </div>
     </div>
   );

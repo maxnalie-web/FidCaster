@@ -56,7 +56,6 @@ const SIDEBAR_ITEMS: { id: MainTab; label: string; icon: typeof Home }[] = [
 const BOTTOM_NAV: { id: MainTab; icon: typeof Home }[] = [
   { id: "feed",          icon: Home },
   { id: "search",        icon: Search },
-  { id: "miniapps",      icon: Layers },
 ];
 
 
@@ -593,6 +592,10 @@ function MobileDrawer({
             <Hash className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Channels</span>
           </button>
+          <button onClick={() => { navigate("/market"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+            <Tag className="w-4 h-4 shrink-0" />
+            <span className="flex-1 text-left font-medium">FID Market</span>
+          </button>
           <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Settings className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Settings</span>
@@ -862,14 +865,8 @@ export function DashboardPage() {
   const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
-  const sidebarItems = (authMethod === "mnemonic"
-    ? SIDEBAR_ITEMS
-    : SIDEBAR_ITEMS.filter((i) => i.id !== "wallet")
-  ).filter((i) => miniAppsAllowed || i.id !== "miniapps");
-  const bottomNavItems = (authMethod === "mnemonic"
-    ? BOTTOM_NAV
-    : BOTTOM_NAV.filter((i) => i.id !== "wallet")
-  ).filter((i) => miniAppsAllowed || i.id !== "miniapps");
+  const sidebarItems = SIDEBAR_ITEMS.filter((i) => miniAppsAllowed || i.id !== "miniapps");
+  const bottomNavItems = BOTTOM_NAV;
 
   const { unread: unreadNotifs, markSeen: markNotifsSeen } = useUnreadNotifications(Number(fid), neynarKey);
 
@@ -1285,36 +1282,23 @@ export function DashboardPage() {
               </button>
             );
           })}
-          {/* Grow tab */}
-          {adminCfg.features.growEnabled !== false && (
-            <button
-              onClick={() => navigate("/follow")}
-              className="flex-1 flex items-center justify-center transition-colors"
-            >
-              <TrendingUp className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-            </button>
-          )}
-          {/* FID Market tab */}
+          {/* Grow tab - always shown (matches native MainTabs) */}
           <button
-            onClick={() => navigate("/market")}
+            onClick={() => navigate("/follow")}
             className="flex-1 flex items-center justify-center transition-colors"
           >
-            <Tag className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+            <TrendingUp className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
           </button>
-          {/* Wallet · mnemonic auth only (same gating as the desktop sidebar) ·
-              was previously missing from the mobile bottom nav entirely, so
-              mnemonic users had no way to reach their wallet on phone/tablet. */}
-          {authMethod === "mnemonic" && (
-            <button
-              onClick={() => setMainTab("wallet")}
-              className="flex-1 flex items-center justify-center transition-colors"
-            >
-              <Wallet
-                className={cn("w-6 h-6", mainTab === "wallet" ? "text-primary" : "text-muted-foreground")}
-                strokeWidth={mainTab === "wallet" ? 2.5 : 2}
-              />
-            </button>
-          )}
+          {/* Wallet - always shown (matches native; WalletPanel handles no-wallet onboarding state) */}
+          <button
+            onClick={() => setMainTab("wallet")}
+            className="flex-1 flex items-center justify-center transition-colors"
+          >
+            <Wallet
+              className={cn("w-6 h-6", mainTab === "wallet" ? "text-primary" : "text-muted-foreground")}
+              strokeWidth={mainTab === "wallet" ? 2.5 : 2}
+            />
+          </button>
           {/* Notifications · sits right next to Profile */}
           <button
             onClick={() => setMainTab("notifications")}

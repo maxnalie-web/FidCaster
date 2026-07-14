@@ -1119,7 +1119,7 @@ export default function FidMarketPage() {
 
       </div>
 
-      <BottomNav active="market" />
+      <BottomNav />
       </div>
 
       {showComposer && (
