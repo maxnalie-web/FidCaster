@@ -5,6 +5,7 @@ import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, 
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
+import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
 import { ADMIN_FID } from "@/lib/admin-config";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
@@ -245,6 +246,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       while (!cancelRef.current) {
         try {
           await attempt(targetFid);
+          bumpFollowingCount(myFid, mode === "unfollow" ? -1 : 1);
           return "done";
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);

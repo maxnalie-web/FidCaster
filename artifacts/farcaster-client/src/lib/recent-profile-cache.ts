@@ -21,3 +21,9 @@ export function getRecentProfile(fid: number): NeynarUser | undefined {
   if (ts === undefined || Date.now() - ts > TTL_MS) return undefined;
   return cache.get(fid);
 }
+
+export function bumpFollowingCount(fid: number, delta: 1 | -1): void {
+  const user = cache.get(fid);
+  if (!user) return;
+  cache.set(fid, { ...user, following_count: Math.max(0, (user.following_count ?? 0) + delta) });
+}
