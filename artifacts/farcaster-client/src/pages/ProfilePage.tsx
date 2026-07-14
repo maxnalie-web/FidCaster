@@ -5,10 +5,9 @@ import {
   ArrowLeft, User, Loader2, UserPlus, UserCheck, UserMinus,
   MapPin, Check, MoreHorizontal, Copy, Settings,
   AlignLeft, MessageSquare, Heart, Repeat2, X, Search,
-  Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, Gauge, PenSquare,
+  Camera, CheckCircle2, AlertCircle, ChevronRight, Tag, PenSquare,
 } from "lucide-react";
 import { ComposeModal } from "@/components/ComposeModal";
-import { SpamAnalyzerSheet } from "@/components/SpamAnalyzerSheet";
 import { ProfileCastSearchSheet } from "@/components/ProfileCastSearchSheet";
 import { getSpamLabelsFor, type SpamLabelValue } from "@/lib/spam-labels";
 import { useWallet } from "@/hooks/useWallet";
@@ -349,7 +348,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
   const [followSheet, setFollowSheet] = useState<"followers" | "following" | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
-  const [showSpamAnalyzer, setShowSpamAnalyzer] = useState(false);
   const [showCastSearch, setShowCastSearch] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
   const scrollYRef = useRef(typeof window !== "undefined" ? window.scrollY : 0);
@@ -810,14 +808,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
                               <Copy className="w-4 h-4 text-muted-foreground" />
                               Copy link
                             </button>
-                            <div className="my-1 border-t border-border" />
-                            <button
-                              onClick={() => { setShowSpamAnalyzer(true); setShowMoreMenu(false); }}
-                              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
-                            >
-                              <Gauge className="w-4 h-4 text-muted-foreground" />
-                              Health check
-                            </button>
                           </div>
                         )}
                       </div>
@@ -1086,16 +1076,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
             if (onOpenSettings) onOpenSettings("username");
             else navigate("/dashboard?tab=profile");
           }}
-        />
-      )}
-
-      {/* ── Score Analysis Sheet ── */}
-      {showSpamAnalyzer && user && (
-        <SpamAnalyzerSheet
-          user={user}
-          myFid={myFidNum}
-          neynarKey={neynarKey ?? ""}
-          onClose={() => setShowSpamAnalyzer(false)}
         />
       )}
 
