@@ -3,3 +3,4 @@
 - [FidCaster video upload](fidcaster-video-upload.md) — litterbox.catbox.moe works from Replit server IPs; catbox.moe blocks cloud IPs (412); tmpfiles.org always returns HTML pages (not direct video)
 - [FidCaster sync plan](fidcaster-sync-plan.md) — full bidirectional sync plan at sync-plan.md; re-fetch native GitHub tree before updating it.
 - [GitHub Push Blocked](github-push.md) — git CLI push is blocked in main agent; use GitHub REST API blob/tree/commit/ref PATCH with GITHUB_TOKEN env var.
+- [Admin panel removal](admin-panel-removal.md) — admin panel fully removed; ADMIN_FID hardcoded as 16333; 7 files touched beyond the 4 deleted files.

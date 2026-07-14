@@ -3,8 +3,6 @@ import { useLocation } from "wouter";
 import { ArrowRight } from "lucide-react";
 import { FidCasterLogo } from "@/components/FidCasterLogo";
 import { XLogo, TelegramLogo, FarcasterLogo } from "@/components/NeynarScoreBadge";
-import { useAdminConfig } from "@/hooks/useAdminConfig";
-
 /**
  * First screen an installed app (Capacitor native, or an installed/standalone
  * PWA) shows when logged out — replaces the old behavior of redirecting
@@ -15,10 +13,15 @@ import { useAdminConfig } from "@/hooks/useAdminConfig";
  * screen's dark background so the open→splash→here→login sequence reads as
  * one deliberate flow instead of a jarring flash into a form.
  */
+const SOCIAL = {
+  twitter: "https://x.com/fidcaster",
+  telegram: "https://t.me/Fidcaster",
+  farcaster: "https://farcaster.xyz/fidcaster",
+};
+
 export function NativeWelcomePage() {
   const [, navigate] = useLocation();
-  const [adminCfg] = useAdminConfig();
-  const social = adminCfg.social;
+  const social = SOCIAL;
 
   return (
     <div

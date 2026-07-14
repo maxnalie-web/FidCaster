@@ -32,8 +32,6 @@ import {
   SUPPORTED_LANGS, getLangSetting, setPreferredLang, defaultTargetLang,
   type LangCode, type LangSetting,
 } from "@/lib/translate";
-import { useAdminConfig } from "@/hooks/useAdminConfig";
-import { ADMIN_FID } from "@/lib/admin-config";
 import { AddAccountModal, AccountDropdownPanel } from "@/components/AccountModals";
 import { createWalletClient, custom } from "viem";
 import { optimism } from "viem/chains";
@@ -205,13 +203,11 @@ const PILLARS: { icon: typeof Zap; title: string; desc: string }[] = [
 function SupportPanel() {
   const [founder, setFounder] = useState<NeynarUser | null>(null);
   const [, navigate] = useLocation();
-  const [adminCfg] = useAdminConfig();
-
   useEffect(() => {
-    getUserByFid(ADMIN_FID, ADMIN_FID, "").then(res => setFounder(res.users?.[0] ?? null)).catch(() => {});
+    getUserByFid(16333, 16333, "").then(res => setFounder(res.users?.[0] ?? null)).catch(() => {});
   }, []);
 
-  const goToFounder = (e: React.MouseEvent) => { e.preventDefault(); navigate(`/profile/${ADMIN_FID}`); };
+  const goToFounder = (e: React.MouseEvent) => { e.preventDefault(); navigate(`/profile/16333`); };
 
   return (
     <div className="max-w-lg space-y-6">
@@ -289,46 +285,23 @@ function SupportPanel() {
         <div>
           <p className="text-sm font-bold text-foreground">Need help or have feedback?</p>
           <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
-            Send a cast to <a href={`/profile/${ADMIN_FID}`} onClick={goToFounder} className="text-primary font-semibold hover:underline">@m--</a> or mention @fidcaster. Every message reaches the team directly.
+            Send a cast to <a href={`/profile/16333`} onClick={goToFounder} className="text-primary font-semibold hover:underline">@m--</a> or mention @fidcaster. Every message reaches the team directly.
           </p>
         </div>
       </div>
 
       {/* ── Social links ── */}
-      {(adminCfg.social.twitter || adminCfg.social.telegram || adminCfg.social.farcaster) && (
-        <div className="flex items-center gap-2.5">
-          {adminCfg.social.twitter && (
-            <a
-              href={adminCfg.social.twitter}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
-            >
-              <XLogo size={14} /> Follow on X
-            </a>
-          )}
-          {adminCfg.social.telegram && (
-            <a
-              href={adminCfg.social.telegram}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
-            >
-              <TelegramLogo size={14} /> Join Telegram
-            </a>
-          )}
-          {adminCfg.social.farcaster && (
-            <a
-              href={adminCfg.social.farcaster}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors"
-            >
-              <FarcasterLogo size={14} /> Follow on Farcaster
-            </a>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2.5">
+        <a href="https://x.com/fidcaster" target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors">
+          <XLogo size={14} /> Follow on X
+        </a>
+        <a href="https://t.me/Fidcaster" target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors">
+          <TelegramLogo size={14} /> Join Telegram
+        </a>
+        <a href="https://farcaster.xyz/fidcaster" target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/30 hover:bg-accent transition-colors">
+          <FarcasterLogo size={14} /> Follow on Farcaster
+        </a>
+      </div>
     </div>
   );
 }
@@ -813,11 +786,6 @@ export function DashboardPage() {
   } = useWallet();
   const [, navigate] = useLocation();
   const [theme, setTheme] = useTheme();
-  const [adminCfg] = useAdminConfig();
-  const isAdmin = fid !== null && Number(fid) === ADMIN_FID;
-  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("fc_dismissed_ann") || "[]"); } catch { return []; }
-  });
 
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
 
@@ -833,10 +801,8 @@ export function DashboardPage() {
   }, [walletError]);
 
   // Mini Apps is native/PWA-only (a plain web tab has no in-app browser or
-  // SDK bridge to run them in) AND admin-togglable (adminCfg.features.
-  // miniAppsEnabled, off by default) — the tab/nav entry and the ?tab= deep
-  // link are all hidden whenever either condition says no.
-  const miniAppsAllowed = isInstalledApp() && adminCfg.features.miniAppsEnabled;
+  // SDK bridge to run them in) — hidden on plain web tabs.
+  const miniAppsAllowed = false;
   const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile", ...(miniAppsAllowed ? (["miniapps"] as MainTab[]) : [])];
   const [mainTab, setMainTab] = useState<MainTab>(() => {
     try {
@@ -1044,15 +1010,13 @@ export function DashboardPage() {
           })}
 
           {/* Grow link */}
-          {adminCfg.features.growEnabled !== false && (
-            <button
-              onClick={() => navigate("/follow")}
-              className="sidebar-item"
-            >
-              <TrendingUp className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-              <span className="text-[1.0625rem] text-foreground/85">Grow</span>
-            </button>
-          )}
+          <button
+            onClick={() => navigate("/follow")}
+            className="sidebar-item"
+          >
+            <TrendingUp className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[1.0625rem] text-foreground/85">Grow</span>
+          </button>
 
           {/* FID Market link */}
           <button
@@ -1083,17 +1047,6 @@ export function DashboardPage() {
             />
             <span className={cn("text-[1.0625rem]", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
           </button>
-
-          {/* Admin panel link · only for @m-- */}
-          {isAdmin && (
-            <button
-              onClick={() => navigate("/admin")}
-              className="sidebar-item"
-            >
-              <Shield className="w-[26px] h-[26px] shrink-0 text-primary/80" strokeWidth={2} />
-              <span className="text-[1.0625rem] text-primary/90 font-semibold">Admin</span>
-            </button>
-          )}
 
           {/* Theme toggle */}
           <button
@@ -1231,29 +1184,6 @@ export function DashboardPage() {
               <span>Posting locked · tap to re-enter password</span>
             </button>
           )}
-          {/* Announcements */}
-          {adminCfg.announcements.filter(a => a.enabled && !dismissedAnnouncements.includes(a.id)).map((ann) => {
-            const bgMap = { info: "bg-primary/8 border-primary/25 text-primary", warning: "bg-amber-500/8 border-amber-500/25 text-amber-500", success: "bg-emerald-500/8 border-emerald-500/25 text-emerald-500" };
-            const IconMap = { info: Info, warning: AlertTriangle, success: CheckCircle2 };
-            const AnnIcon = IconMap[ann.type];
-            return (
-              <div key={ann.id} className={cn("flex items-start gap-2.5 mx-4 mt-3 px-3 py-2.5 rounded-xl border text-sm", bgMap[ann.type])}>
-                <AnnIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                <p className="flex-1 leading-snug">{ann.text}
-                  {ann.url && <a href={ann.url} target="_blank" rel="noopener noreferrer" className="ml-2 underline underline-offset-2 opacity-80 hover:opacity-100">{ann.urlLabel || "→"}</a>}
-                </p>
-                {ann.dismissible && (
-                  <button onClick={() => {
-                    const next = [...dismissedAnnouncements, ann.id];
-                    setDismissedAnnouncements(next);
-                    try { localStorage.setItem("fc_dismissed_ann", JSON.stringify(next)); } catch {}
-                  }} className="p-0.5 rounded opacity-60 hover:opacity-100 transition-opacity shrink-0">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
           {renderContent()}
         </div>
 

@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLandingStats, formatVolume, formatCount, formatUserCount, type MarketListing, type MarketActivity } from "@/hooks/useLandingStats";
-import { useAdminConfig } from "@/hooks/useAdminConfig";
 
 /* ─── Mock data ─── */
 const MOCK_FEED = [
@@ -52,6 +51,15 @@ const FEATURE_ICONS = [
   <Tag className="w-5 h-5" />,
   <Shield className="w-5 h-5" />,
   <BarChart2 className="w-5 h-5" />,
+];
+
+const LANDING_FEATURE_DATA = [
+  { title: "Cast & Engage", desc: "Post, reply, recast, and react to everything in your Farcaster feed.", color: "#7c3aed" },
+  { title: "Grow Your Network", desc: "Smart batch-follow tools surface quality accounts relevant to your niche.", color: "#6366f1" },
+  { title: "Explore Channels", desc: "Browse Farcaster channels, trending casts, and discovery feeds.", color: "#8b5cf6" },
+  { title: "FID Marketplace", desc: "Buy, sell, and watch Farcaster ID listings settled on-chain.", color: "#a855f7" },
+  { title: "Your Keys, Always", desc: "Posting keys are generated on your device. FidCaster never holds your seed.", color: "#9333ea" },
+  { title: "Stats & Insights", desc: "Track followers, engagement, and Neynar quality scores in real time.", color: "#7c3aed" },
 ];
 
 /* ─── Particle system ─── */
@@ -484,15 +492,11 @@ function SectionHeading({ tag, title, sub }: { tag: string; title: React.ReactNo
 ════════════════════════════════════════ */
 export function LoginPage() {
   const [, navigate] = useLocation();
-  const [cfg] = useAdminConfig();
   const { market, network, listings, activity } = useLandingStats(90_000);
 
-  // Merge config features with fixed icons
-  const clientFeatures = cfg.landingFeatures.map((f, i) => ({
+  const clientFeatures = LANDING_FEATURE_DATA.map((f, i) => ({
     icon: FEATURE_ICONS[i] ?? FEATURE_ICONS[0],
-    title: f.title,
-    desc: f.desc,
-    color: f.color,
+    ...f,
   }));
   const displayListings = listings.filter(l => l.buyable).slice(0, 6);
 
@@ -908,45 +912,22 @@ export function LoginPage() {
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <FidCasterLogo size={22} showName={false} />
-            <span className="text-white/50 text-sm font-semibold">{cfg.branding.logoText || "FidCaster"}</span>
-            {cfg.landingFooter.brandTagline && (
-              <span className="text-white/20 text-xs">· {cfg.landingFooter.brandTagline}</span>
-            )}
+            <span className="text-white/50 text-sm font-semibold">FidCaster</span>
+            <span className="text-white/20 text-xs">· The Farcaster client for power users.</span>
           </div>
           <div className="flex items-center gap-6 text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
             <a href="/download" className="hover:text-white/50 transition-colors">Download</a>
-            {cfg.landingFooter.links.map((lnk, i) => (
-              <a key={i} href={lnk.url} className="hover:text-white/50 transition-colors">{lnk.label}</a>
-            ))}
-            {cfg.landingFooter.copyright && (
-              <span>{cfg.landingFooter.copyright}</span>
-            )}
+            <span>© {new Date().getFullYear()} FidCaster</span>
           </div>
           {/* Social icons */}
-          {(cfg.social.twitter || cfg.social.telegram || cfg.social.github || cfg.social.discord) && (
-            <div className="flex items-center gap-3" style={{ color: "rgba(255,255,255,0.25)" }}>
-              {cfg.social.twitter && (
-                <a href={cfg.social.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
-                  <XLogo size={14} />
-                </a>
-              )}
-              {cfg.social.telegram && (
-                <a href={cfg.social.telegram} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
-                  <TelegramLogo size={14} />
-                </a>
-              )}
-              {cfg.social.github && (
-                <a href={cfg.social.github} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
-                  <Github className="w-3.5 h-3.5" />
-                </a>
-              )}
-              {cfg.social.discord && (
-                <a href={cfg.social.discord} target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                </a>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-3" style={{ color: "rgba(255,255,255,0.25)" }}>
+            <a href="https://x.com/fidcaster" target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
+              <XLogo size={14} />
+            </a>
+            <a href="https://t.me/Fidcaster" target="_blank" rel="noopener noreferrer" className="hover:text-white/60 transition-colors">
+              <TelegramLogo size={14} />
+            </a>
+          </div>
         </div>
       </footer>
     </div>

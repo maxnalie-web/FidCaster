@@ -7,11 +7,12 @@ import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
 import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
-import { ADMIN_FID } from "@/lib/admin-config";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { loadSignerPrivKey } from "@/lib/account-store";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
+
+const ADMIN_FID = 16333;
 
 // ─── Timing knobs ─────────────────────────────────────────────────────────────
 const DELAY_MS = 1500;

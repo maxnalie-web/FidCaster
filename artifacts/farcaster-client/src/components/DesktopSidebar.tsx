@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
-  Home, Bell, Search, Wallet, User, TrendingUp, Tag, Hash, Shield, Sun, Moon,
+  Home, Bell, Search, Wallet, User, TrendingUp, Tag, Hash, Sun, Moon,
   MoreHorizontal, UserCircle, PenSquare, Layers, Settings,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
-import { useAdminConfig } from "@/hooks/useAdminConfig";
 import { useTheme } from "@/App";
-import { ADMIN_FID } from "@/lib/admin-config";
 import { isInstalledApp } from "@/lib/miniapp-native";
 import { AddAccountModal, AccountDropdownPanel } from "@/components/AccountModals";
 import { cn } from "@/lib/utils";
@@ -32,18 +30,16 @@ export type DesktopSidebarActive =
 export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActive; onCast: () => void }) {
   const [, navigate] = useLocation();
   const {
-    fid, profile, authMethod, accounts, switchAccount, logout, removeAccount, addAccount,
+    fid, profile, accounts, switchAccount, logout, removeAccount, addAccount,
     autoSignerLoading, signerApproved,
   } = useWallet();
-  const [adminCfg] = useAdminConfig();
   const [theme, setTheme] = useTheme();
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   const fidNum = fid !== null ? Number(fid) : 0;
-  const isAdmin = fid !== null && Number(fid) === ADMIN_FID;
-  const miniAppsAllowed = isInstalledApp() && adminCfg.features.miniAppsEnabled;
+  const miniAppsAllowed = false;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -60,7 +56,7 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
     { id: "notifications", label: "Notifications", icon: Bell, onClick: () => navigate("/dashboard?tab=notifications") },
     { id: "search", label: "Search", icon: Search, onClick: () => navigate("/dashboard?tab=search") },
     ...(miniAppsAllowed ? [{ id: "miniapps" as const, label: "Mini Apps", icon: Layers, onClick: () => navigate("/dashboard?tab=miniapps") }] : []),
-    ...(authMethod === "mnemonic" ? [{ id: "wallet" as const, label: "Wallet", icon: Wallet, onClick: () => navigate("/dashboard?tab=wallet") }] : []),
+    { id: "wallet" as const, label: "Wallet", icon: Wallet, onClick: () => navigate("/dashboard?tab=wallet") },
     { id: "profile", label: "Profile", icon: User, onClick: () => navigate("/dashboard?tab=profile") },
   ];
 
@@ -102,12 +98,10 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
             );
           })}
 
-          {adminCfg.features.growEnabled !== false && (
-            <button onClick={() => navigate("/follow")} className={cn("sidebar-item", active === "grow" && "active")}>
-              <TrendingUp className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-              <span className="text-[1.0625rem] text-foreground/85">Grow</span>
-            </button>
-          )}
+          <button onClick={() => navigate("/follow")} className={cn("sidebar-item", active === "grow" && "active")}>
+            <TrendingUp className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[1.0625rem] text-foreground/85">Grow</span>
+          </button>
 
           <button onClick={() => navigate("/market")} className={cn("sidebar-item", active === "market" && "active")}>
             <Tag className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
@@ -123,13 +117,6 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
             <Settings className={cn("w-[26px] h-[26px] shrink-0", active === "settings" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "settings" ? 2.5 : 2} />
             <span className={cn("text-[1.0625rem]", active === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
           </button>
-
-          {isAdmin && (
-            <button onClick={() => navigate("/admin")} className="sidebar-item">
-              <Shield className="w-[26px] h-[26px] shrink-0 text-primary/80" strokeWidth={2} />
-              <span className="text-[1.0625rem] text-primary/90 font-semibold">Admin</span>
-            </button>
-          )}
 
           <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="sidebar-item">
             {theme === "dark"
