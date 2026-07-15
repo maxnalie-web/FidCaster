@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { KeyRound, FileKey, Eye, BookUser, ChevronRight } from "lucide-react";
 import { useWalletStore, type WalletKind } from "@/store/walletStore";
+import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
 
 function kindIcon(kind: WalletKind) {
   if (kind === "seed") return <KeyRound size={15} className="text-primary" />;
@@ -20,6 +21,15 @@ interface Props {
 
 export function WalletSettings({ onSelectWallet, onBack }: Props) {
   const wallets = useWalletStore(s => s.wallets);
+  const [showAddressBook, setShowAddressBook] = useState(false);
+
+  if (showAddressBook) {
+    return (
+      <div className="flex flex-col h-full">
+        <AddressBookSheet onClose={() => setShowAddressBook(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -32,7 +42,7 @@ export function WalletSettings({ onSelectWallet, onBack }: Props) {
         <div className="space-y-1.5">
           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-1">General</p>
           <div className="rounded-2xl bg-card border border-border overflow-hidden">
-            <button className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors" onClick={() => alert("Address book — coming soon")}>
+            <button className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors" onClick={() => setShowAddressBook(true)}>
               <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
                 <BookUser size={15} className="text-primary" />
               </div>

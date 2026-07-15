@@ -236,7 +236,7 @@ export function WalletPanel() {
   const isWatchOnly = storeActiveWallet?.kind === "watch-only";
 
   // ── address book ────────────────────────────────────────────────────────────
-  const { contacts, hydrate: hydrateAB, findByAddress } = useAddressBookStore();
+  const { contacts, hydrate: hydrateAB } = useAddressBookStore();
   useEffect(() => { hydrateAB(); }, [hydrateAB]);
 
   // ── wallet overlay ──────────────────────────────────────────────────────────

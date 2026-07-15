@@ -8,3 +8,6 @@
 - [Native wallet port](native-wallet-port.md) — WalletPanel web fully ported from native WalletPanelScreen; color derived from address, hero+circles+3-step send+QR receive+activity tab.
 - [GitHub token access](github-token-access.md) — GITHUB_TOKEN env var exists and works for private repo maxnalie-web/fidcaster-native; use Authorization: token $GITHUB_TOKEN header.
 - [Multi-wallet store](multi-wallet.md) — walletStore (Zustand) is separate from WalletProvider/useWallet; walletStore is the multi-wallet EVM layer, WalletProvider handles Farcaster identity.
+- [OpenOcean swap](openocean-swap.md) — free swap API, no key; chain param uses "optimism" (not "base" — use "bsc" for Base); quote then swap_quote endpoints return full calldata.
+- [NFT Gallery proxy](nft-gallery-proxy.md) — OpenSea v2 blocks browser CORS; must proxy via server /api/nfts/:chain/:address; env var OPENSEA_API; add vite proxy rule for /api/nfts.
+- [Address book store](addressbook-store.md) — useAddressBookStore (Zustand + localStorage "ab_contacts"); hydrate() must be called in each component that reads contacts.
