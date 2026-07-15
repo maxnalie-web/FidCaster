@@ -319,7 +319,7 @@ export function CleanupCastsPanel() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {CARDS.map(card => (
           <CleanupCard key={card.kind} card={card} />
         ))}

@@ -771,7 +771,7 @@ export function FollowPage() {
       <div className="flex-1 lg:min-h-0 max-w-[900px] w-full mx-auto flex flex-col lg:flex-row gap-0 lg:gap-6 px-0 lg:px-4 lg:py-4">
 
         {/* ── LEFT: CONTROLS (full-width when the Active view replaces the two-column layout) ── */}
-        <div className={cn("flex flex-col gap-4", showActive ? "w-full" : "lg:w-[280px] lg:shrink-0")}>
+        <div className={cn("flex flex-col gap-4", (showActive || mode === "purge") ? "w-full" : "lg:w-[280px] lg:shrink-0")}>
 
           {/* Mode switcher */}
           <div className="px-4 pt-4 lg:px-0 lg:pt-0">
@@ -1257,8 +1257,8 @@ export function FollowPage() {
           )}
         </div>
 
-        {/* ── RIGHT: USER LIST · hidden while the Active view is shown ── */}
-        {!showActive && (
+        {/* ── RIGHT: USER LIST · hidden while the Active view is shown or purge mode is active ── */}
+        {!showActive && mode !== "purge" && (
         <div className="flex-1 min-w-0 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-border">
 
           {/* Scan progress */}
