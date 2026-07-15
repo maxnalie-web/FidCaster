@@ -31,6 +31,7 @@ import { NftGallery } from "@/components/wallet/NftGallery";
 import { SwapSheet } from "@/components/wallet/SwapSheet";
 import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
 import { DeFiAppsSheet } from "@/components/wallet/DeFiAppsSheet";
+import { DeFiBrowserSheet } from "@/components/wallet/DeFiBrowserSheet";
 import { useAddressBookStore } from "@/store/addressBookStore";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -243,6 +244,8 @@ export function WalletPanel() {
   const [overlay, setOverlay] = useState<WalletOverlay>("none");
   const [showSwap, setShowSwap] = useState(false);
   const [showDeFi, setShowDeFi] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState("");
   const [showAddressBook, setShowAddressBook] = useState(false);
 
   // ── main wallet state ───────────────────────────────────────────────────────
@@ -602,10 +605,26 @@ export function WalletPanel() {
           <div className="relative bg-card rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
             <div className="flex-1 overflow-y-auto">
-              <DeFiAppsSheet walletColor={walletColor} onClose={() => setShowDeFi(false)} />
+              <DeFiAppsSheet
+                walletColor={walletColor}
+                onClose={() => setShowDeFi(false)}
+                onOpenBrowser={(url) => {
+                  setShowDeFi(false);
+                  setBrowserUrl(url);
+                  setShowBrowser(true);
+                }}
+              />
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── DeFi Browser (Rainbow-style) ─────────────────────────────────── */}
+      {showBrowser && browserUrl && (
+        <DeFiBrowserSheet
+          initialUrl={browserUrl}
+          onClose={() => setShowBrowser(false)}
+        />
       )}
 
       {/* ── Swap sheet ──────────────────────────────────────────────────── */}

@@ -133,15 +133,16 @@ const CATEGORIES: { id: DeFiApp["category"]; label: string; icon: typeof Repeat 
 interface Props {
   onClose: () => void;
   walletColor: string;
+  onOpenBrowser: (url: string) => void;
 }
 
-export function DeFiAppsSheet({ onClose, walletColor }: Props) {
+export function DeFiAppsSheet({ onClose, walletColor, onOpenBrowser }: Props) {
   const [activeCategory, setActiveCategory] = React.useState<DeFiApp["category"] | "all">("all");
 
   const filtered = activeCategory === "all" ? APPS : APPS.filter(a => a.category === activeCategory);
 
   function open(app: DeFiApp) {
-    window.open(app.url, "_blank", "noreferrer");
+    onOpenBrowser(app.url);
   }
 
   return (
