@@ -352,7 +352,6 @@ export function WalletPanel() {
   const [loadingBase, setLoadingBase] = useState(false);
   const [loadingArb,  setLoadingArb]  = useState(false);
   const [loadingEth,  setLoadingEth]  = useState(false);
-  const [showHiddenTokens, setShowHiddenTokens] = useState(false);
   const [erc20Tokens, setErc20Tokens] = useState<Erc20TokenRow[]>([]);
   const [loadingErc20, setLoadingErc20] = useState(false);
   const [detailToken, setDetailToken] = useState<string | null>(null);
@@ -456,7 +455,7 @@ export function WalletPanel() {
   const arbUsdcNum  = arbUsdc  !== null ? parseFloat(formatUnits(arbUsdc, 6)) : 0;
   const ethEthNum   = ethEth   !== null ? parseFloat(formatEther(ethEth))    : 0;
   const ethUsdcNum  = ethUsdc  !== null ? parseFloat(formatUnits(ethUsdc, 6)) : 0;
-  const erc20Usd = erc20Tokens.filter(t => !t.isSpam).reduce((s, t) => s + (t.usdValue ?? 0), 0);
+  const erc20Usd = erc20Tokens.reduce((s, t) => s + (t.usdValue ?? 0), 0);
   const totalUsd = ethPrice
     ? (opEthNum + baseEthNum + arbEthNum + ethEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum + ethUsdcNum + erc20Usd
     : null;
@@ -476,11 +475,9 @@ export function WalletPanel() {
   ];
 
   const loadingDone = !loadingOp && !loadingBase && !loadingArb && !loadingEth;
-  // While loading: show a token if its network is still loading (skeleton row).
-  // Once done:     hide zero-balance rows unless the user toggled "show all".
-  const tokens = !showHiddenTokens
-    ? allTokens.filter(t => t.loading || t.balance > 0)
-    : allTokens;
+  // Show a token row only while its network is still fetching (skeleton state)
+  // OR once done and it actually has a balance. Zero-balance rows never appear.
+  const tokens = allTokens.filter(t => t.loading || t.balance > 0);
 
   const selectedToken = allTokens.find(t => t.key === sendToken) ?? allTokens[0];
   const sendDisabled = sending || !toAddress || !amount;
@@ -1189,7 +1186,7 @@ export function WalletPanel() {
               Loading tokens…
             </div>
           )}
-          {(showHiddenTokens ? erc20Tokens : erc20Tokens.filter(t => !t.isSpam)).map(tk => (
+          {erc20Tokens.map(tk => (
             <button
               key={tk.key}
               onClick={() => setDetailToken(tk.key)}
@@ -1232,20 +1229,6 @@ export function WalletPanel() {
             </div>
           )}
 
-          {loadingDone && (() => {
-            const hiddenBase = allTokens.filter(t => t.balance === 0).length;
-            const hiddenSpam = erc20Tokens.filter(t => t.isSpam).length;
-            const total = hiddenBase + hiddenSpam;
-            if (total === 0 && !showHiddenTokens) return null;
-            return (
-              <button
-                onClick={() => setShowHiddenTokens(v => !v)}
-                className="w-full py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showHiddenTokens ? "Hide spam & zero-balance tokens" : `Show ${total} hidden token${total !== 1 ? "s" : ""}`}
-              </button>
-            );
-          })()}
 
         </div>
       )}
