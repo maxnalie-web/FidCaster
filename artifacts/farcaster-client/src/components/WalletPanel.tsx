@@ -525,7 +525,7 @@ export function WalletPanel() {
             onClick={() => setOverlay("none")}
           />
           <div
-            className="relative bg-background rounded-t-[28px] max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+            className="relative bg-background rounded-t-[28px] max-h-[78vh] overflow-hidden shadow-2xl flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
@@ -614,7 +614,7 @@ export function WalletPanel() {
       {showDeFi && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowDeFi(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-t-[28px] max-h-[75vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
             <div className="flex-1 overflow-y-auto">
               <DeFiAppsSheet
@@ -643,7 +643,7 @@ export function WalletPanel() {
       {showSwap && address && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowSwap(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-t-[28px] max-h-[75vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
             <div className="flex-1 overflow-y-auto">
               <SwapSheet address={address} walletColor={walletColor} onClose={() => setShowSwap(false)} />
@@ -656,7 +656,7 @@ export function WalletPanel() {
       {showAddressBook && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowAddressBook(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-t-[28px] max-h-[72vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
             <div className="flex-1 overflow-y-auto">
               <AddressBookSheet
@@ -672,7 +672,7 @@ export function WalletPanel() {
       {action === "receive" && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] px-5 pt-3 pb-8 space-y-4 max-h-[88vh] overflow-auto" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-t-[28px] px-5 pt-3 pb-8 space-y-4 max-h-[72vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-2" />
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Your address (all networks)</p>

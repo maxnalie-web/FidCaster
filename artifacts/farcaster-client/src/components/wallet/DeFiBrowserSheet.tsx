@@ -369,13 +369,6 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                       <Copy size={14} className="text-muted-foreground" />Copy address
                     </button>
 
-                    {/* Open externally */}
-                    <button
-                      onClick={openExternal}
-                      className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-muted/40 text-foreground border-t border-border/40"
-                    >
-                      <ExternalLink size={14} className="text-muted-foreground" />Open in browser
-                    </button>
                   </motion.div>
                 </>
               )}

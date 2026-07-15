@@ -168,8 +168,13 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     if (!validateMnemonicWords(words)) {
       throw new Error("Invalid recovery phrase. Please check all 12 (or 24) words.");
     }
-    const walletId = genWalletId();
     const { address } = await deriveWalletAccount(phrase, 0);
+    // Deduplicate: if a wallet with this address already exists, return its id
+    const existing = get().wallets.find(w =>
+      w.accounts.some(a => a.address.toLowerCase() === address.toLowerCase())
+    );
+    if (existing) return existing.id;
+    const walletId = genWalletId();
     await saveWalletMnemonic(walletId, phrase);
     const wallet: Wallet = {
       id: walletId,
