@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { motion } from "framer-motion";
 import { Loader2, Heart, Repeat2, MessageCircle, UserPlus, Bell, User, Quote, AtSign, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/hooks/useWallet";
@@ -153,56 +154,64 @@ function FollowGroupRow({
   const first = n.users[0];
 
   return (
-    <div className="flex items-start gap-3 px-4 py-4 border-b border-border/50 hover:bg-accent/30 transition-colors cursor-default">
-      {/* Icon column */}
-      <div className="w-10 shrink-0 flex flex-col items-end gap-1 pt-0.5">
-        <div className="w-9 h-9 rounded-full flex items-center justify-center bg-sky-500/12">
-          <UserPlus className="w-[17px] h-[17px] text-sky-500" strokeWidth={2} />
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        {/* Stacked avatars */}
-        <div className="flex items-center mb-2.5">
-          {shown.map((u, i) => (
-            <div key={u.fid} className={cn("relative", i > 0 && "-ml-2.5")}>
-              <div className="ring-[2px] ring-background rounded-full">
-                <Avatar user={u} size={9} onClick={() => navigate(`/profile/${u.fid}`)} />
-              </div>
-            </div>
-          ))}
-          {extra > 0 && (
-            <div className="-ml-2.5 w-9 h-9 rounded-full bg-muted ring-[2px] ring-background flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-              +{extra}
-            </div>
-          )}
+    <motion.div
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.22 }}
+      className="mx-3 my-1.5 rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden"
+    >
+      <div className="flex items-start gap-3 px-4 py-3.5 hover:bg-accent/20 transition-colors cursor-default">
+        {/* Icon column */}
+        <div className="shrink-0 pt-0.5">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-sky-500/15">
+            <UserPlus className="w-[18px] h-[18px] text-sky-500" strokeWidth={2} />
+          </div>
         </div>
 
-        <p className="text-[13.5px] leading-snug text-foreground">
-          <button
-            onClick={() => { setRecentProfile(first); navigate(`/profile/${first.fid}`); }}
-            className="font-bold hover:underline"
-          >
-            {first.display_name || `@${first.username}`}
-          </button>
-          {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
-          {n.users.length === 1 ? (
-            <span className="text-muted-foreground font-normal"> followed you</span>
-          ) : n.users.length === 2 ? (
-            <>
-              <span className="text-muted-foreground font-normal"> and </span>
-              <button onClick={() => { setRecentProfile(n.users[1]); navigate(`/profile/${n.users[1].fid}`); }} className="font-bold hover:underline">
-                {n.users[1].display_name || `@${n.users[1].username}`}
-              </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="flex items-center gap-1.5">
+              {shown.map((u, i) => (
+                <div key={u.fid} className={cn("relative", i > 0 && "-ml-2")}>
+                  <div className="ring-[2px] ring-card rounded-full">
+                    <Avatar user={u} size={8} onClick={() => navigate(`/profile/${u.fid}`)} />
+                  </div>
+                </div>
+              ))}
+              {extra > 0 && (
+                <div className="-ml-2 w-8 h-8 rounded-full bg-muted ring-[2px] ring-card flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                  +{extra}
+                </div>
+              )}
+            </div>
+            <span className="text-[11px] text-muted-foreground/60 shrink-0 mt-0.5">{timeAgo(n.ts)}</span>
+          </div>
+
+          <p className="text-[13px] leading-snug text-foreground">
+            <button
+              onClick={() => { setRecentProfile(first); navigate(`/profile/${first.fid}`); }}
+              className="font-bold hover:underline"
+            >
+              {first.display_name || `@${first.username}`}
+            </button>
+            {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
+            {n.users.length === 1 ? (
               <span className="text-muted-foreground font-normal"> followed you</span>
-            </>
-          ) : (
-            <span className="text-muted-foreground font-normal"> and {n.users.length - 1} others followed you</span>
-          )}
-        </p>
-        <p className="text-[12px] text-muted-foreground/60 mt-1">{timeAgo(n.ts)}</p>
+            ) : n.users.length === 2 ? (
+              <>
+                <span className="text-muted-foreground font-normal"> and </span>
+                <button onClick={() => { setRecentProfile(n.users[1]); navigate(`/profile/${n.users[1].fid}`); }} className="font-bold hover:underline">
+                  {n.users[1].display_name || `@${n.users[1].username}`}
+                </button>
+                <span className="text-muted-foreground font-normal"> followed you</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground font-normal"> and {n.users.length - 1} others followed you</span>
+            )}
+          </p>
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -223,61 +232,69 @@ function ReactionGroupRow({
   if (!first) return null;
 
   return (
-    <div
-      onClick={() => { if (n.castHash) navigate(`/cast/${n.castHash}`); }}
-      className={cn(
-        "flex items-start gap-3 px-4 py-4 border-b border-border/50 hover:bg-accent/30 transition-colors",
-        n.castHash ? "cursor-pointer" : "cursor-default"
-      )}
+    <motion.div
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.22 }}
+      className="mx-3 my-1.5 rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden"
     >
-      {/* Icon column */}
-      <div className="w-10 shrink-0 flex flex-col items-end pt-0.5">
-        <div className={cn("w-9 h-9 rounded-full flex items-center justify-center", isLike ? "bg-rose-500/10" : "bg-emerald-500/10")}>
-          {isLike
-            ? <Heart className="w-[17px] h-[17px] text-rose-500 fill-current" />
-            : <Repeat2 className="w-[17px] h-[17px] text-emerald-500" strokeWidth={2.2} />}
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        {/* Stacked avatars */}
-        <div className="flex items-center mb-2.5">
-          {shown.map((u, i) => (
-            <div key={u.fid} className={cn("relative", i > 0 && "-ml-2.5")}>
-              <div className="ring-[2px] ring-background rounded-full">
-                <Avatar user={u} size={9} onClick={() => navigate(`/profile/${u.fid}`)} />
-              </div>
-            </div>
-          ))}
-          {extra > 0 && (
-            <div className="-ml-2.5 w-9 h-9 rounded-full bg-muted ring-[2px] ring-background flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-              +{extra}
-            </div>
-          )}
-        </div>
-
-        <p className="text-[13.5px] leading-snug text-foreground">
-          <button
-            onClick={(e) => { e.stopPropagation(); setRecentProfile(first); navigate(`/profile/${first.fid}`); }}
-            className="font-bold hover:underline"
-          >
-            {first.display_name || `@${first.username}`}
-          </button>
-          {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
-          {n.users.length > 1 && (
-            <span className="text-muted-foreground font-normal"> and {n.users.length - 1} other{n.users.length - 1 > 1 ? "s" : ""}</span>
-          )}
-          <span className="text-muted-foreground font-normal">{isLike ? " liked your cast" : " recasted your cast"}</span>
-        </p>
-
-        {n.castText && (
-          <p className="mt-2 text-[12.5px] text-muted-foreground leading-relaxed line-clamp-2 border-l-2 border-border/50 pl-3">
-            {n.castText}
-          </p>
+      <div
+        onClick={() => { if (n.castHash) navigate(`/cast/${n.castHash}`); }}
+        className={cn(
+          "flex items-start gap-3 px-4 py-3.5 hover:bg-accent/20 transition-colors",
+          n.castHash ? "cursor-pointer" : "cursor-default"
         )}
-        <p className="text-[12px] text-muted-foreground/60 mt-1">{timeAgo(n.ts)}</p>
+      >
+        {/* Icon column */}
+        <div className="shrink-0 pt-0.5">
+          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isLike ? "bg-rose-500/12" : "bg-emerald-500/12")}>
+            {isLike
+              ? <Heart className="w-[18px] h-[18px] text-rose-500 fill-current" />
+              : <Repeat2 className="w-[18px] h-[18px] text-emerald-500" strokeWidth={2.2} />}
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="flex items-center gap-1">
+              {shown.map((u, i) => (
+                <div key={u.fid} className={cn("relative", i > 0 && "-ml-2")}>
+                  <div className="ring-[2px] ring-card rounded-full">
+                    <Avatar user={u} size={8} onClick={() => navigate(`/profile/${u.fid}`)} />
+                  </div>
+                </div>
+              ))}
+              {extra > 0 && (
+                <div className="-ml-2 w-8 h-8 rounded-full bg-muted ring-[2px] ring-card flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                  +{extra}
+                </div>
+              )}
+            </div>
+            <span className="text-[11px] text-muted-foreground/60 shrink-0 mt-0.5">{timeAgo(n.ts)}</span>
+          </div>
+
+          <p className="text-[13px] leading-snug text-foreground">
+            <button
+              onClick={(e) => { e.stopPropagation(); setRecentProfile(first); navigate(`/profile/${first.fid}`); }}
+              className="font-bold hover:underline"
+            >
+              {first.display_name || `@${first.username}`}
+            </button>
+            {proMap[first.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
+            {n.users.length > 1 && (
+              <span className="text-muted-foreground font-normal"> and {n.users.length - 1} other{n.users.length - 1 > 1 ? "s" : ""}</span>
+            )}
+            <span className="text-muted-foreground font-normal">{isLike ? " liked your cast" : " recasted your cast"}</span>
+          </p>
+
+          {n.castText && (
+            <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed line-clamp-2 pl-3 border-l-2 border-border/40">
+              {n.castText}
+            </p>
+          )}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -299,43 +316,47 @@ function ConversationRow({
       : { Icon: MessageCircle, color: "text-primary", bg: "bg-primary/10", label: "replied to you" };
 
   return (
-    <div
-      onClick={() => navigate(`/cast/${n.castHash}`)}
-      className="flex items-start gap-3 px-4 py-4 border-b border-border/50 hover:bg-accent/30 transition-colors cursor-pointer"
+    <motion.div
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.22 }}
+      className="mx-3 my-1.5 rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden"
     >
-      {/* Avatar with badge overlay */}
-      <div className="relative shrink-0 mt-0.5">
-        <Avatar user={n.author} size={9} onClick={() => navigate(`/profile/${n.author.fid}`)} />
-        <div className={cn(
-          "absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] rounded-full flex items-center justify-center ring-2 ring-background",
-          cfg.bg
-        )}>
-          <cfg.Icon className={cn("w-2.5 h-2.5", cfg.color)} strokeWidth={2.5} />
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2 mb-0.5">
-          <p className="text-[13.5px] leading-snug text-foreground min-w-0">
-            <button
-              onClick={(e) => { e.stopPropagation(); setRecentProfile(n.author); navigate(`/profile/${n.author.fid}`); }}
-              className="font-bold hover:underline"
-            >
-              {n.author.display_name || `@${n.author.username}`}
-            </button>
-            {proMap[n.author.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
-            <span className="text-muted-foreground font-normal"> {cfg.label}</span>
-          </p>
-          <span className="text-[11.5px] text-muted-foreground/60 shrink-0">{timeAgo(n.ts)}</span>
+      <div
+        onClick={() => navigate(`/cast/${n.castHash}`)}
+        className="flex items-start gap-3 px-4 py-3.5 hover:bg-accent/20 transition-colors cursor-pointer"
+      >
+        {/* Left: type icon + avatar stacked */}
+        <div className="shrink-0 flex flex-col items-center gap-1.5 pt-0.5">
+          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", cfg.bg)}>
+            <cfg.Icon className={cn("w-[18px] h-[18px]", cfg.color)} strokeWidth={2.5} />
+          </div>
+          <Avatar user={n.author} size={8} onClick={() => navigate(`/profile/${n.author.fid}`)} />
         </div>
 
-        {n.text && (
-          <p className="mt-1.5 text-[13px] text-foreground/80 leading-relaxed line-clamp-3">
-            {n.text}
-          </p>
-        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <p className="text-[13px] leading-snug text-foreground min-w-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); setRecentProfile(n.author); navigate(`/profile/${n.author.fid}`); }}
+                className="font-bold hover:underline"
+              >
+                {n.author.display_name || `@${n.author.username}`}
+              </button>
+              {proMap[n.author.fid] && <ProBadge size={11} className="ml-0.5 inline-block align-middle" />}
+              <span className="text-muted-foreground font-normal"> {cfg.label}</span>
+            </p>
+            <span className="text-[11px] text-muted-foreground/60 shrink-0 mt-0.5">{timeAgo(n.ts)}</span>
+          </div>
+
+          {n.text && (
+            <p className="text-[12.5px] text-foreground/75 leading-relaxed line-clamp-3">
+              {n.text}
+            </p>
+          )}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -627,7 +648,7 @@ export function NotificationsPanel() {
           <p className="text-sm">No notifications</p>
         </div>
       ) : (
-        <div className="py-1">
+        <div className="py-2">
           {sorted.map((n) => (
             <NotifRow key={n.id} n={n} navigate={navigate} proMap={proMap} />
           ))}

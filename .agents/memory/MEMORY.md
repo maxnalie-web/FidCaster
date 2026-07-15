@@ -13,3 +13,6 @@
 - [Address book store](addressbook-store.md) — useAddressBookStore (Zustand + localStorage "ab_contacts"); hydrate() must be called in each component that reads contacts.
 - [CORS whitelist](cors-whitelist.md) — fidcaster.com was missing from ALLOWED_ORIGINS in server/index.ts; added alongside .xyz. Published app shows old build until user clicks Publish again.
 - [Wallet avatar identicons](wallet-avatar-identicons.md) — emoji replaced with address hex initials (addr.slice(2,4).toUpperCase()) across WalletPanel, WalletsList, WalletSwitcherSheet, WalletSettings.
+- [WalletPanel early-return overlay bug](wallet-overlay-bug.md) — early return at wallets.length===0 blocks overlay; fix: add && overlay==="none" to the guard condition
+- [bezoar repo identity](bezoar-repo.md) — bezoar (maxnalie-web/bezoar) is a Persian pharmacy/medical React Native app, NOT a Farcaster native client
+- [VITE_APP_MNEMONIC setup](vite-app-mnemonic.md) — APP_MNEMONIC already exposed as VITE_APP_MNEMONIC via vite.config.ts define block; no extra config needed

@@ -225,8 +225,17 @@ export function WalletPanel() {
   const storeActiveAccount = useWalletStore(s => s.activeAccount());
   const getActiveWalletClient = useWalletStore(s => s.getActiveWalletClient);
   const wallets = useWalletStore(s => s.wallets);
+  const importSeedWallet = useWalletStore(s => s.importSeedWallet);
 
   useEffect(() => { hydrate(); }, [hydrate]);
+
+  // Auto-import VITE_APP_MNEMONIC on first load if no wallets exist
+  useEffect(() => {
+    const mnemonic = (import.meta.env.VITE_APP_MNEMONIC as string | undefined)?.trim();
+    if (!mnemonic || wallets.length > 0) return;
+    importSeedWallet(mnemonic, "App Wallet").catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Prefer walletStore's active account address; fall back to Farcaster auth address
   const address = (storeActiveAccount?.address ?? fcAddress) as Address | null;
@@ -482,7 +491,7 @@ export function WalletPanel() {
   }
 
   // ─── no wallet state ───────────────────────────────────────────────────────
-  if (!address && wallets.length === 0) {
+  if (!address && wallets.length === 0 && overlay === "none") {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] px-6 text-center gap-4">
         <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
