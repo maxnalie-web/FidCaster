@@ -3,7 +3,7 @@ import {
   ArrowUpDown, ChevronDown, Loader2, X, ExternalLink,
   AlertTriangle, Search, Check, RefreshCw,
 } from "lucide-react";
-import { createPublicClient, http, formatUnits, parseUnits, encodeFunctionData, type Address } from "viem";
+import { formatUnits, parseUnits, encodeFunctionData, type Address } from "viem";
 import { optimism, base, mainnet, arbitrum, polygon } from "viem/chains";
 import { createChainWalletClient, getPublicClientForChain } from "@/lib/wallet";
 
@@ -292,7 +292,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     let cancelled = false;
     setFromBalance(null);
     setLoadingBalance(true);
-    const client = createPublicClient({ chain: fromChain.viem, transport: http() });
+    const client = getPublicClientForChain(fromChainId);
     const doFetch = async () => {
       try {
         const bal = fromToken.address === NATIVE

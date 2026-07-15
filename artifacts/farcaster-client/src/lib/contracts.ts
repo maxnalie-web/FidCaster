@@ -15,6 +15,8 @@ import { optimism, base, arbitrum, mainnet } from "viem/chains";
 // deployments. Index order is preserved (no rank) so the proxy is always tried first.
 const RPC_PROXY_OP = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/op` : "/api/rpc/op";
 const RPC_PROXY_BASE = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/base` : "/api/rpc/base";
+const RPC_PROXY_ARB = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/arb` : "/api/rpc/arb";
+const RPC_PROXY_ETH = typeof window !== "undefined" ? `${window.location.origin}/api/rpc/eth` : "/api/rpc/eth";
 
 export const publicClient = createPublicClient({
   chain: optimism,
@@ -41,6 +43,7 @@ export const basePublicClient = createPublicClient({
 export const arbPublicClient = createPublicClient({
   chain: arbitrum,
   transport: fallback([
+    http(RPC_PROXY_ARB),
     http("https://arbitrum.llamarpc.com"),
     http("https://arbitrum-one.publicnode.com"),
     http("https://arb1.arbitrum.io/rpc"),
@@ -51,6 +54,7 @@ export const arbPublicClient = createPublicClient({
 export const ethPublicClient = createPublicClient({
   chain: mainnet,
   transport: fallback([
+    http(RPC_PROXY_ETH),
     http("https://eth.llamarpc.com"),
     http("https://ethereum-rpc.publicnode.com"),
     http("https://mainnet.drpc.org"),

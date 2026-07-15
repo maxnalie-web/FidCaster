@@ -364,6 +364,40 @@ function loadHiddenTokens(): Set<string> {
   } catch { return new Set(); }
 }
 
+// ─── instant-load cache (stale-while-revalidate) ──────────────────────────────
+// Balances/tokens/activity are shown from the last-known snapshot the moment an
+// address becomes active — no spinner, no "0" flash — while a fresh fetch runs
+// in the background and silently replaces it. bigints round-trip through a
+// "<digits>n" string tag since JSON has no native bigint support.
+
+function cacheReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? `${value.toString()}n` : value;
+}
+function cacheReviver(_key: string, value: unknown): unknown {
+  return typeof value === "string" && /^\d+n$/.test(value) ? BigInt(value.slice(0, -1)) : value;
+}
+function saveCache<T>(key: string, data: T): void {
+  try { localStorage.setItem(key, JSON.stringify(data, cacheReplacer)); } catch { /* quota */ }
+}
+function loadCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw, cacheReviver) as T) : null;
+  } catch { return null; }
+}
+
+type BalanceSnapshot = {
+  opEth: bigint | null; opUsdc: bigint | null;
+  baseEth: bigint | null; baseUsdc: bigint | null;
+  arbEth: bigint | null; arbUsdc: bigint | null;
+  ethEth: bigint | null; ethUsdc: bigint | null;
+  ethPrice: number | null;
+};
+
+const balCacheKey = (addr: string) => `wallet_cache_bal_${addr.toLowerCase()}`;
+const tokCacheKey = (addr: string) => `wallet_cache_tok_${addr.toLowerCase()}`;
+const actCacheKey = (addr: string) => `wallet_cache_act_${addr.toLowerCase()}`;
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function WalletPanel() {
@@ -444,6 +478,8 @@ export function WalletPanel() {
   }, []);
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const priceRef = useRef(false);
+  const ethPriceRef = useRef<number | null>(null);
+  useEffect(() => { ethPriceRef.current = ethPrice; }, [ethPrice]);
 
   // send
   const [toAddress, setToAddress] = useState("");
@@ -488,6 +524,15 @@ export function WalletPanel() {
     if (ethBal     !== null) setEthEth(ethBal);
     if (ethUsdcBal !== null) setEthUsdc(ethUsdcBal);
     setLoadingOp(false); setLoadingBase(false); setLoadingArb(false); setLoadingEth(false);
+    // Cache this snapshot so the next visit to this address renders instantly
+    // (stale-while-revalidate) instead of showing loaders from a cold start.
+    saveCache<BalanceSnapshot>(balCacheKey(address), {
+      opEth: opBal ?? null, opUsdc: opUsdcBal ?? null,
+      baseEth: baseBal ?? null, baseUsdc: baseUsdcBal ?? null,
+      arbEth: arbBal ?? null, arbUsdc: arbUsdcBal ?? null,
+      ethEth: ethBal ?? null, ethUsdc: ethUsdcBal ?? null,
+      ethPrice: ethPriceRef.current,
+    });
     // Fetch ERC-20 tokens in parallel (non-blocking). Blockscout discovers
     // arbitrary tokens; the curated on-chain read guarantees well-known ones
     // (DEGEN, OP, …) still appear even when Blockscout is unavailable.
@@ -500,23 +545,11 @@ export function WalletPanel() {
       const discovered = [...opToks, ...baseToks];
       const seen = new Set(discovered.map(t => `${t.network}-${t.contractAddress.toLowerCase()}`));
       const extras = curated.filter(t => !seen.has(`${t.network}-${t.contractAddress.toLowerCase()}`));
-      setErc20Tokens([...discovered, ...extras].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1)));
+      const merged = [...discovered, ...extras].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1));
+      setErc20Tokens(merged);
+      saveCache(tokCacheKey(address), merged);
     }).finally(() => setLoadingErc20(false));
   }, [address]);
-
-  // Re-fetch when active wallet changes
-  useEffect(() => {
-    setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
-    setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
-    setActivity([]); setErc20Tokens([]); activityFetchedFor.current = null;
-    fetchAll();
-  }, [address, fetchAll]);
-
-  useEffect(() => {
-    if (priceRef.current) return;
-    priceRef.current = true;
-    fetchEthPriceUsd().then(p => { if (p) setEthPrice(p); });
-  }, []);
 
   const fetchActivity = useCallback(async () => {
     if (!address) return;
@@ -527,11 +560,52 @@ export function WalletPanel() {
         fetchActivityForNetwork("Optimism", address),
         fetchActivityForNetwork("Base", address),
       ]);
-      setActivity([...opTxs, ...baseTxs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30));
+      const merged = [...opTxs, ...baseTxs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30);
+      setActivity(merged);
+      saveCache(actCacheKey(address), merged);
     } finally {
       setLoadingActivity(false);
     }
   }, [address]);
+
+  // Re-fetch when active wallet changes. Hydrate instantly from the last
+  // cached snapshot for this address (if any) so the UI never regresses to a
+  // blank/loading state on a switch back to a wallet we've already loaded —
+  // fetchAll() then runs in the background and silently replaces stale data.
+  useEffect(() => {
+    activityFetchedFor.current = null;
+    if (!address) {
+      setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
+      setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
+      setActivity([]); setErc20Tokens([]);
+      fetchAll();
+      return;
+    }
+    const balSnap = loadCache<BalanceSnapshot>(balCacheKey(address));
+    if (balSnap) {
+      setOpEth(balSnap.opEth); setOpUsdc(balSnap.opUsdc);
+      setBaseEth(balSnap.baseEth); setBaseUsdc(balSnap.baseUsdc);
+      setArbEth(balSnap.arbEth); setArbUsdc(balSnap.arbUsdc);
+      setEthEth(balSnap.ethEth); setEthUsdc(balSnap.ethUsdc);
+      if (balSnap.ethPrice) setEthPrice(balSnap.ethPrice);
+    } else {
+      setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
+      setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
+    }
+    setErc20Tokens(loadCache<Erc20TokenRow[]>(tokCacheKey(address)) ?? []);
+    setActivity(loadCache<ActivityItem[]>(actCacheKey(address)) ?? []);
+    fetchAll();
+    // Prefetch activity in the background too (not gated on the Activity tab
+    // being open) so it's already warm — instant instead of a spinner — the
+    // moment the user taps over to it.
+    if (address) fetchActivity();
+  }, [address, fetchAll, fetchActivity]);
+
+  useEffect(() => {
+    if (priceRef.current) return;
+    priceRef.current = true;
+    fetchEthPriceUsd().then(p => { if (p) setEthPrice(p); });
+  }, []);
 
   useEffect(() => {
     if (tab === "activity" && address && activityFetchedFor.current !== address) {
@@ -884,7 +958,7 @@ export function WalletPanel() {
       {action === "receive" && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 space-y-4 max-h-[85vh] w-full max-w-xs overflow-auto shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 space-y-4 max-h-[85vh] w-full max-w-xs overflow-y-auto overflow-x-hidden shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Your address (all networks)</p>
               <button onClick={() => setAction("none")} className="p-1 text-muted-foreground hover:text-foreground transition-colors"><X className="w-5 h-5" /></button>
@@ -913,7 +987,7 @@ export function WalletPanel() {
       {action === "send" && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 max-h-[85vh] w-full max-w-sm overflow-auto shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 max-h-[85vh] w-full max-w-sm overflow-y-auto overflow-x-hidden shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               {sendStep === "recipient" ? (
                 <div className="w-6" />
@@ -954,7 +1028,7 @@ export function WalletPanel() {
                     value={toAddress}
                     onChange={e => setToAddress(e.target.value)}
                     placeholder="Address (0x…)"
-                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none font-mono"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none font-mono"
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
@@ -1058,7 +1132,7 @@ export function WalletPanel() {
                     placeholder="0"
                     type="number"
                     min="0"
-                    className="flex-1 bg-transparent text-[34px] font-black outline-none tabular-nums mr-3"
+                    className="flex-1 min-w-0 w-full bg-transparent text-[34px] font-black outline-none tabular-nums mr-3"
                     style={{ color: amount ? SEND_ACCENT : "var(--muted-foreground)" }}
                   />
                   <span className="text-xl font-black text-foreground shrink-0">{selectedToken.symbol}</span>
