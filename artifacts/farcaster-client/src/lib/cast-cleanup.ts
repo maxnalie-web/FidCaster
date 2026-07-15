@@ -10,6 +10,7 @@ import {
   getUserRecasts,
   type NeynarCast,
 } from "@/lib/neynar";
+import { nextKey, poolSize } from "@/lib/neynar-pool";
 
 export type CleanupKind = "casts" | "replies" | "unlike" | "unrecast";
 
@@ -19,19 +20,22 @@ async function fetchPage(
   neynarKey: string,
   cursor: string | undefined,
 ): Promise<{ items: NeynarCast[]; next?: string }> {
+  const usePool = poolSize() > 0;
+  const directKey = usePool ? nextKey(neynarKey) : undefined;
+
   if (kind === "casts") {
-    const r = await getUserCasts(fid, fid, neynarKey, cursor, 100);
+    const r = await getUserCasts(fid, fid, neynarKey, cursor, 150);
     return { items: r.casts, next: r.next?.cursor };
   }
   if (kind === "replies") {
-    const r = await getUserReplies(fid, fid, neynarKey, cursor);
+    const r = await getUserReplies(fid, fid, neynarKey, cursor, directKey);
     return { items: r.casts, next: r.next?.cursor };
   }
   if (kind === "unlike") {
-    const r = await getUserLikes(fid, fid, neynarKey, cursor);
+    const r = await getUserLikes(fid, fid, neynarKey, cursor, directKey);
     return { items: r.reactions.map(x => x.cast), next: r.next?.cursor };
   }
-  const r = await getUserRecasts(fid, fid, neynarKey, cursor);
+  const r = await getUserRecasts(fid, fid, neynarKey, cursor, directKey);
   return { items: r.reactions.map(x => x.cast), next: r.next?.cursor };
 }
 

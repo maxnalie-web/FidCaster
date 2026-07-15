@@ -135,6 +135,32 @@ function headers(key: string) {
   };
 }
 
+/** Direct Neynar GET · bypasses the server proxy. Used by pool-powered bulk scans
+ *  so each request can use a different key from the pool, giving throughput equal
+ *  to (pool_size × single-key rate limit). Falls back gracefully on 429. */
+export async function directNeynarGet<T>(path: string, key: string): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${NEYNAR_BASE}${path}`, {
+      headers: { accept: "application/json", api_key: key },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.status === 429 && attempt < 2) {
+      const retryAfter = res.headers.get("Retry-After");
+      const waitMs = retryAfter
+        ? Math.min(parseInt(retryAfter, 10) * 1000, 10_000)
+        : (2 ** attempt) * 1000 + Math.random() * 500;
+      await new Promise(r => setTimeout(r, waitMs));
+      continue;
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+  }
+  throw new Error("Neynar rate limit exceeded.");
+}
+
 async function neynar<T>(
   path: string,
   method: "GET" | "POST" | "DELETE",
@@ -472,10 +498,13 @@ export async function getUserLikes(
   fid: number,
   viewerFid: number,
   key: string,
-  cursor?: string
+  cursor?: string,
+  directKey?: string
 ): Promise<{ reactions: Array<{ cast: NeynarCast }>; next?: { cursor: string } }> {
-  const q = new URLSearchParams({ fid: String(fid), type: "likes", limit: "25", viewer_fid: String(viewerFid) });
+  const limit = directKey ? "100" : "50";
+  const q = new URLSearchParams({ fid: String(fid), type: "likes", limit, viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
+  if (directKey) return directNeynarGet(`/farcaster/reactions/user?${q}`, directKey);
   return neynar(`/farcaster/reactions/user?${q}`, "GET", key);
 }
 
@@ -483,10 +512,13 @@ export async function getUserRecasts(
   fid: number,
   viewerFid: number,
   key: string,
-  cursor?: string
+  cursor?: string,
+  directKey?: string
 ): Promise<{ reactions: Array<{ cast: NeynarCast }>; next?: { cursor: string } }> {
-  const q = new URLSearchParams({ fid: String(fid), type: "recasts", limit: "25", viewer_fid: String(viewerFid) });
+  const limit = directKey ? "100" : "50";
+  const q = new URLSearchParams({ fid: String(fid), type: "recasts", limit, viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
+  if (directKey) return directNeynarGet(`/farcaster/reactions/user?${q}`, directKey);
   return neynar(`/farcaster/reactions/user?${q}`, "GET", key);
 }
 
@@ -494,11 +526,18 @@ export async function getUserReplies(
   fid: number,
   viewerFid: number,
   key: string,
-  cursor?: string
+  cursor?: string,
+  directKey?: string
 ): Promise<{ casts: NeynarCast[]; next?: { cursor: string } }> {
-  const q = new URLSearchParams({ fid: String(fid), limit: "25", viewer_fid: String(viewerFid), include_replies: "true" });
+  const limit = directKey ? "150" : "50";
+  const q = new URLSearchParams({ fid: String(fid), limit, viewer_fid: String(viewerFid), include_replies: "true" });
   if (cursor) q.set("cursor", cursor);
-  const result = await neynar<{ casts: NeynarCast[]; next?: { cursor: string } }>(`/farcaster/feed/user/casts?${q}`, "GET", key);
+  let result: { casts: NeynarCast[]; next?: { cursor: string } };
+  if (directKey) {
+    result = await directNeynarGet<{ casts: NeynarCast[]; next?: { cursor: string } }>(`/farcaster/feed/user/casts?${q}`, directKey);
+  } else {
+    result = await neynar<{ casts: NeynarCast[]; next?: { cursor: string } }>(`/farcaster/feed/user/casts?${q}`, "GET", key);
+  }
   result.casts = result.casts.filter((c) => c.parent_hash != null);
   return result;
 }

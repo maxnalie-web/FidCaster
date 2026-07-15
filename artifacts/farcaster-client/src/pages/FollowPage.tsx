@@ -1606,7 +1606,7 @@ function ActiveGrowsView({
         const isRunning = op.phase === "running";
         const isDone = op.phase === "done" || op.phase === "cancelled";
         const kindLabel: Record<string, string> = {
-          casts: "Casts", replies: "Comments", likes: "Likes", recasts: "Recasts",
+          casts: "Casts", replies: "Comments", unlike: "Likes", unrecast: "Recasts",
         };
         const pct = op.total > 0 ? Math.round((op.done / op.total) * 100) : isRunning ? 0 : 100;
         return (

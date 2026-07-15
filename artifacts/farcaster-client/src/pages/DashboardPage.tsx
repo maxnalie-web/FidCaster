@@ -27,6 +27,7 @@ import {
   LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash, Type, Wind, Trash2,
 } from "lucide-react";
 import { getUserByFid, type NeynarUser } from "@/lib/neynar";
+import { loadPool, savePool, poolSize } from "@/lib/neynar-pool";
 import { NeynarScoreBadge, XLogo, TelegramLogo, FarcasterLogo } from "@/components/NeynarScoreBadge";
 import {
   SUPPORTED_LANGS, getLangSetting, setPreferredLang, defaultTargetLang,
@@ -188,6 +189,56 @@ function AppSettingsPanel() {
           {clearing ? "Clearing…" : "Clear"}
         </button>
       </div>
+
+      <ApiKeyPoolSection />
+    </div>
+  );
+}
+
+function ApiKeyPoolSection() {
+  const [raw, setRaw] = useState<string>(() => loadPool().join("\n"));
+  const [saved, setSaved] = useState(false);
+  const count = poolSize();
+
+  function handleSave() {
+    const keys = raw.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 8);
+    savePool(keys);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div className="space-y-3 p-3.5 rounded-xl border border-border bg-muted/20">
+      <div className="flex items-center gap-3">
+        <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">Neynar API key pool</p>
+            {count > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                {count} active
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Paste up to 80 keys (one per line). Purge scans rotate through them for maximum speed.
+          </p>
+        </div>
+      </div>
+      <textarea
+        value={raw}
+        onChange={e => setRaw(e.target.value)}
+        placeholder={"NEYNAR_KEY_1\nNEYNAR_KEY_2\n..."}
+        rows={4}
+        className="w-full text-xs font-mono bg-background border border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:ring-1 focus:ring-primary/40"
+        spellCheck={false}
+      />
+      <button
+        onClick={handleSave}
+        className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+      >
+        {saved ? "Saved ✓" : "Save pool"}
+      </button>
     </div>
   );
 }
@@ -473,6 +524,7 @@ function MobileDrawer({
   onNavigateToProfile: () => void;
 }) {
   const [, navigate] = useLocation();
+  const [showAccSheet, setShowAccSheet] = useState(false);
   return (
     <>
       <div
@@ -480,7 +532,7 @@ function MobileDrawer({
           "fixed inset-0 z-[55] bg-black/40 backdrop-blur-sm transition-opacity duration-300 md:hidden",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
-        onClick={onClose}
+        onClick={() => { setShowAccSheet(false); onClose(); }}
       />
       <div
         className={cn(
@@ -513,7 +565,7 @@ function MobileDrawer({
                 </button>
               ))}
               <button
-                onClick={onAddAccount}
+                onClick={() => setShowAccSheet(true)}
                 className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               >
                 <MoreHorizontal className="w-4.5 h-4.5" />
@@ -563,6 +615,59 @@ function MobileDrawer({
           Sign out
         </button>
       </div>
+
+      {showAccSheet && (
+        <>
+          <div
+            className="fixed inset-0 z-[57] bg-black/50 md:hidden"
+            onClick={() => setShowAccSheet(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-[58] bg-background rounded-t-3xl pb-8 md:hidden shadow-2xl">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/25 mx-auto mt-3 mb-2" />
+            <div className="flex items-center justify-between px-5 py-3">
+              <button
+                onClick={() => setShowAccSheet(false)}
+                className="text-sm font-semibold text-primary"
+              >
+                Edit
+              </button>
+              <span className="text-sm font-bold text-foreground">Accounts</span>
+              <div className="w-10" />
+            </div>
+            <div className="h-px bg-border mx-5 mb-1" />
+            {accounts.map(acc => (
+              <button
+                key={acc.fid}
+                onClick={() => {
+                  if (acc.fid !== fid) switchAccount(acc.fid);
+                  setShowAccSheet(false);
+                  onClose();
+                }}
+                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-accent transition-colors"
+              >
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0">
+                  {acc.pfpUrl
+                    ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" />
+                    : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{acc.username || `FID ${acc.fid}`}</p>
+                  <p className="text-xs text-muted-foreground truncate">@{acc.username || `fid${acc.fid}`}</p>
+                </div>
+                {acc.fid === fid && <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />}
+              </button>
+            ))}
+            <div className="h-px bg-border mx-5 mt-1" />
+            <button
+              onClick={() => { setShowAccSheet(false); onAddAccount(); }}
+              className="w-full flex items-center gap-3 px-5 py-4 text-primary text-sm font-semibold hover:bg-accent transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add an account
+            </button>
+          </div>
+        </>
+      )}
     </>
   );
 }
