@@ -484,17 +484,12 @@ function SignerPanel({
 /* ─── Compose Modal ──────────────────────────────────────────────────────── */
 function ComposeModal({ onClose, onPublished }: { onClose: () => void; onPublished: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      {/* Bottom sheet on mobile, centered modal on desktop */}
       <div
-        className="relative w-full md:max-w-lg bg-background rounded-t-2xl md:rounded-2xl shadow-2xl border-t md:border border-border flex flex-col max-h-[92vh] md:max-h-[85vh] animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300"
+        className="relative w-full max-w-lg bg-background rounded-2xl shadow-2xl border border-border flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Drag handle (mobile only) */}
-        <div className="md:hidden flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-9 h-1 rounded-full bg-muted-foreground/25" />
-        </div>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <span className="text-sm font-bold text-foreground">New Cast</span>
           <button onClick={onClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors">
@@ -1216,7 +1211,7 @@ export function DashboardPage() {
             elsewhere in the app — previously this generic bar and that richer
             header were two different-looking headers for the same profile. */}
         {mainTab !== "profile" && (
-        <header className="md:hidden sticky top-0 z-30 bg-background border-b border-border">
+        <header className="md:hidden sticky top-0 z-30 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>
           <div className="h-[53px] flex items-center justify-between px-4">
             {/* Avatar with signer dot */}
             <button onClick={() => setShowDrawer(true)} className="relative shrink-0">

@@ -8,15 +8,15 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "@/hooks/useWallet";
 import {
-  publicClient, basePublicClient, arbPublicClient,
-  USDC_BASE_ADDRESS, USDC_OP_ADDRESS, USDC_ARB_ADDRESS,
+  publicClient, basePublicClient, arbPublicClient, ethPublicClient,
+  USDC_BASE_ADDRESS, USDC_OP_ADDRESS, USDC_ARB_ADDRESS, USDC_ETH_ADDRESS,
   ERC20_BALANCE_ABI, ERC20_TRANSFER_ABI,
 } from "@/lib/contracts";
-import { createBaseWalletClient, createArbWalletClient } from "@/lib/wallet";
+import { createBaseWalletClient, createArbWalletClient, createEthWalletClient } from "@/lib/wallet";
 import {
   formatEther, parseEther, parseUnits, isAddress, formatUnits, type Address,
 } from "viem";
-import { optimism, base, arbitrum } from "viem/chains";
+import { optimism, base, arbitrum, mainnet } from "viem/chains";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/walletStore";
@@ -33,6 +33,7 @@ import { SwapSheet } from "@/components/wallet/SwapSheet";
 import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
 import { DeFiAppsSheet } from "@/components/wallet/DeFiAppsSheet";
 import { DeFiBrowserSheet } from "@/components/wallet/DeFiBrowserSheet";
+import { TokenDetailPopup } from "@/components/wallet/TokenDetailPopup";
 import { useAddressBookStore } from "@/store/addressBookStore";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ function groupActivity(items: ActivityItem[]): { title: string; data: ActivityIt
 
 type MainTab = "tokens" | "nfts" | "activity";
 type ActionMode = "none" | "send" | "receive";
-type SendToken = "op-eth" | "op-usdc" | "base-eth" | "base-usdc" | "arb-eth" | "arb-usdc";
+type SendToken = "op-eth" | "op-usdc" | "base-eth" | "base-usdc" | "arb-eth" | "arb-usdc" | "eth-eth" | "eth-usdc";
 type SendStep = "recipient" | "asset" | "amount";
 type ActivityNetwork = "Optimism" | "Base";
 type ActivityType = "sent" | "received" | "minted" | "swapped" | "approved" | "interacted";
@@ -274,9 +275,14 @@ export function WalletPanel() {
   const [baseUsdc, setBaseUsdc] = useState<bigint | null>(null);
   const [arbEth,   setArbEth]   = useState<bigint | null>(null);
   const [arbUsdc,  setArbUsdc]  = useState<bigint | null>(null);
+  const [ethEth,   setEthEth]   = useState<bigint | null>(null);
+  const [ethUsdc,  setEthUsdc]  = useState<bigint | null>(null);
   const [loadingOp,   setLoadingOp]   = useState(false);
   const [loadingBase, setLoadingBase] = useState(false);
   const [loadingArb,  setLoadingArb]  = useState(false);
+  const [loadingEth,  setLoadingEth]  = useState(false);
+  const [showHiddenTokens, setShowHiddenTokens] = useState(false);
+  const [detailToken, setDetailToken] = useState<string | null>(null);
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const priceRef = useRef(false);
 
@@ -299,31 +305,36 @@ export function WalletPanel() {
 
   const fetchAll = useCallback(async () => {
     if (!address) return;
-    setLoadingOp(true); setLoadingBase(true); setLoadingArb(true);
+    setLoadingOp(true); setLoadingBase(true); setLoadingArb(true); setLoadingEth(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const readErc20 = (client: any, addr: `0x${string}`) =>
       (client.readContract({ address: addr, abi: ERC20_BALANCE_ABI, functionName: "balanceOf", args: [address] })) as Promise<bigint>;
     const safe = <T,>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
-    const [opBal, opUsdcBal, baseBal, baseUsdcBal, arbBal, arbUsdcBal] = await Promise.all([
+    const [opBal, opUsdcBal, baseBal, baseUsdcBal, arbBal, arbUsdcBal, ethBal, ethUsdcBal] = await Promise.all([
       safe(publicClient.getBalance({ address })),
       safe(readErc20(publicClient, USDC_OP_ADDRESS)),
       safe(basePublicClient.getBalance({ address })),
       safe(readErc20(basePublicClient, USDC_BASE_ADDRESS)),
       safe(arbPublicClient.getBalance({ address })),
       safe(readErc20(arbPublicClient, USDC_ARB_ADDRESS)),
+      safe(ethPublicClient.getBalance({ address })),
+      safe(readErc20(ethPublicClient, USDC_ETH_ADDRESS)),
     ]);
-    if (opBal   !== null) setOpEth(opBal);
-    if (opUsdcBal !== null) setOpUsdc(opUsdcBal);
-    if (baseBal !== null) setBaseEth(baseBal);
+    if (opBal      !== null) setOpEth(opBal);
+    if (opUsdcBal  !== null) setOpUsdc(opUsdcBal);
+    if (baseBal    !== null) setBaseEth(baseBal);
     if (baseUsdcBal !== null) setBaseUsdc(baseUsdcBal);
-    if (arbBal  !== null) setArbEth(arbBal);
-    if (arbUsdcBal  !== null) setArbUsdc(arbUsdcBal);
-    setLoadingOp(false); setLoadingBase(false); setLoadingArb(false);
+    if (arbBal     !== null) setArbEth(arbBal);
+    if (arbUsdcBal !== null) setArbUsdc(arbUsdcBal);
+    if (ethBal     !== null) setEthEth(ethBal);
+    if (ethUsdcBal !== null) setEthUsdc(ethUsdcBal);
+    setLoadingOp(false); setLoadingBase(false); setLoadingArb(false); setLoadingEth(false);
   }, [address]);
 
   // Re-fetch when active wallet changes
   useEffect(() => {
-    setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null); setArbEth(null); setArbUsdc(null);
+    setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
+    setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
     setActivity([]); activityFetchedFor.current = null;
     fetchAll();
   }, [address, fetchAll]);
@@ -356,27 +367,38 @@ export function WalletPanel() {
   }, [tab, address, fetchActivity]);
 
   // derived
-  const opEthNum   = opEth   !== null ? parseFloat(formatEther(opEth))   : 0;
-  const opUsdcNum  = opUsdc  !== null ? parseFloat(formatUnits(opUsdc, 6)) : 0;
-  const baseEthNum = baseEth !== null ? parseFloat(formatEther(baseEth)) : 0;
+  const opEthNum    = opEth    !== null ? parseFloat(formatEther(opEth))     : 0;
+  const opUsdcNum   = opUsdc   !== null ? parseFloat(formatUnits(opUsdc, 6)) : 0;
+  const baseEthNum  = baseEth  !== null ? parseFloat(formatEther(baseEth))   : 0;
   const baseUsdcNum = baseUsdc !== null ? parseFloat(formatUnits(baseUsdc, 6)) : 0;
-  const arbEthNum  = arbEth  !== null ? parseFloat(formatEther(arbEth))  : 0;
-  const arbUsdcNum = arbUsdc !== null ? parseFloat(formatUnits(arbUsdc, 6)) : 0;
-  const totalUsd = ethPrice ? (opEthNum + baseEthNum + arbEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum : null;
+  const arbEthNum   = arbEth   !== null ? parseFloat(formatEther(arbEth))    : 0;
+  const arbUsdcNum  = arbUsdc  !== null ? parseFloat(formatUnits(arbUsdc, 6)) : 0;
+  const ethEthNum   = ethEth   !== null ? parseFloat(formatEther(ethEth))    : 0;
+  const ethUsdcNum  = ethUsdc  !== null ? parseFloat(formatUnits(ethUsdc, 6)) : 0;
+  const totalUsd = ethPrice
+    ? (opEthNum + baseEthNum + arbEthNum + ethEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum + ethUsdcNum
+    : null;
 
   const ETH_ICON  = "https://assets.coingecko.com/coins/images/279/small/ethereum.png";
   const USDC_ICON = "https://assets.coingecko.com/coins/images/6319/small/usdc.png";
 
-  const tokens: TokenRow[] = [
-    { key: "op-eth",    name: "Ethereum", symbol: "ETH",  network: "Optimism", networkColor: "#ff0420", balance: opEthNum,   rawBalance: opEth,   usdValue: ethPrice ? opEthNum * ethPrice : null,   loading: loadingOp,   icon: ETH_ICON  },
-    { key: "op-usdc",   name: "USD Coin", symbol: "USDC", network: "Optimism", networkColor: "#ff0420", balance: opUsdcNum,  rawBalance: opUsdc,  usdValue: opUsdcNum,   loading: loadingOp,   icon: USDC_ICON },
-    { key: "base-eth",  name: "Ethereum", symbol: "ETH",  network: "Base",     networkColor: "#0052ff", balance: baseEthNum, rawBalance: baseEth, usdValue: ethPrice ? baseEthNum * ethPrice : null, loading: loadingBase, icon: ETH_ICON  },
-    { key: "base-usdc", name: "USD Coin", symbol: "USDC", network: "Base",     networkColor: "#0052ff", balance: baseUsdcNum,rawBalance: baseUsdc,usdValue: baseUsdcNum, loading: loadingBase, icon: USDC_ICON },
-    { key: "arb-eth",   name: "Ethereum", symbol: "ETH",  network: "Arbitrum", networkColor: "#9945ff", balance: arbEthNum,  rawBalance: arbEth,  usdValue: ethPrice ? arbEthNum * ethPrice : null,  loading: loadingArb,  icon: ETH_ICON  },
-    { key: "arb-usdc",  name: "USD Coin", symbol: "USDC", network: "Arbitrum", networkColor: "#9945ff", balance: arbUsdcNum, rawBalance: arbUsdc, usdValue: arbUsdcNum,  loading: loadingArb,  icon: USDC_ICON },
+  const allTokens: TokenRow[] = [
+    { key: "op-eth",    name: "Ethereum", symbol: "ETH",  network: "Optimism", networkColor: "#ff0420", balance: opEthNum,    rawBalance: opEth,    usdValue: ethPrice ? opEthNum * ethPrice : null,    loading: loadingOp,   icon: ETH_ICON  },
+    { key: "op-usdc",   name: "USD Coin", symbol: "USDC", network: "Optimism", networkColor: "#ff0420", balance: opUsdcNum,   rawBalance: opUsdc,   usdValue: opUsdcNum,                                loading: loadingOp,   icon: USDC_ICON },
+    { key: "base-eth",  name: "Ethereum", symbol: "ETH",  network: "Base",     networkColor: "#0052ff", balance: baseEthNum,  rawBalance: baseEth,  usdValue: ethPrice ? baseEthNum * ethPrice : null,  loading: loadingBase, icon: ETH_ICON  },
+    { key: "base-usdc", name: "USD Coin", symbol: "USDC", network: "Base",     networkColor: "#0052ff", balance: baseUsdcNum, rawBalance: baseUsdc, usdValue: baseUsdcNum,                              loading: loadingBase, icon: USDC_ICON },
+    { key: "arb-eth",   name: "Ethereum", symbol: "ETH",  network: "Arbitrum", networkColor: "#28a0f0", balance: arbEthNum,   rawBalance: arbEth,   usdValue: ethPrice ? arbEthNum * ethPrice : null,   loading: loadingArb,  icon: ETH_ICON  },
+    { key: "arb-usdc",  name: "USD Coin", symbol: "USDC", network: "Arbitrum", networkColor: "#28a0f0", balance: arbUsdcNum,  rawBalance: arbUsdc,  usdValue: arbUsdcNum,                               loading: loadingArb,  icon: USDC_ICON },
+    { key: "eth-eth",   name: "Ethereum", symbol: "ETH",  network: "Ethereum", networkColor: "#627eea", balance: ethEthNum,   rawBalance: ethEth,   usdValue: ethPrice ? ethEthNum * ethPrice : null,   loading: loadingEth,  icon: ETH_ICON  },
+    { key: "eth-usdc",  name: "USD Coin", symbol: "USDC", network: "Ethereum", networkColor: "#627eea", balance: ethUsdcNum,  rawBalance: ethUsdc,  usdValue: ethUsdcNum,                               loading: loadingEth,  icon: USDC_ICON },
   ];
 
-  const selectedToken = tokens.find(t => t.key === sendToken) ?? tokens[0];
+  const loadingDone = !loadingOp && !loadingBase && !loadingArb && !loadingEth;
+  const tokens = loadingDone && !showHiddenTokens
+    ? allTokens.filter(t => t.balance > 0 || t.rawBalance === null)
+    : allTokens;
+
+  const selectedToken = allTokens.find(t => t.key === sendToken) ?? allTokens[0];
   const sendDisabled = sending || !toAddress || !amount;
 
   const usdEquivalent = (() => {
@@ -389,9 +411,9 @@ export function WalletPanel() {
 
   function handleMax() {
     if (selectedToken.loading) return;
-    const isUsdc = sendToken === "base-usdc" || sendToken === "op-usdc" || sendToken === "arb-usdc";
+    const isUsdc = sendToken.endsWith("-usdc");
     if (isUsdc) {
-      const raw = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : arbUsdc;
+      const raw = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : sendToken === "arb-usdc" ? arbUsdc : ethUsdc;
       if (raw !== null) setAmount(formatUnits(raw, 6));
     } else {
       const max = Math.max(0, selectedToken.balance - 0.0001);
@@ -433,20 +455,23 @@ export function WalletPanel() {
       let hash: `0x${string}`;
       const isBase = sendToken === "base-eth" || sendToken === "base-usdc";
       const isArb  = sendToken === "arb-eth"  || sendToken === "arb-usdc";
+      const isEth  = sendToken === "eth-eth"  || sendToken === "eth-usdc";
       const activeClient = isBase
         ? createBaseWalletClient(walletClient.account!)
         : isArb
         ? createArbWalletClient(walletClient.account!)
+        : isEth
+        ? createEthWalletClient(walletClient.account!)
         : walletClient;
 
-      const isUsdc = sendToken === "base-usdc" || sendToken === "op-usdc" || sendToken === "arb-usdc";
+      const isUsdc = sendToken.endsWith("-usdc");
       if (isUsdc) {
         const rawAmt = parseUnits(amount, 6);
-        const currentBal = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : arbUsdc;
+        const currentBal = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : sendToken === "arb-usdc" ? arbUsdc : ethUsdc;
         if (currentBal !== null && rawAmt > currentBal) { setSendError("Insufficient USDC balance."); setSending(false); return; }
-        const usdcAddr  = sendToken === "base-usdc" ? USDC_BASE_ADDRESS : sendToken === "op-usdc" ? USDC_OP_ADDRESS : USDC_ARB_ADDRESS;
-        const usdcPub   = sendToken === "base-usdc" ? basePublicClient : sendToken === "op-usdc" ? publicClient : arbPublicClient;
-        const usdcChain = sendToken === "base-usdc" ? base : sendToken === "op-usdc" ? optimism : arbitrum;
+        const usdcAddr  = sendToken === "base-usdc" ? USDC_BASE_ADDRESS : sendToken === "op-usdc" ? USDC_OP_ADDRESS : sendToken === "arb-usdc" ? USDC_ARB_ADDRESS : USDC_ETH_ADDRESS;
+        const usdcPub   = sendToken === "base-usdc" ? basePublicClient : sendToken === "op-usdc" ? publicClient : sendToken === "arb-usdc" ? arbPublicClient : ethPublicClient;
+        const usdcChain = sendToken === "base-usdc" ? base : sendToken === "op-usdc" ? optimism : sendToken === "arb-usdc" ? arbitrum : mainnet;
         const { request } = await usdcPub.simulateContract({
           address: usdcAddr, abi: ERC20_TRANSFER_ABI, functionName: "transfer",
           args: [toAddress as `0x${string}`, rawAmt], account: walletClient.account!,
@@ -454,10 +479,10 @@ export function WalletPanel() {
         hash = await activeClient.writeContract({ ...request, chain: usdcChain });
       } else {
         const value = parseEther(amount);
-        const bal = sendToken === "op-eth" ? opEth : sendToken === "base-eth" ? baseEth : arbEth;
+        const bal = sendToken === "op-eth" ? opEth : sendToken === "base-eth" ? baseEth : sendToken === "arb-eth" ? arbEth : ethEth;
         if (bal !== null && value > bal) { setSendError("Insufficient ETH balance."); setSending(false); return; }
-        const chain  = sendToken === "op-eth" ? optimism : sendToken === "base-eth" ? base : arbitrum;
-        const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : arbPublicClient;
+        const chain  = sendToken === "op-eth" ? optimism : sendToken === "base-eth" ? base : sendToken === "arb-eth" ? arbitrum : mainnet;
+        const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : sendToken === "arb-eth" ? arbPublicClient : ethPublicClient;
         let gas: bigint | undefined;
         try {
           const estimated = await pubCli.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value });
@@ -489,6 +514,8 @@ export function WalletPanel() {
     ? "https://arbiscan.io/tx/"
     : sendToken.startsWith("base")
     ? "https://basescan.org/tx/"
+    : sendToken.startsWith("eth-")
+    ? "https://etherscan.io/tx/"
     : "https://optimistic.etherscan.io/tx/";
 
   function openSend(tokenKey?: SendToken) {
@@ -639,6 +666,27 @@ export function WalletPanel() {
           </div>
         </div>
       )}
+
+      {/* ── Token detail popup ────────────────────────────────────────────── */}
+      {detailToken && (() => {
+        const tk = allTokens.find(t => t.key === detailToken);
+        if (!tk) return null;
+        return (
+          <TokenDetailPopup
+            tokenKey={tk.key}
+            name={tk.name}
+            symbol={tk.symbol}
+            network={tk.network}
+            networkColor={tk.networkColor}
+            balance={tk.balance}
+            usdValue={tk.usdValue}
+            icon={tk.icon}
+            onClose={() => setDetailToken(null)}
+            onSend={() => openSend(tk.key as SendToken)}
+            onSwap={() => setShowSwap(true)}
+          />
+        );
+      })()}
 
       {/* ── DeFi Browser (Rainbow-style) ─────────────────────────────────── */}
       {showBrowser && browserUrl && (
@@ -981,26 +1029,27 @@ export function WalletPanel() {
           </div>
 
           {/* Network badges */}
-          <div className="relative flex items-center gap-2">
+          <div className="relative flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15">
               <div className="flex -space-x-1">
                 <div className="w-3 h-3 rounded-full bg-[#ff0420] ring-1 ring-white/30" />
                 <div className="w-3 h-3 rounded-full bg-[#0052ff] ring-1 ring-white/30" />
+                <div className="w-3 h-3 rounded-full bg-[#28a0f0] ring-1 ring-white/30" />
+                <div className="w-3 h-3 rounded-full bg-[#627eea] ring-1 ring-white/30" />
               </div>
-              <span className="text-[10px] text-white/80 font-bold">Optimism · Base</span>
+              <span className="text-[10px] text-white/80 font-bold">OP · Base · Arb · ETH</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-2 px-4 py-3">
+      <div className="grid grid-cols-4 gap-2 px-4 py-3">
         {[
           { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
           { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
           { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
           { label: "DeFi",    icon: Zap,           onClick: () => { setBrowserUrl("https://app.uniswap.org"); setShowBrowser(true); }, disabled: false, color: "#f59e0b" },
-          { label: "Wallets", icon: Wallet,        onClick: () => setOverlay("list"), disabled: false, color: walletColor },
         ].map(({ label, icon: Icon, onClick, disabled, color }) => (
           <button
             key={label}
@@ -1043,11 +1092,8 @@ export function WalletPanel() {
           {tokens.map(tk => (
             <button
               key={tk.key}
-              onClick={() => !isWatchOnly && openSend(tk.key)}
-              className={cn(
-                "w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm transition-colors",
-                !isWatchOnly && "hover:bg-muted/30 cursor-pointer"
-              )}
+              onClick={() => setDetailToken(tk.key)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm transition-colors hover:bg-muted/30 cursor-pointer"
             >
               <div className="relative shrink-0">
                 <img
@@ -1060,7 +1106,7 @@ export function WalletPanel() {
                   style={{ backgroundColor: tk.networkColor }}
                 >
                   <span className="text-[7px] font-bold text-white leading-none">
-                    {tk.network === "Optimism" ? "OP" : tk.network === "Base" ? "B" : "ARB"}
+                    {tk.network === "Optimism" ? "OP" : tk.network === "Base" ? "B" : tk.network === "Arbitrum" ? "A" : "E"}
                   </span>
                 </div>
               </div>
@@ -1083,15 +1129,24 @@ export function WalletPanel() {
             </button>
           ))}
 
-          {opEth === 0n && baseEth === 0n && arbEth === 0n && !loadingOp && !loadingBase && !loadingArb && (
+          {loadingDone && tokens.length === 0 && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border bg-amber-50 border-amber-200/80 text-xs text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold mb-0.5">No ETH balance</p>
-                <p className="opacity-80">Send ETH on Optimism or Base to get started. You need a tiny amount for gas (~$0.01).</p>
+                <p className="font-bold mb-0.5">No balance yet</p>
+                <p className="opacity-80">Send ETH or USDC to your address to get started. You need a tiny amount of ETH for gas (~$0.01).</p>
                 <code className="block mt-2 break-all font-mono text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded text-[10px]">{address}</code>
               </div>
             </div>
+          )}
+
+          {loadingDone && (
+            <button
+              onClick={() => setShowHiddenTokens(v => !v)}
+              className="w-full py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showHiddenTokens ? "Hide zero-balance tokens" : `Show all ${allTokens.length} tokens`}
+            </button>
           )}
 
         </div>
@@ -1127,6 +1182,8 @@ export function WalletPanel() {
                   const MetaIcon = meta.icon;
                   const explorerUrl = item.network === "Optimism"
                     ? `https://optimistic.etherscan.io/tx/${item.hash}`
+                    : item.network === "Arbitrum"
+                    ? `https://arbiscan.io/tx/${item.hash}`
                     : `https://basescan.org/tx/${item.hash}`;
                   return (
                     <a
@@ -1142,8 +1199,11 @@ export function WalletPanel() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-bold text-foreground">{meta.label}</p>
-                          <div className="px-1.5 py-0.5 rounded-md text-[9px] font-bold" style={{ backgroundColor: item.network === "Optimism" ? "#ff042015" : "#0052ff15", color: item.network === "Optimism" ? "#ff0420" : "#0052ff" }}>
-                            {item.network === "Optimism" ? "OP" : "Base"}
+                          <div className="px-1.5 py-0.5 rounded-md text-[9px] font-bold" style={{
+                            backgroundColor: item.network === "Optimism" ? "#ff042015" : item.network === "Arbitrum" ? "#28a0f015" : "#0052ff15",
+                            color: item.network === "Optimism" ? "#ff0420" : item.network === "Arbitrum" ? "#28a0f0" : "#0052ff"
+                          }}>
+                            {item.network === "Optimism" ? "OP" : item.network === "Arbitrum" ? "ARB" : "Base"}
                           </div>
                           {item.status === "error" && (
                             <div className="px-1.5 py-0.5 rounded-md bg-destructive/10 text-[9px] font-bold text-destructive">Failed</div>

@@ -388,14 +388,7 @@ const _notifCache = new Map<number, {
 const NOTIF_CACHE_TTL = 4 * 60 * 1000; // 4 minutes · don't re-fetch more often
 
 /* ─── Filter tabs ─── */
-type FilterTab = "all" | "reactions" | "replies" | "follows";
-
-const FILTER_TABS: { id: FilterTab; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "reactions", label: "Reactions" },
-  { id: "replies", label: "Replies" },
-  { id: "follows", label: "Follows" },
-];
+type FilterTab = "all";
 
 const MUTE_OPTIONS: { id: NotifKind; label: string; desc: string }[] = [
   { id: "reactions", label: "Likes & recasts", desc: "Hide reaction notifications from the list and unread count" },
@@ -474,7 +467,7 @@ export function NotificationsPanel() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterTab>("all");
+  const filter: FilterTab = "all";
   const lastCursorRef = useRef<string | undefined>(undefined);
   const lastFetchTimeRef = useRef<number>(0);
 
@@ -615,20 +608,6 @@ export function NotificationsPanel() {
             Notifications
           </h2>
           <NotifSettingsMenu muted={muted} setMuted={setMuted} />
-        </div>
-        <div className="flex gap-1 overflow-x-auto no-scrollbar">
-          {FILTER_TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setFilter(t.id)}
-              className={cn(
-                "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all tab-pill shrink-0",
-                filter === t.id ? "active" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
         </div>
       </div>
 

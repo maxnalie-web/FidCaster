@@ -1,6 +1,6 @@
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { createWalletClient, fallback, http, type WalletClient, type Account } from "viem";
-import { optimism, base, arbitrum } from "viem/chains";
+import { optimism, base, arbitrum, mainnet } from "viem/chains";
 import { validateMnemonic, mnemonicToSeedSync, generateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import { HDKey } from "@scure/bip32";
@@ -125,6 +125,17 @@ export function createBaseWalletClient(account: Account): WalletClient {
 /** Create a walletClient bound to the Arbitrum One chain for an already-derived account. */
 export function createArbWalletClient(account: Account): WalletClient {
   return createWalletClient({ account, chain: arbitrum, transport: arbWalletTransport });
+}
+
+const ethWalletTransport = fallback([
+  http("https://eth.llamarpc.com"),
+  http("https://ethereum-rpc.publicnode.com"),
+  http("https://mainnet.drpc.org"),
+], { retryCount: 2 });
+
+/** Create a walletClient bound to Ethereum Mainnet for an already-derived account. */
+export function createEthWalletClient(account: Account): WalletClient {
+  return createWalletClient({ account, chain: mainnet, transport: ethWalletTransport });
 }
 
 export async function deriveAccount(mnemonic: string): Promise<DerivedAccount> {

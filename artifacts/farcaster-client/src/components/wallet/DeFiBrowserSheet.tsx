@@ -226,10 +226,12 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-3">
               <div
-                className="w-14 h-14 rounded-3xl flex items-center justify-center text-2xl border"
+                className="w-14 h-14 rounded-3xl flex items-center justify-center border"
                 style={{ background: `linear-gradient(135deg, ${walletColor}30, ${walletColor}10)`, borderColor: `${walletColor}30` }}
               >
-                {walletEmoji}
+                <span className="text-xl font-black leading-none" style={{ color: walletColor }}>
+                  {address ? address.slice(2, 4).toUpperCase() : walletLabel.slice(0, 2).toUpperCase()}
+                </span>
               </div>
               <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               <p className="text-xs text-muted-foreground">{domain}</p>
@@ -258,13 +260,15 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
             className="relative shrink-0 active:scale-95 transition-transform"
           >
             <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-lg border-2"
+              className="w-9 h-9 rounded-full flex items-center justify-center border-2"
               style={{
                 background: `linear-gradient(135deg, ${walletColor}ee, ${walletColor}77)`,
                 borderColor: `${walletColor}60`,
               }}
             >
-              <span className="leading-none select-none">{walletEmoji}</span>
+              <span className="text-[13px] font-black text-white leading-none select-none">
+                {address ? address.slice(2, 4).toUpperCase() : walletLabel.slice(0, 2).toUpperCase()}
+              </span>
             </div>
             {isConnected && (
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-background" />
@@ -356,10 +360,12 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                       className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-muted/40 text-foreground border-t border-border/40"
                     >
                       <div
-                        className="w-4 h-4 rounded-full flex items-center justify-center text-xs"
+                        className="w-4 h-4 rounded-full flex items-center justify-center"
                         style={{ background: `linear-gradient(135deg, ${walletColor}dd, ${walletColor}88)` }}
                       >
-                        <span className="leading-none text-[9px]">{walletEmoji}</span>
+                        <span className="leading-none text-[7px] font-black text-white">
+                          {address ? address.slice(2, 4).toUpperCase() : "WL"}
+                        </span>
                       </div>
                       Switch wallet
                     </button>
