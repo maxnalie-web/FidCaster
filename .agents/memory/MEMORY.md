@@ -5,3 +5,5 @@
 - [GitHub Push Blocked](github-push.md) — git CLI push is blocked in main agent; use GitHub REST API blob/tree/commit/ref PATCH with GITHUB_TOKEN env var.
 - [Admin panel removal](admin-panel-removal.md) — admin panel fully removed; ADMIN_FID hardcoded as 16333; 7 files touched beyond the 4 deleted files.
 - [Native UI sync findings](native-ui-sync.md) — key visual diffs between native and web; MobileDrawer + ProfilePage stats fixed; wallet screen depth still pending.
+- [Native wallet port](native-wallet-port.md) — WalletPanel web fully ported from native WalletPanelScreen; color derived from address, hero+circles+3-step send+QR receive+activity tab.
+- [GitHub token access](github-token-access.md) — GITHUB_TOKEN env var exists and works for private repo maxnalie-web/fidcaster-native; use Authorization: token $GITHUB_TOKEN header.
