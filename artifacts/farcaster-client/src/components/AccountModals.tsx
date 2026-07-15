@@ -84,7 +84,7 @@ export function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd
   const cols = wordCount === 24 ? 4 : 3;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
         className="relative w-full max-w-md bg-background border border-border rounded-2xl p-5 shadow-2xl"
@@ -194,7 +194,7 @@ export function AccountDropdownPanel({
   onRemoveAccount: (fid: number) => void;
 }) {
   return (
-    <div className="absolute left-0 bottom-full mb-2 bg-popover border border-border rounded-2xl p-1.5 min-w-[240px] shadow-2xl z-50">
+    <div className="fixed bottom-[80px] left-2 w-[232px] bg-popover border border-border rounded-2xl p-1.5 shadow-2xl z-[200]">
       <div className="px-2.5 py-1.5 mb-1">
         <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Accounts</p>
       </div>

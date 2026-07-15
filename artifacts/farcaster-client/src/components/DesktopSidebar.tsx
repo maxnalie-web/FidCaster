@@ -62,7 +62,7 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
 
   return (
     <>
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-[270px] border-r border-border bg-background z-40">
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-[240px] border-r border-border bg-background z-40">
         {/* Logo */}
         <div className="px-5 pt-5 pb-2">
           <div className="flex items-center gap-2">
@@ -88,10 +88,10 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
                 className={cn("sidebar-item", isActive && "active")}
               >
                 <Icon
-                  className={cn("w-[26px] h-[26px] shrink-0", isActive ? "text-foreground" : "text-foreground/75")}
+                  className={cn("w-[22px] h-[22px] shrink-0", isActive ? "text-foreground" : "text-foreground/75")}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
-                <span className={cn("text-[1.0625rem]", isActive ? "text-foreground" : "text-foreground/85")}>
+                <span className={cn("text-[0.9375rem]", isActive ? "text-foreground" : "text-foreground/85")}>
                   {item.label}
                 </span>
               </button>
@@ -99,30 +99,30 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
           })}
 
           <button onClick={() => navigate("/follow")} className={cn("sidebar-item", active === "grow" && "active")}>
-            <TrendingUp className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">Grow</span>
+            <TrendingUp className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[0.9375rem] text-foreground/85">Grow</span>
           </button>
 
           <button onClick={() => navigate("/market")} className={cn("sidebar-item", active === "market" && "active")}>
-            <Tag className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">FID Market</span>
+            <Tag className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[0.9375rem] text-foreground/85">FID Market</span>
           </button>
 
           <button onClick={() => navigate("/channels")} className={cn("sidebar-item", active === "channels" && "active")}>
-            <Hash className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">Channels</span>
+            <Hash className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[0.9375rem] text-foreground/85">Channels</span>
           </button>
 
           <button onClick={() => navigate("/dashboard?tab=profile&section=settings")} className={cn("sidebar-item", active === "settings" && "active")}>
-            <Settings className={cn("w-[26px] h-[26px] shrink-0", active === "settings" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "settings" ? 2.5 : 2} />
-            <span className={cn("text-[1.0625rem]", active === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
+            <Settings className={cn("w-[22px] h-[22px] shrink-0", active === "settings" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "settings" ? 2.5 : 2} />
+            <span className={cn("text-[0.9375rem]", active === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
           </button>
 
           <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="sidebar-item">
             {theme === "dark"
-              ? <Sun className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-              : <Moon className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />}
-            <span className="text-[1.0625rem] text-foreground/85">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+              ? <Sun className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+              : <Moon className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />}
+            <span className="text-[0.9375rem] text-foreground/85">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
           </button>
         </nav>
 
@@ -130,7 +130,7 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
         <div className="px-4 pb-3">
           <button
             onClick={onCast}
-            className="w-full py-3.5 rounded-full bg-primary text-white font-bold text-[1.0625rem] hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-full bg-primary text-white font-bold text-[0.9375rem] hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2"
           >
             <PenSquare className="w-5 h-5" />
             Cast

@@ -151,7 +151,7 @@ export function ThreadPage() {
   return (
     <div className="min-h-screen bg-background">
       <DesktopSidebar active="feed" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[270px]">
+      <div className="md:ml-[240px]">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background border-b border-border">
         <div className="max-w-[600px] mx-auto h-14 flex items-center gap-3 px-4">

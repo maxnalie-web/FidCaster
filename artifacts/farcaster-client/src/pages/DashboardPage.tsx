@@ -1045,7 +1045,7 @@ export function DashboardPage() {
     <div className="min-h-screen bg-background flex w-full overflow-x-hidden">
 
       {/* ── DESKTOP SIDEBAR ─────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-[270px] border-r border-border bg-background z-40">
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-[240px] border-r border-border bg-background z-40">
 
         {/* Logo */}
         <div className="px-5 pt-5 pb-2">
@@ -1073,7 +1073,7 @@ export function DashboardPage() {
               >
                 <span className="relative shrink-0">
                   <Icon
-                    className={cn("w-[26px] h-[26px]", active ? "text-foreground" : "text-foreground/75")}
+                    className={cn("w-[22px] h-[22px]", active ? "text-foreground" : "text-foreground/75")}
                     strokeWidth={active ? 2.5 : 2}
                   />
                   {item.id === "notifications" && unreadNotifs > 0 && (
@@ -1082,7 +1082,7 @@ export function DashboardPage() {
                     </span>
                   )}
                 </span>
-                <span className={cn("text-[1.0625rem]", active ? "text-foreground" : "text-foreground/85")}>
+                <span className={cn("text-[0.9375rem]", active ? "text-foreground" : "text-foreground/85")}>
                   {item.label}
                 </span>
               </button>
@@ -1094,8 +1094,8 @@ export function DashboardPage() {
             onClick={() => navigate("/follow")}
             className="sidebar-item"
           >
-            <TrendingUp className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">Grow</span>
+            <TrendingUp className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[0.9375rem] text-foreground/85">Grow</span>
           </button>
 
           {/* FID Market link */}
@@ -1103,8 +1103,8 @@ export function DashboardPage() {
             onClick={() => navigate("/market")}
             className="sidebar-item"
           >
-            <Tag className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">FID Market</span>
+            <Tag className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[0.9375rem] text-foreground/85">FID Market</span>
           </button>
 
           {/* Channels link */}
@@ -1112,8 +1112,8 @@ export function DashboardPage() {
             onClick={() => navigate("/channels")}
             className="sidebar-item"
           >
-            <Hash className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-            <span className="text-[1.0625rem] text-foreground/85">Channels</span>
+            <Hash className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+            <span className="text-[0.9375rem] text-foreground/85">Channels</span>
           </button>
 
           {/* Settings */}
@@ -1122,10 +1122,10 @@ export function DashboardPage() {
             className={cn("sidebar-item", mainTab === "profile" && profileSection === "settings" && "active")}
           >
             <Settings
-              className={cn("w-[26px] h-[26px] shrink-0", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/75")}
+              className={cn("w-[22px] h-[22px] shrink-0", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/75")}
               strokeWidth={mainTab === "profile" && profileSection === "settings" ? 2.5 : 2}
             />
-            <span className={cn("text-[1.0625rem]", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
+            <span className={cn("text-[0.9375rem]", mainTab === "profile" && profileSection === "settings" ? "text-foreground" : "text-foreground/85")}>Settings</span>
           </button>
 
           {/* Theme toggle */}
@@ -1134,9 +1134,9 @@ export function DashboardPage() {
             className="sidebar-item"
           >
             {theme === "dark"
-              ? <Sun className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />
-              : <Moon className="w-[26px] h-[26px] shrink-0 text-foreground/75" strokeWidth={2} />}
-            <span className="text-[1.0625rem] text-foreground/85">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+              ? <Sun className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
+              : <Moon className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />}
+            <span className="text-[0.9375rem] text-foreground/85">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
           </button>
         </nav>
 
@@ -1144,7 +1144,7 @@ export function DashboardPage() {
         <div className="px-4 pb-3">
           <button
             onClick={() => setShowFabCompose(true)}
-            className="w-full py-3.5 rounded-full bg-primary text-white font-bold text-[1.0625rem] hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-full bg-primary text-white font-bold text-[0.9375rem] hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2"
           >
             <PenSquare className="w-5 h-5" />
             Cast
@@ -1207,7 +1207,7 @@ export function DashboardPage() {
       </aside>
 
       {/* ── MAIN AREA ────────────────────────────────────────────── */}
-      <div className="md:ml-[270px] flex-1 min-w-0 min-h-screen flex flex-col">
+      <div className="md:ml-[240px] flex-1 min-w-0 min-h-screen flex flex-col">
 
         {/* ── MOBILE HEADER ──────────────────────────────────── */}
         {/* Hidden on the profile tab: ProfilePage renders its own banner-blur

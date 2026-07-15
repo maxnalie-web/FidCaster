@@ -671,7 +671,7 @@ export default function FidDetailPage() {
   return (
     <div className="min-h-screen bg-background pb-28 md:pb-0">
       <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[270px]">
+      <div className="md:ml-[240px]">
       {showComposer && (
         <ComposeModal onClose={() => setShowComposer(false)} onPublished={() => setShowComposer(false)} />
       )}

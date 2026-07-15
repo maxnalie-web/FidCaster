@@ -269,7 +269,7 @@ export default function FidMarketPage() {
   return (
     <div className="min-h-screen bg-background pb-28 md:pb-8">
       <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[270px]">
+      <div className="md:ml-[240px]">
 
       {/* ── Header ── */}
       <header className="sticky top-0 z-40 bg-background border-b border-border">

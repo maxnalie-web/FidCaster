@@ -748,7 +748,7 @@ export function FollowPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col pb-[54px] md:pb-0">
       <DesktopSidebar active="grow" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[270px]">
+      <div className="md:ml-[240px]">
       {showComposer && (
         <ComposeModal onClose={() => setShowComposer(false)} onPublished={() => setShowComposer(false)} />
       )}

@@ -604,7 +604,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
   return (
     <div className={embedded ? "" : "min-h-screen bg-background"}>
       {!embedded && <DesktopSidebar active="profile" onCast={() => setShowComposer(true)} />}
-      <div className={embedded ? "" : "md:ml-[270px]"}>
+      <div className={embedded ? "" : "md:ml-[240px]"}>
 
       {/* ── Sticky Header ──
           Carries a sliver of the banner behind it (blurred + darkened for

@@ -68,7 +68,7 @@ export function ChannelsListPage() {
   return (
     <div className="min-h-screen bg-background">
       <DesktopSidebar active="channels" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[270px]">
+      <div className="md:ml-[240px]">
       <header className="sticky top-0 z-30 bg-background border-b border-border">
         <div className="max-w-[600px] mx-auto h-14 flex items-center gap-3 px-4">
           <button

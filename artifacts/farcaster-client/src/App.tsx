@@ -147,8 +147,8 @@ function App() {
         </WouterRouter>
         <BatchProgressPill />
         <SignerSetupPopup />
-        <MinimizedMiniAppBar />
-        <MiniAppIframeModal />
+        {false && <MinimizedMiniAppBar />}
+        {false && <MiniAppIframeModal />}
         <Toaster
         position="bottom-right"
         theme={theme === "dark" ? "dark" : "light"}
