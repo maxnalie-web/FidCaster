@@ -1,7 +1,7 @@
-import { mnemonicToAccount } from "viem/accounts";
+import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { createWalletClient, fallback, http, type WalletClient, type Account } from "viem";
 import { optimism, base } from "viem/chains";
-import { validateMnemonic, mnemonicToSeedSync } from "@scure/bip39";
+import { validateMnemonic, mnemonicToSeedSync, generateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import { HDKey } from "@scure/bip32";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -140,4 +140,53 @@ export async function deriveAccount(mnemonic: string): Promise<DerivedAccount> {
     walletClient: client,
     localSigner,
   };
+}
+
+/** Generate a fresh BIP-39 mnemonic (12 words). */
+export function generateWalletMnemonic(): string {
+  return generateMnemonic(wordlist, 128);
+}
+
+export type WalletAccountDerived = {
+  address: `0x${string}`;
+  walletClient: WalletClient;
+  baseWalletClient: WalletClient;
+};
+
+/** Derive a wallet account at BIP-44 addressIndex (m/44'/60'/0'/0/<index>). */
+export async function deriveWalletAccount(mnemonic: string, index: number): Promise<WalletAccountDerived> {
+  const phrase = mnemonic.trim().toLowerCase();
+  const account = mnemonicToAccount(phrase, { addressIndex: index });
+  return {
+    address: account.address,
+    walletClient: createWalletClient({ account, chain: optimism, transport: opWalletTransport }),
+    baseWalletClient: createBaseWalletClient(account),
+  };
+}
+
+/** Derive walletClient from a raw private key hex. */
+export function deriveWalletAccountFromKey(privateKeyHex: string): WalletAccountDerived {
+  const account = privateKeyToAccount(privateKeyHex as `0x${string}`);
+  return {
+    address: account.address,
+    walletClient: createWalletClient({ account, chain: optimism, transport: opWalletTransport }),
+    baseWalletClient: createBaseWalletClient(account),
+  };
+}
+
+/** Export the raw private key hex for a BIP-44 account at a given index. */
+export function exportPrivateKeyHex(mnemonic: string, accountIndex: number): string {
+  const phrase = mnemonic.trim().toLowerCase();
+  const seed = mnemonicToSeedSync(phrase);
+  const hdKey = HDKey.fromMasterSeed(seed);
+  const child = hdKey.derive(`m/44'/60'/0'/0/${accountIndex}`);
+  if (!child.privateKey) { seed.fill(0); throw new Error("Failed to derive private key"); }
+  const hex = "0x" + Array.from(child.privateKey).map((b: number) => b.toString(16).padStart(2, "0")).join("");
+  seed.fill(0);
+  return hex;
+}
+
+/** Create an Optimism walletClient (counterpart to createBaseWalletClient). */
+export function createOpWalletClient(account: Account): WalletClient {
+  return createWalletClient({ account, chain: optimism, transport: opWalletTransport });
 }

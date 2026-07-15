@@ -7,3 +7,4 @@
 - [Native UI sync findings](native-ui-sync.md) — key visual diffs between native and web; MobileDrawer + ProfilePage stats fixed; wallet screen depth still pending.
 - [Native wallet port](native-wallet-port.md) — WalletPanel web fully ported from native WalletPanelScreen; color derived from address, hero+circles+3-step send+QR receive+activity tab.
 - [GitHub token access](github-token-access.md) — GITHUB_TOKEN env var exists and works for private repo maxnalie-web/fidcaster-native; use Authorization: token $GITHUB_TOKEN header.
+- [Multi-wallet store](multi-wallet.md) — walletStore (Zustand) is separate from WalletProvider/useWallet; walletStore is the multi-wallet EVM layer, WalletProvider handles Farcaster identity.

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, Copy, Send, ArrowDownLeft, RefreshCw, CheckCircle2,
   AlertTriangle, ChevronDown, ChevronLeft, X,
-  ArrowUpRight, Repeat, Sparkles, FileText, Compass,
+  ArrowUpRight, Repeat, Sparkles, FileText, Compass, ChevronRight,
+  Wallet,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "@/hooks/useWallet";
@@ -17,16 +18,17 @@ import {
 import { optimism, base } from "viem/chains";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useWalletStore } from "@/store/walletStore";
+import { WalletSwitcherSheet } from "@/components/wallet/WalletSwitcherSheet";
+import { WalletsList } from "@/components/wallet/WalletsList";
+import { CreateWallet } from "@/components/wallet/CreateWallet";
+import { ImportWallet } from "@/components/wallet/ImportWallet";
+import { ImportPrivateKey } from "@/components/wallet/ImportPrivateKey";
+import { AddWatchOnly } from "@/components/wallet/AddWatchOnly";
+import { WalletSettings } from "@/components/wallet/WalletSettings";
+import { WalletDetailSettings } from "@/components/wallet/WalletDetailSettings";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-const WALLET_COLORS = ["#ff6b9d","#4c9aff","#34d399","#fb923c","#a78bfa","#f472b6","#22c1c3","#fbbf24"];
-function walletColor(addr: string | null): string {
-  if (!addr) return WALLET_COLORS[0];
-  let h = 0;
-  for (let i = 0; i < addr.length; i++) h = (h * 31 + addr.charCodeAt(i)) >>> 0;
-  return WALLET_COLORS[h % WALLET_COLORS.length];
-}
 
 function timeoutSignal(ms: number): AbortSignal {
   const c = new AbortController();
@@ -105,6 +107,17 @@ type SendStep = "recipient" | "asset" | "amount";
 type ActivityNetwork = "Optimism" | "Base";
 type ActivityType = "sent" | "received" | "minted" | "swapped" | "approved" | "interacted";
 
+type WalletOverlay =
+  | "none"
+  | "switcher"
+  | "list"
+  | "create"
+  | "import"
+  | "import-key"
+  | "watch"
+  | "settings"
+  | { detail: string };
+
 type TokenRow = {
   key: SendToken;
   name: string;
@@ -136,11 +149,7 @@ type ActivityItem = {
 
 const SEND_ACCENT = "#ff3b5c";
 
-type ActivityMeta = {
-  icon: typeof Send;
-  label: string;
-  color: string;
-};
+type ActivityMeta = { icon: typeof Send; label: string; color: string };
 
 const ACTIVITY_TYPE_META: Record<ActivityType, ActivityMeta> = {
   sent:        { icon: ArrowUpRight,  label: "Sent",        color: "#ff3b5c" },
@@ -202,12 +211,30 @@ async function fetchActivityForNetwork(network: ActivityNetwork, address: Addres
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function WalletPanel() {
-  const { address, walletClient, profile } = useWallet();
+  const { address: fcAddress, walletClient: fcWalletClient, profile } = useWallet();
 
-  const walletLabel = profile?.displayName ?? profile?.username ?? "My Wallet";
-  const walletInitial = walletLabel.trim()[0]?.toUpperCase() ?? "W";
-  const color = walletColor(address);
+  // ── wallet store ────────────────────────────────────────────────────────────
+  const hydrate = useWalletStore(s => s.hydrate);
+  const storeActiveWallet = useWalletStore(s => s.activeWallet());
+  const storeActiveAccount = useWalletStore(s => s.activeAccount());
+  const getActiveWalletClient = useWalletStore(s => s.getActiveWalletClient);
+  const wallets = useWalletStore(s => s.wallets);
 
+  useEffect(() => { hydrate(); }, [hydrate]);
+
+  // Prefer walletStore's active account address; fall back to Farcaster auth address
+  const address = (storeActiveAccount?.address ?? fcAddress) as Address | null;
+
+  // Display info: prefer walletStore wallet; fall back to Farcaster profile
+  const walletColor = storeActiveWallet?.color ?? "#6366f1";
+  const walletEmoji = storeActiveWallet?.emoji ?? "🦄";
+  const walletLabel = storeActiveWallet?.label ?? profile?.displayName ?? profile?.username ?? "My Wallet";
+  const isWatchOnly = storeActiveWallet?.kind === "watch-only";
+
+  // ── wallet overlay ──────────────────────────────────────────────────────────
+  const [overlay, setOverlay] = useState<WalletOverlay>("none");
+
+  // ── main wallet state ───────────────────────────────────────────────────────
   const [tab, setTab] = useState<MainTab>("tokens");
   const [action, setAction] = useState<ActionMode>("none");
   const [sendStep, setSendStep] = useState<SendStep>("recipient");
@@ -264,7 +291,12 @@ export function WalletPanel() {
     }
   }, [address]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  // Re-fetch when active wallet changes
+  useEffect(() => {
+    setOpEth(null); setBaseEth(null); setBaseUsdc(null);
+    setActivity([]); activityFetchedFor.current = null;
+    fetchAll();
+  }, [address, fetchAll]);
 
   useEffect(() => {
     if (priceRef.current) return;
@@ -301,39 +333,18 @@ export function WalletPanel() {
 
   const tokens: TokenRow[] = [
     {
-      key: "op-eth",
-      name: "Ethereum",
-      symbol: "ETH",
-      network: "Optimism",
-      networkColor: "#ff0420",
-      balance: opEthNum,
-      rawBalance: opEth,
-      usdValue: ethPrice ? opEthNum * ethPrice : null,
-      loading: loadingOp,
-      icon: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
+      key: "op-eth", name: "Ethereum", symbol: "ETH", network: "Optimism", networkColor: "#ff0420",
+      balance: opEthNum, rawBalance: opEth, usdValue: ethPrice ? opEthNum * ethPrice : null,
+      loading: loadingOp, icon: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
     },
     {
-      key: "base-eth",
-      name: "Ethereum",
-      symbol: "ETH",
-      network: "Base",
-      networkColor: "#0052ff",
-      balance: baseEthNum,
-      rawBalance: baseEth,
-      usdValue: ethPrice ? baseEthNum * ethPrice : null,
-      loading: loadingBase,
-      icon: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
+      key: "base-eth", name: "Ethereum", symbol: "ETH", network: "Base", networkColor: "#0052ff",
+      balance: baseEthNum, rawBalance: baseEth, usdValue: ethPrice ? baseEthNum * ethPrice : null,
+      loading: loadingBase, icon: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
     },
     {
-      key: "base-usdc",
-      name: "USD Coin",
-      symbol: "USDC",
-      network: "Base",
-      networkColor: "#0052ff",
-      balance: baseUsdcNum,
-      rawBalance: baseUsdc,
-      usdValue: baseUsdcNum,
-      loading: loadingBase,
+      key: "base-usdc", name: "USD Coin", symbol: "USDC", network: "Base", networkColor: "#0052ff",
+      balance: baseUsdcNum, rawBalance: baseUsdc, usdValue: baseUsdcNum, loading: loadingBase,
       icon: "https://assets.coingecko.com/coins/images/6319/small/usdc.png",
     },
   ];
@@ -360,7 +371,7 @@ export function WalletPanel() {
   }
 
   function handleSend() {
-    if (!walletClient || !address || !toAddress || !amount) return;
+    if (!address || !toAddress || !amount) return;
     if (!isAddress(toAddress)) { setSendError("Invalid Ethereum address."); return; }
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) { setSendError("Enter a valid amount."); return; }
@@ -373,15 +384,27 @@ export function WalletPanel() {
   }
 
   async function executeSend() {
-    if (!walletClient || !address || !confirmTx) return;
+    if (!address || !confirmTx) return;
     setConfirmTx(null);
     setSending(true);
     setSendError(null);
     setTxHash(null);
     try {
+      // Get walletClient: prefer walletStore active client, fall back to fcWalletClient
+      let walletClient = fcWalletClient;
+      try {
+        const storeClients = await getActiveWalletClient();
+        if (storeClients) {
+          walletClient = storeClients.walletClient;
+        }
+      } catch { /**/ }
+
+      if (!walletClient) { setSendError("No wallet connected."); setSending(false); return; }
+
       let hash: `0x${string}`;
       const isBase = sendToken === "base-eth" || sendToken === "base-usdc";
       const activeClient = isBase ? createBaseWalletClient(walletClient.account!) : walletClient;
+
       if (sendToken === "base-usdc") {
         const rawAmt = parseUnits(amount, 6);
         if (baseUsdc !== null && rawAmt > baseUsdc) { setSendError("Insufficient USDC balance."); setSending(false); return; }
@@ -444,10 +467,84 @@ export function WalletPanel() {
     setAction("send");
   }
 
-  // ─── sheet close on outside click (backdrop) ──────────────────────────────
+  // ─── no wallet state ───────────────────────────────────────────────────────
+  if (!address && wallets.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] px-6 text-center gap-4">
+        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+          <Wallet size={36} className="text-primary" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-foreground">No wallet yet</h2>
+          <p className="text-sm text-muted-foreground mt-1">Create or import a wallet to get started</p>
+        </div>
+        <button
+          onClick={() => setOverlay("list")}
+          className="px-6 py-3.5 rounded-2xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
+        >
+          Set Up Wallet
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-full">
+
+      {/* ── Wallet overlay panels ────────────────────────────────────────── */}
+      {overlay !== "none" && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setOverlay("none")}
+          />
+          <div
+            className="relative bg-background rounded-t-[28px] max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+
+            {overlay === "switcher" && (
+              <WalletSwitcherSheet
+                onClose={() => setOverlay("none")}
+                onManage={() => setOverlay("list")}
+                onSettings={() => setOverlay("settings")}
+              />
+            )}
+            {overlay === "list" && (
+              <WalletsList
+                onAdd={mode => setOverlay(mode)}
+                onSelectWallet={id => setOverlay({ detail: id })}
+                onBack={() => setOverlay("none")}
+              />
+            )}
+            {overlay === "create" && (
+              <CreateWallet onDone={() => setOverlay("none")} onBack={() => setOverlay("list")} />
+            )}
+            {overlay === "import" && (
+              <ImportWallet onDone={() => setOverlay("none")} onBack={() => setOverlay("list")} />
+            )}
+            {overlay === "import-key" && (
+              <ImportPrivateKey onDone={() => setOverlay("none")} onBack={() => setOverlay("list")} />
+            )}
+            {overlay === "watch" && (
+              <AddWatchOnly onDone={() => setOverlay("none")} onBack={() => setOverlay("list")} />
+            )}
+            {overlay === "settings" && (
+              <WalletSettings
+                onSelectWallet={id => setOverlay({ detail: id })}
+                onBack={() => setOverlay("none")}
+              />
+            )}
+            {typeof overlay === "object" && "detail" in overlay && (
+              <WalletDetailSettings
+                walletId={overlay.detail}
+                onBack={() => setOverlay(wallets.length > 0 ? "list" : "none")}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Confirm dialog ──────────────────────────────────────────────── */}
       {confirmTx && (
@@ -524,7 +621,6 @@ export function WalletPanel() {
           <div className="relative bg-card rounded-t-[28px] px-5 pt-3 pb-8 max-h-[92vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-3" />
 
-            {/* Header */}
             <div className="flex items-center justify-between mb-4">
               {sendStep === "recipient" ? (
                 <div className="w-6" />
@@ -540,13 +636,12 @@ export function WalletPanel() {
               <button onClick={() => setAction("none")} className="p-1 text-muted-foreground hover:text-foreground transition-colors"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Recipient chip on steps 2+3 */}
             {sendStep !== "recipient" && !!toAddress && (
               <button
                 onClick={() => setSendStep("recipient")}
                 className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl bg-muted/60 mb-4"
               >
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0" style={{ backgroundColor: color }}>
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-black shrink-0" style={{ backgroundColor: walletColor }}>
                   {toAddress.slice(2, 4).toUpperCase()}
                 </div>
                 <div className="flex-1 text-left min-w-0">
@@ -557,7 +652,6 @@ export function WalletPanel() {
               </button>
             )}
 
-            {/* ── STEP 1: RECIPIENT ── */}
             {sendStep === "recipient" && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 bg-muted/60 rounded-2xl px-3 py-3">
@@ -591,7 +685,6 @@ export function WalletPanel() {
               </div>
             )}
 
-            {/* ── STEP 2: ASSET ── */}
             {sendStep === "asset" && (
               <div className="space-y-1">
                 <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-1 pt-2 pb-1">Select Token</p>
@@ -621,10 +714,8 @@ export function WalletPanel() {
               </div>
             )}
 
-            {/* ── STEP 3: AMOUNT ── */}
             {sendStep === "amount" && (
               <div className="space-y-3.5">
-                {/* token card */}
                 <button
                   onClick={() => !assetLocked && setSendStep("asset")}
                   className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-muted/60"
@@ -641,7 +732,6 @@ export function WalletPanel() {
                   {!assetLocked && <ChevronDown className="w-5 h-5 text-muted-foreground shrink-0" />}
                 </button>
 
-                {/* amount input */}
                 <div className="flex items-center justify-between px-4 py-4 rounded-2xl bg-muted/60">
                   <input
                     autoFocus
@@ -656,7 +746,6 @@ export function WalletPanel() {
                   <span className="text-xl font-black text-foreground shrink-0">{selectedToken.symbol}</span>
                 </div>
 
-                {/* USD equivalent + Max */}
                 <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-muted/60">
                   <span className="text-[15px] font-bold text-muted-foreground truncate flex-1">{usdEquivalent}</span>
                   <div className="flex items-center gap-2.5 shrink-0">
@@ -689,14 +778,14 @@ export function WalletPanel() {
 
                 <button
                   onClick={handleSend}
-                  disabled={sendDisabled}
+                  disabled={sendDisabled || isWatchOnly}
                   className="w-full py-4 rounded-full font-black text-base flex items-center justify-center gap-2 transition-all"
-                  style={sendDisabled
+                  style={(sendDisabled || isWatchOnly)
                     ? { backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }
                     : { backgroundColor: SEND_ACCENT, color: "#fff", boxShadow: `0 8px 24px ${SEND_ACCENT}66` }}
                 >
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : !sendDisabled ? <Send className="w-4 h-4" /> : null}
-                  {sending ? "Sending…" : !amount ? "Enter an Amount" : `Send ${selectedToken.symbol}`}
+                  {isWatchOnly ? "Watch-only — can't send" : sending ? "Sending…" : !amount ? "Enter an Amount" : `Send ${selectedToken.symbol}`}
                 </button>
               </div>
             )}
@@ -706,27 +795,56 @@ export function WalletPanel() {
 
       {/* ── Hero ────────────────────────────────────────────────────────── */}
       <div className="flex flex-col items-center px-5 pt-6 pb-5">
-        {/* Wallet avatar */}
-        <div
-          className="w-[76px] h-[76px] rounded-full flex items-center justify-center shadow-xl"
-          style={{ backgroundColor: color }}
+        {/* Wallet avatar — tappable opens switcher */}
+        <button
+          onClick={() => setOverlay("switcher")}
+          className="relative group"
+          aria-label="Switch wallet"
         >
-          <span className="text-[34px] font-black text-white leading-none">{walletInitial}</span>
-        </div>
+          <div
+            className="w-[76px] h-[76px] rounded-full flex items-center justify-center shadow-xl transition-transform group-active:scale-95"
+            style={{ backgroundColor: walletColor, boxShadow: `0 12px 36px ${walletColor}55` }}
+          >
+            <span className="text-[38px] leading-none">{walletEmoji}</span>
+          </div>
+          {wallets.length > 1 && (
+            <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-background border-2 border-border flex items-center justify-center">
+              <ChevronDown size={10} className="text-muted-foreground" />
+            </div>
+          )}
+        </button>
 
-        {/* Wallet name */}
-        <div className="flex items-center gap-1 mt-3">
+        {/* Wallet name + switcher */}
+        <button
+          onClick={() => setOverlay("switcher")}
+          className="flex items-center gap-1 mt-3 hover:opacity-80 transition-opacity"
+        >
           <span className="text-[15px] font-bold text-foreground">{walletLabel}</span>
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
-        </div>
+        </button>
+
+        {/* Address chip */}
+        {address && (
+          <button
+            onClick={copyAddress}
+            className="flex items-center gap-1.5 mt-1 px-3 py-1 rounded-full bg-muted/50 hover:bg-muted/80 transition-colors"
+          >
+            <span className="text-[11px] font-mono text-muted-foreground">
+              {address.slice(0, 6)}…{address.slice(-4)}
+            </span>
+            {copied
+              ? <CheckCircle2 size={11} className="text-green-500" />
+              : <Copy size={11} className="text-muted-foreground" />}
+          </button>
+        )}
 
         {/* Total balance */}
         {totalUsd !== null ? (
-          <p className="text-[40px] font-black text-foreground tabular-nums mt-1.5 tracking-tight leading-tight">
+          <p className="text-[40px] font-black text-foreground tabular-nums mt-3 tracking-tight leading-tight">
             {formatUsd(totalUsd)}
           </p>
         ) : (
-          <div className="h-12 flex items-center mt-1.5">
+          <div className="h-12 flex items-center mt-3">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         )}
@@ -738,26 +856,33 @@ export function WalletPanel() {
           <span className="text-[11px] font-bold text-muted-foreground ml-1">Optimism · Base</span>
         </div>
 
+        {/* Watch-only badge */}
+        {isWatchOnly && (
+          <div className="mt-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
+            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">👁 Watch-only</span>
+          </div>
+        )}
+
         {/* Quick action circles */}
         <div className="flex gap-2.5 mt-5 w-full">
           {[
-            { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive") },
-            { label: "Send", icon: Send, onClick: () => openSend() },
+            { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false },
+            { label: "Send", icon: Send, onClick: () => openSend(), disabled: isWatchOnly },
             { label: "Refresh", icon: RefreshCw, onClick: fetchAll, spin: loadingOp || loadingBase, disabled: loadingOp || loadingBase },
-            { label: "Swap", icon: Repeat, onClick: () => toast.info("Swap coming soon") },
-            { label: "Browser", icon: Compass, onClick: () => toast.info("Browser coming soon") },
+            { label: "Swap", icon: Repeat, onClick: () => toast.info("Swap coming soon"), disabled: isWatchOnly },
+            { label: "More", icon: Wallet, onClick: () => setOverlay("switcher"), disabled: false },
           ].map(({ label, icon: Icon, onClick, spin, disabled }) => (
             <button
               key={label}
               onClick={onClick}
               disabled={!!disabled}
-              className="flex-1 flex flex-col items-center gap-1.5 disabled:opacity-50"
+              className="flex-1 flex flex-col items-center gap-1.5 disabled:opacity-40"
             >
               <div
-                className="w-[50px] h-[50px] rounded-full flex items-center justify-center"
+                className="w-[50px] h-[50px] rounded-full flex items-center justify-center transition-transform active:scale-90"
                 style={{
-                  backgroundColor: color,
-                  boxShadow: `0 6px 20px ${color}55`,
+                  backgroundColor: walletColor,
+                  boxShadow: `0 6px 20px ${walletColor}55`,
                 }}
               >
                 <Icon className={cn("w-[19px] h-[19px] text-white", spin && "animate-spin")} strokeWidth={2.6} />
@@ -792,8 +917,11 @@ export function WalletPanel() {
           {tokens.map(tk => (
             <button
               key={tk.key}
-              onClick={() => openSend(tk.key)}
-              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm hover:bg-muted/30 transition-colors"
+              onClick={() => !isWatchOnly && openSend(tk.key)}
+              className={cn(
+                "w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm transition-colors",
+                !isWatchOnly && "hover:bg-muted/30 cursor-pointer"
+              )}
             >
               <div className="relative shrink-0">
                 <img
@@ -827,7 +955,6 @@ export function WalletPanel() {
             </button>
           ))}
 
-          {/* No ETH warning */}
           {opEth === 0n && baseEth === 0n && !loadingOp && !loadingBase && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border bg-amber-50 border-amber-200/80 text-xs text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -838,6 +965,22 @@ export function WalletPanel() {
               </div>
             </div>
           )}
+
+          {/* Manage wallets link */}
+          <button
+            onClick={() => setOverlay("list")}
+            className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border border-dashed border-border/60 hover:bg-muted/20 transition-colors mt-1"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
+                <Wallet size={14} className="text-muted-foreground" />
+              </div>
+              <span className="text-sm font-semibold text-muted-foreground">
+                {wallets.length > 1 ? `${wallets.length} wallets` : "Manage wallets"}
+              </span>
+            </div>
+            <ChevronRight size={15} className="text-muted-foreground" />
+          </button>
         </div>
       )}
 
@@ -870,42 +1013,44 @@ export function WalletPanel() {
               <div key={group.title} className="space-y-2.5">
                 <p className="text-base font-black text-foreground mt-1">{group.title}</p>
                 {group.data.map(item => {
-                  const explorer = item.network === "Optimism" ? "https://optimistic.etherscan.io/tx/" : "https://basescan.org/tx/";
-                  const networkColor = item.network === "Optimism" ? "#ff0420" : "#0052ff";
                   const meta = ACTIVITY_TYPE_META[item.activityType];
-                  const TypeIcon = meta.icon;
-                  const title = meta.label;
-                  const subtitle = (item.activityType === "sent" || item.activityType === "received")
-                    ? `${item.activityType === "sent" ? "To" : "From"} ${item.counterparty.slice(0,6)}…${item.counterparty.slice(-4)}`
-                    : item.contractName ?? `${item.counterparty.slice(0,6)}…${item.counterparty.slice(-4)}`;
+                  const MetaIcon = meta.icon;
+                  const explorerUrl = item.network === "Optimism"
+                    ? `https://optimistic.etherscan.io/tx/${item.hash}`
+                    : `https://basescan.org/tx/${item.hash}`;
                   return (
                     <a
-                      key={`${item.network}-${item.hash}`}
-                      href={`${explorer}${item.hash}`}
+                      key={item.hash}
+                      href={explorerUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm hover:bg-muted/30 transition-colors"
+                      className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border/50 hover:bg-muted/30 transition-colors"
                     >
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${meta.color}1a` }}
-                      >
-                        <TypeIcon className="w-[18px] h-[18px]" style={{ color: meta.color }} />
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${meta.color}20` }}>
+                        <MetaIcon size={18} style={{ color: meta.color }} strokeWidth={2.5} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-foreground">{title}</p>
-                        <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
-                        <div className="inline-flex mt-0.5 px-1.5 py-0.5 rounded-md" style={{ backgroundColor: `${networkColor}1a` }}>
-                          <p className="text-[11px] font-semibold" style={{ color: networkColor }}>{item.network}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-bold text-foreground">{meta.label}</p>
+                          <div className="px-1.5 py-0.5 rounded-md text-[9px] font-bold" style={{ backgroundColor: item.network === "Optimism" ? "#ff042015" : "#0052ff15", color: item.network === "Optimism" ? "#ff0420" : "#0052ff" }}>
+                            {item.network === "Optimism" ? "OP" : "Base"}
+                          </div>
+                          {item.status === "error" && (
+                            <div className="px-1.5 py-0.5 rounded-md bg-destructive/10 text-[9px] font-bold text-destructive">Failed</div>
+                          )}
                         </div>
-                      </div>
-                      <div className="text-right shrink-0 space-y-0.5">
-                        <p className="text-sm font-bold text-foreground tabular-nums">
-                          {item.direction === "sent" ? "-" : "+"}{formatBal(item.valueEth, 6)} ETH
+                        <p className="text-xs text-muted-foreground truncate">
+                          {item.activityType === "sent" || item.activityType === "interacted"
+                            ? item.contractName ?? `→ ${item.counterparty.slice(0, 8)}…`
+                            : `← ${item.counterparty.slice(0, 8)}…`}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">{formatRelativeTime(item.timestamp)}</p>
-                        {item.status === "error" && <p className="text-[10px] font-bold text-destructive">Failed</p>}
-                        {item.status === "pending" && <p className="text-[10px] font-bold text-amber-500">Pending</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold tabular-nums" style={{ color: item.direction === "received" ? "#10b981" : "var(--foreground)" }}>
+                          {item.direction === "received" ? "+" : item.valueEth > 0 ? "-" : ""}
+                          {item.valueEth > 0 ? `${formatBal(item.valueEth, 4)} ETH` : "—"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">{formatRelativeTime(item.timestamp)}</p>
                       </div>
                     </a>
                   );

@@ -1,0 +1,324 @@
+import React, { useRef, useState } from "react";
+import {
+  KeyRound, FileKey, Eye, Pencil, Plus, ShieldCheck, Trash2,
+  Copy, CheckCircle2,
+} from "lucide-react";
+import { useWalletStore, type WalletKind } from "@/store/walletStore";
+
+function kindLabel(kind: WalletKind): string {
+  if (kind === "seed") return "Recovery phrase wallet";
+  if (kind === "private-key") return "Private key wallet";
+  return "Watch-only wallet";
+}
+
+interface Props {
+  walletId: string;
+  onBack: () => void;
+}
+
+const MASKED = "•".repeat(40);
+
+export function WalletDetailSettings({ walletId, onBack }: Props) {
+  const wallet = useWalletStore(s => s.wallets.find(w => w.id === walletId));
+  const activeWalletId = useWalletStore(s => s.activeWalletId);
+  const activeAccountIndex = useWalletStore(s => s.activeAccountIndex);
+  const setActiveWallet = useWalletStore(s => s.setActiveWallet);
+  const renameWallet = useWalletStore(s => s.renameWallet);
+  const revealMnemonic = useWalletStore(s => s.revealMnemonic);
+  const revealPrivateKey = useWalletStore(s => s.revealPrivateKey);
+  const removeWallet = useWalletStore(s => s.removeWallet);
+  const addAccountToWallet = useWalletStore(s => s.addAccountToWallet);
+
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameText, setRenameText] = useState("");
+  const [addingAccount, setAddingAccount] = useState(false);
+
+  const [revealLoading, setRevealLoading] = useState<"mnemonic" | "key" | null>(null);
+  const [reveal, setReveal] = useState<{ kind: "mnemonic" | "key"; value: string } | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const clipRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [removeConfirm, setRemoveConfirm] = useState(false);
+
+  if (!wallet) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-4 pt-5 pb-4">
+          <button onClick={onBack} className="text-sm text-muted-foreground">← Back</button>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Wallet not found</div>
+      </div>
+    );
+  }
+
+  const isRemoveDisabled = wallet.sourceFid !== undefined;
+
+  const onAddAccount = async () => {
+    if (addingAccount) return;
+    setAddingAccount(true);
+    try { await addAccountToWallet(wallet.id); }
+    catch (e) { alert(e instanceof Error ? e.message : "Failed to add account."); }
+    finally { setAddingAccount(false); }
+  };
+
+  const doRevealMnemonic = async () => {
+    setRevealLoading("mnemonic");
+    try { setReveal({ kind: "mnemonic", value: await revealMnemonic(wallet.id) }); }
+    catch (e) { alert(e instanceof Error ? e.message : "Failed to reveal."); }
+    finally { setRevealLoading(null); }
+  };
+
+  const doRevealKey = async () => {
+    setRevealLoading("key");
+    try { setReveal({ kind: "key", value: await revealPrivateKey(wallet.id, 0) }); }
+    catch (e) { alert(e instanceof Error ? e.message : "Failed to reveal."); }
+    finally { setRevealLoading(null); }
+  };
+
+  const closeReveal = () => {
+    if (clipRef.current) { clearTimeout(clipRef.current); clipRef.current = null; }
+    setReveal(null); setShowSecret(false); setCopied(false);
+  };
+
+  const onCopy = async () => {
+    if (!reveal || !showSecret) return;
+    await navigator.clipboard.writeText(reveal.value).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    if (clipRef.current) clearTimeout(clipRef.current);
+    clipRef.current = setTimeout(async () => {
+      try { const cur = await navigator.clipboard.readText(); if (cur === reveal.value) await navigator.clipboard.writeText(""); } catch {}
+      clipRef.current = null;
+    }, 60000);
+  };
+
+  const doRemove = async () => {
+    try { await removeWallet(wallet.id); onBack(); }
+    catch (e) { alert(e instanceof Error ? e.message : "Failed to remove."); setRemoveConfirm(false); }
+  };
+
+  const revealWords = reveal?.kind === "mnemonic" ? reveal.value.split(" ") : [];
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 pt-5 pb-4">
+        <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
+        <span className="text-base font-bold text-foreground truncate">{wallet.label}</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
+        {/* Identity card */}
+        <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0" style={{ backgroundColor: wallet.color }}>
+            {wallet.emoji}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-foreground truncate">{wallet.label}</div>
+            <div className="text-xs text-muted-foreground">{kindLabel(wallet.kind)}</div>
+          </div>
+        </div>
+
+        {/* General */}
+        <Section label="General">
+          <Row icon={<Pencil size={15} className="text-primary" />} iconColor="#6366f1" title="Rename Wallet" desc="Change display name" onClick={() => { setRenameText(wallet.label); setRenameOpen(true); }} />
+        </Section>
+
+        {/* Accounts (seed only) */}
+        {wallet.kind === "seed" && (
+          <Section label="Accounts">
+            {wallet.accounts.map((account, i) => {
+              const isActive = wallet.id === activeWalletId && account.index === activeAccountIndex;
+              return (
+                <Row
+                  key={account.index}
+                  divider={i > 0}
+                  icon={isActive ? <CheckCircle2 size={15} className="text-primary" /> : <KeyRound size={15} className="text-primary" />}
+                  iconColor="#6366f1"
+                  title={account.label}
+                  desc={`${account.address.slice(0, 8)}…${account.address.slice(-6)}${isActive ? " · Active" : ""}`}
+                  onClick={() => setActiveWallet(wallet.id, account.index)}
+                />
+              );
+            })}
+            <Row
+              divider
+              icon={addingAccount ? <span className="text-primary text-xs animate-spin">⟳</span> : <Plus size={15} className="text-primary" />}
+              iconColor="#6366f1"
+              title="Add Account"
+              desc="Derive another account from this seed"
+              onClick={onAddAccount}
+            />
+          </Section>
+        )}
+
+        {/* Security */}
+        <Section label="Security">
+          {wallet.kind === "seed" && (
+            <Row
+              icon={revealLoading === "mnemonic" ? <span className="text-green-500 text-xs animate-spin">⟳</span> : <KeyRound size={15} className="text-green-500" />}
+              iconColor="#10b981"
+              title="Reveal Recovery Phrase"
+              desc="View your 12-word backup"
+              onClick={doRevealMnemonic}
+            />
+          )}
+          {wallet.kind !== "watch-only" && (
+            <Row
+              divider={wallet.kind === "seed"}
+              icon={revealLoading === "key" ? <span className="text-green-500 text-xs animate-spin">⟳</span> : <FileKey size={15} className="text-green-500" />}
+              iconColor="#10b981"
+              title="Reveal Private Key"
+              desc="View raw private key hex"
+              onClick={doRevealKey}
+            />
+          )}
+          <Row
+            divider={wallet.kind !== "watch-only"}
+            icon={<ShieldCheck size={15} className="text-green-500" />}
+            iconColor="#10b981"
+            title="Token Approvals"
+            desc="Review and revoke spending permissions"
+            onClick={() => alert("Coming soon")}
+          />
+        </Section>
+
+        {/* Danger */}
+        <Section label="Danger Zone">
+          <Row
+            icon={<Trash2 size={15} className={isRemoveDisabled ? "text-muted-foreground" : "text-destructive"} />}
+            iconColor={isRemoveDisabled ? "#6b7280" : "#ef4444"}
+            title="Remove Wallet"
+            desc={isRemoveDisabled ? "Linked to Farcaster account — sign out to remove" : "Delete from this device"}
+            onClick={() => !isRemoveDisabled && setRemoveConfirm(true)}
+            disabled={isRemoveDisabled}
+            destructive={!isRemoveDisabled}
+          />
+        </Section>
+      </div>
+
+      {/* Rename modal */}
+      {renameOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6" onClick={() => setRenameOpen(false)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-foreground">Rename Wallet</h3>
+            <input
+              autoFocus
+              className="w-full bg-muted/40 border border-border rounded-xl px-3 py-3 text-sm text-foreground outline-none"
+              value={renameText}
+              onChange={e => setRenameText(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && renameText.trim()) { renameWallet(wallet.id, renameText.trim()); setRenameOpen(false); } }}
+            />
+            <div className="flex gap-2">
+              <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRenameOpen(false)}>Cancel</button>
+              <button
+                className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-40"
+                disabled={!renameText.trim()}
+                onClick={() => { renameWallet(wallet.id, renameText.trim()); setRenameOpen(false); }}
+              >Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reveal modal */}
+      {reveal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-5" onClick={closeReveal}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="text-base font-bold text-foreground">{reveal.kind === "mnemonic" ? "Recovery Phrase" : "Private Key"}</h3>
+              <p className="text-xs text-muted-foreground mt-1">Never share this. Anyone with it controls your funds.</p>
+            </div>
+
+            <div className="relative">
+              {reveal.kind === "mnemonic" ? (
+                <div className={`grid grid-cols-3 gap-1.5 p-3 rounded-xl bg-muted/40 border border-border ${!showSecret ? "blur-sm" : ""}`}>
+                  {(showSecret ? revealWords : Array.from({ length: 12 })).map((w, i) => (
+                    <div key={i} className="flex items-center gap-1 bg-background rounded-lg px-2 py-1.5">
+                      <span className="text-[9px] text-muted-foreground w-3 font-mono">{i + 1}.</span>
+                      <span className="text-[11px] font-semibold text-foreground">{showSecret ? (w as string) : "••••"}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={`p-3 rounded-xl bg-muted/40 border border-border ${!showSecret ? "blur-sm" : ""}`}>
+                  <p className="text-xs font-mono text-foreground break-all leading-relaxed">{showSecret ? reveal.value : MASKED}</p>
+                </div>
+              )}
+              {!showSecret && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <button
+                    onClick={() => setShowSecret(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-semibold"
+                  >
+                    <Eye size={14} /> Tap to reveal
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              disabled={!showSecret}
+              onClick={onCopy}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-semibold transition-all ${showSecret ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10" : "border-border text-muted-foreground opacity-40"}`}
+            >
+              {copied ? <CheckCircle2 size={15} className="text-green-500" /> : <Copy size={15} />}
+              {copied ? "Copied!" : showSecret ? "Copy" : "Reveal to copy"}
+            </button>
+            <button onClick={closeReveal} className="w-full py-3 rounded-xl bg-primary text-white text-sm font-bold">Done</button>
+          </div>
+        </div>
+      )}
+
+      {/* Remove confirm */}
+      {removeConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-6" onClick={() => setRemoveConfirm(false)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-destructive">Remove Wallet?</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Make sure you've backed up your recovery phrase or private key — this cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRemoveConfirm(false)}>Cancel</button>
+              <button className="flex-1 py-3 rounded-xl bg-destructive text-white text-sm font-bold" onClick={doRemove}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-1">{label}</p>
+      <div className="rounded-2xl bg-card border border-border overflow-hidden divide-y divide-border/50">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Row({
+  icon, iconColor, title, desc, onClick, divider, disabled, destructive
+}: {
+  icon: React.ReactNode; iconColor: string; title: string; desc: string;
+  onClick: () => void; divider?: boolean; disabled?: boolean; destructive?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors disabled:opacity-50 ${disabled ? "" : "hover:bg-muted/30"}`}
+    >
+      <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${iconColor}20` }}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className={`text-sm font-semibold ${destructive ? "text-destructive" : "text-foreground"}`}>{title}</div>
+        <div className="text-xs text-muted-foreground">{desc}</div>
+      </div>
+    </button>
+  );
+}

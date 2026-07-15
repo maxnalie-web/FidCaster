@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
+import { useWalletStore } from "@/store/walletStore";
 import { WalletContext, type WalletState } from "./useWallet";
 import { deriveAccount, signerFromBytes, signerFromPrivateKeyHex, signerPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { lookupFid, getSignerState, registerSignerOnchain, publicClient, hasSufficientBalanceForSignerRegistration } from "@/lib/contracts";
@@ -411,6 +412,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       accounts: loadAccountsMeta(),
       neynarKey, fidSold: false, authMethod: "mnemonic",
     }));
+
+    useWalletStore.getState().linkFarcasterSeed(
+      fidNum,
+      mnemonic,
+      profile?.displayName ?? `FID ${fidNum}`,
+    ).catch(() => {});
 
     _autoActivateSigner(fid, address, walletClient, localSigner).catch((err) => {
       console.error("[WalletProvider] background signer activation failed:", err);
