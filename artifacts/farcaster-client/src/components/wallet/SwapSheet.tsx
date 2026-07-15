@@ -3,8 +3,14 @@ import {
   ArrowUpDown, ChevronDown, Loader2, X, ExternalLink,
   AlertTriangle, Search, Check, RefreshCw,
 } from "lucide-react";
-import { formatUnits, parseUnits, type Address } from "viem";
+import { createPublicClient, http, formatUnits, parseUnits, type Address } from "viem";
 import { optimism, base, mainnet, arbitrum, polygon } from "viem/chains";
+
+const ERC20_BAL_ABI = [{
+  name: "balanceOf", type: "function", stateMutability: "view",
+  inputs: [{ name: "owner", type: "address" }],
+  outputs: [{ type: "uint256" }],
+}] as const;
 import { useWalletStore } from "@/store/walletStore";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
@@ -246,6 +252,36 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
   const [swapping,        setSwapping]        = useState(false);
   const [txHash,          setTxHash]          = useState<string | null>(null);
   const quoteCtrl = useRef<AbortController | null>(null);
+
+  // Live wallet balance for the "from" token
+  const [fromBalance, setFromBalance] = useState<bigint | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+
+  // Fetch live balance for the selected from-token whenever it or the address changes
+  useEffect(() => {
+    if (!address) { setFromBalance(null); return; }
+    let cancelled = false;
+    setFromBalance(null);
+    setLoadingBalance(true);
+    const client = createPublicClient({ chain: fromChain.viem, transport: http() });
+    const doFetch = async () => {
+      try {
+        const bal = fromToken.address === NATIVE
+          ? await client.getBalance({ address })
+          : await client.readContract({
+              address: fromToken.address as Address,
+              abi: ERC20_BAL_ABI,
+              functionName: "balanceOf",
+              args: [address],
+            }) as bigint;
+        if (!cancelled) setFromBalance(bal);
+      } catch { if (!cancelled) setFromBalance(null); }
+      if (!cancelled) setLoadingBalance(false);
+    };
+    void doFetch();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromToken.address, fromToken.chainId, fromChainId, address]);
 
   const isBridge = tab === "bridge";
   const effectiveToChainId = isBridge ? toChainId : fromChainId;
@@ -511,9 +547,26 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
         {/* From box */}
         <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 space-y-1">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            {isBridge ? `From · ${fromChain.label}` : "You pay"}
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              {isBridge ? `From · ${fromChain.label}` : "You pay"}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground">
+                {loadingBalance ? "…" : fromBalance !== null ? `${parseFloat(formatUnits(fromBalance, fromToken.decimals)).toFixed(4)} ${fromToken.symbol}` : ""}
+              </span>
+              {fromBalance !== null && fromBalance > 0n && (
+                <button
+                  onClick={() => {
+                    const raw = parseFloat(formatUnits(fromBalance, fromToken.decimals));
+                    const max = fromToken.address === NATIVE ? Math.max(0, raw - 0.001) : raw;
+                    setAmount(max.toFixed(6)); setTxHash(null);
+                  }}
+                  className="text-[10px] font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                >MAX</button>
+              )}
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <input type="number" min="0" placeholder="0.0" value={amount}
               onChange={e => { setAmount(e.target.value); setTxHash(null); }}
@@ -707,8 +760,25 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                 .map(tk => (
                   <button key={`${tk.chainId}-${tk.address}`}
                     onClick={() => {
-                      if (pickerFor === "from") { setFromToken(tk); if (!isBridge) setFromChainId(tk.chainId); }
-                      else { setToToken(tk); if (isBridge) setToChainId(tk.chainId); }
+                      if (pickerFor === "from") {
+                        setFromToken(tk);
+                        setFromChainId(tk.chainId);
+                        // In swap mode, keep to-token on the same chain
+                        if (!isBridge) {
+                          const compatTo = TOKENS.find(t => t.chainId === tk.chainId && t.address !== tk.address);
+                          if (compatTo) setToToken(compatTo);
+                        }
+                      } else {
+                        setToToken(tk);
+                        if (isBridge) {
+                          setToChainId(tk.chainId);
+                        } else if (tk.chainId !== fromChainId) {
+                          // Swap mode: auto-sync from-chain so aggregators get consistent params
+                          setFromChainId(tk.chainId);
+                          const compatFrom = TOKENS.find(t => t.chainId === tk.chainId && t.address === NATIVE);
+                          if (compatFrom) setFromToken(compatFrom);
+                        }
+                      }
                       setPickerFor(null); setAmount(""); setTxHash(null);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors">
