@@ -746,7 +746,7 @@ export function FollowPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background flex flex-col pb-[54px] md:pb-0">
+    <div className="min-h-screen bg-background flex flex-col pb-24 md:pb-0">
       <DesktopSidebar active="grow" onCast={() => setShowComposer(true)} />
       <div className="md:ml-[240px]">
       {showComposer && (
