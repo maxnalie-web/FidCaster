@@ -1,8 +1,8 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, RefreshCw, MoreHorizontal, Wifi, WifiOff,
-  Copy, ExternalLink, Shield, Check,
+  Copy, ExternalLink, Shield, Check, Search,
 } from "lucide-react";
 import { useWalletStore } from "@/store/walletStore";
 import { toast } from "sonner";
@@ -25,7 +25,7 @@ function normalizeUrl(raw: string): string {
   if (!t) return "";
   if (/^https?:\/\//.test(t)) return t;
   if (t.includes(".") && !t.includes(" ")) return "https://" + t;
-  return `https://duckduckgo.com/?q=${encodeURIComponent(t)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
 }
 
 function truncAddr(addr: string): string {
@@ -38,11 +38,19 @@ interface Props {
   onClose: () => void;
 }
 
+const QUICK_LINKS = [
+  { label: "Uniswap",   url: "https://app.uniswap.org",   emoji: "🦄" },
+  { label: "Aave",      url: "https://app.aave.com",      emoji: "👻" },
+  { label: "OpenSea",   url: "https://opensea.io",        emoji: "🌊" },
+  { label: "DexScreener", url: "https://dexscreener.com", emoji: "📊" },
+];
+
 export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const [url, setUrl]               = useState(initialUrl);
   const [inputUrl, setInputUrl]     = useState(initialUrl);
   const [isEditing, setIsEditing]   = useState(false);
-  const [isLoading, setIsLoading]   = useState(true);
+  const [isLoading, setIsLoading]   = useState(!!initialUrl);
+  const [startQuery, setStartQuery] = useState("");
   const [network, setNetwork]       = useState<Network>("optimism");
   const [isConnected, setIsConnected] = useState(false);
   const [showAccPicker, setShowAccPicker]   = useState(false);
@@ -52,6 +60,14 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const [iframeKey, setIframeKey]   = useState(0);
 
   const urlRef = useRef<HTMLInputElement>(null);
+
+  // Safety valve: if the proxy or target site never fires onLoad, don't leave
+  // the spinner up forever — reveal whatever the iframe managed to render.
+  useEffect(() => {
+    if (!isLoading) return;
+    const t = setTimeout(() => setIsLoading(false), 12_000);
+    return () => clearTimeout(t);
+  }, [isLoading, iframeKey]);
 
   const wallets           = useWalletStore(s => s.wallets);
   const activeWalletId    = useWalletStore(s => s.activeWalletId);
@@ -132,7 +148,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
     setShowWalletMenu(false);
   }
 
-  const domain = getDomain(url);
+  const domain = url ? getDomain(url) : "New Tab";
   const net    = NETWORK_CONFIG[network];
 
   return (
@@ -220,34 +236,75 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
         </div>
       </div>
 
-      {/* ── iframe ──────────────────────────────────────────────── */}
+      {/* ── content: blank start page (new tab) or proxied iframe ── */}
       <div className="flex-1 relative overflow-hidden">
-        {isLoading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-3">
-              <div
-                className="w-14 h-14 rounded-3xl flex items-center justify-center border"
-                style={{ background: `linear-gradient(135deg, ${walletColor}30, ${walletColor}10)`, borderColor: `${walletColor}30` }}
-              >
-                <span className="text-xl font-black leading-none" style={{ color: walletColor }}>
-                  {address ? address.slice(2, 4).toUpperCase() : walletLabel.slice(0, 2).toUpperCase()}
-                </span>
+        {!url ? (
+          /* New-tab page: empty, with a Google search box + quick links */
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-6 bg-background">
+            <p className="text-lg font-black text-foreground/80 tracking-tight">Search or enter address</p>
+            <form
+              className="w-full max-w-sm"
+              onSubmit={e => { e.preventDefault(); if (startQuery.trim()) navigate(startQuery); }}
+            >
+              <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-full bg-muted/60 border border-border/60 focus-within:ring-2 focus-within:ring-primary/40">
+                <Search size={16} className="text-muted-foreground shrink-0" />
+                <input
+                  autoFocus
+                  value={startQuery}
+                  onChange={e => setStartQuery(e.target.value)}
+                  placeholder="Search Google or type a URL"
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
               </div>
-              <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              <p className="text-xs text-muted-foreground">{domain}</p>
+            </form>
+            <div className="flex gap-3">
+              {QUICK_LINKS.map(l => (
+                <button
+                  key={l.label}
+                  onClick={() => navigate(l.url)}
+                  className="flex flex-col items-center gap-1.5 w-16"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-muted/60 border border-border/50 flex items-center justify-center text-xl active:scale-95 transition-transform">
+                    {l.emoji}
+                  </div>
+                  <span className="text-[10px] font-semibold text-muted-foreground">{l.label}</span>
+                </button>
+              ))}
             </div>
           </div>
+        ) : (
+          <>
+            {isLoading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-3">
+                  <div
+                    className="w-14 h-14 rounded-3xl flex items-center justify-center border"
+                    style={{ background: `linear-gradient(135deg, ${walletColor}30, ${walletColor}10)`, borderColor: `${walletColor}30` }}
+                  >
+                    <span className="text-xl font-black leading-none" style={{ color: walletColor }}>
+                      {address ? address.slice(2, 4).toUpperCase() : walletLabel.slice(0, 2).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs text-muted-foreground">{domain}</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              key={iframeKey}
+              src={`/api/browser-proxy?url=${encodeURIComponent(url)}`}
+              title="Browser"
+              className="w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-downloads allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+              referrerPolicy="no-referrer"
+              allow="fullscreen; autoplay; clipboard-write; payment"
+              onLoad={() => setIsLoading(false)}
+            />
+          </>
         )}
-        <iframe
-          key={iframeKey}
-          src={url ? `/api/browser-proxy?url=${encodeURIComponent(url)}` : "about:blank"}
-          title="Browser"
-          className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-downloads allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-          referrerPolicy="no-referrer"
-          allow="fullscreen; autoplay; clipboard-write; payment"
-          onLoad={() => setIsLoading(false)}
-        />
       </div>
 
       {/* ── Bottom wallet bar (Rainbow-style) ───────────────────── */}

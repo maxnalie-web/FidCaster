@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Send, Repeat, TrendingUp, TrendingDown, ExternalLink, Loader2 } from "lucide-react";
+import { X, Send, Repeat, TrendingUp, TrendingDown, ExternalLink, Loader2, EyeOff, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PricePoint { t: number; p: number }
@@ -15,8 +15,10 @@ interface Props {
   icon: string;
   contractAddress?: string;
   onClose: () => void;
-  onSend: () => void;
+  onSend?: () => void;
   onSwap: () => void;
+  hidden?: boolean;
+  onToggleHide?: () => void;
 }
 
 const COINGECKO_IDS: Record<string, string> = {
@@ -61,7 +63,7 @@ function Sparkline({ points, color, up }: { points: PricePoint[]; color: string;
   );
 }
 
-export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor, balance, usdValue, icon, contractAddress, onClose, onSend, onSwap }: Props) {
+export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor, balance, usdValue, icon, contractAddress, onClose, onSend, onSwap, hidden, onToggleHide }: Props) {
   const [price, setPrice] = useState<number | null>(usdValue && balance > 0 ? usdValue / balance : null);
   const [change24h, setChange24h] = useState<number | null>(null);
   const [chartPoints, setChartPoints] = useState<PricePoint[]>([]);
@@ -135,10 +137,10 @@ export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor
     : balance < 0.0001 && balance > 0 ? balance.toExponential(4) : balance.toFixed(4);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative w-full md:max-w-sm bg-background rounded-t-3xl md:rounded-3xl shadow-2xl border-t md:border border-border flex flex-col max-h-[90vh] animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300 overflow-hidden"
+        className="relative w-full max-w-sm bg-background rounded-3xl shadow-2xl border border-border flex flex-col max-h-[85vh] animate-in zoom-in-95 fade-in duration-200 overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Colored header */}
@@ -227,14 +229,16 @@ export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor
 
         {/* Actions */}
         <div className="flex gap-2.5 px-4 pb-6" style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
-          <button
-            onClick={() => { onClose(); onSend(); }}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95 text-white"
-            style={{ backgroundColor: networkColor }}
-          >
-            <Send className="w-4 h-4" />
-            Send
-          </button>
+          {onSend && (
+            <button
+              onClick={() => { onClose(); onSend(); }}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95 text-white"
+              style={{ backgroundColor: networkColor }}
+            >
+              <Send className="w-4 h-4" />
+              Send
+            </button>
+          )}
           <button
             onClick={() => { onClose(); onSwap(); }}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-sm bg-muted/60 text-foreground hover:bg-muted transition-all active:scale-95 border border-border"
@@ -242,6 +246,17 @@ export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor
             <Repeat className="w-4 h-4" />
             Swap
           </button>
+          {onToggleHide && (
+            <button
+              onClick={() => { onToggleHide(); onClose(); }}
+              title={hidden ? "Unhide token" : "Hide token"}
+              className="flex items-center justify-center w-12 rounded-2xl bg-muted/60 border border-border hover:bg-muted transition-all active:scale-95"
+            >
+              {hidden
+                ? <Eye className="w-4 h-4 text-muted-foreground" />
+                : <EyeOff className="w-4 h-4 text-muted-foreground" />}
+            </button>
+          )}
           {dexPair && (
             <a
               href={dexPair}

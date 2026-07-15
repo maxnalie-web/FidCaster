@@ -905,18 +905,17 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       redirect: "follow",
     });
 
-    // Build a clean response header map — strip frame-blocking directives
+    // Build a clean response header map — strip frame-blocking directives.
+    // The whole CSP is dropped (not just frame-ancestors): the proxied document
+    // is served from OUR origin, so any 'self'-based upstream policy would
+    // block every one of the page's own scripts/styles and it renders as a
+    // permanently-spinning blank frame.
     const stripped: Record<string, string> = {};
     upstream.headers.forEach((val, key) => {
       const k = key.toLowerCase();
       if (k === "x-frame-options") return;
-      if (k === "content-security-policy") {
-        // Remove only the frame-ancestors directive, keep the rest
-        const cleaned = val.split(";").filter(d => !d.trim().toLowerCase().startsWith("frame-ancestors")).join(";").trim();
-        if (cleaned) stripped[key] = cleaned;
-        return;
-      }
-      if (k === "transfer-encoding" || k === "connection") return; // hop-by-hop
+      if (k === "content-security-policy" || k === "content-security-policy-report-only") return;
+      if (k === "transfer-encoding" || k === "connection" || k === "content-encoding" || k === "content-length") return; // hop-by-hop / recomputed
       stripped[key] = val;
     });
 
@@ -926,15 +925,44 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       // Inject <base> so relative resources resolve against the original origin
       const origin = new URL(upstream.url || targetUrl).origin + "/";
       const baseTag = `<base href="${origin}">`;
+      // Keep in-frame navigation flowing through the proxy: without this, the
+      // first click navigates the iframe straight to the real site, whose
+      // X-Frame-Options blocks rendering and the frame appears to hang forever.
+      const navScript = `<script>(function(){
+        var PROXY='/api/browser-proxy?url=';
+        function proxied(href){try{var u=new URL(href, document.baseURI);if(u.protocol!=='http:'&&u.protocol!=='https:')return null;return PROXY+encodeURIComponent(u.href);}catch(e){return null;}}
+        document.addEventListener('click',function(ev){
+          var a=ev.target&&ev.target.closest?ev.target.closest('a[href]'):null;
+          if(!a)return;
+          var p=proxied(a.getAttribute('href'));
+          if(!p)return;
+          ev.preventDefault();ev.stopPropagation();
+          if(a.target==='_blank'){window.open(p);}else{window.location.href=p;}
+        },true);
+        document.addEventListener('submit',function(ev){
+          var f=ev.target;if(!f||f.method&&f.method.toLowerCase()==='post')return;
+          try{
+            ev.preventDefault();
+            var u=new URL(f.getAttribute('action')||document.baseURI,document.baseURI);
+            var q=new URLSearchParams(new FormData(f));u.search=q.toString();
+            window.location.href=PROXY+encodeURIComponent(u.href);
+          }catch(e){}
+        },true);
+      })();</script>`;
       if (!html.includes("<base")) {
-        html = html.replace(/(<head[^>]*>)/i, `$1${baseTag}`);
-        if (!html.includes(baseTag)) html = baseTag + html;
+        html = html.replace(/(<head[^>]*>)/i, `$1${baseTag}${navScript}`);
+        if (!html.includes(baseTag)) html = baseTag + navScript + html;
+      } else {
+        html = html.replace(/(<head[^>]*>)/i, `$1${navScript}`);
+        if (!html.includes(navScript)) html = navScript + html;
       }
+      res.status(upstream.status);
       res.set({ ...stripped, "cache-control": "no-store" });
       res.send(html);
     } else {
       // Pass binary/other content through unchanged
       const buf = Buffer.from(await upstream.arrayBuffer());
+      res.status(upstream.status);
       res.set({ ...stripped, "cache-control": "public, max-age=3600" });
       res.send(buf);
     }

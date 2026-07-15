@@ -3,13 +3,26 @@ import {
   ArrowUpDown, ChevronDown, Loader2, X, ExternalLink,
   AlertTriangle, Search, Check, RefreshCw,
 } from "lucide-react";
-import { createPublicClient, http, formatUnits, parseUnits, type Address } from "viem";
+import { createPublicClient, http, formatUnits, parseUnits, encodeFunctionData, type Address } from "viem";
 import { optimism, base, mainnet, arbitrum, polygon } from "viem/chains";
+import { createChainWalletClient, getPublicClientForChain } from "@/lib/wallet";
 
 const ERC20_BAL_ABI = [{
   name: "balanceOf", type: "function", stateMutability: "view",
   inputs: [{ name: "owner", type: "address" }],
   outputs: [{ type: "uint256" }],
+}] as const;
+
+const ERC20_ALLOWANCE_ABI = [{
+  name: "allowance", type: "function", stateMutability: "view",
+  inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }],
+  outputs: [{ type: "uint256" }],
+}] as const;
+
+const ERC20_APPROVE_ABI = [{
+  name: "approve", type: "function", stateMutability: "nonpayable",
+  inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ type: "bool" }],
 }] as const;
 import { useWalletStore } from "@/store/walletStore";
 import { useWallet } from "@/hooks/useWallet";
@@ -249,9 +262,25 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
   const [quotes,          setQuotes]          = useState<QuoteResult[]>(emptyQuotes);
   const [selectedSource,  setSelectedSource]  = useState("lifi");
+  const [showRoutes,      setShowRoutes]      = useState(false);
   const [swapping,        setSwapping]        = useState(false);
   const [txHash,          setTxHash]          = useState<string | null>(null);
   const quoteCtrl = useRef<AbortController | null>(null);
+
+  // Prepared transaction pending user confirmation (review popup)
+  const [pendingTx, setPendingTx] = useState<{
+    txTo: Address;
+    txData: `0x${string}`;
+    txValue: bigint;
+    txGas?: bigint;
+    needsApproval: boolean;
+    spender?: Address;
+    approveAmount?: bigint;
+    simStatus: "passed" | "after-approval";
+    gasEstimate?: bigint;
+    source: string;
+  } | null>(null);
+  const [preparing, setPreparing] = useState(false);
 
   // Live wallet balance for the "from" token
   const [fromBalance, setFromBalance] = useState<bigint | null>(null);
@@ -356,19 +385,16 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
   const selectedQ = quotes.find(q => q.source === selectedSource);
 
-  /* ── Execute ─────────────────────────────────────────────────────────── */
-  async function execute() {
-    if (!selectedQ?.outFmt || !amount || swapping) return;
-    setSwapping(true);
+  /* ── Prepare (build tx + allowance check + simulation) ──────────────── */
+  async function prepare() {
+    if (!selectedQ?.outFmt || !amount || swapping || preparing) return;
+    setPreparing(true);
     try {
-      let wc = fcWalletClient;
-      try { const sc = await getActiveWalletClient(); if (sc) wc = sc.walletClient; } catch {}
-      if (!wc) throw new Error("No wallet connected");
-
       let txTo: string | undefined;
       let txData: string | undefined;
       let txValue: bigint = 0n;
       let txGas: bigint | undefined;
+      let spender: string | undefined;
 
       const src = selectedQ.source;
 
@@ -423,7 +449,8 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         txGas   = d.transaction?.gas ? BigInt(d.transaction.gas) : undefined;
 
       } else if (src === "paraswap") {
-        const m = selectedQ.meta as { priceRoute: unknown; chainId: number; src: string; dst: string; amtWei: string; user: string; fromDec: number; toDec: number };
+        const m = selectedQ.meta as { priceRoute: { tokenTransferProxy?: string }; chainId: number; src: string; dst: string; amtWei: string; user: string; fromDec: number; toDec: number };
+        spender = m.priceRoute?.tokenTransferProxy;
         const r = await fetch(`https://apiv5.paraswap.io/transactions/${m.chainId}`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -443,20 +470,120 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
       if (!txTo || !txData) throw new Error("Could not build transaction");
 
-      const hash = await wc.sendTransaction({
-        account: wc.account!,
+      const pub = getPublicClientForChain(fromChainId);
+      const approveSpender = (spender ?? txTo) as Address;
+      const sellAmount = parseUnits(amount, fromToken.decimals);
+
+      // ERC-20 sells need an allowance for the router before the swap can succeed
+      let needsApproval = false;
+      if (fromToken.address !== NATIVE) {
+        const allowance = await pub.readContract({
+          address: fromToken.address as Address,
+          abi: ERC20_ALLOWANCE_ABI,
+          functionName: "allowance",
+          args: [address, approveSpender],
+        }) as bigint;
+        needsApproval = allowance < sellAmount;
+      }
+
+      // Simulate before ever signing: a failing eth_call means the swap would
+      // revert on-chain, so surface the error instead of burning gas.
+      let gasEstimate: bigint | undefined;
+      let simStatus: "passed" | "after-approval" = "passed";
+      if (needsApproval) {
+        // Swap can't be simulated until the approval lands — simulate the approval itself
+        simStatus = "after-approval";
+        await pub.call({
+          account: address,
+          to: fromToken.address as Address,
+          data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [approveSpender, sellAmount] }),
+        });
+      } else {
+        await pub.call({
+          account: address,
+          to: txTo as Address,
+          data: txData as `0x${string}`,
+          value: txValue,
+        });
+        try {
+          gasEstimate = await pub.estimateGas({
+            account: address,
+            to: txTo as Address,
+            data: txData as `0x${string}`,
+            value: txValue,
+          });
+        } catch { /* keep aggregator-provided gas */ }
+      }
+
+      setPendingTx({
+        txTo: txTo as Address,
+        txData: txData as `0x${string}`,
+        txValue,
+        txGas,
+        needsApproval,
+        spender: approveSpender,
+        approveAmount: sellAmount,
+        simStatus,
+        gasEstimate,
+        source: src,
+      });
+    } catch (e) {
+      const msg = (e as Error).message ?? "Failed to prepare transaction";
+      toast.error(msg.includes("revert") || msg.includes("execution")
+        ? "Simulation failed — this swap would revert on-chain. Try refreshing quotes."
+        : msg.slice(0, 140));
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  /* ── Confirm & sign (runs after the user approves the review popup) ─── */
+  async function confirmAndSend() {
+    if (!pendingTx || swapping) return;
+    setSwapping(true);
+    try {
+      let wc = fcWalletClient;
+      try { const sc = await getActiveWalletClient(); if (sc) wc = sc.walletClient; } catch { /* fall back */ }
+      if (!wc?.account) throw new Error("No wallet connected");
+
+      // Always sign & broadcast on the chain the quote was built for — never
+      // reuse a client bound to another chain's RPC.
+      const chainWc = createChainWalletClient(wc.account, fromChainId);
+      const pub = getPublicClientForChain(fromChainId);
+
+      if (pendingTx.needsApproval && pendingTx.spender && pendingTx.approveAmount !== undefined) {
+        const approveHash = await chainWc.sendTransaction({
+          account: chainWc.account!,
+          chain: fromChain.viem,
+          to: fromToken.address as Address,
+          data: encodeFunctionData({
+            abi: ERC20_APPROVE_ABI,
+            functionName: "approve",
+            args: [pendingTx.spender, pendingTx.approveAmount],
+          }),
+          value: 0n,
+        });
+        toast.info(`Approving ${fromToken.symbol}…`);
+        await pub.waitForTransactionReceipt({ hash: approveHash, timeout: 60_000 });
+      }
+
+      const hash = await chainWc.sendTransaction({
+        account: chainWc.account!,
         chain: fromChain.viem,
-        to: txTo as Address,
-        data: txData as `0x${string}`,
-        value: txValue,
-        ...(txGas ? { gas: txGas } : {}),
+        to: pendingTx.txTo,
+        data: pendingTx.txData,
+        value: pendingTx.txValue,
+        ...(pendingTx.gasEstimate
+          ? { gas: (pendingTx.gasEstimate * 130n) / 100n }
+          : pendingTx.txGas ? { gas: pendingTx.txGas } : {}),
       });
 
+      setPendingTx(null);
       setTxHash(hash);
       toast.success(isBridge ? "Bridge submitted!" : "Swap submitted!");
       setAmount("");
     } catch (e) {
-      toast.error((e as Error).message ?? "Transaction failed");
+      toast.error(((e as Error).message ?? "Transaction failed").slice(0, 140));
     } finally {
       setSwapping(false);
     }
@@ -625,59 +752,75 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           )}
         </div>
 
-        {/* Quotes comparison */}
+        {/* Best route — auto-selected, comparison is view-only */}
         {amount && parseFloat(amount) > 0 && (
           <div className="space-y-1">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5 pt-1">
-              Quotes from {isBridge ? "bridges" : "5 aggregators"}
-            </p>
-            {sortedQuotes.map(q => {
+            {(() => {
+              const anyLoading = quotes.some(q => q.loading);
+              const best = quotes.find(q => q.source === selectedSource);
+              const agg = AGGS.find(a => a.key === selectedSource);
+              const okCount = quotes.filter(q => !q.loading && !q.error && q.outAmountRaw > 0n).length;
+              if (!best || (!best.outFmt && anyLoading)) {
+                return (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-muted/10">
+                    <Loader2 size={13} className="animate-spin text-muted-foreground shrink-0" />
+                    <span className="text-xs text-muted-foreground">Finding the best route…</span>
+                  </div>
+                );
+              }
+              if (!best.outFmt) return null;
+              return (
+                <button onClick={() => setShowRoutes(v => !v)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 text-left">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: `${agg?.color ?? "#10b981"}22` }}>
+                    <div className="w-2 h-2 rounded-full" style={{ background: agg?.color ?? "#10b981" }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-foreground">Best route: {agg?.name}</span>
+                      <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 uppercase tracking-wide">Auto</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {anyLoading ? "Still comparing…" : `Picked automatically from ${Math.max(okCount, 1)} quote${okCount === 1 ? "" : "s"}`}
+                      {best.gas ? ` · ${best.gas}` : ""}
+                    </p>
+                  </div>
+                  <ChevronDown size={13} className={cn("text-muted-foreground shrink-0 transition-transform", showRoutes && "rotate-180")} />
+                </button>
+              );
+            })()}
+            {showRoutes && sortedQuotes.map(q => {
               const agg = AGGS.find(a => a.key === q.source)!;
               if (q.error === "Cross-chain: use LI.FI") return null;
               const isBestQ = q.source === bestSource;
-              const isSelected = q.source === selectedSource;
               return (
-                <button key={q.source}
-                  onClick={() => !q.loading && !q.error && q.outAmountRaw > 0n && setSelectedSource(q.source)}
-                  disabled={q.loading || !!q.error || q.outAmountRaw === 0n}
+                <div key={q.source}
                   className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all text-left",
-                    isSelected && !q.error
-                      ? "border-primary/50 bg-primary/5 shadow-sm"
-                      : "border-border/40 bg-muted/10 hover:bg-muted/30",
-                    (q.loading || q.error) && "opacity-50 cursor-default"
+                    "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border/40 bg-muted/10 text-left",
+                    (q.loading || q.error) && "opacity-50"
                   )}>
-                  {/* Dot */}
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                  <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
                     style={{ background: `${agg.color}22` }}>
-                    <div className="w-2 h-2 rounded-full" style={{ background: agg.color }} />
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: agg.color }} />
                   </div>
-                  {/* Name + route */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-foreground">{agg.name}</span>
+                      <span className="text-[11px] font-bold text-foreground">{agg.name}</span>
                       {isBestQ && !q.loading && !q.error && (
                         <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 uppercase tracking-wide">Best</span>
                       )}
                     </div>
-                    {q.route && <p className="text-[10px] text-muted-foreground truncate leading-tight">{q.route}</p>}
-                    {q.gas   && <p className="text-[10px] text-muted-foreground leading-tight">{q.gas}</p>}
+                    {q.route && <p className="text-[9px] text-muted-foreground truncate leading-tight">{q.route}</p>}
                   </div>
-                  {/* Amount */}
                   <div className="text-right shrink-0">
                     {q.loading
-                      ? <Loader2 size={13} className="animate-spin text-muted-foreground" />
+                      ? <Loader2 size={12} className="animate-spin text-muted-foreground" />
                       : q.error
-                      ? <span className="text-[10px] text-muted-foreground/60">{q.error.slice(0, 20)}</span>
-                      : <div>
-                          <p className="text-sm font-bold text-foreground tabular-nums">{q.outFmt}</p>
-                          {q.outUsd && <p className="text-[10px] text-muted-foreground">{q.outUsd}</p>}
-                        </div>}
+                      ? <span className="text-[9px] text-muted-foreground/60">{q.error.slice(0, 20)}</span>
+                      : <p className="text-xs font-bold text-foreground tabular-nums">{q.outFmt}</p>}
                   </div>
-                  {isSelected && !q.loading && !q.error && (
-                    <Check size={13} className="text-primary shrink-0" />
-                  )}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -694,9 +837,9 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           </a>
         )}
 
-        {/* Execute button */}
-        <button onClick={execute}
-          disabled={!selectedQ?.outFmt || !amount || swapping || !!selectedQ?.loading}
+        {/* Review button — opens the confirmation popup, nothing is signed yet */}
+        <button onClick={prepare}
+          disabled={!selectedQ?.outFmt || !amount || swapping || preparing || !!selectedQ?.loading}
           className="w-full py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-40 transition-all flex items-center justify-center gap-2"
           style={{
             backgroundColor: walletColor,
@@ -704,13 +847,15 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           }}>
           {swapping
             ? <><Loader2 size={15} className="animate-spin" /> Processing…</>
+            : preparing
+            ? <><Loader2 size={15} className="animate-spin" /> Simulating…</>
             : !amount
             ? "Enter Amount"
             : !selectedQ?.outFmt
             ? "Fetching quotes…"
             : isBridge
-            ? `Bridge via ${activeAgg?.name ?? "LI.FI"}`
-            : `Swap via ${activeAgg?.name ?? "Best route"}`}
+            ? `Review Bridge (${activeAgg?.name ?? "LI.FI"})`
+            : `Review Swap (${activeAgg?.name ?? "Best route"})`}
         </button>
 
         <p className="text-[10px] text-muted-foreground text-center pb-1">
@@ -720,14 +865,84 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         </p>
       </div>
 
+      {/* Confirm transaction popup — centered, shows simulation result before signing */}
+      {pendingTx && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => !swapping && setPendingTx(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-sm bg-card rounded-3xl border border-border shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 pt-5 pb-4 border-b border-border/60">
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Confirm {isBridge ? "Bridge" : "Swap"}</p>
+              <p className="text-[15px] font-semibold text-foreground">
+                {amount} {fromToken.symbol} → ~{selectedQ?.outFmt} {toToken.symbol}
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div className="rounded-xl border border-border/50 bg-muted/30 divide-y divide-border/40 text-sm">
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-muted-foreground">You pay</span>
+                  <span className="font-semibold text-foreground font-mono">{amount} {fromToken.symbol}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-muted-foreground">You receive</span>
+                  <div className="text-right">
+                    <span className="font-semibold text-foreground font-mono">~{selectedQ?.outFmt} {toToken.symbol}</span>
+                    {selectedQ?.outUsd && <p className="text-xs text-muted-foreground">{selectedQ.outUsd}</p>}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-muted-foreground">Network</span>
+                  <span className="font-medium text-foreground">
+                    {fromChain.label}{isBridge ? ` → ${toChain.label}` : ""}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-muted-foreground">Route</span>
+                  <span className="font-medium text-foreground">{AGGS.find(a => a.key === pendingTx.source)?.name}</span>
+                </div>
+                {pendingTx.gasEstimate !== undefined && (
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-muted-foreground">Est. gas</span>
+                    <span className="font-medium text-foreground font-mono">{pendingTx.gasEstimate.toLocaleString()} units</span>
+                  </div>
+                )}
+              </div>
+
+              {pendingTx.simStatus === "passed" ? (
+                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400">
+                  <Check size={13} className="shrink-0 mt-0.5" />
+                  Simulation passed — this transaction should succeed on-chain.
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                  Requires a one-time {fromToken.symbol} approval first — two transactions will be signed.
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground text-center">Nothing is signed until you confirm below.</p>
+            </div>
+            <div className="px-5 pb-5 flex gap-2">
+              <button onClick={() => setPendingTx(null)} disabled={swapping}
+                className="flex-1 py-3.5 rounded-xl border border-border text-sm font-bold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={confirmAndSend} disabled={swapping}
+                className="flex-1 py-3.5 rounded-xl text-white text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                style={{ backgroundColor: walletColor }}>
+                {swapping ? <><Loader2 size={14} className="animate-spin" /> Signing…</> : "Sign & Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Token picker */}
       {pickerFor && (
-        <div className="fixed inset-0 z-[60] flex flex-col justify-end lg:items-center lg:justify-center lg:p-8" onClick={() => setPickerFor(null)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setPickerFor(null)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-3xl lg:rounded-2xl w-full lg:max-w-sm max-h-[62vh] lg:max-h-[65vh] flex flex-col overflow-hidden shadow-2xl"
+          <div className="relative bg-card rounded-2xl w-full max-w-sm max-h-[65vh] flex flex-col overflow-hidden shadow-2xl border border-border/60 mt-2"
             onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-2 shrink-0 lg:hidden" />
-            <div className="px-4 pb-2 shrink-0 space-y-2">
+            <div className="px-4 pt-4 pb-2 shrink-0 space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-bold text-foreground">Select Token</p>
                 <button onClick={() => setPickerFor(null)} className="p-1 text-muted-foreground hover:text-foreground"><X size={16} /></button>

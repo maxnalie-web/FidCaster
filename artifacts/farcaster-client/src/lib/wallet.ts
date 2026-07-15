@@ -1,6 +1,6 @@
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
-import { createWalletClient, fallback, http, type WalletClient, type Account } from "viem";
-import { optimism, base, arbitrum, mainnet } from "viem/chains";
+import { createWalletClient, createPublicClient, fallback, http, type WalletClient, type PublicClient, type Account, type Chain } from "viem";
+import { optimism, base, arbitrum, mainnet, polygon } from "viem/chains";
 import { validateMnemonic, mnemonicToSeedSync, generateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import { HDKey } from "@scure/bip32";
@@ -208,4 +208,42 @@ export function exportPrivateKeyHex(mnemonic: string, accountIndex: number): str
 /** Create an Optimism walletClient (counterpart to createBaseWalletClient). */
 export function createOpWalletClient(account: Account): WalletClient {
   return createWalletClient({ account, chain: optimism, transport: opWalletTransport });
+}
+
+const polygonWalletTransport = fallback([
+  http("https://polygon-rpc.com"),
+  http("https://polygon-bor-rpc.publicnode.com"),
+  http("https://polygon.drpc.org"),
+], { retryCount: 2 });
+
+const CHAIN_TRANSPORTS: Record<number, { chain: Chain; transport: ReturnType<typeof fallback> }> = {
+  10:    { chain: optimism, transport: opWalletTransport },
+  8453:  { chain: base,     transport: baseWalletTransport },
+  1:     { chain: mainnet,  transport: ethWalletTransport },
+  42161: { chain: arbitrum, transport: arbWalletTransport },
+  137:   { chain: polygon,  transport: polygonWalletTransport },
+};
+
+/**
+ * Create a walletClient bound to an arbitrary supported chain. Signing AND
+ * broadcasting both happen against this chain's RPC, so a transaction built
+ * for e.g. Base can never end up broadcast on Optimism.
+ */
+export function createChainWalletClient(account: Account, chainId: number): WalletClient {
+  const cfg = CHAIN_TRANSPORTS[chainId];
+  if (!cfg) throw new Error(`Unsupported chain id ${chainId}`);
+  return createWalletClient({ account, chain: cfg.chain, transport: cfg.transport });
+}
+
+const chainPublicClients = new Map<number, PublicClient>();
+
+/** Get (and cache) a publicClient for any supported chain — used for tx simulation. */
+export function getPublicClientForChain(chainId: number): PublicClient {
+  const cached = chainPublicClients.get(chainId);
+  if (cached) return cached;
+  const cfg = CHAIN_TRANSPORTS[chainId];
+  if (!cfg) throw new Error(`Unsupported chain id ${chainId}`);
+  const client = createPublicClient({ chain: cfg.chain, transport: cfg.transport });
+  chainPublicClients.set(chainId, client);
+  return client;
 }
