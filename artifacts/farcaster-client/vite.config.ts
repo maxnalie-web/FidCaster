@@ -146,7 +146,6 @@ export default defineConfig({
     },
     headers: {
       "X-Content-Type-Options": "nosniff",
-      "X-Frame-Options": "DENY",
       "Referrer-Policy": "strict-origin-when-cross-origin",
       "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
       "Content-Security-Policy": [
@@ -158,6 +157,8 @@ export default defineConfig({
         "connect-src 'self' https: wss: ws:",
         // Mini apps run inside iframes — allow any https origin to be framed.
         "frame-src 'self' https: https://verify.walletconnect.com https://verify.walletconnect.org",
+        // Allow Replit canvas to embed this dev preview in an iframe.
+        "frame-ancestors 'self' https://*.replit.com https://*.repl.co https://*.replit.dev https://*.worf.replit.dev https://*.spock.replit.dev",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
