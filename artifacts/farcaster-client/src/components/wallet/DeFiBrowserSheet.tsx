@@ -240,11 +240,11 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
         )}
         <iframe
           key={iframeKey}
-          src={url}
-          title="DeFi Browser"
+          src={url ? `/api/browser-proxy?url=${encodeURIComponent(url)}` : "about:blank"}
+          title="Browser"
           className="w-full h-full border-0"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-downloads allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-          referrerPolicy="strict-origin-when-cross-origin"
+          referrerPolicy="no-referrer"
           allow="fullscreen; autoplay; clipboard-write; payment"
           onLoad={() => setIsLoading(false)}
         />

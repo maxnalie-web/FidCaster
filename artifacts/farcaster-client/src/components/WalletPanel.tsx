@@ -476,8 +476,10 @@ export function WalletPanel() {
   ];
 
   const loadingDone = !loadingOp && !loadingBase && !loadingArb && !loadingEth;
-  const tokens = loadingDone && !showHiddenTokens
-    ? allTokens.filter(t => t.balance > 0 || t.rawBalance === null)
+  // While loading: show a token if its network is still loading (skeleton row).
+  // Once done:     hide zero-balance rows unless the user toggled "show all".
+  const tokens = !showHiddenTokens
+    ? allTokens.filter(t => t.loading || t.balance > 0)
     : allTokens;
 
   const selectedToken = allTokens.find(t => t.key === sendToken) ?? allTokens[0];

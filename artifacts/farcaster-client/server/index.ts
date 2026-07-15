@@ -851,7 +851,12 @@ app.put("/api/user-prefs", (req: express.Request, res: express.Response) => {
 // ── NFT proxy (OpenSea v2) ───────────────────────────────────────────────────
 const nftLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
 const OPENSEA_KEY = process.env.OPENSEA_API ?? "";
-const OPENSEA_CHAINS: Record<string, string> = { optimism: "optimism", base: "base" };
+const OPENSEA_CHAINS: Record<string, string> = {
+  optimism: "optimism",
+  base: "base",
+  arbitrum: "arbitrum",
+  ethereum: "ethereum",
+};
 
 app.get("/api/nfts/:chain/:address", nftLimiter, async (req, res) => {
   const { chain, address } = req.params;
@@ -875,6 +880,66 @@ app.get("/api/nfts/:chain/:address", nftLimiter, async (req, res) => {
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: "NFT fetch failed", detail: String(e) });
+  }
+});
+
+// ── In-app browser proxy ─────────────────────────────────────────────────────
+// Strips X-Frame-Options / CSP frame-ancestors so external sites load in the
+// wallet browser iframe. Injects <base> so relative links resolve correctly.
+const browserProxyLimiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
+
+app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
+  const targetUrl = String(req.query.url ?? "");
+  if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+    res.status(400).json({ error: "Invalid or missing url param" });
+    return;
+  }
+  try {
+    const upstream = await fetch(targetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(15_000),
+      redirect: "follow",
+    });
+
+    // Build a clean response header map — strip frame-blocking directives
+    const stripped: Record<string, string> = {};
+    upstream.headers.forEach((val, key) => {
+      const k = key.toLowerCase();
+      if (k === "x-frame-options") return;
+      if (k === "content-security-policy") {
+        // Remove only the frame-ancestors directive, keep the rest
+        const cleaned = val.split(";").filter(d => !d.trim().toLowerCase().startsWith("frame-ancestors")).join(";").trim();
+        if (cleaned) stripped[key] = cleaned;
+        return;
+      }
+      if (k === "transfer-encoding" || k === "connection") return; // hop-by-hop
+      stripped[key] = val;
+    });
+
+    const ct = (stripped["content-type"] ?? upstream.headers.get("content-type") ?? "").toLowerCase();
+    if (ct.includes("text/html")) {
+      let html = await upstream.text();
+      // Inject <base> so relative resources resolve against the original origin
+      const origin = new URL(upstream.url || targetUrl).origin + "/";
+      const baseTag = `<base href="${origin}">`;
+      if (!html.includes("<base")) {
+        html = html.replace(/(<head[^>]*>)/i, `$1${baseTag}`);
+        if (!html.includes(baseTag)) html = baseTag + html;
+      }
+      res.set({ ...stripped, "cache-control": "no-store" });
+      res.send(html);
+    } else {
+      // Pass binary/other content through unchanged
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.set({ ...stripped, "cache-control": "public, max-age=3600" });
+      res.send(buf);
+    }
+  } catch (e) {
+    res.status(502).json({ error: "Proxy error", detail: String(e) });
   }
 });
 

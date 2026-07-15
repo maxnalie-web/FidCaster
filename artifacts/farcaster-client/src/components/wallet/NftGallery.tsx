@@ -34,23 +34,9 @@ const CHAIN_COLOR: Record<Chain, string> = {
   ethereum: "#627eea",
 };
 
-const OPENSEA_KEY = (import.meta.env.VITE_OPENSEA_API_KEY as string | undefined) ?? "";
-
+// Always route through the server proxy — keeps the OpenSea API key off the
+// client bundle and lets the server handle CORS + rate limiting.
 async function fetchNfts(chain: Chain, address: string, cursor?: string): Promise<OpenSeaResp> {
-  if (OPENSEA_KEY) {
-    const params = new URLSearchParams({ limit: "50" });
-    if (cursor) params.set("next", cursor);
-    const r = await fetch(
-      `https://api.opensea.io/api/v2/chain/${chain}/account/${address}/nfts?${params}`,
-      {
-        headers: { "X-API-KEY": OPENSEA_KEY, "accept": "application/json" },
-        signal: AbortSignal.timeout(15_000),
-      }
-    );
-    if (!r.ok) throw new Error(`OpenSea ${r.status}`);
-    return r.json();
-  }
-  // Dev fallback: server proxy
   const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
   const r = await fetch(`/api/nfts/${chain}/${address}${params}`, { signal: AbortSignal.timeout(15_000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -115,9 +101,7 @@ export function NftGallery({ address }: Props) {
         <ImageOff className="w-10 h-10 text-muted-foreground/30" />
         <p className="text-sm font-semibold text-foreground">No NFTs found</p>
         <p className="text-xs text-muted-foreground">
-          {OPENSEA_KEY
-            ? "No NFTs found across Optimism, Base, Arbitrum, and Ethereum."
-            : "Set VITE_OPENSEA_API_KEY to enable NFT fetching in production."}
+          No NFTs found across Optimism, Base, Arbitrum, and Ethereum.
         </p>
         <button
           onClick={() => CHAINS.forEach(c => loadChain(c))}
