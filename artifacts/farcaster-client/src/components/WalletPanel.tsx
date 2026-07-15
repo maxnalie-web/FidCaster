@@ -8,14 +8,15 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "@/hooks/useWallet";
 import {
-  publicClient, basePublicClient,
-  USDC_BASE_ADDRESS, ERC20_BALANCE_ABI, ERC20_TRANSFER_ABI,
+  publicClient, basePublicClient, arbPublicClient,
+  USDC_BASE_ADDRESS, USDC_OP_ADDRESS, USDC_ARB_ADDRESS,
+  ERC20_BALANCE_ABI, ERC20_TRANSFER_ABI,
 } from "@/lib/contracts";
-import { createBaseWalletClient } from "@/lib/wallet";
+import { createBaseWalletClient, createArbWalletClient } from "@/lib/wallet";
 import {
   formatEther, parseEther, parseUnits, isAddress, formatUnits, type Address,
 } from "viem";
-import { optimism, base } from "viem/chains";
+import { optimism, base, arbitrum } from "viem/chains";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/walletStore";
@@ -108,7 +109,7 @@ function groupActivity(items: ActivityItem[]): { title: string; data: ActivityIt
 
 type MainTab = "tokens" | "nfts" | "activity";
 type ActionMode = "none" | "send" | "receive";
-type SendToken = "op-eth" | "base-eth" | "base-usdc";
+type SendToken = "op-eth" | "op-usdc" | "base-eth" | "base-usdc" | "arb-eth" | "arb-usdc";
 type SendStep = "recipient" | "asset" | "amount";
 type ActivityNetwork = "Optimism" | "Base";
 type ActivityType = "sent" | "received" | "minted" | "swapped" | "approved" | "interacted";
@@ -267,11 +268,15 @@ export function WalletPanel() {
   const [assetLocked, setAssetLocked] = useState(false);
 
   // balances
-  const [opEth, setOpEth] = useState<bigint | null>(null);
-  const [baseEth, setBaseEth] = useState<bigint | null>(null);
+  const [opEth,    setOpEth]    = useState<bigint | null>(null);
+  const [opUsdc,   setOpUsdc]   = useState<bigint | null>(null);
+  const [baseEth,  setBaseEth]  = useState<bigint | null>(null);
   const [baseUsdc, setBaseUsdc] = useState<bigint | null>(null);
-  const [loadingOp, setLoadingOp] = useState(false);
+  const [arbEth,   setArbEth]   = useState<bigint | null>(null);
+  const [arbUsdc,  setArbUsdc]  = useState<bigint | null>(null);
+  const [loadingOp,   setLoadingOp]   = useState(false);
   const [loadingBase, setLoadingBase] = useState(false);
+  const [loadingArb,  setLoadingArb]  = useState(false);
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const priceRef = useRef(false);
 
@@ -294,32 +299,31 @@ export function WalletPanel() {
 
   const fetchAll = useCallback(async () => {
     if (!address) return;
-    setLoadingOp(true);
-    setLoadingBase(true);
-    try {
-      const [opBal, baseBal, usdcBal] = await Promise.all([
-        publicClient.getBalance({ address }),
-        basePublicClient.getBalance({ address }),
-        basePublicClient.readContract({
-          address: USDC_BASE_ADDRESS,
-          abi: ERC20_BALANCE_ABI,
-          functionName: "balanceOf",
-          args: [address],
-        }),
-      ]);
-      setOpEth(opBal);
-      setBaseEth(baseBal);
-      setBaseUsdc(usdcBal as bigint);
-    } catch { /**/ }
-    finally {
-      setLoadingOp(false);
-      setLoadingBase(false);
-    }
+    setLoadingOp(true); setLoadingBase(true); setLoadingArb(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const readErc20 = (client: any, addr: `0x${string}`) =>
+      (client.readContract({ address: addr, abi: ERC20_BALANCE_ABI, functionName: "balanceOf", args: [address] })) as Promise<bigint>;
+    const safe = <T,>(p: Promise<T>): Promise<T | null> => p.catch(() => null);
+    const [opBal, opUsdcBal, baseBal, baseUsdcBal, arbBal, arbUsdcBal] = await Promise.all([
+      safe(publicClient.getBalance({ address })),
+      safe(readErc20(publicClient, USDC_OP_ADDRESS)),
+      safe(basePublicClient.getBalance({ address })),
+      safe(readErc20(basePublicClient, USDC_BASE_ADDRESS)),
+      safe(arbPublicClient.getBalance({ address })),
+      safe(readErc20(arbPublicClient, USDC_ARB_ADDRESS)),
+    ]);
+    if (opBal   !== null) setOpEth(opBal);
+    if (opUsdcBal !== null) setOpUsdc(opUsdcBal);
+    if (baseBal !== null) setBaseEth(baseBal);
+    if (baseUsdcBal !== null) setBaseUsdc(baseUsdcBal);
+    if (arbBal  !== null) setArbEth(arbBal);
+    if (arbUsdcBal  !== null) setArbUsdc(arbUsdcBal);
+    setLoadingOp(false); setLoadingBase(false); setLoadingArb(false);
   }, [address]);
 
   // Re-fetch when active wallet changes
   useEffect(() => {
-    setOpEth(null); setBaseEth(null); setBaseUsdc(null);
+    setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null); setArbEth(null); setArbUsdc(null);
     setActivity([]); activityFetchedFor.current = null;
     fetchAll();
   }, [address, fetchAll]);
@@ -352,27 +356,24 @@ export function WalletPanel() {
   }, [tab, address, fetchActivity]);
 
   // derived
-  const opEthNum = opEth !== null ? parseFloat(formatEther(opEth)) : 0;
+  const opEthNum   = opEth   !== null ? parseFloat(formatEther(opEth))   : 0;
+  const opUsdcNum  = opUsdc  !== null ? parseFloat(formatUnits(opUsdc, 6)) : 0;
   const baseEthNum = baseEth !== null ? parseFloat(formatEther(baseEth)) : 0;
   const baseUsdcNum = baseUsdc !== null ? parseFloat(formatUnits(baseUsdc, 6)) : 0;
-  const totalUsd = ethPrice ? (opEthNum + baseEthNum) * ethPrice + baseUsdcNum : null;
+  const arbEthNum  = arbEth  !== null ? parseFloat(formatEther(arbEth))  : 0;
+  const arbUsdcNum = arbUsdc !== null ? parseFloat(formatUnits(arbUsdc, 6)) : 0;
+  const totalUsd = ethPrice ? (opEthNum + baseEthNum + arbEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum : null;
+
+  const ETH_ICON  = "https://assets.coingecko.com/coins/images/279/small/ethereum.png";
+  const USDC_ICON = "https://assets.coingecko.com/coins/images/6319/small/usdc.png";
 
   const tokens: TokenRow[] = [
-    {
-      key: "op-eth", name: "Ethereum", symbol: "ETH", network: "Optimism", networkColor: "#ff0420",
-      balance: opEthNum, rawBalance: opEth, usdValue: ethPrice ? opEthNum * ethPrice : null,
-      loading: loadingOp, icon: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
-    },
-    {
-      key: "base-eth", name: "Ethereum", symbol: "ETH", network: "Base", networkColor: "#0052ff",
-      balance: baseEthNum, rawBalance: baseEth, usdValue: ethPrice ? baseEthNum * ethPrice : null,
-      loading: loadingBase, icon: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
-    },
-    {
-      key: "base-usdc", name: "USD Coin", symbol: "USDC", network: "Base", networkColor: "#0052ff",
-      balance: baseUsdcNum, rawBalance: baseUsdc, usdValue: baseUsdcNum, loading: loadingBase,
-      icon: "https://assets.coingecko.com/coins/images/6319/small/usdc.png",
-    },
+    { key: "op-eth",    name: "Ethereum", symbol: "ETH",  network: "Optimism", networkColor: "#ff0420", balance: opEthNum,   rawBalance: opEth,   usdValue: ethPrice ? opEthNum * ethPrice : null,   loading: loadingOp,   icon: ETH_ICON  },
+    { key: "op-usdc",   name: "USD Coin", symbol: "USDC", network: "Optimism", networkColor: "#ff0420", balance: opUsdcNum,  rawBalance: opUsdc,  usdValue: opUsdcNum,   loading: loadingOp,   icon: USDC_ICON },
+    { key: "base-eth",  name: "Ethereum", symbol: "ETH",  network: "Base",     networkColor: "#0052ff", balance: baseEthNum, rawBalance: baseEth, usdValue: ethPrice ? baseEthNum * ethPrice : null, loading: loadingBase, icon: ETH_ICON  },
+    { key: "base-usdc", name: "USD Coin", symbol: "USDC", network: "Base",     networkColor: "#0052ff", balance: baseUsdcNum,rawBalance: baseUsdc,usdValue: baseUsdcNum, loading: loadingBase, icon: USDC_ICON },
+    { key: "arb-eth",   name: "Ethereum", symbol: "ETH",  network: "Arbitrum", networkColor: "#9945ff", balance: arbEthNum,  rawBalance: arbEth,  usdValue: ethPrice ? arbEthNum * ethPrice : null,  loading: loadingArb,  icon: ETH_ICON  },
+    { key: "arb-usdc",  name: "USD Coin", symbol: "USDC", network: "Arbitrum", networkColor: "#9945ff", balance: arbUsdcNum, rawBalance: arbUsdc, usdValue: arbUsdcNum,  loading: loadingArb,  icon: USDC_ICON },
   ];
 
   const selectedToken = tokens.find(t => t.key === sendToken) ?? tokens[0];
@@ -388,8 +389,10 @@ export function WalletPanel() {
 
   function handleMax() {
     if (selectedToken.loading) return;
-    if (sendToken === "base-usdc") {
-      if (baseUsdc !== null) setAmount(formatUnits(baseUsdc, 6));
+    const isUsdc = sendToken === "base-usdc" || sendToken === "op-usdc" || sendToken === "arb-usdc";
+    if (isUsdc) {
+      const raw = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : arbUsdc;
+      if (raw !== null) setAmount(formatUnits(raw, 6));
     } else {
       const max = Math.max(0, selectedToken.balance - 0.0001);
       setAmount(max > 0 ? max.toFixed(8) : "0");
@@ -429,35 +432,39 @@ export function WalletPanel() {
 
       let hash: `0x${string}`;
       const isBase = sendToken === "base-eth" || sendToken === "base-usdc";
-      const activeClient = isBase ? createBaseWalletClient(walletClient.account!) : walletClient;
+      const isArb  = sendToken === "arb-eth"  || sendToken === "arb-usdc";
+      const activeClient = isBase
+        ? createBaseWalletClient(walletClient.account!)
+        : isArb
+        ? createArbWalletClient(walletClient.account!)
+        : walletClient;
 
-      if (sendToken === "base-usdc") {
+      const isUsdc = sendToken === "base-usdc" || sendToken === "op-usdc" || sendToken === "arb-usdc";
+      if (isUsdc) {
         const rawAmt = parseUnits(amount, 6);
-        if (baseUsdc !== null && rawAmt > baseUsdc) { setSendError("Insufficient USDC balance."); setSending(false); return; }
-        const { request } = await basePublicClient.simulateContract({
-          address: USDC_BASE_ADDRESS,
-          abi: ERC20_TRANSFER_ABI,
-          functionName: "transfer",
-          args: [toAddress as `0x${string}`, rawAmt],
-          account: walletClient.account!,
+        const currentBal = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : arbUsdc;
+        if (currentBal !== null && rawAmt > currentBal) { setSendError("Insufficient USDC balance."); setSending(false); return; }
+        const usdcAddr  = sendToken === "base-usdc" ? USDC_BASE_ADDRESS : sendToken === "op-usdc" ? USDC_OP_ADDRESS : USDC_ARB_ADDRESS;
+        const usdcPub   = sendToken === "base-usdc" ? basePublicClient : sendToken === "op-usdc" ? publicClient : arbPublicClient;
+        const usdcChain = sendToken === "base-usdc" ? base : sendToken === "op-usdc" ? optimism : arbitrum;
+        const { request } = await usdcPub.simulateContract({
+          address: usdcAddr, abi: ERC20_TRANSFER_ABI, functionName: "transfer",
+          args: [toAddress as `0x${string}`, rawAmt], account: walletClient.account!,
         });
-        hash = await activeClient.writeContract({ ...request, chain: base });
+        hash = await activeClient.writeContract({ ...request, chain: usdcChain });
       } else {
         const value = parseEther(amount);
-        const bal = sendToken === "op-eth" ? opEth : baseEth;
+        const bal = sendToken === "op-eth" ? opEth : sendToken === "base-eth" ? baseEth : arbEth;
         if (bal !== null && value > bal) { setSendError("Insufficient ETH balance."); setSending(false); return; }
-        const chain = sendToken === "op-eth" ? optimism : base;
-        const chainPublicClient = sendToken === "op-eth" ? publicClient : basePublicClient;
+        const chain  = sendToken === "op-eth" ? optimism : sendToken === "base-eth" ? base : arbitrum;
+        const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : arbPublicClient;
         let gas: bigint | undefined;
         try {
-          const estimated = await chainPublicClient.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value });
+          const estimated = await pubCli.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value });
           gas = (estimated * 130n) / 100n;
         } catch { /**/ }
         hash = await activeClient.sendTransaction({
-          account: walletClient.account!,
-          chain,
-          to: toAddress as `0x${string}`,
-          value,
+          account: walletClient.account!, chain, to: toAddress as `0x${string}`, value,
           ...(gas !== undefined ? { gas } : {}),
         });
       }
@@ -478,9 +485,11 @@ export function WalletPanel() {
     });
   }
 
-  const explorerBase = sendToken === "op-eth"
-    ? "https://optimistic.etherscan.io/tx/"
-    : "https://basescan.org/tx/";
+  const explorerBase = sendToken.startsWith("arb")
+    ? "https://arbiscan.io/tx/"
+    : sendToken.startsWith("base")
+    ? "https://basescan.org/tx/"
+    : "https://optimistic.etherscan.io/tx/";
 
   function openSend(tokenKey?: SendToken) {
     setSendStep("recipient");
@@ -700,9 +709,9 @@ export function WalletPanel() {
 
       {/* ── Send sheet (3-step) ─────────────────────────────────────────── */}
       {action === "send" && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setAction("none")}>
+        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] px-5 pt-3 pb-8 max-h-[92vh] overflow-auto" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl px-5 pt-3 pb-8 max-h-[75vh] lg:max-h-[80vh] w-full lg:max-w-sm overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-3" />
 
             <div className="flex items-center justify-between mb-4">
@@ -990,7 +999,7 @@ export function WalletPanel() {
           { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
           { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
           { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
-          { label: "DeFi",    icon: Zap,           onClick: () => setShowDeFi(true), disabled: false, color: "#f59e0b" },
+          { label: "DeFi",    icon: Zap,           onClick: () => { setBrowserUrl("https://app.uniswap.org"); setShowBrowser(true); }, disabled: false, color: "#f59e0b" },
           { label: "Wallets", icon: Wallet,        onClick: () => setOverlay("list"), disabled: false, color: walletColor },
         ].map(({ label, icon: Icon, onClick, disabled, color }) => (
           <button
@@ -1050,7 +1059,9 @@ export function WalletPanel() {
                   className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
                   style={{ backgroundColor: tk.networkColor }}
                 >
-                  <span className="text-[7px] font-bold text-white leading-none">{tk.network === "Optimism" ? "OP" : "B"}</span>
+                  <span className="text-[7px] font-bold text-white leading-none">
+                    {tk.network === "Optimism" ? "OP" : tk.network === "Base" ? "B" : "ARB"}
+                  </span>
                 </div>
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -1072,7 +1083,7 @@ export function WalletPanel() {
             </button>
           ))}
 
-          {opEth === 0n && baseEth === 0n && !loadingOp && !loadingBase && (
+          {opEth === 0n && baseEth === 0n && arbEth === 0n && !loadingOp && !loadingBase && !loadingArb && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border bg-amber-50 border-amber-200/80 text-xs text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <div>

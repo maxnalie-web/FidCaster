@@ -18,13 +18,39 @@ interface OpenSeaResp {
   next?: string;
 }
 
-const CHAINS = ["optimism", "base"] as const;
+const CHAINS = ["optimism", "base", "arbitrum", "ethereum"] as const;
 type Chain = typeof CHAINS[number];
 
-const CHAIN_LABEL: Record<Chain, string> = { optimism: "Optimism", base: "Base" };
-const CHAIN_COLOR: Record<Chain, string> = { optimism: "#ff0420", base: "#0052ff" };
+const CHAIN_LABEL: Record<Chain, string> = {
+  optimism: "Optimism",
+  base: "Base",
+  arbitrum: "Arbitrum",
+  ethereum: "Ethereum",
+};
+const CHAIN_COLOR: Record<Chain, string> = {
+  optimism: "#ff0420",
+  base: "#0052ff",
+  arbitrum: "#9945ff",
+  ethereum: "#627eea",
+};
+
+const OPENSEA_KEY = (import.meta.env.VITE_OPENSEA_API_KEY as string | undefined) ?? "";
 
 async function fetchNfts(chain: Chain, address: string, cursor?: string): Promise<OpenSeaResp> {
+  if (OPENSEA_KEY) {
+    const params = new URLSearchParams({ limit: "50" });
+    if (cursor) params.set("next", cursor);
+    const r = await fetch(
+      `https://api.opensea.io/api/v2/chain/${chain}/account/${address}/nfts?${params}`,
+      {
+        headers: { "X-API-KEY": OPENSEA_KEY, "accept": "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      }
+    );
+    if (!r.ok) throw new Error(`OpenSea ${r.status}`);
+    return r.json();
+  }
+  // Dev fallback: server proxy
   const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
   const r = await fetch(`/api/nfts/${chain}/${address}${params}`, { signal: AbortSignal.timeout(15_000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -37,12 +63,13 @@ interface Props {
 
 type ChainNfts = { items: NftItem[]; next?: string; loading: boolean; error: string | null; loaded: boolean };
 
+const emptyChain = (): ChainNfts => ({ items: [], loading: false, error: null, loaded: false, next: undefined });
+
 export function NftGallery({ address }: Props) {
-  const [selected, setSelected] = useState<NftItem | null>(null);
-  const [filter, setFilter] = useState<Chain | "all">("all");
+  const [selected, setSelected] = useState<(NftItem & { chain: Chain }) | null>(null);
+  const [filter, setFilter]     = useState<Chain | "all">("all");
   const [chainData, setChainData] = useState<Record<Chain, ChainNfts>>({
-    optimism: { items: [], loading: false, error: null, loaded: false, next: undefined },
-    base:     { items: [], loading: false, error: null, loaded: false, next: undefined },
+    optimism: emptyChain(), base: emptyChain(), arbitrum: emptyChain(), ethereum: emptyChain(),
   });
 
   const loadChain = useCallback(async (chain: Chain, cursor?: string) => {
@@ -66,13 +93,12 @@ export function NftGallery({ address }: Props) {
     CHAINS.forEach(c => loadChain(c));
   }, [loadChain]);
 
-  const allItems: Array<NftItem & { chain: Chain }> = [
-    ...chainData.optimism.items.map(n => ({ ...n, chain: "optimism" as Chain })),
-    ...chainData.base.items.map(n => ({ ...n, chain: "base" as Chain })),
-  ];
-  const displayed = filter === "all" ? allItems : allItems.filter(n => n.chain === filter);
-  const isLoading = CHAINS.some(c => chainData[c].loading && !chainData[c].loaded);
-  const totalCount = allItems.length;
+  const allItems: Array<NftItem & { chain: Chain }> = CHAINS.flatMap(c =>
+    chainData[c].items.map(n => ({ ...n, chain: c }))
+  );
+  const displayed   = filter === "all" ? allItems : allItems.filter(n => n.chain === filter);
+  const isLoading   = CHAINS.some(c => chainData[c].loading && !chainData[c].loaded);
+  const totalCount  = allItems.length;
 
   if (isLoading) {
     return (
@@ -85,80 +111,76 @@ export function NftGallery({ address }: Props) {
 
   if (totalCount === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-5 gap-3 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center">
-          <ImageOff className="w-8 h-8 text-muted-foreground/40" />
-        </div>
-        <p className="text-sm font-bold text-foreground">No NFTs found</p>
-        <p className="text-xs text-muted-foreground">NFTs on Optimism and Base will appear here</p>
-        <button onClick={() => CHAINS.forEach(c => loadChain(c))} className="mt-1 flex items-center gap-1.5 text-xs text-primary font-semibold">
-          <RefreshCw size={12} /> Refresh
+      <div className="flex flex-col items-center justify-center py-20 gap-3 px-5 text-center">
+        <ImageOff className="w-10 h-10 text-muted-foreground/30" />
+        <p className="text-sm font-semibold text-foreground">No NFTs found</p>
+        <p className="text-xs text-muted-foreground">
+          {OPENSEA_KEY
+            ? "No NFTs found across Optimism, Base, Arbitrum, and Ethereum."
+            : "Set VITE_OPENSEA_API_KEY to enable NFT fetching in production."}
+        </p>
+        <button
+          onClick={() => CHAINS.forEach(c => loadChain(c))}
+          className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Retry
         </button>
       </div>
     );
   }
 
   return (
-    <>
-      {selected && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="bg-card rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-            {(selected.display_image_url || selected.image_url) ? (
-              <img
-                src={selected.display_image_url || selected.image_url!}
-                alt={selected.name ?? "NFT"}
-                className="w-full aspect-square object-cover"
-                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-            ) : (
-              <div className="w-full aspect-square bg-muted/40 flex items-center justify-center">
-                <ImageOff className="w-12 h-12 text-muted-foreground/40" />
-              </div>
-            )}
-            <div className="p-4 space-y-2">
-              <p className="text-base font-bold text-foreground">{selected.name ?? `#${selected.identifier}`}</p>
-              <p className="text-xs text-muted-foreground">{selected.collection}</p>
-              {selected.description && (
-                <p className="text-xs text-muted-foreground line-clamp-3">{selected.description}</p>
-              )}
-              {selected.opensea_url && (
-                <a href={selected.opensea_url} target="_blank" rel="noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-primary font-semibold mt-1">
-                  <ExternalLink size={12} /> View on OpenSea
-                </a>
-              )}
-            </div>
-            <button onClick={() => setSelected(null)} className="w-full py-3 border-t border-border text-sm font-bold text-muted-foreground">Close</button>
-          </div>
-        </div>
-      )}
-
-      <div className="px-4 pt-2 pb-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-muted/40 border border-border/40">
-            {(["all", ...CHAINS] as const).map(c => (
-              <button key={c} onClick={() => setFilter(c)}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${filter === c ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                {c === "all" ? `All (${totalCount})` : CHAIN_LABEL[c]}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => CHAINS.forEach(c => loadChain(c))} className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-            <RefreshCw size={14} />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {displayed.map((nft, i) => (
-            <button key={`${nft.chain}-${nft.contract}-${nft.identifier}-${i}`}
-              onClick={() => setSelected(nft)}
-              className="rounded-2xl overflow-hidden border border-border/50 bg-card hover:bg-muted/30 transition-all text-left active:scale-95"
+    <div className="px-4 pb-4 space-y-3">
+      {/* Chain filter */}
+      <div className="flex gap-1.5 flex-wrap pt-2">
+        {(["all", ...CHAINS] as const).map(c => {
+          const count = c === "all" ? totalCount : chainData[c].items.length;
+          if (c !== "all" && count === 0 && chainData[c].loaded) return null;
+          return (
+            <button
+              key={c}
+              onClick={() => setFilter(c)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                filter === c
+                  ? "bg-primary/10 border-primary/30 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <div className="relative aspect-square bg-muted/40">
-                {(nft.display_image_url || nft.image_url) ? (
-                  <img src={nft.display_image_url || nft.image_url!} alt={nft.name ?? "NFT"}
+              {c === "all" ? "All" : CHAIN_LABEL[c]}
+              {count > 0 && (
+                <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full ${
+                  filter === c ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                }`}>{count}</span>
+              )}
+            </button>
+          );
+        })}
+        <button
+          onClick={() => CHAINS.forEach(c => loadChain(c))}
+          className="ml-auto p-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+        >
+          <RefreshCw className="w-3 h-3" />
+        </button>
+      </div>
+
+      {/* NFT grid */}
+      <div className="grid grid-cols-2 gap-2.5">
+        {displayed.map((nft, i) => {
+          const img = nft.display_image_url || nft.image_url;
+          const key = `${nft.chain}-${nft.contract}-${nft.identifier}-${i}`;
+          return (
+            <button
+              key={key}
+              onClick={() => setSelected(nft)}
+              className="rounded-2xl overflow-hidden border border-border bg-card hover:border-primary/30 transition-all active:scale-[0.98] text-left"
+            >
+              <div className="aspect-square bg-muted relative overflow-hidden">
+                {img ? (
+                  <img
+                    src={img}
+                    alt={nft.name ?? "NFT"}
                     className="w-full h-full object-cover"
+                    loading="lazy"
                     onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
                 ) : (
@@ -166,28 +188,72 @@ export function NftGallery({ address }: Props) {
                     <ImageOff className="w-8 h-8 text-muted-foreground/30" />
                   </div>
                 )}
-                <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md text-[8px] font-bold text-white"
-                  style={{ backgroundColor: CHAIN_COLOR[nft.chain] }}>
-                  {CHAIN_LABEL[nft.chain] === "Optimism" ? "OP" : "Base"}
+                <div
+                  className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-full text-[8px] font-bold text-white"
+                  style={{ backgroundColor: CHAIN_COLOR[nft.chain] }}
+                >
+                  {nft.chain === "optimism" ? "OP" : nft.chain === "base" ? "Base" : nft.chain === "arbitrum" ? "ARB" : "ETH"}
                 </div>
               </div>
-              <div className="p-2.5">
-                <p className="text-xs font-bold text-foreground truncate">{nft.name ?? `#${nft.identifier}`}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{nft.collection}</p>
+              <div className="p-2">
+                <p className="text-[11px] font-bold text-foreground truncate">{nft.name || `#${nft.identifier}`}</p>
+                <p className="text-[9px] text-muted-foreground truncate">{nft.collection}</p>
               </div>
             </button>
-          ))}
-        </div>
-
-        {CHAINS.map(c => chainData[c].next && (
-          <button key={c} onClick={() => loadChain(c, chainData[c].next)}
-            disabled={chainData[c].loading}
-            className="w-full py-3 rounded-xl border border-border/40 text-xs font-semibold text-muted-foreground hover:bg-muted/30 disabled:opacity-40"
-          >
-            {chainData[c].loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : `Load more ${CHAIN_LABEL[c]} NFTs`}
-          </button>
-        ))}
+          );
+        })}
       </div>
-    </>
+
+      {/* Detail modal */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm lg:p-6"
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="relative bg-card rounded-t-[28px] lg:rounded-2xl w-full lg:max-w-sm max-h-[80vh] overflow-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 lg:hidden" />
+            <div className="aspect-square bg-muted overflow-hidden rounded-t-[28px] lg:rounded-t-2xl">
+              {(selected.display_image_url || selected.image_url) ? (
+                <img src={selected.display_image_url || selected.image_url!} alt={selected.name ?? "NFT"} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <ImageOff className="w-16 h-16 text-muted-foreground/20" />
+                </div>
+              )}
+            </div>
+            <div className="p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-base font-black text-foreground truncate">{selected.name || `#${selected.identifier}`}</p>
+                  <p className="text-xs text-muted-foreground truncate">{selected.collection}</p>
+                </div>
+                <div
+                  className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shrink-0"
+                  style={{ backgroundColor: CHAIN_COLOR[selected.chain] }}
+                >
+                  {CHAIN_LABEL[selected.chain]}
+                </div>
+              </div>
+              {selected.description && (
+                <p className="text-xs text-muted-foreground line-clamp-3">{selected.description}</p>
+              )}
+              {selected.opensea_url && (
+                <a
+                  href={selected.opensea_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> View on OpenSea
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -124,14 +124,16 @@ export const useWalletStore = create<WalletState>((set, get) => ({
 
   hydrate: () => {
     const raw = loadMeta<Wallet[]>(WALLETS_KEY, []);
-    const wallets = raw.map(w => ({
-      ...w,
-      color: w.color ?? pickRandom(WALLET_COLORS),
-      emoji: w.emoji ?? pickRandom(WALLET_EMOJIS),
-      backedUp: w.backedUp ?? true,
-    }));
+    let needsPersist = false;
+    const wallets = raw.map(w => {
+      const color = w.color ?? pickRandom(WALLET_COLORS);
+      const emoji = w.emoji ?? pickRandom(WALLET_EMOJIS);
+      if (!w.color || !w.emoji) needsPersist = true;
+      return { ...w, color, emoji, backedUp: w.backedUp ?? true };
+    });
     const activeWalletId = loadMeta<string | null>(ACTIVE_ID_KEY, null);
     const activeAccountIndex = loadMeta<number>(ACTIVE_IDX_KEY, 0);
+    if (needsPersist) persistMeta(wallets, activeWalletId, activeAccountIndex);
     set({ wallets, activeWalletId, activeAccountIndex });
   },
 

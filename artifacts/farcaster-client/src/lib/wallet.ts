@@ -1,6 +1,6 @@
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { createWalletClient, fallback, http, type WalletClient, type Account } from "viem";
-import { optimism, base } from "viem/chains";
+import { optimism, base, arbitrum } from "viem/chains";
 import { validateMnemonic, mnemonicToSeedSync, generateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import { HDKey } from "@scure/bip32";
@@ -110,13 +110,21 @@ const baseWalletTransport = fallback([
   http("https://mainnet.base.org"),
 ], { retryCount: 2 });
 
+const arbWalletTransport = fallback([
+  http("https://arbitrum.llamarpc.com"),
+  http("https://arbitrum-one.publicnode.com"),
+  http("https://arb1.arbitrum.io/rpc"),
+  http("https://arbitrum.drpc.org"),
+], { retryCount: 2 });
+
 /** Create a walletClient bound to the Base chain for an already-derived account. */
 export function createBaseWalletClient(account: Account): WalletClient {
-  return createWalletClient({
-    account,
-    chain: base,
-    transport: baseWalletTransport,
-  });
+  return createWalletClient({ account, chain: base, transport: baseWalletTransport });
+}
+
+/** Create a walletClient bound to the Arbitrum One chain for an already-derived account. */
+export function createArbWalletClient(account: Account): WalletClient {
+  return createWalletClient({ account, chain: arbitrum, transport: arbWalletTransport });
 }
 
 export async function deriveAccount(mnemonic: string): Promise<DerivedAccount> {

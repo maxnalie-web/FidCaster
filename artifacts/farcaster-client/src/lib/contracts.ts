@@ -6,7 +6,7 @@ import {
   parseAbiParameters,
   type WalletClient,
 } from "viem";
-import { optimism, base } from "viem/chains";
+import { optimism, base, arbitrum } from "viem/chains";
 
 // PRIMARY transport is our server RPC proxy (/api/rpc/*): it forwards each call
 // from the server across a rotating pool of public nodes, skipping any that are
@@ -38,7 +38,19 @@ export const basePublicClient = createPublicClient({
   ], { retryCount: 2 }),
 });
 
+export const arbPublicClient = createPublicClient({
+  chain: arbitrum,
+  transport: fallback([
+    http("https://arbitrum.llamarpc.com"),
+    http("https://arbitrum-one.publicnode.com"),
+    http("https://arb1.arbitrum.io/rpc"),
+    http("https://arbitrum.drpc.org"),
+  ], { retryCount: 2 }),
+});
+
 export const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
+export const USDC_OP_ADDRESS   = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" as const;
+export const USDC_ARB_ADDRESS  = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" as const;
 
 export const ERC20_BALANCE_ABI = [
   {

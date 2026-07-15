@@ -768,10 +768,10 @@ export function FollowPage() {
         </div>
       </header>
 
-      <div className="flex-1 lg:min-h-0 max-w-[900px] w-full mx-auto flex flex-col lg:flex-row gap-0 lg:gap-6 px-0 lg:px-4 lg:py-4">
+      <div className="flex-1 max-w-[680px] w-full mx-auto flex flex-col gap-0 px-0 lg:px-4 lg:py-4">
 
-        {/* ── LEFT: CONTROLS (full-width when the Active view replaces the two-column layout) ── */}
-        <div className={cn("flex flex-col gap-4", (showActive || mode === "purge") ? "w-full" : "lg:w-[280px] lg:shrink-0")}>
+        {/* ── CONTROLS (always full-width single column) ── */}
+        <div className="flex flex-col gap-4 w-full">
 
           {/* Mode switcher */}
           <div className="px-4 pt-4 lg:px-0 lg:pt-0">
@@ -1257,9 +1257,9 @@ export function FollowPage() {
           )}
         </div>
 
-        {/* ── RIGHT: USER LIST · hidden while the Active view is shown or purge mode is active ── */}
+        {/* ── USER LIST · shown below controls when not in Active/Purge view ── */}
         {!showActive && mode !== "purge" && (
-        <div className="flex-1 min-w-0 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-border">
+        <div className="flex-1 min-w-0 border-t border-border">
 
           {/* Scan progress */}
           {phase === "loading" && (
@@ -1317,7 +1317,7 @@ export function FollowPage() {
           )}
 
           {/* Idle / searching */}
-          {mode !== "purge" && (phase === "idle" || phase === "searching") && !batchStarted && (
+          {(phase === "idle" || phase === "searching") && !batchStarted && (
             <div className="flex flex-col items-center gap-4 py-16 text-muted-foreground">
               {phase === "searching"
                 ? <Loader2 className="w-8 h-8 animate-spin text-primary/40" />
