@@ -75,10 +75,10 @@ export function WalletsList({ onAdd, onSelectWallet, onBack }: Props) {
                       <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
                     )}
                     <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-lg"
+                      className="w-12 h-12 rounded-full flex items-center justify-center font-black text-white text-sm shadow-lg"
                       style={{ backgroundColor: wallet.color }}
                     >
-                      {wallet.emoji}
+                      {firstAccount?.address ? firstAccount.address.slice(2, 4).toUpperCase() : wallet.label.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="text-center min-w-0 w-full">
                       <div className="text-xs font-bold text-foreground truncate">{wallet.label}</div>

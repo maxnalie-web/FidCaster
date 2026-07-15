@@ -231,7 +231,6 @@ export function WalletPanel() {
 
   // Display info: prefer walletStore wallet; fall back to Farcaster profile
   const walletColor = storeActiveWallet?.color ?? "#6366f1";
-  const walletEmoji = storeActiveWallet?.emoji ?? "🦄";
   const walletLabel = storeActiveWallet?.label ?? profile?.displayName ?? profile?.username ?? "My Wallet";
   const isWatchOnly = storeActiveWallet?.kind === "watch-only";
 
@@ -869,7 +868,9 @@ export function WalletPanel() {
             className="w-[76px] h-[76px] rounded-full flex items-center justify-center shadow-xl transition-transform group-active:scale-95"
             style={{ backgroundColor: walletColor, boxShadow: `0 12px 36px ${walletColor}55` }}
           >
-            <span className="text-[38px] leading-none">{walletEmoji}</span>
+            <span className="text-[26px] font-black text-white leading-none select-none tracking-tight">
+              {address ? address.slice(2, 4).toUpperCase() : "WL"}
+            </span>
           </div>
           {wallets.length > 1 && (
             <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-background border-2 border-border flex items-center justify-center">
@@ -933,8 +934,8 @@ export function WalletPanel() {
             { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false },
             { label: "Send", icon: Send, onClick: () => openSend(), disabled: isWatchOnly },
             { label: "Refresh", icon: RefreshCw, onClick: fetchAll, spin: loadingOp || loadingBase, disabled: loadingOp || loadingBase },
-            { label: "Swap", icon: Repeat, onClick: () => !isWatchOnly && setShowSwap(true), disabled: isWatchOnly },
-            { label: "More", icon: Wallet, onClick: () => setOverlay("switcher"), disabled: false },
+            { label: "Swap", icon: Repeat, onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import a seed phrase or private key to swap") : setShowSwap(true), disabled: false },
+            { label: "Wallets", icon: Wallet, onClick: () => setOverlay("list"), disabled: false },
           ].map(({ label, icon: Icon, onClick, spin, disabled }) => (
             <button
               key={label}
@@ -1030,21 +1031,6 @@ export function WalletPanel() {
             </div>
           )}
 
-          {/* Manage wallets link */}
-          <button
-            onClick={() => setOverlay("list")}
-            className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border border-dashed border-border/60 hover:bg-muted/20 transition-colors mt-1"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
-                <Wallet size={14} className="text-muted-foreground" />
-              </div>
-              <span className="text-sm font-semibold text-muted-foreground">
-                {wallets.length > 1 ? `${wallets.length} wallets` : "Manage wallets"}
-              </span>
-            </div>
-            <ChevronRight size={15} className="text-muted-foreground" />
-          </button>
         </div>
       )}
 

@@ -79,10 +79,10 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
                 onClick={() => setExpandedId(expanded ? null : wallet.id)}
               >
                 <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-base shadow-sm"
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-black text-white text-xs shadow-sm"
                   style={{ backgroundColor: wallet.color }}
                 >
-                  {wallet.emoji}
+                  {wallet.accounts[0]?.address ? wallet.accounts[0].address.slice(2, 4).toUpperCase() : wallet.label.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="text-sm font-semibold text-foreground truncate">{wallet.label}</div>

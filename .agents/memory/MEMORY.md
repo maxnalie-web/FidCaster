@@ -12,3 +12,4 @@
 - [NFT Gallery proxy](nft-gallery-proxy.md) — OpenSea v2 blocks browser CORS; must proxy via server /api/nfts/:chain/:address; env var OPENSEA_API; add vite proxy rule for /api/nfts.
 - [Address book store](addressbook-store.md) — useAddressBookStore (Zustand + localStorage "ab_contacts"); hydrate() must be called in each component that reads contacts.
 - [CORS whitelist](cors-whitelist.md) — fidcaster.com was missing from ALLOWED_ORIGINS in server/index.ts; added alongside .xyz. Published app shows old build until user clicks Publish again.
+- [Wallet avatar identicons](wallet-avatar-identicons.md) — emoji replaced with address hex initials (addr.slice(2,4).toUpperCase()) across WalletPanel, WalletsList, WalletSwitcherSheet, WalletSettings.
