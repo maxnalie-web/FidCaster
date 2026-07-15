@@ -21,32 +21,37 @@ export function BottomNav({ active }: { active?: "grow" }) {
   const { unread: unreadNotifs } = useUnreadNotifications(Number(fid ?? 0), neynarKey ?? "");
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-30 flex h-[54px]">
-      <button onClick={() => navigate("/dashboard?tab=feed")} className="flex-1 flex items-center justify-center transition-colors">
-        <Home className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-      </button>
-      <button onClick={() => navigate("/dashboard?tab=search")} className="flex-1 flex items-center justify-center transition-colors">
-        <Search className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-      </button>
-      <button onClick={() => navigate("/follow")} className="flex-1 flex items-center justify-center transition-colors">
-        <TrendingUp className={cn("w-6 h-6", active === "grow" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "grow" ? 2.5 : 2} />
-      </button>
-      <button onClick={() => navigate("/dashboard?tab=wallet")} className="flex-1 flex items-center justify-center transition-colors">
-        <Wallet className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-      </button>
-      <button onClick={() => navigate("/dashboard?tab=notifications")} className="flex-1 flex items-center justify-center transition-colors">
-        <span className="relative">
-          <Bell className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-          {unreadNotifs > 0 && (
-            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold leading-none flex items-center justify-center ring-2 ring-background">
-              {unreadNotifs > 9 ? "9+" : unreadNotifs}
-            </span>
-          )}
-        </span>
-      </button>
-      <button onClick={() => fid ? navigate(`/profile/${fid}`) : navigate("/dashboard?tab=profile")} className="flex-1 flex items-center justify-center transition-colors">
-        <User className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
-      </button>
+    <nav
+      className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-30 flex flex-col"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <div className="flex h-[54px]">
+        <button onClick={() => navigate("/dashboard?tab=feed")} className="flex-1 flex items-center justify-center transition-colors">
+          <Home className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+        </button>
+        <button onClick={() => navigate("/dashboard?tab=search")} className="flex-1 flex items-center justify-center transition-colors">
+          <Search className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+        </button>
+        <button onClick={() => navigate("/follow")} className="flex-1 flex items-center justify-center transition-colors">
+          <TrendingUp className={cn("w-6 h-6", active === "grow" ? "text-primary" : "text-muted-foreground")} strokeWidth={active === "grow" ? 2.5 : 2} />
+        </button>
+        <button onClick={() => navigate("/dashboard?tab=wallet")} className="flex-1 flex items-center justify-center transition-colors">
+          <Wallet className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+        </button>
+        <button onClick={() => navigate("/dashboard?tab=notifications")} className="flex-1 flex items-center justify-center transition-colors">
+          <span className="relative">
+            <Bell className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+            {unreadNotifs > 0 && (
+              <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold leading-none flex items-center justify-center ring-2 ring-background">
+                {unreadNotifs > 9 ? "9+" : unreadNotifs}
+              </span>
+            )}
+          </span>
+        </button>
+        <button onClick={() => fid ? navigate(`/profile/${fid}`) : navigate("/dashboard?tab=profile")} className="flex-1 flex items-center justify-center transition-colors">
+          <User className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
+        </button>
+      </div>
     </nav>
   );
 }

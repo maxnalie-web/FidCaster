@@ -19,6 +19,7 @@ import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { loadSignerPrivKey } from "@/lib/account-store";
 import type { NeynarCast } from "@/lib/neynar";
 import type { CleanupKind } from "@/lib/cast-cleanup";
+import { bustProfileCache } from "@/pages/ProfilePage";
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 const CLEANUP_KEY_PREFIX = "fc_cleanup_v1_";
@@ -266,6 +267,7 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, lane));
 
     clearCleanup(myFid, kind);
+    bustProfileCache();
     setOps(prev => prev.map(o =>
       o.id === opId
         ? { ...o, done, skipped, errors, phase: cancelRef.current ? "cancelled" : "done", waitMsg: undefined }

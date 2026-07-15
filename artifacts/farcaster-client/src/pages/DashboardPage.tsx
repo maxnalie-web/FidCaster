@@ -484,20 +484,24 @@ function SignerPanel({
 /* ─── Compose Modal ──────────────────────────────────────────────────────── */
 function ComposeModal({ onClose, onPublished }: { onClose: () => void; onPublished: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      {/* Centered popup card on every screen size (mobile, tablet, desktop) */}
+      {/* Bottom sheet on mobile, centered modal on desktop */}
       <div
-        className="relative w-full max-w-lg bg-background rounded-2xl shadow-2xl border border-border flex flex-col max-h-[85vh]"
+        className="relative w-full md:max-w-lg bg-background rounded-t-2xl md:rounded-2xl shadow-2xl border-t md:border border-border flex flex-col max-h-[92vh] md:max-h-[85vh] animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle (mobile only) */}
+        <div className="md:hidden flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-9 h-1 rounded-full bg-muted-foreground/25" />
+        </div>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <span className="text-sm font-bold text-foreground">New Cast</span>
           <button onClick={onClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
           <CastComposer
             onPublished={() => { onPublished(); onClose(); }}
             onCanceled={onClose}
@@ -1264,7 +1268,7 @@ export function DashboardPage() {
         </div>
 
         {/* ── MOBILE BOTTOM NAV ──────────────────────────────── */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-30 flex h-[54px]">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-30 flex flex-col" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}><div className="flex h-[54px]">
           {bottomNavItems.map((item) => {
             const Icon = item.icon;
             const active = mainTab === item.id;
@@ -1332,13 +1336,13 @@ export function DashboardPage() {
               strokeWidth={mainTab === "profile" ? 2.5 : 2}
             />
           </button>
-        </nav>
+        </div></nav>
 
         {/* ── FAB (mobile) ───────────────────────────────────── */}
         {showFab && (
           <button
             onClick={() => setShowFabCompose(true)}
-            className="md:hidden fixed bottom-[70px] right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+            className="md:hidden fixed right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-[0_4px_20px_rgba(124,58,237,0.45)] flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all" style={{ bottom: "calc(70px + env(safe-area-inset-bottom))" }}
           >
             <PenSquare className="w-[22px] h-[22px]" />
           </button>

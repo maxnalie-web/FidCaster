@@ -11,6 +11,7 @@ import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
 import { loadSignerPrivKey } from "@/lib/account-store";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
+import { bustProfileCache } from "@/pages/ProfilePage";
 
 const ADMIN_FID = 16333;
 
@@ -331,6 +332,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     }
 
     clearBatch(myFid, mode);
+    bustProfileCache();
     upsertOp(key, prev =>
       prev
         ? { ...prev, done, errors, skipped, phase: cancelRef.current ? "cancelled" : "done", waitMsg: undefined }

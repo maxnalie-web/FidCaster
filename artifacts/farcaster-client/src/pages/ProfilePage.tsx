@@ -54,6 +54,10 @@ const _profileCache = new Map<string, {
   scrollY: number;
 }>();
 
+export function bustProfileCache() {
+  _profileCache.clear();
+}
+
 const TAB_META: { id: ProfileTab; label: string; icon: React.ReactNode }[] = [
   { id: "casts",   label: "Casts",   icon: <AlignLeft    className="w-3.5 h-3.5" /> },
   { id: "replies", label: "Replies", icon: <MessageSquare className="w-3.5 h-3.5" /> },

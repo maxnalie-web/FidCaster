@@ -1352,7 +1352,7 @@ export function FollowPage() {
           )}
 
           {/* Idle / searching */}
-          {(phase === "idle" || phase === "searching") && !batchStarted && (
+          {mode !== "purge" && (phase === "idle" || phase === "searching") && !batchStarted && (
             <div className="flex flex-col items-center gap-4 py-16 text-muted-foreground">
               {phase === "searching"
                 ? <Loader2 className="w-8 h-8 animate-spin text-primary/40" />
