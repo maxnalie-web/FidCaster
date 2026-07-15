@@ -450,7 +450,9 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                               borderColor: isActive ? wallet.color : `${wallet.color}35`,
                             }}
                           >
-                            <span className="leading-none select-none">{wallet.emoji}</span>
+                            <span className="leading-none select-none text-xs font-black text-white">
+                              {acc.address ? acc.address.slice(2, 4).toUpperCase() : wallet.label.slice(0, 2).toUpperCase()}
+                            </span>
                           </div>
                           <div className="flex-1 text-left min-w-0">
                             <p className="text-sm font-semibold text-foreground">

@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, Copy, Send, ArrowDownLeft, RefreshCw, CheckCircle2,
   AlertTriangle, ChevronDown, ChevronLeft, X,
-  ArrowUpRight, Repeat, Sparkles, FileText, ChevronRight,
-  Wallet, Zap, LayoutGrid,
+  ArrowUpRight, Repeat, Sparkles, FileText,
+  Wallet, Zap,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "@/hooks/useWallet";
@@ -31,7 +31,6 @@ import { WalletDetailSettings } from "@/components/wallet/WalletDetailSettings";
 import { NftGallery } from "@/components/wallet/NftGallery";
 import { SwapSheet } from "@/components/wallet/SwapSheet";
 import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
-import { DeFiAppsSheet } from "@/components/wallet/DeFiAppsSheet";
 import { DeFiBrowserSheet } from "@/components/wallet/DeFiBrowserSheet";
 import { TokenDetailPopup } from "@/components/wallet/TokenDetailPopup";
 import { useAddressBookStore } from "@/store/addressBookStore";
@@ -216,6 +215,79 @@ async function fetchActivityForNetwork(network: ActivityNetwork, address: Addres
   } catch { return []; }
 }
 
+// ─── ERC-20 token support (Blockscout) ────────────────────────────────────────
+
+type Erc20TokenRow = {
+  key: string;
+  name: string;
+  symbol: string;
+  network: "Optimism" | "Base";
+  networkColor: string;
+  balance: number;
+  rawBalance: bigint;
+  usdValue: number | null;
+  loading: false;
+  icon: string;
+  contractAddress: string;
+  isSpam: boolean;
+};
+
+const ERC20_SKIP_SYMBOLS = new Set(["WETH", "USDC", "USDC.e", "USDbC", "wETH"]);
+
+async function fetchErc20Balances(
+  network: "Optimism" | "Base",
+  address: Address
+): Promise<Erc20TokenRow[]> {
+  const host = network === "Optimism" ? "optimism.blockscout.com" : "base.blockscout.com";
+  const networkColor = network === "Optimism" ? "#ff0420" : "#0052ff";
+  try {
+    const r = await fetch(
+      `https://${host}/api/v2/addresses/${address}/token-balances?type=ERC-20`,
+      { signal: timeoutSignal(10000) }
+    );
+    if (!r.ok) return [];
+    const items = await r.json() as unknown[];
+    if (!Array.isArray(items)) return [];
+    return items
+      .filter((item) => {
+        const it = item as Record<string, unknown>;
+        const token = it.token as Record<string, unknown> | undefined;
+        return (
+          token?.type === "ERC-20" &&
+          it.value && it.value !== "0" &&
+          token?.symbol &&
+          !ERC20_SKIP_SYMBOLS.has(String(token.symbol))
+        );
+      })
+      .map((item): Erc20TokenRow => {
+        const it = item as Record<string, unknown>;
+        const token = it.token as Record<string, unknown>;
+        const decimals = Math.min(parseInt(String(token.decimals ?? "18"), 10), 18);
+        const rawBalance = BigInt(String(it.value));
+        const balance = parseFloat(formatUnits(rawBalance, decimals));
+        const rate = token.exchange_rate ? parseFloat(String(token.exchange_rate)) : null;
+        const usdValue = (rate !== null && rate > 0) ? balance * rate : null;
+        const isSpam = usdValue !== null ? usdValue < 0.01 : !token.exchange_rate;
+        return {
+          key: `erc20-${network}-${String(token.address)}`,
+          name: String(token.name ?? token.symbol ?? "Unknown"),
+          symbol: String(token.symbol ?? "?"),
+          network,
+          networkColor,
+          balance,
+          rawBalance,
+          usdValue,
+          loading: false,
+          icon: String(token.icon_url ?? ""),
+          contractAddress: String(token.address),
+          isSpam,
+        };
+      })
+      .filter(t => t.balance > 0)
+      .sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1));
+  } catch { return []; }
+}
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function WalletPanel() {
@@ -257,7 +329,6 @@ export function WalletPanel() {
   // ── wallet overlay ──────────────────────────────────────────────────────────
   const [overlay, setOverlay] = useState<WalletOverlay>("none");
   const [showSwap, setShowSwap] = useState(false);
-  const [showDeFi, setShowDeFi] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
   const [browserUrl, setBrowserUrl] = useState("");
   const [showAddressBook, setShowAddressBook] = useState(false);
@@ -282,6 +353,8 @@ export function WalletPanel() {
   const [loadingArb,  setLoadingArb]  = useState(false);
   const [loadingEth,  setLoadingEth]  = useState(false);
   const [showHiddenTokens, setShowHiddenTokens] = useState(false);
+  const [erc20Tokens, setErc20Tokens] = useState<Erc20TokenRow[]>([]);
+  const [loadingErc20, setLoadingErc20] = useState(false);
   const [detailToken, setDetailToken] = useState<string | null>(null);
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const priceRef = useRef(false);
@@ -329,13 +402,21 @@ export function WalletPanel() {
     if (ethBal     !== null) setEthEth(ethBal);
     if (ethUsdcBal !== null) setEthUsdc(ethUsdcBal);
     setLoadingOp(false); setLoadingBase(false); setLoadingArb(false); setLoadingEth(false);
+    // Fetch ERC-20 tokens in parallel (non-blocking)
+    setLoadingErc20(true);
+    Promise.all([
+      fetchErc20Balances("Optimism", address),
+      fetchErc20Balances("Base", address),
+    ]).then(([opToks, baseToks]) => {
+      setErc20Tokens([...opToks, ...baseToks].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1)));
+    }).finally(() => setLoadingErc20(false));
   }, [address]);
 
   // Re-fetch when active wallet changes
   useEffect(() => {
     setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
     setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
-    setActivity([]); activityFetchedFor.current = null;
+    setActivity([]); setErc20Tokens([]); activityFetchedFor.current = null;
     fetchAll();
   }, [address, fetchAll]);
 
@@ -375,8 +456,9 @@ export function WalletPanel() {
   const arbUsdcNum  = arbUsdc  !== null ? parseFloat(formatUnits(arbUsdc, 6)) : 0;
   const ethEthNum   = ethEth   !== null ? parseFloat(formatEther(ethEth))    : 0;
   const ethUsdcNum  = ethUsdc  !== null ? parseFloat(formatUnits(ethUsdc, 6)) : 0;
+  const erc20Usd = erc20Tokens.filter(t => !t.isSpam).reduce((s, t) => s + (t.usdValue ?? 0), 0);
   const totalUsd = ethPrice
-    ? (opEthNum + baseEthNum + arbEthNum + ethEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum + ethUsdcNum
+    ? (opEthNum + baseEthNum + arbEthNum + ethEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum + ethUsdcNum + erc20Usd
     : null;
 
   const ETH_ICON  = "https://assets.coingecko.com/coins/images/279/small/ethereum.png";
@@ -555,16 +637,15 @@ export function WalletPanel() {
 
       {/* ── Wallet overlay panels ────────────────────────────────────────── */}
       {overlay !== "none" && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setOverlay("none")}
           />
           <div
-            className="relative bg-background rounded-t-[28px] lg:rounded-2xl max-h-[62vh] lg:max-h-[72vh] w-full lg:max-w-[420px] overflow-hidden shadow-2xl flex flex-col"
+            className="relative bg-background rounded-2xl max-h-[75vh] w-full max-w-[420px] overflow-hidden shadow-2xl flex flex-col"
             onClick={e => e.stopPropagation()}
           >
-            <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-1 flex-shrink-0 lg:hidden" />
 
             {overlay === "switcher" && (
               <WalletSwitcherSheet
@@ -646,31 +727,12 @@ export function WalletPanel() {
         </div>
       )}
 
-      {/* ── DeFi Apps sheet ─────────────────────────────────────────────── */}
-      {showDeFi && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setShowDeFi(false)}>
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl max-h-[65vh] lg:max-h-[70vh] w-full lg:max-w-md overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0 lg:hidden" />
-            <div className="flex-1 overflow-y-auto">
-              <DeFiAppsSheet
-                walletColor={walletColor}
-                onClose={() => setShowDeFi(false)}
-                onOpenBrowser={(url) => {
-                  setShowDeFi(false);
-                  setBrowserUrl(url);
-                  setShowBrowser(true);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Token detail popup ────────────────────────────────────────────── */}
       {detailToken && (() => {
-        const tk = allTokens.find(t => t.key === detailToken);
+        const tk = allTokens.find(t => t.key === detailToken) ?? erc20Tokens.find(t => t.key === detailToken);
         if (!tk) return null;
+        const isErc20 = "contractAddress" in tk;
         return (
           <TokenDetailPopup
             tokenKey={tk.key}
@@ -681,8 +743,9 @@ export function WalletPanel() {
             balance={tk.balance}
             usdValue={tk.usdValue}
             icon={tk.icon}
+            contractAddress={isErc20 ? (tk as Erc20TokenRow).contractAddress : undefined}
             onClose={() => setDetailToken(null)}
-            onSend={() => openSend(tk.key as SendToken)}
+            onSend={isErc20 ? () => {} : () => openSend(tk.key as SendToken)}
             onSwap={() => setShowSwap(true)}
           />
         );
@@ -1028,18 +1091,6 @@ export function WalletPanel() {
             )}
           </div>
 
-          {/* Network badges */}
-          <div className="relative flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15">
-              <div className="flex -space-x-1">
-                <div className="w-3 h-3 rounded-full bg-[#ff0420] ring-1 ring-white/30" />
-                <div className="w-3 h-3 rounded-full bg-[#0052ff] ring-1 ring-white/30" />
-                <div className="w-3 h-3 rounded-full bg-[#28a0f0] ring-1 ring-white/30" />
-                <div className="w-3 h-3 rounded-full bg-[#627eea] ring-1 ring-white/30" />
-              </div>
-              <span className="text-[10px] text-white/80 font-bold">OP · Base · Arb · ETH</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1049,7 +1100,7 @@ export function WalletPanel() {
           { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
           { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
           { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
-          { label: "DeFi",    icon: Zap,           onClick: () => { setBrowserUrl("https://app.uniswap.org"); setShowBrowser(true); }, disabled: false, color: "#f59e0b" },
+          { label: "Browser",  icon: Zap,           onClick: () => { if (!browserUrl) setBrowserUrl("https://app.uniswap.org"); setShowBrowser(true); }, disabled: false, color: "#f59e0b" },
         ].map(({ label, icon: Icon, onClick, disabled, color }) => (
           <button
             key={label}
@@ -1129,7 +1180,46 @@ export function WalletPanel() {
             </button>
           ))}
 
-          {loadingDone && tokens.length === 0 && (
+          {/* ERC-20 tokens from Blockscout (Clanker, DEGEN, etc.) */}
+          {loadingErc20 && erc20Tokens.length === 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Loading tokens…
+            </div>
+          )}
+          {(showHiddenTokens ? erc20Tokens : erc20Tokens.filter(t => !t.isSpam)).map(tk => (
+            <button
+              key={tk.key}
+              onClick={() => setDetailToken(tk.key)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm transition-colors hover:bg-muted/30 cursor-pointer"
+            >
+              <div className="relative shrink-0">
+                {tk.icon ? (
+                  <img src={tk.icon} alt={tk.symbol} className="w-10 h-10 rounded-full bg-muted"
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden"); }} />
+                ) : null}
+                <div className={cn("w-10 h-10 rounded-full bg-muted flex items-center justify-center", tk.icon ? "hidden" : "")}>
+                  <span className="text-xs font-bold text-muted-foreground">{tk.symbol.slice(0, 3)}</span>
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
+                  style={{ backgroundColor: tk.networkColor }}>
+                  <span className="text-[7px] font-bold text-white leading-none">{tk.network === "Optimism" ? "OP" : "B"}</span>
+                </div>
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-sm font-bold text-foreground truncate">{tk.symbol}</p>
+                <div className="inline-flex mt-0.5 px-1.5 py-0.5 rounded-md" style={{ backgroundColor: `${tk.networkColor}1a` }}>
+                  <p className="text-[11px] font-semibold" style={{ color: tk.networkColor }}>{tk.network}</p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, 4)} {tk.symbol}</p>
+                {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
+              </div>
+            </button>
+          ))}
+
+          {loadingDone && tokens.length === 0 && erc20Tokens.length === 0 && !loadingErc20 && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border bg-amber-50 border-amber-200/80 text-xs text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <div>
@@ -1140,14 +1230,20 @@ export function WalletPanel() {
             </div>
           )}
 
-          {loadingDone && (
-            <button
-              onClick={() => setShowHiddenTokens(v => !v)}
-              className="w-full py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {showHiddenTokens ? "Hide zero-balance tokens" : `Show all ${allTokens.length} tokens`}
-            </button>
-          )}
+          {loadingDone && (() => {
+            const hiddenBase = allTokens.filter(t => t.balance === 0).length;
+            const hiddenSpam = erc20Tokens.filter(t => t.isSpam).length;
+            const total = hiddenBase + hiddenSpam;
+            if (total === 0 && !showHiddenTokens) return null;
+            return (
+              <button
+                onClick={() => setShowHiddenTokens(v => !v)}
+                className="w-full py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showHiddenTokens ? "Hide spam & zero-balance tokens" : `Show ${total} hidden token${total !== 1 ? "s" : ""}`}
+              </button>
+            );
+          })()}
 
         </div>
       )}

@@ -114,10 +114,10 @@ export default defineConfig({
       env.IMGUR_CLIENT_ID ?? env.VITE_IMGUR_CLIENT_ID ?? ""
     ),
     "import.meta.env.VITE_APP_FID": JSON.stringify(
-      env.APP_FID ?? ""
+      env.APP_FID ?? process.env.APP_FID ?? ""
     ),
     "import.meta.env.VITE_APP_MNEMONIC": JSON.stringify(
-      process.env.NODE_ENV !== "production" ? (env.APP_MNEMONIC ?? "") : ""
+      env.APP_MNEMONIC ?? process.env.APP_MNEMONIC ?? ""
     ),
   },
   build: {

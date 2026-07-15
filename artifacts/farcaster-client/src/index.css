@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* PWA safe-area: when installed to home screen (standalone mode), push content
+   below the OS status bar. Native (Capacitor) builds handle this separately via
+   StatusBar.setOverlaysWebView({ overlay: false }), so this only fires for PWAs. */
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
