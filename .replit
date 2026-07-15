@@ -3,6 +3,8 @@ modules = ["nodejs-20", "python-3.12", "web"]
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+run = ["bash", "-c", "cd artifacts/farcaster-client && NODE_ENV=production pnpm run start"]
+build = ["bash", "-c", "cd artifacts/farcaster-client && pnpm install && pnpm run build"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
