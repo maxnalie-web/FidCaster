@@ -1640,11 +1640,6 @@ function ActiveGrowsView({
                 />
               </div>
             </div>
-            {op.log.length > 0 && (
-              <p className="text-[10px] text-muted-foreground font-mono bg-muted/20 rounded-lg px-2.5 py-1.5 truncate border border-border/50">
-                {op.log[op.log.length - 1]}
-              </p>
-            )}
           </div>
         );
       })}
