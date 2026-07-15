@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import {
   KeyRound, FileKey, Eye, Pencil, Plus, ShieldCheck, Trash2,
-  Copy, CheckCircle2,
+  Copy, CheckCircle2, ExternalLink,
 } from "lucide-react";
 import { useWalletStore, type WalletKind } from "@/store/walletStore";
 
@@ -29,8 +29,11 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
   const removeWallet = useWalletStore(s => s.removeWallet);
   const addAccountToWallet = useWalletStore(s => s.addAccountToWallet);
 
+  const renameAccount = useWalletStore(s => s.renameAccount);
+
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameText, setRenameText] = useState("");
+  const [renameTarget, setRenameTarget] = useState<{ wallet: true } | { wallet: false; accountIndex: number } | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
 
   const [revealLoading, setRevealLoading] = useState<"mnemonic" | "key" | null>(null);
@@ -121,7 +124,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
 
         {/* General */}
         <Section label="General">
-          <Row icon={<Pencil size={15} className="text-primary" />} iconColor="#6366f1" title="Rename Wallet" desc="Change display name" onClick={() => { setRenameText(wallet.label); setRenameOpen(true); }} />
+          <Row icon={<Pencil size={15} className="text-primary" />} iconColor="#6366f1" title="Rename Wallet" desc="Change display name" onClick={() => { setRenameText(wallet.label); setRenameTarget({ wallet: true }); setRenameOpen(true); }} />
         </Section>
 
         {/* Accounts (seed only) */}
@@ -130,15 +133,26 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
             {wallet.accounts.map((account, i) => {
               const isActive = wallet.id === activeWalletId && account.index === activeAccountIndex;
               return (
-                <Row
-                  key={account.index}
-                  divider={i > 0}
-                  icon={isActive ? <CheckCircle2 size={15} className="text-primary" /> : <KeyRound size={15} className="text-primary" />}
-                  iconColor="#6366f1"
-                  title={account.label}
-                  desc={`${account.address.slice(0, 8)}…${account.address.slice(-6)}${isActive ? " · Active" : ""}`}
-                  onClick={() => setActiveWallet(wallet.id, account.index)}
-                />
+                <div key={account.index} className={`flex items-center ${i > 0 ? "border-t border-border/50" : ""}`}>
+                  <button
+                    className="flex-1 flex items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/30 transition-colors min-w-0"
+                    onClick={() => setActiveWallet(wallet.id, account.index)}
+                  >
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#6366f120" }}>
+                      {isActive ? <CheckCircle2 size={15} className="text-primary" /> : <KeyRound size={15} className="text-primary" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-foreground truncate">{account.label}</div>
+                      <div className="text-xs text-muted-foreground">{account.address.slice(0, 8)}…{account.address.slice(-6)}{isActive ? " · Active" : ""}</div>
+                    </div>
+                  </button>
+                  <button
+                    className="px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => { setRenameText(account.label); setRenameTarget({ wallet: false, accountIndex: account.index }); setRenameOpen(true); }}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
               );
             })}
             <Row
@@ -178,8 +192,12 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
             icon={<ShieldCheck size={15} className="text-green-500" />}
             iconColor="#10b981"
             title="Token Approvals"
-            desc="Review and revoke spending permissions"
-            onClick={() => alert("Coming soon")}
+            desc="Review & revoke spending permissions on revoke.cash"
+            onClick={() => {
+              const addr = wallet.accounts[0]?.address ?? "";
+              window.open(`https://revoke.cash/address/${addr}`, "_blank", "noreferrer");
+            }}
+            rightIcon={<ExternalLink size={13} className="text-muted-foreground" />}
           />
         </Section>
 
@@ -201,20 +219,32 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
       {renameOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6" onClick={() => setRenameOpen(false)}>
           <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-foreground">Rename Wallet</h3>
+            <h3 className="text-base font-bold text-foreground">
+              {renameTarget?.wallet === true ? "Rename Wallet" : "Rename Account"}
+            </h3>
             <input
               autoFocus
               className="w-full bg-muted/40 border border-border rounded-xl px-3 py-3 text-sm text-foreground outline-none"
               value={renameText}
               onChange={e => setRenameText(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && renameText.trim()) { renameWallet(wallet.id, renameText.trim()); setRenameOpen(false); } }}
+              onKeyDown={e => {
+                if (e.key === "Enter" && renameText.trim()) {
+                  if (renameTarget?.wallet === true) renameWallet(wallet.id, renameText.trim());
+                  else if (renameTarget?.wallet === false) renameAccount(wallet.id, renameTarget.accountIndex, renameText.trim());
+                  setRenameOpen(false);
+                }
+              }}
             />
             <div className="flex gap-2">
               <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRenameOpen(false)}>Cancel</button>
               <button
                 className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-40"
                 disabled={!renameText.trim()}
-                onClick={() => { renameWallet(wallet.id, renameText.trim()); setRenameOpen(false); }}
+                onClick={() => {
+                  if (renameTarget?.wallet === true) renameWallet(wallet.id, renameText.trim());
+                  else if (renameTarget?.wallet === false) renameAccount(wallet.id, renameTarget.accountIndex, renameText.trim());
+                  setRenameOpen(false);
+                }}
               >Save</button>
             </div>
           </div>
@@ -301,10 +331,11 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 }
 
 function Row({
-  icon, iconColor, title, desc, onClick, divider, disabled, destructive
+  icon, iconColor, title, desc, onClick, divider, disabled, destructive, rightIcon
 }: {
   icon: React.ReactNode; iconColor: string; title: string; desc: string;
   onClick: () => void; divider?: boolean; disabled?: boolean; destructive?: boolean;
+  rightIcon?: React.ReactNode;
 }) {
   return (
     <button
@@ -319,6 +350,7 @@ function Row({
         <div className={`text-sm font-semibold ${destructive ? "text-destructive" : "text-foreground"}`}>{title}</div>
         <div className="text-xs text-muted-foreground">{desc}</div>
       </div>
+      {rightIcon && <div className="shrink-0">{rightIcon}</div>}
     </button>
   );
 }

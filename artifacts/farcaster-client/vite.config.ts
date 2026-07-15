@@ -177,6 +177,7 @@ export default defineConfig({
       "/api/user-prefs": { target: "http://localhost:3001", changeOrigin: true },
       "/api/admin":     { target: "http://localhost:3001", changeOrigin: true },
       "/api/public-config": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/nfts":          { target: "http://localhost:3001", changeOrigin: true },
     },
   },
   preview: {

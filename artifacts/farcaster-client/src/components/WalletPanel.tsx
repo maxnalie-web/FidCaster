@@ -27,6 +27,10 @@ import { ImportPrivateKey } from "@/components/wallet/ImportPrivateKey";
 import { AddWatchOnly } from "@/components/wallet/AddWatchOnly";
 import { WalletSettings } from "@/components/wallet/WalletSettings";
 import { WalletDetailSettings } from "@/components/wallet/WalletDetailSettings";
+import { NftGallery } from "@/components/wallet/NftGallery";
+import { SwapSheet } from "@/components/wallet/SwapSheet";
+import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
+import { useAddressBookStore } from "@/store/addressBookStore";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -231,8 +235,14 @@ export function WalletPanel() {
   const walletLabel = storeActiveWallet?.label ?? profile?.displayName ?? profile?.username ?? "My Wallet";
   const isWatchOnly = storeActiveWallet?.kind === "watch-only";
 
+  // ── address book ────────────────────────────────────────────────────────────
+  const { contacts, hydrate: hydrateAB, findByAddress } = useAddressBookStore();
+  useEffect(() => { hydrateAB(); }, [hydrateAB]);
+
   // ── wallet overlay ──────────────────────────────────────────────────────────
   const [overlay, setOverlay] = useState<WalletOverlay>("none");
+  const [showSwap, setShowSwap] = useState(false);
+  const [showAddressBook, setShowAddressBook] = useState(false);
 
   // ── main wallet state ───────────────────────────────────────────────────────
   const [tab, setTab] = useState<MainTab>("tokens");
@@ -584,6 +594,35 @@ export function WalletPanel() {
         </div>
       )}
 
+      {/* ── Swap sheet ──────────────────────────────────────────────────── */}
+      {showSwap && address && (
+        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowSwap(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-card rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
+            <div className="flex-1 overflow-y-auto">
+              <SwapSheet address={address} walletColor={walletColor} onClose={() => setShowSwap(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Address Book sheet ───────────────────────────────────────────── */}
+      {showAddressBook && (
+        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowAddressBook(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-card rounded-t-[28px] max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
+            <div className="flex-1 overflow-y-auto">
+              <AddressBookSheet
+                onSelectAddress={(addr) => { setToAddress(addr); setShowAddressBook(false); }}
+                onClose={() => setShowAddressBook(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Receive sheet ───────────────────────────────────────────────── */}
       {action === "receive" && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setAction("none")}>
@@ -673,6 +712,31 @@ export function WalletPanel() {
                     Paste
                   </button>
                 </div>
+                {contacts.length > 0 && !isAddress(toAddress) && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-1">
+                      <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Contacts</p>
+                      <button onClick={() => setShowAddressBook(true)} className="text-[11px] text-primary font-semibold">Manage</button>
+                    </div>
+                    <div className="space-y-1">
+                      {contacts.slice(0, 5).map(c => (
+                        <button key={c.id} onClick={() => { setToAddress(c.address); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors text-left">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-base flex-shrink-0">{c.emoji}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-foreground truncate">{c.label}</p>
+                            <p className="text-[10px] font-mono text-muted-foreground">{c.address.slice(0,8)}…{c.address.slice(-6)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {contacts.length === 0 && !isAddress(toAddress) && (
+                  <button onClick={() => setShowAddressBook(true)} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border/60 text-xs font-semibold text-muted-foreground hover:bg-muted/20 transition-colors">
+                    📒 Open Address Book
+                  </button>
+                )}
                 {isAddress(toAddress) && (
                   <button
                     onClick={() => setSendStep(assetLocked ? "amount" : "asset")}
@@ -869,7 +933,7 @@ export function WalletPanel() {
             { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false },
             { label: "Send", icon: Send, onClick: () => openSend(), disabled: isWatchOnly },
             { label: "Refresh", icon: RefreshCw, onClick: fetchAll, spin: loadingOp || loadingBase, disabled: loadingOp || loadingBase },
-            { label: "Swap", icon: Repeat, onClick: () => toast.info("Swap coming soon"), disabled: isWatchOnly },
+            { label: "Swap", icon: Repeat, onClick: () => !isWatchOnly && setShowSwap(true), disabled: isWatchOnly },
             { label: "More", icon: Wallet, onClick: () => setOverlay("switcher"), disabled: false },
           ].map(({ label, icon: Icon, onClick, spin, disabled }) => (
             <button
@@ -984,14 +1048,11 @@ export function WalletPanel() {
         </div>
       )}
 
-      {/* ── NFTs tab (stub) ─────────────────────────────────────────────── */}
-      {tab === "nfts" && (
+      {/* ── NFTs tab ────────────────────────────────────────────────────── */}
+      {tab === "nfts" && address && <NftGallery address={address} />}
+      {tab === "nfts" && !address && (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground px-5">
-          <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-2">
-            <span className="text-3xl">🖼️</span>
-          </div>
-          <p className="text-sm font-bold">NFT Gallery</p>
-          <p className="text-xs opacity-60 text-center">Your NFT collection will appear here</p>
+          <p className="text-sm font-bold">Connect a wallet to see NFTs</p>
         </div>
       )}
 

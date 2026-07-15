@@ -847,6 +847,36 @@ app.put("/api/user-prefs", (req: express.Request, res: express.Response) => {
   res.json({ ok: true });
 });
 
+// ── NFT proxy (OpenSea v2) ───────────────────────────────────────────────────
+const nftLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+const OPENSEA_KEY = process.env.OPENSEA_API ?? "";
+const OPENSEA_CHAINS: Record<string, string> = { optimism: "optimism", base: "base" };
+
+app.get("/api/nfts/:chain/:address", nftLimiter, async (req, res) => {
+  const { chain, address } = req.params;
+  const osChain = OPENSEA_CHAINS[chain];
+  if (!osChain) { res.status(400).json({ error: "Unsupported chain" }); return; }
+  if (!OPENSEA_KEY) { res.status(503).json({ error: "OpenSea API key not configured" }); return; }
+  try {
+    const cursor = req.query.cursor ? `&next=${encodeURIComponent(String(req.query.cursor))}` : "";
+    const url = `https://api.opensea.io/api/v2/chain/${osChain}/account/${address}/nfts?limit=50${cursor}`;
+    const r = await fetch(url, {
+      headers: { "X-API-KEY": OPENSEA_KEY, "accept": "application/json" },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      res.status(r.status).json({ error: `OpenSea error ${r.status}`, detail: text.slice(0, 200) });
+      return;
+    }
+    const data = await r.json();
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: "NFT fetch failed", detail: String(e) });
+  }
+});
+
 // ── Admin panel: real server-side auth + persisted config/secrets ──────────────
 // Replaces the old client-only PIN (a hash compared entirely in the browser,
 // trivially bypassable) with a signed session cookie checked here on the
