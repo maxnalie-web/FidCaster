@@ -117,7 +117,7 @@ export default defineConfig({
       env.APP_FID ?? ""
     ),
     "import.meta.env.VITE_APP_MNEMONIC": JSON.stringify(
-      env.APP_MNEMONIC ?? ""
+      process.env.NODE_ENV !== "production" ? (env.APP_MNEMONIC ?? "") : ""
     ),
   },
   build: {

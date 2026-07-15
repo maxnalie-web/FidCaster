@@ -229,8 +229,11 @@ export function WalletPanel() {
 
   useEffect(() => { hydrate(); }, [hydrate]);
 
-  // Auto-import VITE_APP_MNEMONIC on first load if no wallets exist
+  // Dev-only: auto-import VITE_APP_MNEMONIC on first load if no wallets exist.
+  // VITE_APP_MNEMONIC is intentionally blanked in production builds (see vite.config.ts)
+  // so this never runs in a deployed bundle.
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const mnemonic = (import.meta.env.VITE_APP_MNEMONIC as string | undefined)?.trim();
     if (!mnemonic || wallets.length > 0) return;
     importSeedWallet(mnemonic, "App Wallet").catch(() => {});
