@@ -754,32 +754,16 @@ export function FollowPage() {
       )}
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 bg-background border-b border-border relative overflow-hidden">
-        <div className={cn(
-          "absolute inset-0 opacity-[0.07] pointer-events-none",
-          mode === "follow" || mode === "purge"
-            ? "bg-gradient-to-r from-primary via-violet-500 to-transparent"
-            : "bg-gradient-to-r from-rose-500 via-orange-400 to-transparent"
-        )} />
-        <div className="h-[53px] flex items-center gap-3 px-4 max-w-[900px] mx-auto w-full relative">
+      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border">
+        <div className="h-[53px] flex items-center gap-3 px-4 max-w-[900px] mx-auto w-full">
           <button
             onClick={() => navigate("/dashboard")}
-            className="p-2 -ml-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className={cn(
-            "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center",
-            mode === "follow" ? "bg-primary/10 text-primary"
-            : mode === "purge" ? "bg-primary/10 text-primary"
-            : "bg-rose-500/10 text-rose-500",
-          )}>
-            {mode === "follow" ? <UserPlus className="w-4 h-4" />
-              : mode === "purge" ? <Trash2 className="w-4 h-4" />
-              : <Scissors className="w-4 h-4" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-[15px] text-foreground">{pageTitle}</h1>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="font-bold text-[16px] text-foreground tracking-tight">Grow</span>
           </div>
         </div>
       </header>
@@ -791,56 +775,37 @@ export function FollowPage() {
 
           {/* Mode switcher */}
           <div className="px-4 pt-4 lg:px-0 lg:pt-0">
-            <div className="flex gap-1 p-1 bg-muted/40 rounded-xl border border-border">
-              <button
-                onClick={() => switchMode("follow")}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
-                  mode === "follow" && !showActive
-                    ? "bg-primary text-white shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Follow
-              </button>
-              <button
-                onClick={() => switchMode("cleanup")}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
-                  mode === "cleanup" && !showActive
-                    ? "bg-rose-500 text-white shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Scissors className="w-3.5 h-3.5" />
-                Clean Up
-              </button>
-              <button
-                onClick={() => switchMode("purge")}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
-                  mode === "purge" && !showActive
-                    ? "bg-primary text-white shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Purge
-              </button>
+            <div className="flex gap-1.5 p-1 bg-muted/50 rounded-2xl">
+              {([
+                { id: "follow",  label: "Follow",  Icon: UserPlus,   activeClass: "bg-primary text-white shadow-md" },
+                { id: "cleanup", label: "Cleanup", Icon: Scissors,   activeClass: "bg-rose-500 text-white shadow-md" },
+                { id: "purge",   label: "Purge",   Icon: Trash2,     activeClass: "bg-orange-500 text-white shadow-md" },
+              ] as { id: PageMode; label: string; Icon: typeof UserPlus; activeClass: string }[]).map(({ id, label, Icon, activeClass }) => (
+                <button
+                  key={id}
+                  onClick={() => switchMode(id)}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold transition-all whitespace-nowrap",
+                    mode === id && !showActive ? activeClass : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
+                  {label}
+                </button>
+              ))}
               <button
                 onClick={() => { setShowActive(true); navigate("/follow?tab=active", { replace: true }); }}
                 className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold transition-all",
+                  "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold transition-all whitespace-nowrap",
                   showActive
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-foreground text-background shadow-md"
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/60"
                 )}
               >
-                <ListChecks className="w-3.5 h-3.5" />
+                <ListChecks className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
                 Active
                 {(batchOp.ops.filter(o => o.phase === "running").length > 0 || allCleanupRunning) && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </button>
             </div>
