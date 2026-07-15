@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, Copy, Send, ArrowDownLeft, RefreshCw, CheckCircle2,
   AlertTriangle, ChevronDown, ChevronLeft, X,
-  ArrowUpRight, Repeat, Sparkles, FileText, Compass, ChevronRight,
-  Wallet,
+  ArrowUpRight, Repeat, Sparkles, FileText, ChevronRight,
+  Wallet, Zap, LayoutGrid,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "@/hooks/useWallet";
@@ -30,6 +30,7 @@ import { WalletDetailSettings } from "@/components/wallet/WalletDetailSettings";
 import { NftGallery } from "@/components/wallet/NftGallery";
 import { SwapSheet } from "@/components/wallet/SwapSheet";
 import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
+import { DeFiAppsSheet } from "@/components/wallet/DeFiAppsSheet";
 import { useAddressBookStore } from "@/store/addressBookStore";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -241,6 +242,7 @@ export function WalletPanel() {
   // ── wallet overlay ──────────────────────────────────────────────────────────
   const [overlay, setOverlay] = useState<WalletOverlay>("none");
   const [showSwap, setShowSwap] = useState(false);
+  const [showDeFi, setShowDeFi] = useState(false);
   const [showAddressBook, setShowAddressBook] = useState(false);
 
   // ── main wallet state ───────────────────────────────────────────────────────
@@ -593,6 +595,19 @@ export function WalletPanel() {
         </div>
       )}
 
+      {/* ── DeFi Apps sheet ─────────────────────────────────────────────── */}
+      {showDeFi && (
+        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowDeFi(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-card rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
+            <div className="flex-1 overflow-y-auto">
+              <DeFiAppsSheet walletColor={walletColor} onClose={() => setShowDeFi(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Swap sheet ──────────────────────────────────────────────────── */}
       {showSwap && address && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowSwap(false)}>
@@ -856,106 +871,112 @@ export function WalletPanel() {
         </div>
       )}
 
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col items-center px-5 pt-6 pb-5">
-        {/* Wallet avatar — tappable opens switcher */}
-        <button
-          onClick={() => setOverlay("switcher")}
-          className="relative group"
-          aria-label="Switch wallet"
+      {/* ── Hero Card ────────────────────────────────────────────────────── */}
+      <div className="px-4 pt-4 pb-2">
+        <div
+          className="relative rounded-3xl overflow-hidden px-5 pt-5 pb-5 shadow-xl"
+          style={{ background: `linear-gradient(140deg, ${walletColor}f0 0%, ${walletColor}99 100%)` }}
         >
-          <div
-            className="w-[76px] h-[76px] rounded-full flex items-center justify-center shadow-xl transition-transform group-active:scale-95"
-            style={{ backgroundColor: walletColor, boxShadow: `0 12px 36px ${walletColor}55` }}
-          >
-            <span className="text-[26px] font-black text-white leading-none select-none tracking-tight">
-              {address ? address.slice(2, 4).toUpperCase() : "WL"}
-            </span>
-          </div>
-          {wallets.length > 1 && (
-            <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-background border-2 border-border flex items-center justify-center">
-              <ChevronDown size={10} className="text-muted-foreground" />
-            </div>
-          )}
-        </button>
+          {/* Decorative blobs */}
+          <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-20" style={{ backgroundColor: walletColor, filter: "blur(32px)" }} />
+          <div className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full opacity-15" style={{ backgroundColor: "#fff", filter: "blur(24px)" }} />
 
-        {/* Wallet name + switcher */}
-        <button
-          onClick={() => setOverlay("switcher")}
-          className="flex items-center gap-1 mt-3 hover:opacity-80 transition-opacity"
-        >
-          <span className="text-[15px] font-bold text-foreground">{walletLabel}</span>
-          <ChevronDown className="w-4 h-4 text-muted-foreground" />
-        </button>
-
-        {/* Address chip */}
-        {address && (
-          <button
-            onClick={copyAddress}
-            className="flex items-center gap-1.5 mt-1 px-3 py-1 rounded-full bg-muted/50 hover:bg-muted/80 transition-colors"
-          >
-            <span className="text-[11px] font-mono text-muted-foreground">
-              {address.slice(0, 6)}…{address.slice(-4)}
-            </span>
-            {copied
-              ? <CheckCircle2 size={11} className="text-green-500" />
-              : <Copy size={11} className="text-muted-foreground" />}
-          </button>
-        )}
-
-        {/* Total balance */}
-        {totalUsd !== null ? (
-          <p className="text-[40px] font-black text-foreground tabular-nums mt-3 tracking-tight leading-tight">
-            {formatUsd(totalUsd)}
-          </p>
-        ) : (
-          <div className="h-12 flex items-center mt-3">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        )}
-
-        {/* Network dots */}
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <div className="w-2.5 h-2.5 rounded-full border-2 border-background" style={{ backgroundColor: "#ff0420" }} />
-          <div className="w-2.5 h-2.5 rounded-full border-2 border-background -ml-1.5" style={{ backgroundColor: "#0052ff" }} />
-          <span className="text-[11px] font-bold text-muted-foreground ml-1">Optimism · Base</span>
-        </div>
-
-        {/* Watch-only badge */}
-        {isWatchOnly && (
-          <div className="mt-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
-            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">👁 Watch-only</span>
-          </div>
-        )}
-
-        {/* Quick action circles */}
-        <div className="flex gap-2.5 mt-5 w-full">
-          {[
-            { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false },
-            { label: "Send", icon: Send, onClick: () => openSend(), disabled: isWatchOnly },
-            { label: "Refresh", icon: RefreshCw, onClick: fetchAll, spin: loadingOp || loadingBase, disabled: loadingOp || loadingBase },
-            { label: "Swap", icon: Repeat, onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import a seed phrase or private key to swap") : setShowSwap(true), disabled: false },
-            { label: "Wallets", icon: Wallet, onClick: () => setOverlay("list"), disabled: false },
-          ].map(({ label, icon: Icon, onClick, spin, disabled }) => (
+          {/* Top row: avatar + name + copy address */}
+          <div className="relative flex items-center justify-between mb-5">
             <button
-              key={label}
-              onClick={onClick}
-              disabled={!!disabled}
-              className="flex-1 flex flex-col items-center gap-1.5 disabled:opacity-40"
+              onClick={() => setOverlay("switcher")}
+              className="flex items-center gap-2.5 active:opacity-80 transition-opacity"
             >
-              <div
-                className="w-[50px] h-[50px] rounded-full flex items-center justify-center transition-transform active:scale-90"
-                style={{
-                  backgroundColor: walletColor,
-                  boxShadow: `0 6px 20px ${walletColor}55`,
-                }}
-              >
-                <Icon className={cn("w-[19px] h-[19px] text-white", spin && "animate-spin")} strokeWidth={2.6} />
+              <div className="w-10 h-10 rounded-full bg-white/25 flex items-center justify-center ring-2 ring-white/40 shrink-0">
+                <span className="text-sm font-black text-white leading-none">
+                  {address ? address.slice(2, 4).toUpperCase() : "WL"}
+                </span>
               </div>
-              <span className="text-[11.5px] font-bold text-foreground">{label}</span>
+              <div className="text-left">
+                <div className="flex items-center gap-1">
+                  <span className="text-[15px] font-bold text-white leading-tight">{walletLabel}</span>
+                  <ChevronDown size={13} className="text-white/70" />
+                </div>
+                {isWatchOnly && (
+                  <span className="text-[9px] font-bold text-white/70 bg-white/20 px-1.5 py-0.5 rounded-full">Watch-only</span>
+                )}
+                {wallets.length > 1 && !isWatchOnly && (
+                  <span className="text-[9px] font-semibold text-white/60">{wallets.length} wallets</span>
+                )}
+              </div>
             </button>
-          ))}
+            <button
+              onClick={copyAddress}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 transition-all"
+            >
+              {copied
+                ? <CheckCircle2 size={12} className="text-white" />
+                : <Copy size={12} className="text-white/80" />}
+              <span className="text-[11px] text-white/80 font-mono">
+                {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—"}
+              </span>
+            </button>
+          </div>
+
+          {/* Balance */}
+          <div className="relative mb-4">
+            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mb-1">Total Balance</p>
+            {totalUsd !== null ? (
+              <button
+                onClick={fetchAll}
+                className="flex items-center gap-2 active:opacity-80 transition-opacity"
+              >
+                <span className="text-white text-[40px] font-black tracking-tight leading-none tabular-nums">
+                  {formatUsd(totalUsd)}
+                </span>
+                {(loadingOp || loadingBase) && (
+                  <Loader2 size={16} className="text-white/60 animate-spin mt-1" />
+                )}
+              </button>
+            ) : (
+              <div className="h-10 flex items-center">
+                <Loader2 className="w-5 h-5 animate-spin text-white/50" />
+              </div>
+            )}
+          </div>
+
+          {/* Network badges */}
+          <div className="relative flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15">
+              <div className="flex -space-x-1">
+                <div className="w-3 h-3 rounded-full bg-[#ff0420] ring-1 ring-white/30" />
+                <div className="w-3 h-3 rounded-full bg-[#0052ff] ring-1 ring-white/30" />
+              </div>
+              <span className="text-[10px] text-white/80 font-bold">Optimism · Base</span>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* ── Quick Actions ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-5 gap-2 px-4 py-3">
+        {[
+          { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
+          { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
+          { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
+          { label: "DeFi",    icon: Zap,           onClick: () => setShowDeFi(true), disabled: false, color: "#f59e0b" },
+          { label: "Wallets", icon: Wallet,        onClick: () => setOverlay("list"), disabled: false, color: walletColor },
+        ].map(({ label, icon: Icon, onClick, disabled, color }) => (
+          <button
+            key={label}
+            onClick={onClick}
+            disabled={!!disabled}
+            className="flex flex-col items-center gap-1.5 disabled:opacity-40"
+          >
+            <div
+              className="w-[50px] h-[50px] rounded-2xl flex items-center justify-center transition-transform active:scale-90"
+              style={{ backgroundColor: `${color}18`, border: `1.5px solid ${color}30` }}
+            >
+              <Icon className="w-[20px] h-[20px]" strokeWidth={2.4} style={{ color }} />
+            </div>
+            <span className="text-[10.5px] font-bold text-muted-foreground">{label}</span>
+          </button>
+        ))}
       </div>
 
       {/* ── Tabs ────────────────────────────────────────────────────────── */}

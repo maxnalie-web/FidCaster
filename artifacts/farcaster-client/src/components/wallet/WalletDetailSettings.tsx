@@ -1,8 +1,9 @@
 import React, { useRef, useState } from "react";
 import {
   KeyRound, FileKey, Eye, Pencil, Plus, ShieldCheck, Trash2,
-  Copy, CheckCircle2, ExternalLink,
+  Copy, CheckCircle2,
 } from "lucide-react";
+import { TokenApprovalsSheet } from "@/components/wallet/TokenApprovalsSheet";
 import { useWalletStore, type WalletKind } from "@/store/walletStore";
 
 function kindLabel(kind: WalletKind): string {
@@ -43,6 +44,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
   const clipRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [removeConfirm, setRemoveConfirm] = useState(false);
+  const [showApprovals, setShowApprovals] = useState(false);
 
   if (!wallet) {
     return (
@@ -192,12 +194,8 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
             icon={<ShieldCheck size={15} className="text-green-500" />}
             iconColor="#10b981"
             title="Token Approvals"
-            desc="Review & revoke spending permissions on revoke.cash"
-            onClick={() => {
-              const addr = wallet.accounts[0]?.address ?? "";
-              window.open(`https://revoke.cash/address/${addr}`, "_blank", "noreferrer");
-            }}
-            rightIcon={<ExternalLink size={13} className="text-muted-foreground" />}
+            desc="Review & revoke spending permissions"
+            onClick={() => setShowApprovals(true)}
           />
         </Section>
 
@@ -296,6 +294,21 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
               {copied ? "Copied!" : showSecret ? "Copy" : "Reveal to copy"}
             </button>
             <button onClick={closeReveal} className="w-full py-3 rounded-xl bg-primary text-white text-sm font-bold">Done</button>
+          </div>
+        </div>
+      )}
+
+      {/* Token Approvals overlay */}
+      {showApprovals && wallet.accounts[0]?.address && (
+        <div className="fixed inset-0 z-[60] flex flex-col justify-end" onClick={() => setShowApprovals(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative bg-background rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-0 shrink-0" />
+            <TokenApprovalsSheet
+              address={wallet.accounts[0].address as `0x${string}`}
+              walletColor="#10b981"
+              onClose={() => setShowApprovals(false)}
+            />
           </div>
         </div>
       )}
