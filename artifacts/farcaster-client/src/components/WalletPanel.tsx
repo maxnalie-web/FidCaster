@@ -519,16 +519,16 @@ export function WalletPanel() {
 
       {/* ── Wallet overlay panels ────────────────────────────────────────── */}
       {overlay !== "none" && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setOverlay("none")}
           />
           <div
-            className="relative bg-background rounded-t-[28px] max-h-[78vh] overflow-hidden shadow-2xl flex flex-col"
+            className="relative bg-background rounded-t-[28px] lg:rounded-2xl max-h-[62vh] lg:max-h-[72vh] w-full lg:max-w-[420px] overflow-hidden shadow-2xl flex flex-col"
             onClick={e => e.stopPropagation()}
           >
-            <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+            <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-1 flex-shrink-0 lg:hidden" />
 
             {overlay === "switcher" && (
               <WalletSwitcherSheet
@@ -612,10 +612,10 @@ export function WalletPanel() {
 
       {/* ── DeFi Apps sheet ─────────────────────────────────────────────── */}
       {showDeFi && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowDeFi(false)}>
+        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setShowDeFi(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] max-h-[75vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
+          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl max-h-[65vh] lg:max-h-[70vh] w-full lg:max-w-md overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0 lg:hidden" />
             <div className="flex-1 overflow-y-auto">
               <DeFiAppsSheet
                 walletColor={walletColor}
@@ -641,10 +641,10 @@ export function WalletPanel() {
 
       {/* ── Swap sheet ──────────────────────────────────────────────────── */}
       {showSwap && address && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowSwap(false)}>
+        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setShowSwap(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] max-h-[75vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
+          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl max-h-[65vh] lg:max-h-[70vh] w-full lg:max-w-sm overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0 lg:hidden" />
             <div className="flex-1 overflow-y-auto">
               <SwapSheet address={address} walletColor={walletColor} onClose={() => setShowSwap(false)} />
             </div>
@@ -654,10 +654,10 @@ export function WalletPanel() {
 
       {/* ── Address Book sheet ───────────────────────────────────────────── */}
       {showAddressBook && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setShowAddressBook(false)}>
+        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setShowAddressBook(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] max-h-[72vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0" />
+          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl max-h-[60vh] lg:max-h-[65vh] w-full lg:max-w-sm overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0 lg:hidden" />
             <div className="flex-1 overflow-y-auto">
               <AddressBookSheet
                 onSelectAddress={(addr) => { setToAddress(addr); setShowAddressBook(false); }}
@@ -670,9 +670,9 @@ export function WalletPanel() {
 
       {/* ── Receive sheet ───────────────────────────────────────────────── */}
       {action === "receive" && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end" onClick={() => setAction("none")}>
+        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] px-5 pt-3 pb-8 space-y-4 max-h-[72vh] overflow-auto" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl px-5 pt-3 pb-8 space-y-4 max-h-[60vh] lg:max-h-[unset] w-full lg:max-w-xs overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-2" />
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Your address (all networks)</p>

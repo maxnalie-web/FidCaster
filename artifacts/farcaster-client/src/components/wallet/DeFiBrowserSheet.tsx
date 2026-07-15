@@ -136,7 +136,10 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const net    = NETWORK_CONFIG[network];
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-background">
+    <div className="fixed inset-0 z-[70] flex flex-col lg:items-center lg:justify-center lg:p-8 lg:bg-black/60 lg:backdrop-blur-sm">
+    {/* Desktop close backdrop */}
+    <div className="hidden lg:block absolute inset-0" onClick={onClose} />
+    <div className="relative flex flex-col bg-background w-full h-full lg:rounded-2xl lg:shadow-2xl lg:max-w-4xl lg:max-h-[85vh] lg:overflow-hidden">
 
       {/* ── Top bar ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 h-12 shrink-0 border-b border-border/60 bg-background">
@@ -543,6 +546,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
     </div>
   );
 }
