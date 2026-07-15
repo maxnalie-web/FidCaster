@@ -288,6 +288,82 @@ async function fetchErc20Balances(
   } catch { return []; }
 }
 
+// Curated well-known tokens, read straight from the chain via our RPC proxy.
+// This is the safety net for when Blockscout is down/rate-limited (which used
+// to make tokens like DEGEN silently vanish from the wallet).
+const CURATED_ERC20: { network: "Optimism" | "Base"; symbol: string; name: string; address: `0x${string}`; decimals: number; icon: string }[] = [
+  { network: "Base", symbol: "DEGEN",  name: "Degen",      address: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", decimals: 18, icon: "https://assets.coingecko.com/coins/images/34515/small/android-chrome-512x512.png" },
+  { network: "Base", symbol: "BRETT",  name: "Brett",      address: "0x532f27101965dd16442E59d40670FaF5eBB142E4", decimals: 18, icon: "https://assets.coingecko.com/coins/images/35529/small/200x200logo.png" },
+  { network: "Base", symbol: "HIGHER", name: "Higher",     address: "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe", decimals: 18, icon: "https://assets.coingecko.com/coins/images/36084/small/higher.jpg" },
+  { network: "Base", symbol: "AERO",   name: "Aerodrome",  address: "0x940181a94A35A4569E4529A3CDfB74e38FD98631", decimals: 18, icon: "https://assets.coingecko.com/coins/images/31745/small/token.png" },
+  { network: "Base", symbol: "cbBTC",  name: "Coinbase BTC", address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8, icon: "https://assets.coingecko.com/coins/images/7598/small/wrapped_bitcoin_wbtc.png" },
+  { network: "Optimism", symbol: "OP",   name: "Optimism",  address: "0x4200000000000000000000000000000000000042", decimals: 18, icon: "https://assets.coingecko.com/coins/images/25244/small/Optimism.png" },
+  { network: "Optimism", symbol: "USDT", name: "Tether",    address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", decimals: 6,  icon: "https://assets.coingecko.com/coins/images/325/small/Tether.png" },
+  { network: "Optimism", symbol: "DAI",  name: "Dai",       address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18, icon: "https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png" },
+  { network: "Optimism", symbol: "WBTC", name: "Wrapped BTC", address: "0x68f180fcCe6836688e9084f035309E29Bf0A2095", decimals: 8, icon: "https://assets.coingecko.com/coins/images/7598/small/wrapped_bitcoin_wbtc.png" },
+  { network: "Optimism", symbol: "VELO", name: "Velodrome", address: "0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db", decimals: 18, icon: "https://assets.coingecko.com/coins/images/25783/small/velo.png" },
+];
+
+async function fetchCuratedErc20(address: Address): Promise<Erc20TokenRow[]> {
+  const rows = await Promise.all(CURATED_ERC20.map(async (t): Promise<Erc20TokenRow | null> => {
+    try {
+      const client = t.network === "Base" ? basePublicClient : publicClient;
+      const raw = await client.readContract({
+        address: t.address, abi: ERC20_BALANCE_ABI, functionName: "balanceOf", args: [address],
+      }) as bigint;
+      if (raw === 0n) return null;
+      const balance = parseFloat(formatUnits(raw, t.decimals));
+      return {
+        key: `erc20-${t.network}-${t.address}`,
+        name: t.name, symbol: t.symbol,
+        network: t.network,
+        networkColor: t.network === "Optimism" ? "#ff0420" : "#0052ff",
+        balance, rawBalance: raw,
+        usdValue: null, loading: false,
+        icon: t.icon, contractAddress: t.address, isSpam: false,
+      };
+    } catch { return null; }
+  }));
+  const found = rows.filter((r): r is Erc20TokenRow => r !== null);
+  // Best-effort USD pricing via DexScreener (batch per network); ignore failures
+  await Promise.all((["Base", "Optimism"] as const).map(async net => {
+    const toks = found.filter(t => t.network === net);
+    if (!toks.length) return;
+    try {
+      const slug = net === "Base" ? "base" : "optimism";
+      const r = await fetch(
+        `https://api.dexscreener.com/tokens/v1/${slug}/${toks.map(t => t.contractAddress).join(",")}`,
+        { signal: timeoutSignal(6000) }
+      );
+      if (!r.ok) return;
+      const pairs = await r.json() as { baseToken?: { address?: string }; priceUsd?: string }[];
+      if (!Array.isArray(pairs)) return;
+      const priceMap = new Map<string, number>();
+      for (const p of pairs) {
+        const addr = p.baseToken?.address?.toLowerCase();
+        const price = p.priceUsd ? parseFloat(p.priceUsd) : NaN;
+        if (addr && !isNaN(price) && !priceMap.has(addr)) priceMap.set(addr, price);
+      }
+      for (const t of toks) {
+        const price = priceMap.get(t.contractAddress.toLowerCase());
+        if (price !== undefined) t.usdValue = t.balance * price;
+      }
+    } catch { /* pricing is optional */ }
+  }));
+  return found;
+}
+
+// ─── hidden tokens (user-managed, persisted) ──────────────────────────────────
+
+const HIDDEN_TOKENS_KEY = "wallet_hidden_tokens";
+
+function loadHiddenTokens(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_TOKENS_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch { return new Set(); }
+}
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function WalletPanel() {
@@ -330,7 +406,7 @@ export function WalletPanel() {
   const [overlay, setOverlay] = useState<WalletOverlay>("none");
   const [showSwap, setShowSwap] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
-  const [browserUrl, setBrowserUrl] = useState("");
+  const [browserUrl] = useState("");
   const [showAddressBook, setShowAddressBook] = useState(false);
 
   // ── main wallet state ───────────────────────────────────────────────────────
@@ -355,6 +431,17 @@ export function WalletPanel() {
   const [erc20Tokens, setErc20Tokens] = useState<Erc20TokenRow[]>([]);
   const [loadingErc20, setLoadingErc20] = useState(false);
   const [detailToken, setDetailToken] = useState<string | null>(null);
+  const [hiddenTokens, setHiddenTokens] = useState<Set<string>>(loadHiddenTokens);
+  const [showHiddenSection, setShowHiddenSection] = useState(false);
+
+  const toggleHiddenToken = useCallback((key: string) => {
+    setHiddenTokens(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem(HIDDEN_TOKENS_KEY, JSON.stringify([...next])); } catch { /* quota */ }
+      return next;
+    });
+  }, []);
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const priceRef = useRef(false);
 
@@ -401,13 +488,19 @@ export function WalletPanel() {
     if (ethBal     !== null) setEthEth(ethBal);
     if (ethUsdcBal !== null) setEthUsdc(ethUsdcBal);
     setLoadingOp(false); setLoadingBase(false); setLoadingArb(false); setLoadingEth(false);
-    // Fetch ERC-20 tokens in parallel (non-blocking)
+    // Fetch ERC-20 tokens in parallel (non-blocking). Blockscout discovers
+    // arbitrary tokens; the curated on-chain read guarantees well-known ones
+    // (DEGEN, OP, …) still appear even when Blockscout is unavailable.
     setLoadingErc20(true);
     Promise.all([
       fetchErc20Balances("Optimism", address),
       fetchErc20Balances("Base", address),
-    ]).then(([opToks, baseToks]) => {
-      setErc20Tokens([...opToks, ...baseToks].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1)));
+      fetchCuratedErc20(address),
+    ]).then(([opToks, baseToks, curated]) => {
+      const discovered = [...opToks, ...baseToks];
+      const seen = new Set(discovered.map(t => `${t.network}-${t.contractAddress.toLowerCase()}`));
+      const extras = curated.filter(t => !seen.has(`${t.network}-${t.contractAddress.toLowerCase()}`));
+      setErc20Tokens([...discovered, ...extras].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1)));
     }).finally(() => setLoadingErc20(false));
   }, [address]);
 
@@ -455,7 +548,7 @@ export function WalletPanel() {
   const arbUsdcNum  = arbUsdc  !== null ? parseFloat(formatUnits(arbUsdc, 6)) : 0;
   const ethEthNum   = ethEth   !== null ? parseFloat(formatEther(ethEth))    : 0;
   const ethUsdcNum  = ethUsdc  !== null ? parseFloat(formatUnits(ethUsdc, 6)) : 0;
-  const erc20Usd = erc20Tokens.reduce((s, t) => s + (t.usdValue ?? 0), 0);
+  const erc20Usd = erc20Tokens.reduce((s, t) => s + (hiddenTokens.has(t.key) ? 0 : (t.usdValue ?? 0)), 0);
   const totalUsd = ethPrice
     ? (opEthNum + baseEthNum + arbEthNum + ethEthNum) * ethPrice + opUsdcNum + baseUsdcNum + arbUsdcNum + ethUsdcNum + erc20Usd
     : null;
@@ -690,7 +783,7 @@ export function WalletPanel() {
 
       {/* ── Confirm dialog ──────────────────────────────────────────────── */}
       {confirmTx && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-sm bg-card rounded-3xl border border-border shadow-2xl overflow-hidden">
             <div className="px-5 pt-5 pb-4 border-b border-border/60">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Confirm Transaction</p>
@@ -744,14 +837,16 @@ export function WalletPanel() {
             icon={tk.icon}
             contractAddress={isErc20 ? (tk as Erc20TokenRow).contractAddress : undefined}
             onClose={() => setDetailToken(null)}
-            onSend={isErc20 ? () => {} : () => openSend(tk.key as SendToken)}
+            onSend={isErc20 ? undefined : () => openSend(tk.key as SendToken)}
             onSwap={() => setShowSwap(true)}
+            hidden={hiddenTokens.has(tk.key)}
+            onToggleHide={() => toggleHiddenToken(tk.key)}
           />
         );
       })()}
 
       {/* ── DeFi Browser (Rainbow-style) ─────────────────────────────────── */}
-      {showBrowser && browserUrl && (
+      {showBrowser && (
         <DeFiBrowserSheet
           initialUrl={browserUrl}
           onClose={() => setShowBrowser(false)}
@@ -760,10 +855,9 @@ export function WalletPanel() {
 
       {/* ── Swap sheet ──────────────────────────────────────────────────── */}
       {showSwap && address && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setShowSwap(false)}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setShowSwap(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl max-h-[65vh] lg:max-h-[70vh] w-full lg:max-w-sm overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0 lg:hidden" />
+          <div className="relative bg-card rounded-3xl max-h-[80vh] w-full max-w-sm overflow-hidden flex flex-col shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex-1 overflow-y-auto">
               <SwapSheet address={address} walletColor={walletColor} onClose={() => setShowSwap(false)} />
             </div>
@@ -773,10 +867,9 @@ export function WalletPanel() {
 
       {/* ── Address Book sheet ───────────────────────────────────────────── */}
       {showAddressBook && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setShowAddressBook(false)}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setShowAddressBook(false)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl max-h-[60vh] lg:max-h-[65vh] w-full lg:max-w-sm overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-0 flex-shrink-0 lg:hidden" />
+          <div className="relative bg-card rounded-3xl max-h-[70vh] w-full max-w-sm overflow-hidden flex flex-col shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex-1 overflow-y-auto">
               <AddressBookSheet
                 onSelectAddress={(addr) => { setToAddress(addr); setShowAddressBook(false); }}
@@ -789,10 +882,9 @@ export function WalletPanel() {
 
       {/* ── Receive sheet ───────────────────────────────────────────────── */}
       {action === "receive" && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setAction("none")}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl px-5 pt-3 pb-8 space-y-4 max-h-[60vh] lg:max-h-[unset] w-full lg:max-w-xs overflow-auto" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mb-2" />
+          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 space-y-4 max-h-[85vh] w-full max-w-xs overflow-auto shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Your address (all networks)</p>
               <button onClick={() => setAction("none")} className="p-1 text-muted-foreground hover:text-foreground transition-colors"><X className="w-5 h-5" /></button>
@@ -819,11 +911,9 @@ export function WalletPanel() {
 
       {/* ── Send sheet (3-step) ─────────────────────────────────────────── */}
       {action === "send" && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end lg:items-center lg:justify-center lg:p-6" onClick={() => setAction("none")}>
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-t-[28px] lg:rounded-2xl px-5 pt-3 pb-8 max-h-[75vh] lg:max-h-[80vh] w-full lg:max-w-sm overflow-auto" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mb-3" />
-
+          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 max-h-[85vh] w-full max-w-sm overflow-auto shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               {sendStep === "recipient" ? (
                 <div className="w-6" />
@@ -1099,7 +1189,7 @@ export function WalletPanel() {
           { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
           { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
           { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
-          { label: "Browser",  icon: Zap,           onClick: () => { if (!browserUrl) setBrowserUrl("https://app.uniswap.org"); setShowBrowser(true); }, disabled: false, color: "#f59e0b" },
+          { label: "Browser",  icon: Zap,           onClick: () => setShowBrowser(true), disabled: false, color: "#f59e0b" },
         ].map(({ label, icon: Icon, onClick, disabled, color }) => (
           <button
             key={label}
@@ -1139,7 +1229,7 @@ export function WalletPanel() {
       {/* ── Tokens tab ──────────────────────────────────────────────────── */}
       {tab === "tokens" && (
         <div className="px-4 py-2 space-y-2.5">
-          {tokens.map(tk => (
+          {tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => (
             <button
               key={tk.key}
               onClick={() => setDetailToken(tk.key)}
@@ -1186,7 +1276,7 @@ export function WalletPanel() {
               Loading tokens…
             </div>
           )}
-          {erc20Tokens.map(tk => (
+          {erc20Tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => (
             <button
               key={tk.key}
               onClick={() => setDetailToken(tk.key)}
@@ -1217,6 +1307,42 @@ export function WalletPanel() {
               </div>
             </button>
           ))}
+
+          {/* Hidden tokens — user-managed, collapsible */}
+          {(() => {
+            const hiddenRows = [
+              ...tokens.filter(tk => hiddenTokens.has(tk.key)),
+              ...erc20Tokens.filter(tk => hiddenTokens.has(tk.key)),
+            ];
+            if (hiddenRows.length === 0) return null;
+            return (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowHiddenSection(v => !v)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showHiddenSection && "rotate-180")} />
+                  Hidden tokens ({hiddenRows.length})
+                </button>
+                {showHiddenSection && hiddenRows.map(tk => (
+                  <div key={tk.key} className="flex items-center gap-3 px-4 py-2.5 rounded-2xl opacity-60">
+                    <img src={tk.icon} alt={tk.symbol} className="w-8 h-8 rounded-full bg-muted shrink-0"
+                      onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="text-sm font-bold text-foreground truncate">{tk.symbol}</p>
+                      <p className="text-[11px] text-muted-foreground">{tk.network} · {formatBal(tk.balance, 4)}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleHiddenToken(tk.key)}
+                      className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-colors shrink-0"
+                    >
+                      Unhide
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {loadingDone && tokens.length === 0 && erc20Tokens.length === 0 && !loadingErc20 && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl border bg-amber-50 border-amber-200/80 text-xs text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400">
