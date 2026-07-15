@@ -492,7 +492,7 @@ function MobileDrawer({
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => { onNavigateToProfile(); onClose(); }}
-              className="w-14 h-14 rounded-full overflow-hidden bg-primary/10 ring-2 ring-border hover:ring-primary/50 transition-all"
+              className="w-14 h-14 rounded-full overflow-hidden bg-primary/10 ring-2 ring-border hover:ring-primary/50 transition-all shrink-0"
             >
               {profile?.pfpUrl ? (
                 <img src={profile.pfpUrl} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -500,12 +500,25 @@ function MobileDrawer({
                 <div className="w-full h-full flex items-center justify-center"><UserCircle className="w-8 h-8 text-primary/40" /></div>
               )}
             </button>
-            <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            >
-              {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+            <div className="flex items-center gap-2">
+              {accounts.filter(a => a.fid !== fid).slice(0, 2).map(acc => (
+                <button
+                  key={acc.fid}
+                  onClick={() => { switchAccount(acc.fid); onClose(); }}
+                  className="w-8 h-8 rounded-full overflow-hidden bg-muted ring-1 ring-border hover:ring-primary/50 transition-all shrink-0"
+                >
+                  {acc.pfpUrl
+                    ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" />
+                    : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
+                </button>
+              ))}
+              <button
+                onClick={onAddAccount}
+                className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                <MoreHorizontal className="w-4.5 h-4.5" />
+              </button>
+            </div>
           </div>
           <button
             onClick={() => { onNavigateToProfile(); onClose(); }}
@@ -514,72 +527,30 @@ function MobileDrawer({
             <p className="font-bold text-base text-foreground truncate">{profile?.displayName || profile?.username || `FID ${fid}`}</p>
             <p className="text-sm text-muted-foreground mt-0.5 truncate">@{profile?.username || `fid${fid}`}</p>
           </button>
-          {profile?.bio && <p className="text-xs text-foreground/70 mt-2 line-clamp-2">{profile.bio}</p>}
         </div>
 
         <div className="h-px bg-border mx-4" />
 
-        {accounts.length > 1 && (
-          <div className="px-3 py-2">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 mb-1">
-              Accounts ({accounts.length})
-            </p>
-            {/* cap to 4 rows */}
-            <div className="overflow-y-auto" style={{ maxHeight: "176px" }}>
-              {accounts.map((acc) => (
-                <div key={acc.fid} className="flex items-center group">
-                  <button
-                    onClick={() => { switchAccount(acc.fid); onClose(); }}
-                    className={cn(
-                      "flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-full text-sm transition-colors min-w-0",
-                      acc.fid === fid ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    )}
-                  >
-                    <div className="w-7 h-7 rounded-full overflow-hidden bg-muted shrink-0">
-                      {acc.pfpUrl ? <img src={acc.pfpUrl} alt="" className="w-full h-full object-cover" loading="lazy" /> : <UserCircle className="w-full h-full p-1 text-muted-foreground" />}
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="font-medium truncate">{acc.username || `FID ${acc.fid}`}</p>
-                      <p className="text-[10px] opacity-50 font-mono">FID {acc.fid}</p>
-                    </div>
-                    {acc.fid === fid && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
-                  </button>
-                  {acc.fid !== fid && (
-                    <button
-                      onClick={() => removeAccount(acc.fid)}
-                      className="shrink-0 mr-1 p-1.5 rounded-full opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-                      title="Remove account"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="h-px bg-border my-1.5 mx-2" />
-          </div>
-        )}
-
         <nav className="flex-1 px-3 py-1 space-y-0.5">
-          <button onClick={() => { navigate("/channels"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+          <button onClick={() => { navigate("/channels"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Hash className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Channels</span>
           </button>
-          <button onClick={() => { navigate("/market"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+          <button onClick={() => { navigate("/market"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Tag className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">FID Market</span>
           </button>
-          <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+          <button onClick={() => { navigate("/dashboard?tab=miniapps"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+            <Layers className="w-4 h-4 shrink-0" />
+            <span className="flex-1 text-left font-medium">Mini Apps</span>
+          </button>
+          <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Settings className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Settings</span>
           </button>
-          <button onClick={() => { onOpenSupport(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
+          <button onClick={() => { onOpenSupport(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <LifeBuoy className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Support</span>
-          </button>
-          <button onClick={() => { onAddAccount(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
-            <Plus className="w-4 h-4 shrink-0" />
-            <span className="flex-1 text-left font-medium">Add account</span>
           </button>
         </nav>
 

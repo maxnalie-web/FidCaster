@@ -965,15 +965,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
                   Neynar badge / bio text above instead of sitting visibly indented. */}
               <div className="flex items-center gap-1 pb-3 border-b border-border/40 -ml-3">
                 <button
-                  onClick={() => setFollowSheet("followers")}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
-                >
-                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={(user.follower_count ?? 0).toLocaleString()}>
-                    {formatCompactCount(user.follower_count ?? 0)}
-                  </span>
-                  <span className="text-muted-foreground text-xs">followers</span>
-                </button>
-                <button
                   onClick={() => setFollowSheet("following")}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
                 >
@@ -981,6 +972,15 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
                     {formatCompactCount(user.following_count ?? 0)}
                   </span>
                   <span className="text-muted-foreground text-xs">following</span>
+                </button>
+                <button
+                  onClick={() => setFollowSheet("followers")}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-accent/50 transition-colors group text-left"
+                >
+                  <span className="font-bold text-foreground text-[15px] group-hover:text-primary transition-colors" title={(user.follower_count ?? 0).toLocaleString()}>
+                    {formatCompactCount(user.follower_count ?? 0)}
+                  </span>
+                  <span className="text-muted-foreground text-xs">followers</span>
                 </button>
               </div>
 
