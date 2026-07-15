@@ -439,6 +439,49 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                 </>
               )}
             </AnimatePresence>
+
+            {/* Switch-network popup — small, anchored right next to the ⋯
+                button (both the network badge and the ⋯ menu's "Switch
+                network" item open this), not a full-screen sheet. */}
+            <AnimatePresence>
+              {showNetPicker && (
+                <>
+                  <div className="fixed inset-0 z-[81]" onClick={() => setShowNetPicker(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                    transition={{ duration: 0.12 }}
+                    className="absolute bottom-10 right-0 w-48 rounded-2xl bg-card border border-border shadow-2xl z-[82] overflow-hidden"
+                  >
+                    <div className="px-4 pt-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                      Network
+                    </div>
+                    {(Object.entries(NETWORK_CONFIG) as [Network, typeof NETWORK_CONFIG[Network]][]).map(([key, cfg]) => {
+                      const isActive = network === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setNetwork(key);
+                            setShowNetPicker(false);
+                            if (isConnected) toast.info(`Switched to ${cfg.label}`);
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-4 py-2.5 text-sm hover:bg-muted/40 text-foreground border-t border-border/40",
+                            isActive && "bg-muted/25"
+                          )}
+                        >
+                          <div className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: cfg.color }} />
+                          <span className="flex-1 text-left font-medium">{cfg.label}</span>
+                          {isActive && <Check size={13} className="shrink-0" style={{ color: cfg.color }} />}
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -536,81 +579,6 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── Network picker sheet ─────────────────────────────────── */}
-      <AnimatePresence>
-        {showNetPicker && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[85] flex flex-col justify-end"
-          >
-            <div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowNetPicker(false)}
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 38 }}
-              className="relative z-10 bg-card rounded-t-3xl"
-            >
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
-              </div>
-
-              <div className="flex items-center justify-between px-5 py-3">
-                <span className="text-base font-bold text-foreground">Select Network</span>
-                <button onClick={() => setShowNetPicker(false)} className="p-1 text-muted-foreground hover:text-foreground">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="px-4 pb-10 flex flex-col gap-2.5">
-                {(Object.entries(NETWORK_CONFIG) as [Network, typeof NETWORK_CONFIG[Network]][]).map(([key, cfg]) => {
-                  const isActive = network === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => {
-                        setNetwork(key);
-                        setShowNetPicker(false);
-                        if (isConnected) toast.info(`Switched to ${cfg.label}`);
-                      }}
-                      className={cn(
-                        "flex items-center gap-4 w-full p-4 rounded-2xl border-2 transition-all",
-                        isActive ? "" : "border-border/50 hover:border-border"
-                      )}
-                      style={isActive ? { borderColor: cfg.color, background: `${cfg.color}12` } : {}}
-                    >
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: cfg.color }}
-                      >
-                        <span className="text-white font-black text-sm leading-none">{cfg.short[0]}</span>
-                      </div>
-                      <div className="flex-1 text-left">
-                        <p className="text-sm font-bold text-foreground">{cfg.label}</p>
-                        <p className="text-xs text-muted-foreground">Chain ID {cfg.chainId}</p>
-                      </div>
-                      {isActive && (
-                        <div
-                          className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
-                          style={{ background: cfg.color }}
-                        >
-                          <Check size={11} className="text-white" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
     </div>
   );

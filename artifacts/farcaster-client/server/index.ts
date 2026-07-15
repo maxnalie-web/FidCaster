@@ -894,6 +894,20 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
     res.status(400).json({ error: "Invalid or missing url param" });
     return;
   }
+  // helmet() above applies its own CSP/frame/cross-origin headers to every
+  // route by default, including this one — 'self' in that policy means OUR
+  // origin, so it silently blocked every script on the proxied page (both
+  // the target site's own bundle and the nav script injected below) even
+  // after the target's own CSP/X-Frame-Options were stripped further down.
+  // That combination is what actually produced the permanently-blank frame:
+  // the HTML/CSS painted, nothing ever executed. Strip helmet's headers
+  // before doing anything else on this route.
+  res.removeHeader("Content-Security-Policy");
+  res.removeHeader("Content-Security-Policy-Report-Only");
+  res.removeHeader("X-Frame-Options");
+  res.removeHeader("Cross-Origin-Opener-Policy");
+  res.removeHeader("Cross-Origin-Resource-Policy");
+  res.removeHeader("Cross-Origin-Embedder-Policy");
   try {
     const upstream = await fetch(targetUrl, {
       headers: {
@@ -922,6 +936,16 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
     const ct = (stripped["content-type"] ?? upstream.headers.get("content-type") ?? "").toLowerCase();
     if (ct.includes("text/html")) {
       let html = await upstream.text();
+      // Many sites (Uniswap, OpenSea, ...) ALSO ship CSP as an in-body <meta>
+      // tag, which the header-strip above never touches. Since the document
+      // is served from OUR origin, that meta tag's 'self' resolves to us —
+      // not the target site — so it blocks every one of the page's own
+      // scripts (and our injected nav script below) from running at all,
+      // leaving a permanently blank page. Strip it same as the header.
+      html = html.replace(
+        /<meta[^>]+http-equiv=["']content-security-policy(?:-report-only)?["'][^>]*>/gi,
+        ""
+      );
       // Inject <base> so relative resources resolve against the original origin
       const origin = new URL(upstream.url || targetUrl).origin + "/";
       const baseTag = `<base href="${origin}">`;

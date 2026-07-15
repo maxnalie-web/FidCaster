@@ -69,6 +69,13 @@ function formatUsd(n: number): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function networkAbbrev(network: string): string {
+  if (network === "Optimism") return "OP";
+  if (network === "Base") return "B";
+  if (network === "Arbitrum") return "A";
+  return "E";
+}
+
 function formatRelativeTime(ts: number): string {
   if (!ts) return "";
   const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -645,6 +652,24 @@ export function WalletPanel() {
   // Show a token row only while its network is still fetching (skeleton state)
   // OR once done and it actually has a balance. Zero-balance rows never appear.
   const tokens = allTokens.filter(t => t.loading || t.balance > 0);
+
+  // Single, unified token list — native (ETH/USDC per chain) and discovered
+  // ERC-20s merged and sorted by USD value, biggest balance first. Still-
+  // loading native rows (skeleton) float to the top rather than the bottom
+  // so the list doesn't visibly reshuffle a moment later once they price in.
+  type DisplayToken =
+    | (TokenRow & { kind: "native" })
+    | (Erc20TokenRow & { kind: "erc20" });
+  const visibleTokens: DisplayToken[] = [
+    ...tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => ({ ...tk, kind: "native" as const })),
+    ...erc20Tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => ({ ...tk, kind: "erc20" as const })),
+  ].sort((a, b) => {
+    const aLoading = a.kind === "native" && a.loading;
+    const bLoading = b.kind === "native" && b.loading;
+    if (aLoading && !bLoading) return -1;
+    if (!aLoading && bLoading) return 1;
+    return (b.usdValue ?? -1) - (a.usdValue ?? -1);
+  });
 
   const selectedToken = allTokens.find(t => t.key === sendToken) ?? allTokens[0];
   const sendDisabled = sending || !toAddress || !amount;
@@ -1303,54 +1328,8 @@ export function WalletPanel() {
       {/* ── Tokens tab ──────────────────────────────────────────────────── */}
       {tab === "tokens" && (
         <div className="px-4 py-2 space-y-2.5">
-          {tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => (
-            <button
-              key={tk.key}
-              onClick={() => setDetailToken(tk.key)}
-              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm transition-colors hover:bg-muted/30 cursor-pointer"
-            >
-              <div className="relative shrink-0">
-                <img
-                  src={tk.icon} alt={tk.symbol}
-                  className="w-10 h-10 rounded-full bg-muted"
-                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-                <div
-                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
-                  style={{ backgroundColor: tk.networkColor }}
-                >
-                  <span className="text-[7px] font-bold text-white leading-none">
-                    {tk.network === "Optimism" ? "OP" : tk.network === "Base" ? "B" : tk.network === "Arbitrum" ? "A" : "E"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-sm font-bold text-foreground">{tk.symbol}</p>
-                <div className="inline-flex mt-0.5 px-1.5 py-0.5 rounded-md" style={{ backgroundColor: `${tk.networkColor}1a` }}>
-                  <p className="text-[11px] font-semibold" style={{ color: tk.networkColor }}>{tk.network}</p>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                {tk.loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
-                ) : (
-                  <>
-                    <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, tk.symbol === "USDC" ? 2 : 4)} {tk.symbol}</p>
-                    {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
-                  </>
-                )}
-              </div>
-            </button>
-          ))}
-
-          {/* ERC-20 tokens from Blockscout (Clanker, DEGEN, etc.) */}
-          {loadingErc20 && erc20Tokens.length === 0 && (
-            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Loading tokens…
-            </div>
-          )}
-          {erc20Tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => (
+          {/* Native + ERC-20 tokens, merged into one list sorted by USD value (highest first) */}
+          {visibleTokens.map(tk => (
             <button
               key={tk.key}
               onClick={() => setDetailToken(tk.key)}
@@ -1364,9 +1343,11 @@ export function WalletPanel() {
                 <div className={cn("w-10 h-10 rounded-full bg-muted flex items-center justify-center", tk.icon ? "hidden" : "")}>
                   <span className="text-xs font-bold text-muted-foreground">{tk.symbol.slice(0, 3)}</span>
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
-                  style={{ backgroundColor: tk.networkColor }}>
-                  <span className="text-[7px] font-bold text-white leading-none">{tk.network === "Optimism" ? "OP" : "B"}</span>
+                <div
+                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
+                  style={{ backgroundColor: tk.networkColor }}
+                >
+                  <span className="text-[7px] font-bold text-white leading-none">{networkAbbrev(tk.network)}</span>
                 </div>
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -1376,11 +1357,24 @@ export function WalletPanel() {
                 </div>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, 4)} {tk.symbol}</p>
-                {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
+                {tk.kind === "native" && tk.loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, tk.symbol === "USDC" ? 2 : 4)} {tk.symbol}</p>
+                    {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
+                  </>
+                )}
               </div>
             </button>
           ))}
+
+          {loadingErc20 && erc20Tokens.length === 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Loading tokens…
+            </div>
+          )}
 
           {/* Hidden tokens — user-managed, collapsible */}
           {(() => {
