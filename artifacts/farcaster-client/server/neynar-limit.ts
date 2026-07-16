@@ -34,8 +34,10 @@ function collectKeys(): string[] {
   //   NEYNAR_API_KEY2,  NEYNAR_API_KEY3   (no underscore — common mistake)
   // Scan the whole range WITHOUT breaking on a gap — keys are often numbered with
   // holes (e.g. _16 missing but _17…_20 present); an early break would silently
-  // drop every key after the first gap.
-  for (let i = 2; i <= 55; i++) {
+  // drop every key after the first gap. Range covers 90 keys (primary + up to
+  // 89 numbered) — comfortably above the 80-key pools this app expects; the
+  // NEYNAR_API_KEYS CSV var below has no cap at all if more are ever needed.
+  for (let i = 2; i <= 90; i++) {
     const k = process.env[`NEYNAR_API_KEY_${i}`] ?? process.env[`NEYNAR_API_KEY${i}`];
     if (k && !keys.includes(k)) keys.push(k);
   }

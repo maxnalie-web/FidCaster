@@ -135,30 +135,22 @@ function headers(key: string) {
   };
 }
 
-/** Direct Neynar GET · bypasses the server proxy. Used by pool-powered bulk scans
- *  so each request can use a different key from the pool, giving throughput equal
- *  to (pool_size × single-key rate limit). Falls back gracefully on 429. */
-export async function directNeynarGet<T>(path: string, key: string): Promise<T> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(`${NEYNAR_BASE}${path}`, {
-      headers: { accept: "application/json", api_key: key },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (res.status === 429 && attempt < 2) {
-      const retryAfter = res.headers.get("Retry-After");
-      const waitMs = retryAfter
-        ? Math.min(parseInt(retryAfter, 10) * 1000, 10_000)
-        : (2 ** attempt) * 1000 + Math.random() * 500;
-      await new Promise(r => setTimeout(r, waitMs));
-      continue;
-    }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
-    }
-    return res.json() as Promise<T>;
+/** Uncached direct-passthrough proxy · used by high-volume paginated bulk
+ *  scans (Purge/Cleanup) where every page is a unique cursor anyway, so the
+ *  normal cached proxy's caching would be pointless. The server rotates
+ *  through every Neynar key it has configured (env vars only — see
+ *  server/neynar-limit.ts) to spread load; no key of any kind is ever sent
+ *  from or handled by the browser. */
+export async function directNeynarGet<T>(path: string): Promise<T> {
+  const res = await fetch(`/api/fc-direct${path}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string; message?: string }).error ?? (err as { message?: string }).message ?? `HTTP ${res.status}`);
   }
-  throw new Error("Neynar rate limit exceeded.");
+  return res.json() as Promise<T>;
 }
 
 async function neynar<T>(
@@ -499,12 +491,12 @@ export async function getUserLikes(
   viewerFid: number,
   key: string,
   cursor?: string,
-  directKey?: string
+  fast?: boolean
 ): Promise<{ reactions: Array<{ cast: NeynarCast }>; next?: { cursor: string } }> {
-  const limit = directKey ? "100" : "50";
+  const limit = fast ? "100" : "50";
   const q = new URLSearchParams({ fid: String(fid), type: "likes", limit, viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
-  if (directKey) return directNeynarGet(`/farcaster/reactions/user?${q}`, directKey);
+  if (fast) return directNeynarGet(`/farcaster/reactions/user?${q}`);
   return neynar(`/farcaster/reactions/user?${q}`, "GET", key);
 }
 
@@ -513,12 +505,12 @@ export async function getUserRecasts(
   viewerFid: number,
   key: string,
   cursor?: string,
-  directKey?: string
+  fast?: boolean
 ): Promise<{ reactions: Array<{ cast: NeynarCast }>; next?: { cursor: string } }> {
-  const limit = directKey ? "100" : "50";
+  const limit = fast ? "100" : "50";
   const q = new URLSearchParams({ fid: String(fid), type: "recasts", limit, viewer_fid: String(viewerFid) });
   if (cursor) q.set("cursor", cursor);
-  if (directKey) return directNeynarGet(`/farcaster/reactions/user?${q}`, directKey);
+  if (fast) return directNeynarGet(`/farcaster/reactions/user?${q}`);
   return neynar(`/farcaster/reactions/user?${q}`, "GET", key);
 }
 
@@ -527,14 +519,14 @@ export async function getUserReplies(
   viewerFid: number,
   key: string,
   cursor?: string,
-  directKey?: string
+  fast?: boolean
 ): Promise<{ casts: NeynarCast[]; next?: { cursor: string } }> {
-  const limit = directKey ? "150" : "50";
+  const limit = fast ? "150" : "50";
   const q = new URLSearchParams({ fid: String(fid), limit, viewer_fid: String(viewerFid), include_replies: "true" });
   if (cursor) q.set("cursor", cursor);
   let result: { casts: NeynarCast[]; next?: { cursor: string } };
-  if (directKey) {
-    result = await directNeynarGet<{ casts: NeynarCast[]; next?: { cursor: string } }>(`/farcaster/feed/user/casts?${q}`, directKey);
+  if (fast) {
+    result = await directNeynarGet<{ casts: NeynarCast[]; next?: { cursor: string } }>(`/farcaster/feed/user/casts?${q}`);
   } else {
     result = await neynar<{ casts: NeynarCast[]; next?: { cursor: string } }>(`/farcaster/feed/user/casts?${q}`, "GET", key);
   }
