@@ -91,6 +91,7 @@ interface WalletState {
   importPrivateKeyWallet: (privateKeyHex: string, label?: string) => Promise<string>;
   addWatchOnlyWallet: (address: `0x${string}`, label?: string) => string;
   addAccountToWallet: (walletId: string) => Promise<void>;
+  removeAccountFromWallet: (walletId: string, accountIndex: number) => void;
   renameWallet: (walletId: string, label: string) => void;
   renameAccount: (walletId: string, index: number, label: string) => void;
   reorderAccounts: (walletId: string, fromIndex: number, toIndex: number) => void;
@@ -247,6 +248,26 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     const nextWallets = wallets.map(w => w.id === walletId ? { ...w, accounts: nextAccounts } : w);
     persistMeta(nextWallets, get().activeWalletId, get().activeAccountIndex);
     set({ wallets: nextWallets });
+  },
+
+  removeAccountFromWallet: (walletId, accountIndex) => {
+    const { wallets, activeWalletId, activeAccountIndex } = get();
+    const wallet = wallets.find(w => w.id === walletId);
+    if (!wallet) throw new Error("Wallet not found.");
+    if (wallet.accounts.length <= 1) {
+      throw new Error("Can't remove the last account — remove the whole wallet instead.");
+    }
+    const nextAccounts = wallet.accounts.filter(a => a.index !== accountIndex);
+    const nextWallets = wallets.map(w => w.id === walletId ? { ...w, accounts: nextAccounts } : w);
+
+    // If the removed account was the active one (in the active wallet),
+    // fall back to the first remaining account so the app never ends up
+    // pointed at an account that no longer exists.
+    const wasActiveAccount = walletId === activeWalletId && accountIndex === activeAccountIndex;
+    const nextActiveIdx = wasActiveAccount ? nextAccounts[0].index : activeAccountIndex;
+
+    persistMeta(nextWallets, activeWalletId, nextActiveIdx);
+    set({ wallets: nextWallets, activeAccountIndex: nextActiveIdx });
   },
 
   renameWallet: (walletId, label) => {
