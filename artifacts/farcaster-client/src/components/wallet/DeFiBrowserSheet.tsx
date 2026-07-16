@@ -822,8 +822,12 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                         <button
                           key={acc.index}
                           onClick={() => {
+                            // Switching accounts while connected should behave like a
+                            // real wallet's account switch — the site stays connected
+                            // and just sees accountsChanged with the new address (via
+                            // the effect below), not a forced disconnect that silently
+                            // left the site pointed at the old account.
                             setActiveWallet(wallet.id, acc.index);
-                            setIsConnected(false);
                             setShowAccPicker(false);
                           }}
                           className={cn(
