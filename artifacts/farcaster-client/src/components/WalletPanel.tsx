@@ -493,6 +493,7 @@ export function WalletPanel() {
   const [amount, setAmount] = useState("");
   const [sendToken, setSendToken] = useState<SendToken>("op-eth");
   const [sending, setSending] = useState(false);
+  const [maxLoading, setMaxLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -504,6 +505,14 @@ export function WalletPanel() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const activityFetchedFor = useRef<string | null>(null);
+
+  // Guards fetchAll/fetchActivity against stale responses: if the user
+  // switches wallets while a slower fetch for the PREVIOUS address is still
+  // in flight, that late response must never clobber the screen with the
+  // wrong wallet's balances. Updated synchronously (in the address-change
+  // effect, before kicking off any fetch) so every in-flight fetch can check
+  // "is my address still the active one?" right before it commits state.
+  const activeAddressRef = useRef<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!address) return;
@@ -522,6 +531,7 @@ export function WalletPanel() {
       safe(ethPublicClient.getBalance({ address })),
       safe(readErc20(ethPublicClient, USDC_ETH_ADDRESS)),
     ]);
+    if (activeAddressRef.current !== address) return; // a newer wallet is active now — discard this stale response
     if (opBal      !== null) setOpEth(opBal);
     if (opUsdcBal  !== null) setOpUsdc(opUsdcBal);
     if (baseBal    !== null) setBaseEth(baseBal);
@@ -549,6 +559,7 @@ export function WalletPanel() {
       fetchErc20Balances("Base", address),
       fetchCuratedErc20(address),
     ]).then(([opToks, baseToks, curated]) => {
+      if (activeAddressRef.current !== address) return; // stale — a different wallet is active now
       const discovered = [...opToks, ...baseToks];
       const seen = new Set(discovered.map(t => `${t.network}-${t.contractAddress.toLowerCase()}`));
       const extras = curated.filter(t => !seen.has(`${t.network}-${t.contractAddress.toLowerCase()}`));
@@ -567,11 +578,12 @@ export function WalletPanel() {
         fetchActivityForNetwork("Optimism", address),
         fetchActivityForNetwork("Base", address),
       ]);
+      if (activeAddressRef.current !== address) return; // stale — a different wallet is active now
       const merged = [...opTxs, ...baseTxs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30);
       setActivity(merged);
       saveCache(actCacheKey(address), merged);
     } finally {
-      setLoadingActivity(false);
+      if (activeAddressRef.current === address) setLoadingActivity(false);
     }
   }, [address]);
 
@@ -580,6 +592,7 @@ export function WalletPanel() {
   // blank/loading state on a switch back to a wallet we've already loaded —
   // fetchAll() then runs in the background and silently replaces stale data.
   useEffect(() => {
+    activeAddressRef.current = address;
     activityFetchedFor.current = null;
     if (!address) {
       setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
@@ -682,15 +695,45 @@ export function WalletPanel() {
     return `$${(amt * perToken).toFixed(2)}`;
   })();
 
-  function handleMax() {
-    if (selectedToken.loading) return;
+  async function handleMax() {
+    if (selectedToken.loading || maxLoading) return;
     const isUsdc = sendToken.endsWith("-usdc");
     if (isUsdc) {
+      // ERC-20 transfers don't spend the token itself for gas — the full raw
+      // balance is always sendable (gas comes out of the separate ETH balance).
       const raw = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : sendToken === "arb-usdc" ? arbUsdc : ethUsdc;
       if (raw !== null) setAmount(formatUnits(raw, 6));
-    } else {
-      const max = Math.max(0, selectedToken.balance - 0.0001);
+      return;
+    }
+
+    // Native-token max: a flat "leave 0.0001 ETH for gas" buffer badly
+    // under-reserves on Ethereum L1 (where a plain transfer alone can cost
+    // several times that at normal gas prices) — reserve the REAL estimated
+    // cost of this specific send instead.
+    const bal = sendToken === "op-eth" ? opEth : sendToken === "base-eth" ? baseEth : sendToken === "arb-eth" ? arbEth : ethEth;
+    if (bal === null) return;
+    const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : sendToken === "arb-eth" ? arbPublicClient : ethPublicClient;
+    const to = (isAddress(toAddress) ? toAddress : address) as `0x${string}` | null;
+    if (!to) return;
+
+    setMaxLoading(true);
+    try {
+      const [estimatedGas, gasPrice] = await Promise.all([
+        pubCli.estimateGas({ account: address as `0x${string}`, to, value: 1n }).catch(() => 21_000n),
+        pubCli.getGasPrice(),
+      ]);
+      // +50% headroom: gas price can move between estimating "max" here and
+      // the actual send a moment later, especially on Ethereum L1.
+      const reserve = (estimatedGas * gasPrice * 150n) / 100n;
+      const maxWei = bal > reserve ? bal - reserve : 0n;
+      setAmount(maxWei > 0n ? formatEther(maxWei) : "0");
+    } catch {
+      // Estimation itself failed (RPC hiccup) — fall back to a conservative
+      // flat reserve rather than blocking the Max button entirely.
+      const max = Math.max(0, selectedToken.balance - 0.0005);
       setAmount(max > 0 ? max.toFixed(8) : "0");
+    } finally {
+      setMaxLoading(false);
     }
   }
 
@@ -757,10 +800,23 @@ export function WalletPanel() {
         const chain  = sendToken === "op-eth" ? optimism : sendToken === "base-eth" ? base : sendToken === "arb-eth" ? arbitrum : mainnet;
         const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : sendToken === "arb-eth" ? arbPublicClient : ethPublicClient;
         let gas: bigint | undefined;
+        let gasPrice: bigint | undefined;
         try {
-          const estimated = await pubCli.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value });
+          const [estimated, price] = await Promise.all([
+            pubCli.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value }),
+            pubCli.getGasPrice(),
+          ]);
           gas = (estimated * 130n) / 100n;
+          gasPrice = price;
         } catch { /**/ }
+        // Catch "the amount alone fits but there's nothing left for gas" up
+        // front with a clear message, instead of letting the wallet/RPC
+        // reject with a cryptic error after the user already hit Send.
+        if (bal !== null && gas !== undefined && gasPrice !== undefined && value + gas * gasPrice > bal) {
+          setSendError("Insufficient balance to cover this amount plus network fees.");
+          setSending(false);
+          return;
+        }
         hash = await activeClient.sendTransaction({
           account: walletClient.account!, chain, to: toAddress as `0x${string}`, value,
           ...(gas !== undefined ? { gas } : {}),
@@ -1168,10 +1224,11 @@ export function WalletPanel() {
                   <div className="flex items-center gap-2.5 shrink-0">
                     <button
                       onClick={handleMax}
-                      disabled={selectedToken.loading || selectedToken.balance === 0}
-                      className="px-3 py-1.5 rounded-full text-xs font-black disabled:opacity-40"
+                      disabled={selectedToken.loading || selectedToken.balance === 0 || maxLoading}
+                      className="px-3 py-1.5 rounded-full text-xs font-black disabled:opacity-40 flex items-center gap-1.5"
                       style={{ backgroundColor: `${SEND_ACCENT}22`, color: SEND_ACCENT }}
                     >
+                      {maxLoading && <Loader2 size={11} className="animate-spin" />}
                       Max
                     </button>
                     <span className="text-xl font-black text-foreground">USD</span>

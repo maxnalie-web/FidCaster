@@ -47,7 +47,14 @@ interface Token { symbol: string; name: string; address: string; decimals: numbe
 const TOKENS: Token[] = [
   // Optimism
   { symbol:"ETH",    name:"Ethereum",       address:NATIVE,                                          decimals:18, chainId:10,    logo:"https://assets.coingecko.com/coins/images/279/small/ethereum.png" },
-  { symbol:"USDC",   name:"USD Coin",        address:"0x7F5c764cBc14f9669B88837ca1490cCa17c31607",   decimals:6,  chainId:10,    logo:"https://assets.coingecko.com/coins/images/6319/small/usdc.png" },
+  // Native USDC — MUST match USDC_OP_ADDRESS in lib/contracts.ts, which is what
+  // the main wallet balance reads. These previously pointed at two different
+  // contracts (this one used to be USDC.e, the legacy bridged token) — a user
+  // with native USDC showed a balance in the wallet but couldn't swap it here,
+  // and any USDC.e they held was invisible everywhere (also filtered out of
+  // ERC-20 discovery below by ERC20_SKIP_SYMBOLS).
+  { symbol:"USDC",   name:"USD Coin",        address:"0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",   decimals:6,  chainId:10,    logo:"https://assets.coingecko.com/coins/images/6319/small/usdc.png" },
+  { symbol:"USDC.e", name:"Bridged USDC (USDC.e)", address:"0x7F5c764cBc14f9669B88837ca1490cCa17c31607", decimals:6, chainId:10, logo:"https://assets.coingecko.com/coins/images/6319/small/usdc.png" },
   { symbol:"USDT",   name:"Tether",          address:"0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",   decimals:6,  chainId:10,    logo:"https://assets.coingecko.com/coins/images/325/small/Tether.png" },
   { symbol:"DAI",    name:"Dai",             address:"0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",   decimals:18, chainId:10,    logo:"https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png" },
   { symbol:"OP",     name:"Optimism",        address:"0x4200000000000000000000000000000000000042",   decimals:18, chainId:10,    logo:"https://assets.coingecko.com/coins/images/25244/small/Optimism.png" },
@@ -274,6 +281,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     txValue: bigint;
     txGas?: bigint;
     needsApproval: boolean;
+    needsReset: boolean;
     spender?: Address;
     approveAmount?: bigint;
     simStatus: "passed" | "after-approval";
@@ -285,6 +293,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
   // Live wallet balance for the "from" token
   const [fromBalance, setFromBalance] = useState<bigint | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
+  const [maxLoading, setMaxLoading] = useState(false);
 
   // Fetch live balance for the selected from-token whenever it or the address changes
   useEffect(() => {
@@ -476,6 +485,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
       // ERC-20 sells need an allowance for the router before the swap can succeed
       let needsApproval = false;
+      let needsReset = false;
       if (fromToken.address !== NATIVE) {
         const allowance = await pub.readContract({
           address: fromToken.address as Address,
@@ -484,6 +494,14 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           args: [address, approveSpender],
         }) as bigint;
         needsApproval = allowance < sellAmount;
+        // Some tokens (USDT being the famous case — and it's swappable here
+        // on both Optimism and Ethereum) reject changing a non-zero
+        // allowance straight to a different non-zero value; it must go
+        // through zero first. Detecting this reliably per-token isn't
+        // practical, so always take the safe two-step path whenever a
+        // leftover non-zero allowance exists (harmless extra tx for tokens
+        // that don't require it).
+        needsReset = needsApproval && allowance > 0n;
       }
 
       // Simulate before ever signing: a failing eth_call means the swap would
@@ -491,12 +509,14 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       let gasEstimate: bigint | undefined;
       let simStatus: "passed" | "after-approval" = "passed";
       if (needsApproval) {
-        // Swap can't be simulated until the approval lands — simulate the approval itself
+        // Swap can't be simulated until the approval lands — simulate
+        // whichever tx actually gets broadcast first: the zero-reset if one
+        // is needed, otherwise the approval itself.
         simStatus = "after-approval";
         await pub.call({
           account: address,
           to: fromToken.address as Address,
-          data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [approveSpender, sellAmount] }),
+          data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [approveSpender, needsReset ? 0n : sellAmount] }),
         });
       } else {
         await pub.call({
@@ -521,6 +541,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         txValue,
         txGas,
         needsApproval,
+        needsReset,
         spender: approveSpender,
         approveAmount: sellAmount,
         simStatus,
@@ -552,6 +573,17 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       const pub = getPublicClientForChain(fromChainId);
 
       if (pendingTx.needsApproval && pendingTx.spender && pendingTx.approveAmount !== undefined) {
+        if (pendingTx.needsReset) {
+          const resetHash = await chainWc.sendTransaction({
+            account: chainWc.account!,
+            chain: fromChain.viem,
+            to: fromToken.address as Address,
+            data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [pendingTx.spender, 0n] }),
+            value: 0n,
+          });
+          toast.info(`Resetting ${fromToken.symbol} allowance…`);
+          await pub.waitForTransactionReceipt({ hash: resetHash, timeout: 60_000 });
+        }
         const approveHash = await chainWc.sendTransaction({
           account: chainWc.account!,
           chain: fromChain.viem,
@@ -597,6 +629,42 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     if (fromChainId === 42161) return `https://arbiscan.io/tx/${hash}`;
     if (fromChainId === 137)   return `https://polygonscan.com/tx/${hash}`;
     return "#";
+  }
+
+  async function onMaxFrom() {
+    if (!fromBalance || fromBalance <= 0n || maxLoading) return;
+    if (fromToken.address !== NATIVE) {
+      // ERC-20 sells don't touch the token itself for gas — the exact full
+      // raw balance is always sellable. Uses formatUnits directly (not a
+      // parseFloat/toFixed(6) round-trip) so high-decimal tokens don't lose
+      // precision and leave dust behind.
+      setAmount(formatUnits(fromBalance, fromToken.decimals));
+      setTxHash(null);
+      return;
+    }
+    setMaxLoading(true);
+    try {
+      const pub = getPublicClientForChain(fromChainId);
+      const [gasPrice, baseGas] = await Promise.all([
+        pub.getGasPrice(),
+        pub.estimateGas({ account: address, to: address, value: 1n }).catch(() => 21_000n),
+      ]);
+      // A swap/bridge transaction costs meaningfully more than a plain
+      // transfer (router logic, DEX calls) and the exact router isn't known
+      // until a quote comes back — use a generous floor rather than the
+      // flat ETH-amount buffer this used to be (which ignored gas price
+      // entirely and badly under-reserved on Ethereum L1).
+      const swapGasUnits = baseGas > 150_000n ? baseGas : 150_000n;
+      const reserve = (swapGasUnits * gasPrice * 150n) / 100n;
+      const maxWei = fromBalance > reserve ? fromBalance - reserve : 0n;
+      setAmount(formatUnits(maxWei, fromToken.decimals));
+    } catch {
+      const raw = parseFloat(formatUnits(fromBalance, fromToken.decimals));
+      setAmount(Math.max(0, raw - 0.002).toFixed(6));
+    } finally {
+      setMaxLoading(false);
+    }
+    setTxHash(null);
   }
 
   function switchSides() {
@@ -684,13 +752,13 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
               </span>
               {fromBalance !== null && fromBalance > 0n && (
                 <button
-                  onClick={() => {
-                    const raw = parseFloat(formatUnits(fromBalance, fromToken.decimals));
-                    const max = fromToken.address === NATIVE ? Math.max(0, raw - 0.001) : raw;
-                    setAmount(max.toFixed(6)); setTxHash(null);
-                  }}
-                  className="text-[10px] font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
-                >MAX</button>
+                  onClick={onMaxFrom}
+                  disabled={maxLoading}
+                  className="flex items-center gap-1 text-[10px] font-bold text-primary px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors disabled:opacity-50"
+                >
+                  {maxLoading && <Loader2 size={9} className="animate-spin" />}
+                  MAX
+                </button>
               )}
             </div>
           </div>
@@ -916,7 +984,9 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
               ) : (
                 <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
                   <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                  Requires a one-time {fromToken.symbol} approval first — two transactions will be signed.
+                  {pendingTx.needsReset
+                    ? `Requires resetting then re-approving ${fromToken.symbol} first — 3 transactions will be signed.`
+                    : `Requires a one-time ${fromToken.symbol} approval first — 2 transactions will be signed.`}
                 </div>
               )}
               <p className="text-xs text-muted-foreground text-center">Nothing is signed until you confirm below.</p>

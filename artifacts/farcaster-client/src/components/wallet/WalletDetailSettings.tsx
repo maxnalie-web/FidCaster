@@ -4,6 +4,7 @@ import {
   Copy, CheckCircle2,
 } from "lucide-react";
 import { TokenApprovalsSheet } from "@/components/wallet/TokenApprovalsSheet";
+import { PinGate } from "@/components/wallet/PinGate";
 import { useWalletStore, type WalletKind } from "@/store/walletStore";
 
 function kindLabel(kind: WalletKind): string {
@@ -46,6 +47,17 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
   const [removeConfirm, setRemoveConfirm] = useState(false);
   const [showApprovals, setShowApprovals] = useState(false);
 
+  // Gate revealing a seed phrase / private key behind a local PIN — there
+  // was previously no authentication at all on this path, just a blur +
+  // "tap to reveal". See lib/walletPin.ts.
+  const [pinGateFor, setPinGateFor] = useState<"mnemonic" | "key" | null>(null);
+
+  // Which account within this wallet secrets/approvals apply to. Defaults to
+  // whichever account is actually active if this is the active wallet —
+  // previously this was hardcoded to account 0, silently revealing/scanning
+  // the wrong account's key whenever a different account was selected.
+  const [revealAccountIndex, setRevealAccountIndex] = useState<number | null>(null);
+
   if (!wallet) {
     return (
       <div className="flex flex-col h-full">
@@ -58,6 +70,15 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
   }
 
   const isRemoveDisabled = wallet.sourceFid !== undefined;
+
+  // Effective account for reveal-key / approvals: whichever one the user
+  // explicitly picked (revealAccountIndex), else the active account if this
+  // wallet is the active wallet, else the first account.
+  const effectiveAccountIndex =
+    revealAccountIndex ??
+    (wallet.id === activeWalletId ? activeAccountIndex : 0);
+  const effectiveAccount =
+    wallet.accounts.find(a => a.index === effectiveAccountIndex) ?? wallet.accounts[0];
 
   const onAddAccount = async () => {
     if (addingAccount) return;
@@ -76,9 +97,16 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
 
   const doRevealKey = async () => {
     setRevealLoading("key");
-    try { setReveal({ kind: "key", value: await revealPrivateKey(wallet.id, 0) }); }
+    try { setReveal({ kind: "key", value: await revealPrivateKey(wallet.id, effectiveAccount.index) }); }
     catch (e) { alert(e instanceof Error ? e.message : "Failed to reveal."); }
     finally { setRevealLoading(null); }
+  };
+
+  const onPinConfirmed = () => {
+    const kind = pinGateFor;
+    setPinGateFor(null);
+    if (kind === "mnemonic") doRevealMnemonic();
+    else if (kind === "key") doRevealKey();
   };
 
   const closeReveal = () => {
@@ -170,13 +198,35 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
 
         {/* Security */}
         <Section label="Security">
+          {wallet.kind === "seed" && wallet.accounts.length > 1 && (
+            <div className="px-4 py-3 border-b border-border/50">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-2">
+                Applies to account:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {wallet.accounts.map(acc => (
+                  <button
+                    key={acc.index}
+                    onClick={() => setRevealAccountIndex(acc.index)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                      effectiveAccountIndex === acc.index
+                        ? "bg-primary text-white border-primary"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {acc.label || `Account ${acc.index + 1}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {wallet.kind === "seed" && (
             <Row
               icon={revealLoading === "mnemonic" ? <span className="text-green-500 text-xs animate-spin">⟳</span> : <KeyRound size={15} className="text-green-500" />}
               iconColor="#10b981"
               title="Reveal Recovery Phrase"
               desc="View your 12-word backup"
-              onClick={doRevealMnemonic}
+              onClick={() => setPinGateFor("mnemonic")}
             />
           )}
           {wallet.kind !== "watch-only" && (
@@ -185,8 +235,8 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
               icon={revealLoading === "key" ? <span className="text-green-500 text-xs animate-spin">⟳</span> : <FileKey size={15} className="text-green-500" />}
               iconColor="#10b981"
               title="Reveal Private Key"
-              desc="View raw private key hex"
-              onClick={doRevealKey}
+              desc={wallet.accounts.length > 1 ? `View raw key for ${effectiveAccount.label || `Account ${effectiveAccount.index + 1}`}` : "View raw private key hex"}
+              onClick={() => setPinGateFor("key")}
             />
           )}
           <Row
@@ -194,7 +244,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
             icon={<ShieldCheck size={15} className="text-green-500" />}
             iconColor="#10b981"
             title="Token Approvals"
-            desc="Review & revoke spending permissions"
+            desc={wallet.accounts.length > 1 ? `For ${effectiveAccount.label || `Account ${effectiveAccount.index + 1}`}` : "Review & revoke spending permissions"}
             onClick={() => setShowApprovals(true)}
           />
         </Section>
@@ -255,6 +305,11 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
           <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
             <div>
               <h3 className="text-base font-bold text-foreground">{reveal.kind === "mnemonic" ? "Recovery Phrase" : "Private Key"}</h3>
+              {reveal.kind === "key" && wallet.accounts.length > 1 && (
+                <p className="text-xs font-mono text-muted-foreground mt-0.5">
+                  {effectiveAccount.label || `Account ${effectiveAccount.index + 1}`} · {effectiveAccount.address.slice(0, 8)}…{effectiveAccount.address.slice(-6)}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground mt-1">Never share this. Anyone with it controls your funds.</p>
             </div>
 
@@ -299,13 +354,13 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
       )}
 
       {/* Token Approvals overlay */}
-      {showApprovals && wallet.accounts[0]?.address && (
+      {showApprovals && effectiveAccount?.address && (
         <div className="fixed inset-0 z-[60] flex flex-col justify-end" onClick={() => setShowApprovals(false)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="relative bg-background rounded-t-[28px] max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border/70 rounded-full mx-auto mt-3 mb-0 shrink-0" />
             <TokenApprovalsSheet
-              address={wallet.accounts[0].address as `0x${string}`}
+              address={effectiveAccount.address as `0x${string}`}
               walletColor="#10b981"
               onClose={() => setShowApprovals(false)}
             />
@@ -328,6 +383,13 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
           </div>
         </div>
       )}
+
+      <PinGate
+        open={pinGateFor !== null}
+        title={pinGateFor === "mnemonic" ? "Required to view your recovery phrase." : "Required to view your private key."}
+        onSuccess={onPinConfirmed}
+        onCancel={() => setPinGateFor(null)}
+      />
     </div>
   );
 }

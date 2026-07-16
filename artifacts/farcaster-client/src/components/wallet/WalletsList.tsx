@@ -66,10 +66,13 @@ export function WalletsList({ onAdd, onSelectWallet, onBack }: Props) {
                 const isActive = wallet.id === activeWalletId;
                 const firstAccount = wallet.accounts[0];
                 return (
-                  <button
+                  <div
                     key={wallet.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => { setActiveWallet(wallet.id, 0); onBack(); }}
-                    className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${isActive ? "border-primary/40 bg-primary/5" : "border-border/40 bg-card hover:bg-muted/30"}`}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveWallet(wallet.id, 0); onBack(); } }}
+                    className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all cursor-pointer ${isActive ? "border-primary/40 bg-primary/5" : "border-border/40 bg-card hover:bg-muted/30"}`}
                   >
                     {isActive && (
                       <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
@@ -93,7 +96,7 @@ export function WalletsList({ onAdd, onSelectWallet, onBack }: Props) {
                     >
                       <ChevronRight size={13} className="text-muted-foreground" />
                     </button>
-                  </button>
+                  </div>
                 );
               })}
             </div>
