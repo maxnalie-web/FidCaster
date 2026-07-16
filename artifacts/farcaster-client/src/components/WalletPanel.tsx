@@ -69,6 +69,13 @@ function formatUsd(n: number): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function networkAbbrev(network: string): string {
+  if (network === "Optimism") return "OP";
+  if (network === "Base") return "B";
+  if (network === "Arbitrum") return "A";
+  return "E";
+}
+
 function formatRelativeTime(ts: number): string {
   if (!ts) return "";
   const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -364,6 +371,40 @@ function loadHiddenTokens(): Set<string> {
   } catch { return new Set(); }
 }
 
+// ─── instant-load cache (stale-while-revalidate) ──────────────────────────────
+// Balances/tokens/activity are shown from the last-known snapshot the moment an
+// address becomes active — no spinner, no "0" flash — while a fresh fetch runs
+// in the background and silently replaces it. bigints round-trip through a
+// "<digits>n" string tag since JSON has no native bigint support.
+
+function cacheReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? `${value.toString()}n` : value;
+}
+function cacheReviver(_key: string, value: unknown): unknown {
+  return typeof value === "string" && /^\d+n$/.test(value) ? BigInt(value.slice(0, -1)) : value;
+}
+function saveCache<T>(key: string, data: T): void {
+  try { localStorage.setItem(key, JSON.stringify(data, cacheReplacer)); } catch { /* quota */ }
+}
+function loadCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw, cacheReviver) as T) : null;
+  } catch { return null; }
+}
+
+type BalanceSnapshot = {
+  opEth: bigint | null; opUsdc: bigint | null;
+  baseEth: bigint | null; baseUsdc: bigint | null;
+  arbEth: bigint | null; arbUsdc: bigint | null;
+  ethEth: bigint | null; ethUsdc: bigint | null;
+  ethPrice: number | null;
+};
+
+const balCacheKey = (addr: string) => `wallet_cache_bal_${addr.toLowerCase()}`;
+const tokCacheKey = (addr: string) => `wallet_cache_tok_${addr.toLowerCase()}`;
+const actCacheKey = (addr: string) => `wallet_cache_act_${addr.toLowerCase()}`;
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 export function WalletPanel() {
@@ -444,12 +485,15 @@ export function WalletPanel() {
   }, []);
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const priceRef = useRef(false);
+  const ethPriceRef = useRef<number | null>(null);
+  useEffect(() => { ethPriceRef.current = ethPrice; }, [ethPrice]);
 
   // send
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [sendToken, setSendToken] = useState<SendToken>("op-eth");
   const [sending, setSending] = useState(false);
+  const [maxLoading, setMaxLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -461,6 +505,14 @@ export function WalletPanel() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const activityFetchedFor = useRef<string | null>(null);
+
+  // Guards fetchAll/fetchActivity against stale responses: if the user
+  // switches wallets while a slower fetch for the PREVIOUS address is still
+  // in flight, that late response must never clobber the screen with the
+  // wrong wallet's balances. Updated synchronously (in the address-change
+  // effect, before kicking off any fetch) so every in-flight fetch can check
+  // "is my address still the active one?" right before it commits state.
+  const activeAddressRef = useRef<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!address) return;
@@ -479,6 +531,7 @@ export function WalletPanel() {
       safe(ethPublicClient.getBalance({ address })),
       safe(readErc20(ethPublicClient, USDC_ETH_ADDRESS)),
     ]);
+    if (activeAddressRef.current !== address) return; // a newer wallet is active now — discard this stale response
     if (opBal      !== null) setOpEth(opBal);
     if (opUsdcBal  !== null) setOpUsdc(opUsdcBal);
     if (baseBal    !== null) setBaseEth(baseBal);
@@ -488,6 +541,15 @@ export function WalletPanel() {
     if (ethBal     !== null) setEthEth(ethBal);
     if (ethUsdcBal !== null) setEthUsdc(ethUsdcBal);
     setLoadingOp(false); setLoadingBase(false); setLoadingArb(false); setLoadingEth(false);
+    // Cache this snapshot so the next visit to this address renders instantly
+    // (stale-while-revalidate) instead of showing loaders from a cold start.
+    saveCache<BalanceSnapshot>(balCacheKey(address), {
+      opEth: opBal ?? null, opUsdc: opUsdcBal ?? null,
+      baseEth: baseBal ?? null, baseUsdc: baseUsdcBal ?? null,
+      arbEth: arbBal ?? null, arbUsdc: arbUsdcBal ?? null,
+      ethEth: ethBal ?? null, ethUsdc: ethUsdcBal ?? null,
+      ethPrice: ethPriceRef.current,
+    });
     // Fetch ERC-20 tokens in parallel (non-blocking). Blockscout discovers
     // arbitrary tokens; the curated on-chain read guarantees well-known ones
     // (DEGEN, OP, …) still appear even when Blockscout is unavailable.
@@ -497,26 +559,15 @@ export function WalletPanel() {
       fetchErc20Balances("Base", address),
       fetchCuratedErc20(address),
     ]).then(([opToks, baseToks, curated]) => {
+      if (activeAddressRef.current !== address) return; // stale — a different wallet is active now
       const discovered = [...opToks, ...baseToks];
       const seen = new Set(discovered.map(t => `${t.network}-${t.contractAddress.toLowerCase()}`));
       const extras = curated.filter(t => !seen.has(`${t.network}-${t.contractAddress.toLowerCase()}`));
-      setErc20Tokens([...discovered, ...extras].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1)));
+      const merged = [...discovered, ...extras].sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1));
+      setErc20Tokens(merged);
+      saveCache(tokCacheKey(address), merged);
     }).finally(() => setLoadingErc20(false));
   }, [address]);
-
-  // Re-fetch when active wallet changes
-  useEffect(() => {
-    setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
-    setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
-    setActivity([]); setErc20Tokens([]); activityFetchedFor.current = null;
-    fetchAll();
-  }, [address, fetchAll]);
-
-  useEffect(() => {
-    if (priceRef.current) return;
-    priceRef.current = true;
-    fetchEthPriceUsd().then(p => { if (p) setEthPrice(p); });
-  }, []);
 
   const fetchActivity = useCallback(async () => {
     if (!address) return;
@@ -527,11 +578,54 @@ export function WalletPanel() {
         fetchActivityForNetwork("Optimism", address),
         fetchActivityForNetwork("Base", address),
       ]);
-      setActivity([...opTxs, ...baseTxs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30));
+      if (activeAddressRef.current !== address) return; // stale — a different wallet is active now
+      const merged = [...opTxs, ...baseTxs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30);
+      setActivity(merged);
+      saveCache(actCacheKey(address), merged);
     } finally {
-      setLoadingActivity(false);
+      if (activeAddressRef.current === address) setLoadingActivity(false);
     }
   }, [address]);
+
+  // Re-fetch when active wallet changes. Hydrate instantly from the last
+  // cached snapshot for this address (if any) so the UI never regresses to a
+  // blank/loading state on a switch back to a wallet we've already loaded —
+  // fetchAll() then runs in the background and silently replaces stale data.
+  useEffect(() => {
+    activeAddressRef.current = address;
+    activityFetchedFor.current = null;
+    if (!address) {
+      setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
+      setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
+      setActivity([]); setErc20Tokens([]);
+      fetchAll();
+      return;
+    }
+    const balSnap = loadCache<BalanceSnapshot>(balCacheKey(address));
+    if (balSnap) {
+      setOpEth(balSnap.opEth); setOpUsdc(balSnap.opUsdc);
+      setBaseEth(balSnap.baseEth); setBaseUsdc(balSnap.baseUsdc);
+      setArbEth(balSnap.arbEth); setArbUsdc(balSnap.arbUsdc);
+      setEthEth(balSnap.ethEth); setEthUsdc(balSnap.ethUsdc);
+      if (balSnap.ethPrice) setEthPrice(balSnap.ethPrice);
+    } else {
+      setOpEth(null); setOpUsdc(null); setBaseEth(null); setBaseUsdc(null);
+      setArbEth(null); setArbUsdc(null); setEthEth(null); setEthUsdc(null);
+    }
+    setErc20Tokens(loadCache<Erc20TokenRow[]>(tokCacheKey(address)) ?? []);
+    setActivity(loadCache<ActivityItem[]>(actCacheKey(address)) ?? []);
+    fetchAll();
+    // Prefetch activity in the background too (not gated on the Activity tab
+    // being open) so it's already warm — instant instead of a spinner — the
+    // moment the user taps over to it.
+    if (address) fetchActivity();
+  }, [address, fetchAll, fetchActivity]);
+
+  useEffect(() => {
+    if (priceRef.current) return;
+    priceRef.current = true;
+    fetchEthPriceUsd().then(p => { if (p) setEthPrice(p); });
+  }, []);
 
   useEffect(() => {
     if (tab === "activity" && address && activityFetchedFor.current !== address) {
@@ -572,6 +666,24 @@ export function WalletPanel() {
   // OR once done and it actually has a balance. Zero-balance rows never appear.
   const tokens = allTokens.filter(t => t.loading || t.balance > 0);
 
+  // Single, unified token list — native (ETH/USDC per chain) and discovered
+  // ERC-20s merged and sorted by USD value, biggest balance first. Still-
+  // loading native rows (skeleton) float to the top rather than the bottom
+  // so the list doesn't visibly reshuffle a moment later once they price in.
+  type DisplayToken =
+    | (TokenRow & { kind: "native" })
+    | (Erc20TokenRow & { kind: "erc20" });
+  const visibleTokens: DisplayToken[] = [
+    ...tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => ({ ...tk, kind: "native" as const })),
+    ...erc20Tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => ({ ...tk, kind: "erc20" as const })),
+  ].sort((a, b) => {
+    const aLoading = a.kind === "native" && a.loading;
+    const bLoading = b.kind === "native" && b.loading;
+    if (aLoading && !bLoading) return -1;
+    if (!aLoading && bLoading) return 1;
+    return (b.usdValue ?? -1) - (a.usdValue ?? -1);
+  });
+
   const selectedToken = allTokens.find(t => t.key === sendToken) ?? allTokens[0];
   const sendDisabled = sending || !toAddress || !amount;
 
@@ -583,15 +695,45 @@ export function WalletPanel() {
     return `$${(amt * perToken).toFixed(2)}`;
   })();
 
-  function handleMax() {
-    if (selectedToken.loading) return;
+  async function handleMax() {
+    if (selectedToken.loading || maxLoading) return;
     const isUsdc = sendToken.endsWith("-usdc");
     if (isUsdc) {
+      // ERC-20 transfers don't spend the token itself for gas — the full raw
+      // balance is always sendable (gas comes out of the separate ETH balance).
       const raw = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : sendToken === "arb-usdc" ? arbUsdc : ethUsdc;
       if (raw !== null) setAmount(formatUnits(raw, 6));
-    } else {
-      const max = Math.max(0, selectedToken.balance - 0.0001);
+      return;
+    }
+
+    // Native-token max: a flat "leave 0.0001 ETH for gas" buffer badly
+    // under-reserves on Ethereum L1 (where a plain transfer alone can cost
+    // several times that at normal gas prices) — reserve the REAL estimated
+    // cost of this specific send instead.
+    const bal = sendToken === "op-eth" ? opEth : sendToken === "base-eth" ? baseEth : sendToken === "arb-eth" ? arbEth : ethEth;
+    if (bal === null) return;
+    const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : sendToken === "arb-eth" ? arbPublicClient : ethPublicClient;
+    const to = (isAddress(toAddress) ? toAddress : address) as `0x${string}` | null;
+    if (!to) return;
+
+    setMaxLoading(true);
+    try {
+      const [estimatedGas, gasPrice] = await Promise.all([
+        pubCli.estimateGas({ account: address as `0x${string}`, to, value: 1n }).catch(() => 21_000n),
+        pubCli.getGasPrice(),
+      ]);
+      // +50% headroom: gas price can move between estimating "max" here and
+      // the actual send a moment later, especially on Ethereum L1.
+      const reserve = (estimatedGas * gasPrice * 150n) / 100n;
+      const maxWei = bal > reserve ? bal - reserve : 0n;
+      setAmount(maxWei > 0n ? formatEther(maxWei) : "0");
+    } catch {
+      // Estimation itself failed (RPC hiccup) — fall back to a conservative
+      // flat reserve rather than blocking the Max button entirely.
+      const max = Math.max(0, selectedToken.balance - 0.0005);
       setAmount(max > 0 ? max.toFixed(8) : "0");
+    } finally {
+      setMaxLoading(false);
     }
   }
 
@@ -658,10 +800,23 @@ export function WalletPanel() {
         const chain  = sendToken === "op-eth" ? optimism : sendToken === "base-eth" ? base : sendToken === "arb-eth" ? arbitrum : mainnet;
         const pubCli = sendToken === "op-eth" ? publicClient : sendToken === "base-eth" ? basePublicClient : sendToken === "arb-eth" ? arbPublicClient : ethPublicClient;
         let gas: bigint | undefined;
+        let gasPrice: bigint | undefined;
         try {
-          const estimated = await pubCli.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value });
+          const [estimated, price] = await Promise.all([
+            pubCli.estimateGas({ account: walletClient.account!, to: toAddress as `0x${string}`, value }),
+            pubCli.getGasPrice(),
+          ]);
           gas = (estimated * 130n) / 100n;
+          gasPrice = price;
         } catch { /**/ }
+        // Catch "the amount alone fits but there's nothing left for gas" up
+        // front with a clear message, instead of letting the wallet/RPC
+        // reject with a cryptic error after the user already hit Send.
+        if (bal !== null && gas !== undefined && gasPrice !== undefined && value + gas * gasPrice > bal) {
+          setSendError("Insufficient balance to cover this amount plus network fees.");
+          setSending(false);
+          return;
+        }
         hash = await activeClient.sendTransaction({
           account: walletClient.account!, chain, to: toAddress as `0x${string}`, value,
           ...(gas !== undefined ? { gas } : {}),
@@ -884,7 +1039,7 @@ export function WalletPanel() {
       {action === "receive" && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 space-y-4 max-h-[85vh] w-full max-w-xs overflow-auto shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 space-y-4 max-h-[85vh] w-full max-w-xs overflow-y-auto overflow-x-hidden shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Your address (all networks)</p>
               <button onClick={() => setAction("none")} className="p-1 text-muted-foreground hover:text-foreground transition-colors"><X className="w-5 h-5" /></button>
@@ -913,7 +1068,7 @@ export function WalletPanel() {
       {action === "send" && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={() => setAction("none")}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 max-h-[85vh] w-full max-w-sm overflow-auto shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-3xl px-5 pt-5 pb-6 max-h-[85vh] w-full max-w-sm overflow-y-auto overflow-x-hidden shadow-2xl border border-border/60" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               {sendStep === "recipient" ? (
                 <div className="w-6" />
@@ -954,7 +1109,7 @@ export function WalletPanel() {
                     value={toAddress}
                     onChange={e => setToAddress(e.target.value)}
                     placeholder="Address (0x…)"
-                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none font-mono"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none font-mono"
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
@@ -1058,7 +1213,7 @@ export function WalletPanel() {
                     placeholder="0"
                     type="number"
                     min="0"
-                    className="flex-1 bg-transparent text-[34px] font-black outline-none tabular-nums mr-3"
+                    className="flex-1 min-w-0 w-full bg-transparent text-[34px] font-black outline-none tabular-nums mr-3"
                     style={{ color: amount ? SEND_ACCENT : "var(--muted-foreground)" }}
                   />
                   <span className="text-xl font-black text-foreground shrink-0">{selectedToken.symbol}</span>
@@ -1069,10 +1224,11 @@ export function WalletPanel() {
                   <div className="flex items-center gap-2.5 shrink-0">
                     <button
                       onClick={handleMax}
-                      disabled={selectedToken.loading || selectedToken.balance === 0}
-                      className="px-3 py-1.5 rounded-full text-xs font-black disabled:opacity-40"
+                      disabled={selectedToken.loading || selectedToken.balance === 0 || maxLoading}
+                      className="px-3 py-1.5 rounded-full text-xs font-black disabled:opacity-40 flex items-center gap-1.5"
                       style={{ backgroundColor: `${SEND_ACCENT}22`, color: SEND_ACCENT }}
                     >
+                      {maxLoading && <Loader2 size={11} className="animate-spin" />}
                       Max
                     </button>
                     <span className="text-xl font-black text-foreground">USD</span>
@@ -1229,54 +1385,8 @@ export function WalletPanel() {
       {/* ── Tokens tab ──────────────────────────────────────────────────── */}
       {tab === "tokens" && (
         <div className="px-4 py-2 space-y-2.5">
-          {tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => (
-            <button
-              key={tk.key}
-              onClick={() => setDetailToken(tk.key)}
-              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border/50 bg-card shadow-sm transition-colors hover:bg-muted/30 cursor-pointer"
-            >
-              <div className="relative shrink-0">
-                <img
-                  src={tk.icon} alt={tk.symbol}
-                  className="w-10 h-10 rounded-full bg-muted"
-                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-                <div
-                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
-                  style={{ backgroundColor: tk.networkColor }}
-                >
-                  <span className="text-[7px] font-bold text-white leading-none">
-                    {tk.network === "Optimism" ? "OP" : tk.network === "Base" ? "B" : tk.network === "Arbitrum" ? "A" : "E"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-sm font-bold text-foreground">{tk.symbol}</p>
-                <div className="inline-flex mt-0.5 px-1.5 py-0.5 rounded-md" style={{ backgroundColor: `${tk.networkColor}1a` }}>
-                  <p className="text-[11px] font-semibold" style={{ color: tk.networkColor }}>{tk.network}</p>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                {tk.loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
-                ) : (
-                  <>
-                    <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, tk.symbol === "USDC" ? 2 : 4)} {tk.symbol}</p>
-                    {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
-                  </>
-                )}
-              </div>
-            </button>
-          ))}
-
-          {/* ERC-20 tokens from Blockscout (Clanker, DEGEN, etc.) */}
-          {loadingErc20 && erc20Tokens.length === 0 && (
-            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Loading tokens…
-            </div>
-          )}
-          {erc20Tokens.filter(tk => !hiddenTokens.has(tk.key)).map(tk => (
+          {/* Native + ERC-20 tokens, merged into one list sorted by USD value (highest first) */}
+          {visibleTokens.map(tk => (
             <button
               key={tk.key}
               onClick={() => setDetailToken(tk.key)}
@@ -1290,9 +1400,11 @@ export function WalletPanel() {
                 <div className={cn("w-10 h-10 rounded-full bg-muted flex items-center justify-center", tk.icon ? "hidden" : "")}>
                   <span className="text-xs font-bold text-muted-foreground">{tk.symbol.slice(0, 3)}</span>
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
-                  style={{ backgroundColor: tk.networkColor }}>
-                  <span className="text-[7px] font-bold text-white leading-none">{tk.network === "Optimism" ? "OP" : "B"}</span>
+                <div
+                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center"
+                  style={{ backgroundColor: tk.networkColor }}
+                >
+                  <span className="text-[7px] font-bold text-white leading-none">{networkAbbrev(tk.network)}</span>
                 </div>
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -1302,11 +1414,24 @@ export function WalletPanel() {
                 </div>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, 4)} {tk.symbol}</p>
-                {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
+                {tk.kind === "native" && tk.loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-foreground tabular-nums">{formatBal(tk.balance, tk.symbol === "USDC" ? 2 : 4)} {tk.symbol}</p>
+                    {tk.usdValue !== null && <p className="text-xs text-muted-foreground tabular-nums">{formatUsd(tk.usdValue)}</p>}
+                  </>
+                )}
               </div>
             </button>
           ))}
+
+          {loadingErc20 && erc20Tokens.length === 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Loading tokens…
+            </div>
+          )}
 
           {/* Hidden tokens — user-managed, collapsible */}
           {(() => {

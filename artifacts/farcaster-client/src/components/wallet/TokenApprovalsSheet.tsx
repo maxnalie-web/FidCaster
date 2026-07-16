@@ -79,6 +79,54 @@ interface Props {
   onClose: () => void;
 }
 
+// Many public RPC providers in this app's own fallback pool (llamarpc,
+// publicnode, drpc, 1rpc, ankr, ...) cap eth_getLogs to a block range far
+// smaller than the ~500k-block window this scan needs — a single request
+// for the whole range gets rejected outright by most of them. Chunking into
+// windows this size keeps each individual call within what virtually every
+// provider accepts, at the cost of more requests (run with limited
+// concurrency so it doesn't hammer the RPC pool).
+const LOG_CHUNK_BLOCKS = 20_000n;
+const LOG_CHUNK_CONCURRENCY = 6;
+
+// getLogs' return type is generic over the `event` config passed to it —
+// deriving it generically (e.g. via a bare ReturnType<typeof getLogs>) loses
+// that and falls back to an untyped Log with no `.args`. Since every call
+// site here always passes APPROVAL_EVENT, just declare the shape directly.
+type ApprovalLog = {
+  address: Address;
+  args: { owner?: Address; spender?: Address; value?: bigint };
+};
+
+async function getLogsChunked(
+  client: typeof publicClient,
+  address: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<ApprovalLog[]> {
+  const ranges: [bigint, bigint][] = [];
+  for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_BLOCKS) {
+    const end = start + LOG_CHUNK_BLOCKS - 1n > toBlock ? toBlock : start + LOG_CHUNK_BLOCKS - 1n;
+    ranges.push([start, end]);
+  }
+
+  const results: ApprovalLog[] = [];
+  for (let i = 0; i < ranges.length; i += LOG_CHUNK_CONCURRENCY) {
+    const batch = ranges.slice(i, i + LOG_CHUNK_CONCURRENCY);
+    const batchResults = await Promise.allSettled(
+      batch.map(([from, to]) =>
+        client.getLogs({ event: APPROVAL_EVENT, args: { owner: address }, fromBlock: from, toBlock: to })
+      )
+    );
+    for (const r of batchResults) {
+      // A single bad chunk (still-too-large-for-that-node, transient error)
+      // shouldn't blank out the whole scan — skip it and keep the rest.
+      if (r.status === "fulfilled") results.push(...r.value);
+    }
+  }
+  return results;
+}
+
 export function TokenApprovalsSheet({ address, walletColor, onClose }: Props) {
   const { walletClient: fcWalletClient } = useWallet();
   const getActiveWalletClient = useWalletStore(s => s.getActiveWalletClient);
@@ -95,14 +143,9 @@ export function TokenApprovalsSheet({ address, walletColor, onClose }: Props) {
     for (const [netId, cfg] of Object.entries(NETWORK_CONFIG) as [NetworkId, typeof NETWORK_CONFIG[NetworkId]][]) {
       try {
         const latestBlock = await cfg.client.getBlockNumber();
-        const fromBlock = latestBlock - 500000n > cfg.fromBlock ? latestBlock - 500000n : cfg.fromBlock;
+        const fromBlock = latestBlock - 1_000_000n > cfg.fromBlock ? latestBlock - 1_000_000n : cfg.fromBlock;
 
-        const logs = await cfg.client.getLogs({
-          event: APPROVAL_EVENT,
-          args: { owner: address },
-          fromBlock,
-          toBlock: "latest",
-        });
+        const logs = await getLogsChunked(cfg.client, address, fromBlock, latestBlock);
 
         // Deduplicate: keep only latest per (token, spender)
         const latestMap = new Map<string, typeof logs[0]>();

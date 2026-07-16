@@ -11,6 +11,7 @@ import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type Far
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { registerRpcProxy } from "./rpc-proxy.js";
+import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { initSignPool } from "./sign-pool.js";
@@ -894,15 +895,33 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
     res.status(400).json({ error: "Invalid or missing url param" });
     return;
   }
+  // helmet() above applies its own CSP/frame/cross-origin headers to every
+  // route by default, including this one — 'self' in that policy means OUR
+  // origin, so it silently blocked every script on the proxied page (both
+  // the target site's own bundle and the nav script injected below) even
+  // after the target's own CSP/X-Frame-Options were stripped further down.
+  // That combination is what actually produced the permanently-blank frame:
+  // the HTML/CSS painted, nothing ever executed. Strip helmet's headers
+  // before doing anything else on this route.
+  res.removeHeader("Content-Security-Policy");
+  res.removeHeader("Content-Security-Policy-Report-Only");
+  res.removeHeader("X-Frame-Options");
+  res.removeHeader("Cross-Origin-Opener-Policy");
+  res.removeHeader("Cross-Origin-Resource-Policy");
+  res.removeHeader("Cross-Origin-Embedder-Policy");
   try {
-    const upstream = await fetch(targetUrl, {
+    // safeFetch validates the target's ACTUAL resolved IP (not just the URL
+    // text) against private/reserved/loopback/link-local ranges — including
+    // the cloud metadata address — and re-checks on every redirect hop, so
+    // this can't be pointed at the server's own internal network (SSRF).
+    // See ssrf-guard.ts for what specifically is blocked and why.
+    const upstream = await safeFetch(targetUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },
       signal: AbortSignal.timeout(15_000),
-      redirect: "follow",
     });
 
     // Build a clean response header map — strip frame-blocking directives.
@@ -922,6 +941,16 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
     const ct = (stripped["content-type"] ?? upstream.headers.get("content-type") ?? "").toLowerCase();
     if (ct.includes("text/html")) {
       let html = await upstream.text();
+      // Many sites (Uniswap, OpenSea, ...) ALSO ship CSP as an in-body <meta>
+      // tag, which the header-strip above never touches. Since the document
+      // is served from OUR origin, that meta tag's 'self' resolves to us —
+      // not the target site — so it blocks every one of the page's own
+      // scripts (and our injected nav script below) from running at all,
+      // leaving a permanently blank page. Strip it same as the header.
+      html = html.replace(
+        /<meta[^>]+http-equiv=["']content-security-policy(?:-report-only)?["'][^>]*>/gi,
+        ""
+      );
       // Inject <base> so relative resources resolve against the original origin
       const origin = new URL(upstream.url || targetUrl).origin + "/";
       const baseTag = `<base href="${origin}">`;
@@ -949,12 +978,98 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
           }catch(e){}
         },true);
       })();</script>`;
+      // Bridges window.ethereum (EIP-1193 + EIP-6963) to the parent page over
+      // postMessage. Every account/chain/signing request is relayed to
+      // DeFiBrowserSheet.tsx, which is the only place that ever touches the
+      // real wallet client — this script itself never sees any key material.
+      // Without this, "Connect Wallet" inside the framed dApp had nothing to
+      // talk to at all (no window.ethereum existed), so the browser could
+      // load pages but never actually interact with them.
+      const providerScript = `<script>(function(){
+        if (window.top !== window.self && window.parent) {
+          var pending = {};
+          var reqId = 0;
+          var listeners = {};
+          var chainIdHex = null;
+          var accounts = [];
+
+          function emit(ev, data){
+            var hs = listeners[ev] || [];
+            for (var i = 0; i < hs.length; i++) { try { hs[i](data); } catch(e){} }
+          }
+
+          window.addEventListener('message', function(ev){
+            if (ev.source !== window.parent || ev.origin !== window.location.origin) return;
+            var d = ev.data;
+            if (!d || typeof d !== 'object') return;
+            if (d.type === 'fidcaster:wallet:event') {
+              if (d.event === 'chainChanged') chainIdHex = d.data;
+              if (d.event === 'accountsChanged') accounts = d.data || [];
+              if (d.event === 'disconnect') accounts = [];
+              emit(d.event, d.data);
+              return;
+            }
+            if (d.type !== 'fidcaster:wallet:response') return;
+            var entry = pending[d.id];
+            if (!entry) return;
+            delete pending[d.id];
+            if (d.error) { var err = new Error(d.error.message || 'Request failed'); err.code = d.error.code; entry.reject(err); }
+            else entry.resolve(d.result);
+          });
+
+          function request(args){
+            var method = args && args.method;
+            var params = (args && args.params) || [];
+            return new Promise(function(resolve, reject){
+              var id = 'r' + (++reqId);
+              pending[id] = { resolve: resolve, reject: reject };
+              window.parent.postMessage({ type: 'fidcaster:wallet:request', id: id, method: method, params: params }, window.location.origin);
+              setTimeout(function(){ if (pending[id]) { delete pending[id]; reject(new Error('Request timed out')); } }, 120000);
+            });
+          }
+
+          var provider = {
+            isMetaMask: true,
+            isFidCaster: true,
+            request: request,
+            enable: function(){ return request({ method: 'eth_requestAccounts' }); },
+            send: function(a, b){
+              if (typeof a === 'string') return request({ method: a, params: b });
+              request({ method: a.method, params: a.params }).then(
+                function(result){ b(null, { id: a.id, jsonrpc: '2.0', result: result }); },
+                function(err){ b(err); }
+              );
+            },
+            sendAsync: function(payload, cb){
+              request({ method: payload.method, params: payload.params }).then(
+                function(result){ cb(null, { id: payload.id, jsonrpc: '2.0', result: result }); },
+                function(err){ cb(err); }
+              );
+            },
+            on: function(ev, h){ (listeners[ev] = listeners[ev] || []).push(h); },
+            removeListener: function(ev, h){ if (listeners[ev]) listeners[ev] = listeners[ev].filter(function(x){ return x !== h; }); },
+            get chainId(){ return chainIdHex; },
+            get selectedAddress(){ return accounts[0] || null; },
+          };
+
+          try { Object.defineProperty(window, 'ethereum', { value: provider, configurable: true }); }
+          catch(e) { window.ethereum = provider; }
+
+          function announce(){
+            var info = { uuid: 'fidcaster-wallet-' + window.location.origin, name: 'FidCaster Wallet', icon: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTYiIGZpbGw9IiM2MzY2ZjEiLz48L3N2Zz4=', rdns: 'xyz.fidcaster.wallet' };
+            window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info: info, provider: provider }) }));
+          }
+          window.addEventListener('eip6963:requestProvider', announce);
+          announce();
+          window.parent.postMessage({ type: 'fidcaster:wallet:ready' }, window.location.origin);
+        }
+      })();</script>`;
       if (!html.includes("<base")) {
-        html = html.replace(/(<head[^>]*>)/i, `$1${baseTag}${navScript}`);
-        if (!html.includes(baseTag)) html = baseTag + navScript + html;
+        html = html.replace(/(<head[^>]*>)/i, `$1${baseTag}${navScript}${providerScript}`);
+        if (!html.includes(baseTag)) html = baseTag + navScript + providerScript + html;
       } else {
-        html = html.replace(/(<head[^>]*>)/i, `$1${navScript}`);
-        if (!html.includes(navScript)) html = navScript + html;
+        html = html.replace(/(<head[^>]*>)/i, `$1${navScript}${providerScript}`);
+        if (!html.includes(navScript)) html = navScript + providerScript + html;
       }
       res.status(upstream.status);
       res.set({ ...stripped, "cache-control": "no-store" });

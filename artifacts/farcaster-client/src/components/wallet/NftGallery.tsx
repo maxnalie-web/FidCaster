@@ -47,9 +47,9 @@ interface Props {
   address: string;
 }
 
-type ChainNfts = { items: NftItem[]; next?: string; loading: boolean; error: string | null; loaded: boolean };
+type ChainNfts = { items: NftItem[]; next?: string; loading: boolean; loadingMore: boolean; error: string | null; loaded: boolean };
 
-const emptyChain = (): ChainNfts => ({ items: [], loading: false, error: null, loaded: false, next: undefined });
+const emptyChain = (): ChainNfts => ({ items: [], loading: false, loadingMore: false, error: null, loaded: false, next: undefined });
 
 export function NftGallery({ address }: Props) {
   const [selected, setSelected] = useState<(NftItem & { chain: Chain }) | null>(null);
@@ -59,7 +59,10 @@ export function NftGallery({ address }: Props) {
   });
 
   const loadChain = useCallback(async (chain: Chain, cursor?: string) => {
-    setChainData(prev => ({ ...prev, [chain]: { ...prev[chain], loading: true, error: null } }));
+    setChainData(prev => ({
+      ...prev,
+      [chain]: { ...prev[chain], loading: !cursor, loadingMore: !!cursor, error: null },
+    }));
     try {
       const data = await fetchNfts(chain, address, cursor);
       setChainData(prev => ({
@@ -67,13 +70,25 @@ export function NftGallery({ address }: Props) {
         [chain]: {
           items: cursor ? [...prev[chain].items, ...(data.nfts ?? [])] : (data.nfts ?? []),
           next: data.next,
-          loading: false, error: null, loaded: true,
+          loading: false, loadingMore: false, error: null, loaded: true,
         },
       }));
     } catch (e) {
-      setChainData(prev => ({ ...prev, [chain]: { ...prev[chain], loading: false, error: String(e), loaded: true } }));
+      setChainData(prev => ({ ...prev, [chain]: { ...prev[chain], loading: false, loadingMore: false, error: String(e), loaded: true } }));
     }
   }, [address]);
+
+  const loadMore = useCallback((chain: Chain) => {
+    const cursor = chainData[chain].next;
+    if (cursor) loadChain(chain, cursor);
+  }, [chainData, loadChain]);
+
+  // "Load more" for the currently-filtered chain(s) — in the "all" view this
+  // pages every chain that still has more, so the grid keeps growing evenly.
+  const chainsWithMore = (filter === "all" ? CHAINS : [filter]).filter(
+    c => chainData[c].next && !chainData[c].loading && !chainData[c].loadingMore
+  );
+  const anyLoadingMore = CHAINS.some(c => chainData[c].loadingMore);
 
   useEffect(() => {
     CHAINS.forEach(c => loadChain(c));
@@ -187,6 +202,18 @@ export function NftGallery({ address }: Props) {
           );
         })}
       </div>
+
+      {/* Load more — pages whichever chain(s) still have a next cursor */}
+      {chainsWithMore.length > 0 && (
+        <button
+          onClick={() => chainsWithMore.forEach(c => loadMore(c))}
+          disabled={anyLoadingMore}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-60"
+        >
+          {anyLoadingMore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+          {anyLoadingMore ? "Loading more…" : "Load more"}
+        </button>
+      )}
 
       {/* Detail modal */}
       {selected && (

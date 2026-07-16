@@ -2,11 +2,12 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, RefreshCw, MoreHorizontal, Wifi, WifiOff,
-  Copy, ExternalLink, Shield, Check, Search,
+  Copy, ExternalLink, Shield, Check, Search, AlertTriangle, Loader2,
 } from "lucide-react";
 import { useWalletStore } from "@/store/walletStore";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isHex, hexToString, isAddress, formatEther, type WalletClient } from "viem";
 
 const NETWORK_CONFIG = {
   optimism: { label: "Optimism", short: "OP", color: "#ff0420", chainId: 10 },
@@ -14,6 +15,66 @@ const NETWORK_CONFIG = {
 } as const;
 
 type Network = keyof typeof NETWORK_CONFIG;
+const CHAIN_ID_HEX: Record<Network, string> = {
+  optimism: "0xa",     // 10
+  base: "0x2105",      // 8453
+};
+const CHAIN_ID_TO_NETWORK: Record<string, Network> = {
+  "0xa": "optimism",
+  "0x2105": "base",
+};
+
+// ── window.ethereum bridge: request/response over postMessage ──────────────
+// The provider script injected server-side (server/index.ts) relays every
+// account/chain/signing call the framed dApp makes into this component —
+// this is the ONLY place that ever touches the real wallet client. Requests
+// that just read state (chainId, accounts) resolve immediately; anything
+// that connects, signs, or sends requires an explicit tap on the approval
+// card rendered below.
+type WalletRequestMsg = { type: "fidcaster:wallet:request"; id: string; method: string; params: unknown[] };
+type WalletReadyMsg = { type: "fidcaster:wallet:ready" };
+type IncomingMsg = WalletRequestMsg | WalletReadyMsg | { type: string };
+
+const IMMEDIATE_METHODS = new Set(["eth_chainId", "net_version", "eth_accounts", "web3_clientVersion"]);
+const GATED_METHODS = new Set([
+  "eth_requestAccounts", "eth_sendTransaction",
+  "personal_sign", "eth_sign",
+  "eth_signTypedData", "eth_signTypedData_v3", "eth_signTypedData_v4",
+  "wallet_switchEthereumChain", "wallet_addEthereumChain",
+]);
+
+interface PendingRequest {
+  id: string;
+  method: string;
+  params: unknown[];
+}
+
+function extractSignMessage(params: unknown[]): { address: string | null; message: string } {
+  // personal_sign / eth_sign params can arrive as [data, address] OR
+  // [address, data] depending on the dApp — detect which slot is the address.
+  const [p0, p1] = [params[0], params[1]];
+  const isAddr0 = typeof p0 === "string" && isAddress(p0);
+  const addrRaw = isAddr0 ? (p0 as string) : (typeof p1 === "string" ? p1 : null);
+  const dataRaw = isAddr0 ? p1 : p0;
+  let message = typeof dataRaw === "string" ? dataRaw : "";
+  if (isHex(message)) {
+    try { message = hexToString(message as `0x${string}`); } catch { /* keep raw hex if it isn't valid utf8 */ }
+  }
+  return { address: addrRaw, message };
+}
+
+function extractTypedData(params: unknown[]): { address: string | null; typedData: Record<string, unknown> | null } {
+  const [p0, p1] = [params[0], params[1]];
+  const isAddr0 = typeof p0 === "string" && isAddress(p0);
+  const addrRaw = isAddr0 ? (p0 as string) : (typeof p1 === "string" ? p1 : null);
+  const dataRaw = isAddr0 ? p1 : p0;
+  try {
+    const typedData = typeof dataRaw === "string" ? JSON.parse(dataRaw) : (dataRaw as Record<string, unknown>);
+    return { address: addrRaw, typedData };
+  } catch {
+    return { address: addrRaw, typedData: null };
+  }
+}
 
 function getDomain(rawUrl: string): string {
   try { return new URL(rawUrl).hostname.replace(/^www\./, ""); }
@@ -58,8 +119,11 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [showTopMenu, setShowTopMenu]       = useState(false);
   const [iframeKey, setIframeKey]   = useState(0);
+  const [pendingQueue, setPendingQueue] = useState<PendingRequest[]>([]);
+  const [processing, setProcessing] = useState(false);
 
   const urlRef = useRef<HTMLInputElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Safety valve: if the proxy or target site never fires onLoad, don't leave
   // the spinner up forever — reveal whatever the iframe managed to render.
@@ -74,6 +138,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const activeAccIdx      = useWalletStore(s => s.activeAccountIndex);
   const setActiveWallet   = useWalletStore(s => s.setActiveWallet);
   const getActiveWallet   = useWalletStore(s => s.activeWallet);
+  const getActiveWalletClient = useWalletStore(s => s.getActiveWalletClient);
 
   const activeWallet  = getActiveWallet();
   const activeAccount = activeWallet?.accounts.find(a => a.index === activeAccIdx);
@@ -82,6 +147,174 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const walletColor = activeWallet?.color ?? "#6366f1";
   const walletEmoji = activeWallet?.emoji ?? "💼";
   const walletLabel = activeWallet?.label ?? "Wallet";
+
+  // Keep the provider bridge (inside the iframe) in sync with connection
+  // state — refs so the message-handling effect below always reads the
+  // latest values without needing to re-subscribe on every change.
+  const stateRef = useRef({ address, isConnected, network });
+  useEffect(() => { stateRef.current = { address, isConnected, network }; }, [address, isConnected, network]);
+
+  function postToFrame(msg: unknown) {
+    iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
+  }
+
+  function respond(id: string, result?: unknown, error?: { code: number; message: string }) {
+    postToFrame({ type: "fidcaster:wallet:response", id, result, error });
+  }
+
+  // ── Incoming requests from the framed dApp ────────────────────────────
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.source !== iframeRef.current?.contentWindow) return;
+      if (ev.origin !== window.location.origin) return;
+      const d = ev.data as IncomingMsg;
+      if (!d || typeof d !== "object") return;
+
+      if (d.type === "fidcaster:wallet:ready") {
+        const { address: addr, isConnected: connected, network: net } = stateRef.current;
+        postToFrame({ type: "fidcaster:wallet:event", event: "chainChanged", data: CHAIN_ID_HEX[net] });
+        if (connected && addr) {
+          postToFrame({ type: "fidcaster:wallet:event", event: "accountsChanged", data: [addr] });
+        }
+        return;
+      }
+
+      if (d.type !== "fidcaster:wallet:request") return;
+      const req = d as WalletRequestMsg;
+      const { address: addr, isConnected: connected, network: net } = stateRef.current;
+
+      if (IMMEDIATE_METHODS.has(req.method)) {
+        if (req.method === "eth_chainId") return respond(req.id, CHAIN_ID_HEX[net]);
+        if (req.method === "net_version") return respond(req.id, String(NETWORK_CONFIG[net].chainId));
+        if (req.method === "eth_accounts") return respond(req.id, connected && addr ? [addr] : []);
+        if (req.method === "web3_clientVersion") return respond(req.id, "FidCasterWallet/1.0");
+        return;
+      }
+
+      if (GATED_METHODS.has(req.method)) {
+        // eth_requestAccounts when already connected doesn't need to
+        // re-prompt — just return the account, matching how real wallets
+        // behave once a site has already been granted access.
+        if (req.method === "eth_requestAccounts" && connected && addr) {
+          return respond(req.id, [addr]);
+        }
+        if (req.method !== "eth_requestAccounts" && !connected) {
+          return respond(req.id, undefined, { code: 4100, message: "Unauthorized — connect the wallet first." });
+        }
+        setPendingQueue(q => [...q, { id: req.id, method: req.method, params: req.params }]);
+        return;
+      }
+
+      respond(req.id, undefined, { code: 4200, message: `Unsupported method: ${req.method}` });
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  // Broadcast chain/account changes into the iframe whenever they happen
+  // locally (network switch, connect/disconnect) so the dApp's own
+  // chainChanged/accountsChanged listeners fire, same as a real wallet.
+  useEffect(() => {
+    postToFrame({ type: "fidcaster:wallet:event", event: "chainChanged", data: CHAIN_ID_HEX[network] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [network, iframeKey]);
+
+  useEffect(() => {
+    postToFrame({ type: "fidcaster:wallet:event", event: isConnected && address ? "accountsChanged" : "disconnect", data: isConnected && address ? [address] : [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address, iframeKey]);
+
+  const currentRequest = pendingQueue[0] ?? null;
+
+  function finishCurrentRequest() {
+    setPendingQueue(q => q.slice(1));
+  }
+
+  async function approveRequest() {
+    if (!currentRequest || processing) return;
+    setProcessing(true);
+    const { id, method, params } = currentRequest;
+    try {
+      if (method === "eth_requestAccounts") {
+        if (!address) throw Object.assign(new Error("No wallet available"), { code: 4001 });
+        setIsConnected(true);
+        respond(id, [address]);
+        toast.success("Site connected", { description: truncAddr(address) });
+      } else if (method === "wallet_switchEthereumChain") {
+        const target = (params[0] as { chainId?: string } | undefined)?.chainId?.toLowerCase();
+        const targetNet = target ? CHAIN_ID_TO_NETWORK[target] : undefined;
+        if (!targetNet) {
+          respond(id, undefined, { code: 4902, message: "Unrecognized or unsupported chain." });
+        } else {
+          setNetwork(targetNet);
+          respond(id, null);
+        }
+      } else if (method === "wallet_addEthereumChain") {
+        // We only ever operate on the two chains we already support —
+        // treat this as a no-op success if it matches one of them, reject
+        // otherwise rather than pretending to add an arbitrary network.
+        const target = (params[0] as { chainId?: string } | undefined)?.chainId?.toLowerCase();
+        if (target && CHAIN_ID_TO_NETWORK[target]) respond(id, null);
+        else respond(id, undefined, { code: 4200, message: "Adding custom networks isn't supported." });
+      } else if (method === "eth_sendTransaction") {
+        const wc = await getWalletClientForCurrentNetwork();
+        const tx = params[0] as { to?: string; value?: string; data?: string; gas?: string };
+        if (!tx.to || !isAddress(tx.to)) throw new Error("Invalid transaction recipient");
+        const hash = await wc.sendTransaction({
+          account: wc.account!,
+          chain: wc.chain!,
+          to: tx.to as `0x${string}`,
+          value: tx.value ? BigInt(tx.value) : 0n,
+          data: (tx.data as `0x${string}` | undefined) ?? undefined,
+          ...(tx.gas ? { gas: BigInt(tx.gas) } : {}),
+        });
+        respond(id, hash);
+        toast.success("Transaction sent");
+      } else if (method === "personal_sign" || method === "eth_sign") {
+        const wc = await getWalletClientForCurrentNetwork();
+        const { message } = extractSignMessage(params);
+        const sig = await wc.signMessage({ account: wc.account!, message });
+        respond(id, sig);
+      } else if (method === "eth_signTypedData_v4" || method === "eth_signTypedData_v3" || method === "eth_signTypedData") {
+        const wc = await getWalletClientForCurrentNetwork();
+        const { typedData } = extractTypedData(params);
+        if (!typedData) throw new Error("Malformed typed data");
+        const sig = await wc.signTypedData({
+          account: wc.account!,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          domain: typedData.domain as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          types: typedData.types as any,
+          primaryType: typedData.primaryType as string,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          message: typedData.message as any,
+        });
+        respond(id, sig);
+      } else {
+        respond(id, undefined, { code: 4200, message: "Unsupported method" });
+      }
+    } catch (e) {
+      const err = e as Error & { code?: number };
+      respond(id, undefined, { code: err.code ?? -32603, message: err.message ?? "Request failed" });
+      toast.error(err.message?.slice(0, 140) ?? "Request failed");
+    } finally {
+      setProcessing(false);
+      finishCurrentRequest();
+    }
+  }
+
+  function rejectRequest() {
+    if (!currentRequest) return;
+    respond(currentRequest.id, undefined, { code: 4001, message: "User rejected the request." });
+    finishCurrentRequest();
+  }
+
+  async function getWalletClientForCurrentNetwork(): Promise<WalletClient> {
+    const clients = await getActiveWalletClient();
+    if (!clients) throw new Error("No wallet connected");
+    return network === "base" ? clients.baseWalletClient : clients.walletClient;
+  }
 
   const navigate = useCallback((raw: string) => {
     const norm = normalizeUrl(raw);
@@ -92,6 +325,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
     setIsLoading(true);
     setIframeKey(k => k + 1);
     setIsConnected(false);
+    setPendingQueue([]); // the old page (and its pending requests) is gone
   }, []);
 
   function handleSubmit(e: React.FormEvent) {
@@ -114,6 +348,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
     setIsLoading(true);
     setIframeKey(k => k + 1);
     setShowTopMenu(false);
+    setPendingQueue([]);
   }
 
   function copyAddress() {
@@ -294,6 +529,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
               </div>
             )}
             <iframe
+              ref={iframeRef}
               key={iframeKey}
               src={`/api/browser-proxy?url=${encodeURIComponent(url)}`}
               title="Browser"
@@ -439,6 +675,49 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                 </>
               )}
             </AnimatePresence>
+
+            {/* Switch-network popup — small, anchored right next to the ⋯
+                button (both the network badge and the ⋯ menu's "Switch
+                network" item open this), not a full-screen sheet. */}
+            <AnimatePresence>
+              {showNetPicker && (
+                <>
+                  <div className="fixed inset-0 z-[81]" onClick={() => setShowNetPicker(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                    transition={{ duration: 0.12 }}
+                    className="absolute bottom-10 right-0 w-48 rounded-2xl bg-card border border-border shadow-2xl z-[82] overflow-hidden"
+                  >
+                    <div className="px-4 pt-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                      Network
+                    </div>
+                    {(Object.entries(NETWORK_CONFIG) as [Network, typeof NETWORK_CONFIG[Network]][]).map(([key, cfg]) => {
+                      const isActive = network === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setNetwork(key);
+                            setShowNetPicker(false);
+                            if (isConnected) toast.info(`Switched to ${cfg.label}`);
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-4 py-2.5 text-sm hover:bg-muted/40 text-foreground border-t border-border/40",
+                            isActive && "bg-muted/25"
+                          )}
+                        >
+                          <div className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: cfg.color }} />
+                          <span className="flex-1 text-left font-medium">{cfg.label}</span>
+                          {isActive && <Check size={13} className="shrink-0" style={{ color: cfg.color }} />}
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -536,82 +815,131 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── Network picker sheet ─────────────────────────────────── */}
-      <AnimatePresence>
-        {showNetPicker && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[85] flex flex-col justify-end"
-          >
-            <div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowNetPicker(false)}
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 38 }}
-              className="relative z-10 bg-card rounded-t-3xl"
-            >
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
-              </div>
+      {/* ── dApp request approval card ───────────────────────────────── */}
+      {currentRequest && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-card border border-border rounded-3xl shadow-2xl overflow-hidden">
+            <div className="px-5 pt-5 pb-4 border-b border-border/60">
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">{domain}</p>
+              <p className="text-[15px] font-semibold text-foreground">
+                {requestTitle(currentRequest.method)}
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <RequestSummary request={currentRequest} address={address} network={network} />
+              {currentRequest.method === "eth_sendTransaction" && (
+                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                  This transaction is not simulated first — only approve if you trust this site.
+                </div>
+              )}
+              {pendingQueue.length > 1 && (
+                <p className="text-[11px] text-muted-foreground text-center">+{pendingQueue.length - 1} more request{pendingQueue.length > 2 ? "s" : ""} waiting</p>
+              )}
+            </div>
+            <div className="px-5 pb-5 flex gap-2">
+              <button onClick={rejectRequest} disabled={processing}
+                className="flex-1 py-3.5 rounded-xl border border-border text-sm font-bold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50">
+                Reject
+              </button>
+              <button onClick={approveRequest} disabled={processing}
+                className="flex-1 py-3.5 rounded-xl text-white text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                style={{ backgroundColor: walletColor }}>
+                {processing ? <><Loader2 size={14} className="animate-spin" /> Working…</> : "Approve"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="flex items-center justify-between px-5 py-3">
-                <span className="text-base font-bold text-foreground">Select Network</span>
-                <button onClick={() => setShowNetPicker(false)} className="p-1 text-muted-foreground hover:text-foreground">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="px-4 pb-10 flex flex-col gap-2.5">
-                {(Object.entries(NETWORK_CONFIG) as [Network, typeof NETWORK_CONFIG[Network]][]).map(([key, cfg]) => {
-                  const isActive = network === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => {
-                        setNetwork(key);
-                        setShowNetPicker(false);
-                        if (isConnected) toast.info(`Switched to ${cfg.label}`);
-                      }}
-                      className={cn(
-                        "flex items-center gap-4 w-full p-4 rounded-2xl border-2 transition-all",
-                        isActive ? "" : "border-border/50 hover:border-border"
-                      )}
-                      style={isActive ? { borderColor: cfg.color, background: `${cfg.color}12` } : {}}
-                    >
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: cfg.color }}
-                      >
-                        <span className="text-white font-black text-sm leading-none">{cfg.short[0]}</span>
-                      </div>
-                      <div className="flex-1 text-left">
-                        <p className="text-sm font-bold text-foreground">{cfg.label}</p>
-                        <p className="text-xs text-muted-foreground">Chain ID {cfg.chainId}</p>
-                      </div>
-                      {isActive && (
-                        <div
-                          className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
-                          style={{ background: cfg.color }}
-                        >
-                          <Check size={11} className="text-white" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
     </div>
   );
+}
+
+function requestTitle(method: string): string {
+  if (method === "eth_requestAccounts") return "wants to connect to your wallet";
+  if (method === "wallet_switchEthereumChain") return "wants to switch network";
+  if (method === "wallet_addEthereumChain") return "wants to add a network";
+  if (method === "eth_sendTransaction") return "wants to send a transaction";
+  if (method === "personal_sign" || method === "eth_sign") return "wants you to sign a message";
+  if (method.startsWith("eth_signTypedData")) return "wants you to sign typed data";
+  return `wants to call ${method}`;
+}
+
+function RequestSummary({ request, address, network }: { request: PendingRequest; address: string; network: Network }) {
+  const { method, params } = request;
+
+  if (method === "eth_requestAccounts") {
+    return (
+      <div className="rounded-xl border border-border/50 bg-muted/30 px-4 py-3 text-sm">
+        <p className="text-muted-foreground text-xs mb-0.5">Account</p>
+        <p className="font-mono text-foreground">{address || "No account"}</p>
+      </div>
+    );
+  }
+
+  if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") {
+    const target = (params[0] as { chainId?: string } | undefined)?.chainId?.toLowerCase();
+    const targetNet = target ? CHAIN_ID_TO_NETWORK[target] : undefined;
+    return (
+      <div className="rounded-xl border border-border/50 bg-muted/30 px-4 py-3 text-sm flex items-center justify-between">
+        <span className="text-muted-foreground">Network</span>
+        <span className="font-semibold text-foreground">
+          {targetNet ? NETWORK_CONFIG[targetNet].label : `Unsupported (${target ?? "?"})`}
+        </span>
+      </div>
+    );
+  }
+
+  if (method === "eth_sendTransaction") {
+    const tx = (params[0] as { to?: string; value?: string; data?: string }) ?? {};
+    const valueEth = tx.value ? formatEther(BigInt(tx.value)) : "0";
+    return (
+      <div className="rounded-xl border border-border/50 bg-muted/30 divide-y divide-border/40 text-sm">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="text-muted-foreground">To</span>
+          <span className="font-mono text-xs text-foreground">{tx.to ? truncAddr(tx.to) : "—"}</span>
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="text-muted-foreground">Value</span>
+          <span className="font-mono text-xs text-foreground">{valueEth} ETH</span>
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="text-muted-foreground">Network</span>
+          <span className="text-foreground">{NETWORK_CONFIG[network].label}</span>
+        </div>
+        {tx.data && tx.data !== "0x" && (
+          <div className="px-4 py-2.5">
+            <p className="text-muted-foreground mb-1">Data</p>
+            <p className="font-mono text-[10px] text-foreground break-all leading-relaxed max-h-16 overflow-y-auto">{tx.data}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (method === "personal_sign" || method === "eth_sign") {
+    const { message } = extractSignMessage(params);
+    return (
+      <div className="rounded-xl border border-border/50 bg-muted/30 px-4 py-3">
+        <p className="text-muted-foreground text-xs mb-1">Message</p>
+        <p className="text-xs text-foreground break-all whitespace-pre-wrap max-h-32 overflow-y-auto">{message || "(empty)"}</p>
+      </div>
+    );
+  }
+
+  if (method.startsWith("eth_signTypedData")) {
+    const { typedData } = extractTypedData(params);
+    return (
+      <div className="rounded-xl border border-border/50 bg-muted/30 px-4 py-3">
+        <p className="text-muted-foreground text-xs mb-1">Typed data{typedData?.primaryType ? ` · ${String(typedData.primaryType)}` : ""}</p>
+        <pre className="text-[10px] text-foreground break-all whitespace-pre-wrap max-h-32 overflow-y-auto font-mono">
+          {typedData ? JSON.stringify(typedData.message ?? typedData, null, 2).slice(0, 800) : "(unparseable)"}
+        </pre>
+      </div>
+    );
+  }
+
+  return null;
 }

@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ChevronDown, ChevronRight, Plus, KeyRound, FileKey, Eye,
   ShieldAlert, ArrowUp, ArrowDown, Settings, Copy, CheckCircle2,
 } from "lucide-react";
 import { useWalletStore, type Wallet } from "@/store/walletStore";
+import { PinGate } from "@/components/wallet/PinGate";
 
 interface Props {
   onClose: () => void;
@@ -22,6 +23,9 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
 
   const [expandedId, setExpandedId] = useState<string | null>(activeWalletId);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
+  const clipClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Exporting a private key requires the wallet PIN — see lib/walletPin.ts.
+  const [pinGateFor, setPinGateFor] = useState<{ wallet: Wallet; accountIndex: number } | null>(null);
 
   function kindIcon(kind: Wallet["kind"]) {
     if (kind === "seed") return KeyRound;
@@ -39,10 +43,20 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
     try {
       const hex = await revealPrivateKey(wallet.id, accountIndex);
       const confirmed = window.confirm(
-        "This key controls your funds. Never share it.\n\nCopy to clipboard?"
+        "This key controls your funds. Never share it.\n\nCopy to clipboard? It will be cleared automatically after 60 seconds."
       );
       if (confirmed) {
         await navigator.clipboard.writeText(hex).catch(() => {});
+        // Match WalletDetailSettings' reveal flow: never leave a raw private
+        // key sitting in the OS clipboard indefinitely.
+        if (clipClearRef.current) clearTimeout(clipClearRef.current);
+        clipClearRef.current = setTimeout(async () => {
+          try {
+            const cur = await navigator.clipboard.readText();
+            if (cur === hex) await navigator.clipboard.writeText("");
+          } catch { /* clipboard read denied / changed — nothing to do */ }
+          clipClearRef.current = null;
+        }, 60_000);
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not export key.");
@@ -152,7 +166,7 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
                         {wallet.kind !== "watch-only" && (
                           <button
                             className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={e => { e.stopPropagation(); onExportKey(wallet, account.index); }}
+                            onClick={e => { e.stopPropagation(); setPinGateFor({ wallet, accountIndex: account.index }); }}
                           >
                             <KeyRound size={12} />
                           </button>
@@ -197,6 +211,17 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
           <span className="text-sm font-semibold text-muted-foreground">Wallet settings</span>
         </button>
       </div>
+
+      <PinGate
+        open={pinGateFor !== null}
+        title="Required to export a private key."
+        onSuccess={() => {
+          const target = pinGateFor;
+          setPinGateFor(null);
+          if (target) onExportKey(target.wallet, target.accountIndex);
+        }}
+        onCancel={() => setPinGateFor(null)}
+      />
     </div>
   );
 }

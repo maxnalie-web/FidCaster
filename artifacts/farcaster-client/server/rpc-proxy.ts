@@ -5,11 +5,13 @@
  *   1. CORS: several public nodes reject browser POSTs → "Failed to fetch".
  *   2. Rate limits: free tiers (1rpc, ankr) cap per-IP; a busy user burns them.
  *
- * This proxy forwards each JSON-RPC call from the SERVER, rotating across a large
- * pool of public endpoints. On a rate-limit / network error it transparently
- * advances to the next node, so a single exhausted endpoint never surfaces to the
- * user. eth_sendRawTransaction is broadcast to nodes in turn until one accepts
- * (or reports the tx already known / nonce consumed — both mean it landed).
+ * This proxy forwards each JSON-RPC call from the SERVER against a POOL of public
+ * endpoints, racing several of them in parallel per request (Promise.any) instead
+ * of trying one at a time — response time is the fastest node's latency, not the
+ * sum of every slow/dead one tried in sequence. Reads (eth_getBalance, eth_call,
+ * ...) race RACE_SIZE_READ nodes; eth_sendRawTransaction races RACE_SIZE_SEND
+ * nodes so the tx also propagates to multiple mempools at once. If the whole race
+ * loses, the remaining pool is tried sequentially as a last-resort fallback.
  *
  * Zero API keys, zero per-user limits from the browser's perspective: the pool is
  * effectively unlimited because load is spread and dead nodes are skipped.
@@ -36,6 +38,26 @@ const BASE_POOL = [
   "https://mainnet.base.org",
   "https://rpc.ankr.com/base",
   "https://1rpc.io/base",
+];
+
+const ARB_POOL = [
+  "https://arbitrum.llamarpc.com",
+  "https://arbitrum-one.publicnode.com",
+  "https://arbitrum.drpc.org",
+  "https://arb1.arbitrum.io/rpc",
+  "https://arbitrum.gateway.tenderly.co",
+  "https://rpc.ankr.com/arbitrum",
+  "https://1rpc.io/arb",
+];
+
+const ETH_POOL = [
+  "https://eth.llamarpc.com",
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+  "https://ethereum.gateway.tenderly.co",
+  "https://rpc.ankr.com/eth",
+  "https://1rpc.io/eth",
+  "https://cloudflare-eth.com",
 ];
 
 // Per-endpoint cooldown after a rate-limit / failure so we stop hammering it.
@@ -84,12 +106,12 @@ function isAlreadyBroadcast(err: { message?: string } | undefined): boolean {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function forwardOnce(url: string, body: RpcBody): Promise<any> {
+async function forwardOnce(url: string, body: RpcBody, timeoutMs: number): Promise<any> {
   const r = await fetch(`${url}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(12_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) {
     // HTTP-level failure (429/5xx/403) → node unhealthy
@@ -101,6 +123,43 @@ async function forwardOnce(url: string, body: RpcBody): Promise<any> {
   return r.json();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Attempted = { json: any; url: string };
+
+/**
+ * One node attempt, shaped for Promise.any: resolves for anything that's an
+ * AUTHORITATIVE answer (real success, or a deterministic error that would be
+ * identical on every node), rejects for anything that just means "this node
+ * is unhealthy, another one in the race might still come back clean".
+ */
+async function attempt(url: string, body: RpcBody, isSend: boolean, timeoutMs: number): Promise<Attempted> {
+  try {
+    const json = await forwardOnce(url, body, timeoutMs);
+    if (json && typeof json === "object" && "error" in json && json.error) {
+      const rpcErr = json.error as { code?: number; message?: string };
+      if (isSend && isAlreadyBroadcast(rpcErr)) return { json, url };
+      if (isRetriableRpcError(rpcErr)) {
+        cooldownUntil.set(url, Date.now() + COOLDOWN_MS);
+        throw new Error(rpcErr.message ?? "rpc error");
+      }
+      return { json, url }; // deterministic error (revert, bad params, ...)
+    }
+    return { json, url };
+  } catch (e) {
+    cooldownUntil.set(url, Date.now() + COOLDOWN_MS);
+    throw e;
+  }
+}
+
+// How many nodes to fire in parallel per request. Reads race a wide field —
+// latency = the fastest responder, not a sum of sequential timeouts. Sends
+// race a smaller field (broadcasting to N mempools at once is enough; no
+// need to hit every node for a write).
+const RACE_SIZE_READ = 4;
+const RACE_SIZE_SEND = 3;
+const READ_TIMEOUT_MS = 6_000;
+const SEND_TIMEOUT_MS = 12_000;
+
 async function handleRpc(pool: string[], poolKey: string, req: Request, res: Response): Promise<void> {
   const body = req.body as RpcBody;
   if (!body || typeof body.method !== "string") {
@@ -109,37 +168,30 @@ async function handleRpc(pool: string[], poolKey: string, req: Request, res: Res
   }
 
   const isSend = body.method === "eth_sendRawTransaction";
+  const raceSize = isSend ? RACE_SIZE_SEND : RACE_SIZE_READ;
+  const timeoutMs = isSend ? SEND_TIMEOUT_MS : READ_TIMEOUT_MS;
   const order = healthyOrder(pool, poolKey);
+  const primary = order.slice(0, raceSize);
+  const rest = order.slice(raceSize);
   let lastErr: unknown;
 
-  for (const url of order) {
+  // Race the primary batch — first authoritative answer wins.
+  try {
+    const { json } = await Promise.any(primary.map((url) => attempt(url, body, isSend, timeoutMs)));
+    res.json(json);
+    return;
+  } catch (aggErr) {
+    lastErr = (aggErr as AggregateError).errors?.[0] ?? aggErr;
+  }
+
+  // Whole race lost (all primary nodes down/rate-limited) → sequential
+  // fallback through whatever's left in the pool, as a last resort.
+  for (const url of rest) {
     try {
-      const json = await forwardOnce(url, body);
-
-      // JSON-RPC-level error inside a 200 response.
-      if (json && typeof json === "object" && "error" in json && json.error) {
-        const rpcErr = json.error as { code?: number; message?: string };
-        // For broadcasts, "already known"/"nonce too low" == success; return it so
-        // the client's wallet lib resolves instead of erroring.
-        if (isSend && isAlreadyBroadcast(rpcErr)) { res.json(json); return; }
-        // Retriable node error → cool it down and try the next node.
-        if (isRetriableRpcError(rpcErr)) {
-          cooldownUntil.set(url, Date.now() + COOLDOWN_MS);
-          lastErr = new Error(rpcErr.message ?? "rpc error");
-          continue;
-        }
-        // Deterministic error (revert, bad params, real nonce error): it will be
-        // identical on every node — return it as the authoritative answer.
-        res.json(json);
-        return;
-      }
-
-      // Success.
+      const { json } = await attempt(url, body, isSend, timeoutMs);
       res.json(json);
       return;
     } catch (e) {
-      // Network/CORS/timeout/HTTP error → cool the node down, advance.
-      cooldownUntil.set(url, Date.now() + COOLDOWN_MS);
       lastErr = e;
     }
   }
@@ -154,4 +206,6 @@ async function handleRpc(pool: string[], poolKey: string, req: Request, res: Res
 export function registerRpcProxy(app: Express): void {
   app.post("/api/rpc/op", (req, res) => { void handleRpc(OP_POOL, "op", req, res); });
   app.post("/api/rpc/base", (req, res) => { void handleRpc(BASE_POOL, "base", req, res); });
+  app.post("/api/rpc/arb", (req, res) => { void handleRpc(ARB_POOL, "arb", req, res); });
+  app.post("/api/rpc/eth", (req, res) => { void handleRpc(ETH_POOL, "eth", req, res); });
 }
