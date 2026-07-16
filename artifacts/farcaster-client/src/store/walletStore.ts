@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { WalletClient } from "viem";
 import { isAddress, isHex } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import {
   deriveWalletAccount,
   generateWalletMnemonic,
@@ -9,6 +9,7 @@ import {
   validateMnemonicWords,
   createOpWalletClient,
   createBaseWalletClient,
+  createChainWalletClient,
 } from "@/lib/wallet";
 import {
   saveWalletMnemonic,
@@ -101,6 +102,7 @@ interface WalletState {
   revealMnemonic: (walletId: string) => Promise<string>;
   revealPrivateKey: (walletId: string, accountIndex: number) => Promise<string>;
   getActiveWalletClient: () => Promise<{ walletClient: WalletClient; baseWalletClient: WalletClient } | null>;
+  getActiveWalletClientForChain: (chainId: number) => Promise<WalletClient | null>;
   linkFarcasterSeed: (fid: number, mnemonic: string, label: string) => Promise<string>;
 
   activeWallet: () => Wallet | undefined;
@@ -366,6 +368,31 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     const mnemonic = await getWalletMnemonic(wallet.id);
     if (!mnemonic) throw new Error("Wallet secret not found.");
     return deriveWalletAccount(mnemonic, account.index);
+  },
+
+  // Chain-agnostic counterpart to getActiveWalletClient — used by callers
+  // (e.g. the in-app DeFi browser) that need to sign/send on any chain the
+  // app supports (Optimism/Base/Ethereum/Arbitrum/Polygon), not just the
+  // two hardcoded above.
+  getActiveWalletClientForChain: async chainId => {
+    const { wallets, activeWalletId, activeAccountIndex } = get();
+    const wallet = wallets.find(w => w.id === activeWalletId);
+    if (!wallet) return null;
+    if (wallet.kind === "watch-only") return null;
+    const account = findAccount(wallet, activeAccountIndex) ?? wallet.accounts[0];
+    if (!account) return null;
+
+    if (wallet.kind === "private-key") {
+      const hex = await getWalletPrivateKey(wallet.id);
+      if (!hex) throw new Error("Wallet secret not found.");
+      const acc = privateKeyToAccount(hex as `0x${string}`);
+      return createChainWalletClient(acc, chainId);
+    }
+
+    const mnemonic = await getWalletMnemonic(wallet.id);
+    if (!mnemonic) throw new Error("Wallet secret not found.");
+    const acc = mnemonicToAccount(mnemonic.trim().toLowerCase(), { addressIndex: account.index });
+    return createChainWalletClient(acc, chainId);
   },
 
   linkFarcasterSeed: async (fid, mnemonic, label) => {

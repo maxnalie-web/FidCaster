@@ -2,27 +2,37 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, RefreshCw, MoreHorizontal, Wifi, WifiOff,
-  Copy, ExternalLink, Shield, Check, Search, AlertTriangle, Loader2,
+  Copy, ExternalLink, Shield, Check, Search, AlertTriangle, Loader2, Clock, Trash2,
 } from "lucide-react";
 import { useWalletStore } from "@/store/walletStore";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isHex, hexToString, isAddress, formatEther, type WalletClient } from "viem";
+import { loadLastSession, saveLastSession, loadHistory, addHistoryEntry, clearHistory, type HistoryEntry } from "@/lib/browserHistory";
 
 const NETWORK_CONFIG = {
-  optimism: { label: "Optimism", short: "OP", color: "#ff0420", chainId: 10 },
+  optimism: { label: "Optimism", short: "OP",   color: "#ff0420", chainId: 10 },
   base:     { label: "Base",     short: "Base", color: "#0052ff", chainId: 8453 },
+  arbitrum: { label: "Arbitrum", short: "Arb",  color: "#28a0f0", chainId: 42161 },
+  ethereum: { label: "Ethereum", short: "ETH",  color: "#627eea", chainId: 1 },
 } as const;
 
 type Network = keyof typeof NETWORK_CONFIG;
 const CHAIN_ID_HEX: Record<Network, string> = {
   optimism: "0xa",     // 10
   base: "0x2105",      // 8453
+  arbitrum: "0xa4b1",  // 42161
+  ethereum: "0x1",     // 1
 };
 const CHAIN_ID_TO_NETWORK: Record<string, Network> = {
   "0xa": "optimism",
   "0x2105": "base",
+  "0xa4b1": "arbitrum",
+  "0x1": "ethereum",
 };
+function isNetwork(v: string): v is Network {
+  return v in NETWORK_CONFIG;
+}
 
 // ── window.ethereum bridge: request/response over postMessage ──────────────
 // The provider script injected server-side (server/index.ts) relays every
@@ -107,17 +117,26 @@ const QUICK_LINKS = [
 ];
 
 export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
-  const [url, setUrl]               = useState(initialUrl);
-  const [inputUrl, setInputUrl]     = useState(initialUrl);
+  // The sheet fully unmounts on close, so without resuming from the last
+  // saved session it always reopened to a blank "New Tab" page — even mid-
+  // session, since the caller never passes a non-empty initialUrl today.
+  const [resumed] = useState(() => (initialUrl ? null : loadLastSession()));
+  const startUrl = initialUrl || resumed?.url || "";
+  const startNetwork: Network = resumed?.network && isNetwork(resumed.network) ? resumed.network : "optimism";
+
+  const [url, setUrl]               = useState(startUrl);
+  const [inputUrl, setInputUrl]     = useState(startUrl);
   const [isEditing, setIsEditing]   = useState(false);
-  const [isLoading, setIsLoading]   = useState(!!initialUrl);
+  const [isLoading, setIsLoading]   = useState(!!startUrl);
   const [startQuery, setStartQuery] = useState("");
-  const [network, setNetwork]       = useState<Network>("optimism");
+  const [network, setNetwork]       = useState<Network>(startNetwork);
   const [isConnected, setIsConnected] = useState(false);
   const [showAccPicker, setShowAccPicker]   = useState(false);
   const [showNetPicker, setShowNetPicker]   = useState(false);
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [showTopMenu, setShowTopMenu]       = useState(false);
+  const [showHistory, setShowHistory]       = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [iframeKey, setIframeKey]   = useState(0);
   const [pendingQueue, setPendingQueue] = useState<PendingRequest[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -133,12 +152,25 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
     return () => clearTimeout(t);
   }, [isLoading, iframeKey]);
 
+  // Persist the current page + network so reopening the browser (or
+  // reloading the app) resumes here instead of starting blank.
+  useEffect(() => {
+    if (!url) return;
+    saveLastSession(url, network);
+  }, [url, network]);
+
+  // Record every page load into visit history.
+  useEffect(() => {
+    if (!url) return;
+    addHistoryEntry(url);
+  }, [url]);
+
   const wallets           = useWalletStore(s => s.wallets);
   const activeWalletId    = useWalletStore(s => s.activeWalletId);
   const activeAccIdx      = useWalletStore(s => s.activeAccountIndex);
   const setActiveWallet   = useWalletStore(s => s.setActiveWallet);
   const getActiveWallet   = useWalletStore(s => s.activeWallet);
-  const getActiveWalletClient = useWalletStore(s => s.getActiveWalletClient);
+  const getActiveWalletClientForChain = useWalletStore(s => s.getActiveWalletClientForChain);
 
   const activeWallet  = getActiveWallet();
   const activeAccount = activeWallet?.accounts.find(a => a.index === activeAccIdx);
@@ -251,9 +283,10 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
           respond(id, null);
         }
       } else if (method === "wallet_addEthereumChain") {
-        // We only ever operate on the two chains we already support —
-        // treat this as a no-op success if it matches one of them, reject
-        // otherwise rather than pretending to add an arbitrary network.
+        // We only ever operate on the chains we already support (Optimism,
+        // Base, Arbitrum, Ethereum) — treat this as a no-op success if it
+        // matches one of them, reject otherwise rather than pretending to
+        // add an arbitrary network.
         const target = (params[0] as { chainId?: string } | undefined)?.chainId?.toLowerCase();
         if (target && CHAIN_ID_TO_NETWORK[target]) respond(id, null);
         else respond(id, undefined, { code: 4200, message: "Adding custom networks isn't supported." });
@@ -311,9 +344,9 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   }
 
   async function getWalletClientForCurrentNetwork(): Promise<WalletClient> {
-    const clients = await getActiveWalletClient();
-    if (!clients) throw new Error("No wallet connected");
-    return network === "base" ? clients.baseWalletClient : clients.walletClient;
+    const client = await getActiveWalletClientForChain(NETWORK_CONFIG[network].chainId);
+    if (!client) throw new Error("No wallet connected");
+    return client;
   }
 
   const navigate = useCallback((raw: string) => {
@@ -368,6 +401,22 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
     navigator.clipboard.writeText(url);
     toast.success("Link copied");
     setShowTopMenu(false);
+  }
+
+  function openHistory() {
+    setHistoryEntries(loadHistory());
+    setShowHistory(true);
+    setShowTopMenu(false);
+  }
+
+  function visitFromHistory(entry: HistoryEntry) {
+    setShowHistory(false);
+    navigate(entry.url);
+  }
+
+  function clearBrowsingHistory() {
+    clearHistory();
+    setHistoryEntries([]);
   }
 
   function connect() {
@@ -463,6 +512,9 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                   </button>
                   <button onClick={copyLink} className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-muted/40 text-foreground border-t border-border/40">
                     <Copy size={14} className="text-muted-foreground" />Copy link
+                  </button>
+                  <button onClick={openHistory} className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-muted/40 text-foreground border-t border-border/40">
+                    <Clock size={14} className="text-muted-foreground" />History
                   </button>
                 </motion.div>
               </>
@@ -809,6 +861,69 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                     })}
                   </div>
                 ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── History sheet ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[85] flex flex-col justify-end"
+          >
+            <div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowHistory(false)}
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 380, damping: 38 }}
+              className="relative z-10 bg-card rounded-t-3xl max-h-[72vh] flex flex-col"
+            >
+              <div className="flex justify-center pt-3 pb-1 shrink-0">
+                <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
+              </div>
+
+              <div className="flex items-center justify-between px-5 py-3 shrink-0">
+                <span className="text-base font-bold text-foreground">History</span>
+                <div className="flex items-center gap-1">
+                  {historyEntries.length > 0 && (
+                    <button onClick={clearBrowsingHistory} className="p-1.5 text-muted-foreground hover:text-destructive transition-colors">
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                  <button onClick={() => setShowHistory(false)} className="p-1 text-muted-foreground hover:text-foreground">
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto pb-10">
+                {historyEntries.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">No browsing history yet</p>
+                ) : (
+                  historyEntries.map(entry => (
+                    <button
+                      key={entry.url}
+                      onClick={() => visitFromHistory(entry)}
+                      className="flex items-center gap-3 w-full px-5 py-3 hover:bg-muted/40 transition-colors text-left"
+                    >
+                      <Clock size={14} className="text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">{getDomain(entry.url)}</p>
+                        <p className="text-xs text-muted-foreground truncate">{entry.url}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
             </motion.div>
           </motion.div>
