@@ -10,7 +10,6 @@ import {
   getUserRecasts,
   type NeynarCast,
 } from "@/lib/neynar";
-import { nextKey, poolSize } from "@/lib/neynar-pool";
 
 export type CleanupKind = "casts" | "replies" | "unlike" | "unrecast";
 
@@ -20,22 +19,23 @@ async function fetchPage(
   neynarKey: string,
   cursor: string | undefined,
 ): Promise<{ items: NeynarCast[]; next?: string }> {
-  const usePool = poolSize() > 0;
-  const directKey = usePool ? nextKey(neynarKey) : undefined;
-
+  // Bulk-scan pages (replies/likes/recasts) always use the server's fast,
+  // uncached direct-passthrough route, which transparently rotates through
+  // however many Neynar keys are configured server-side (env vars) — no
+  // client-side pool/config of any kind.
   if (kind === "casts") {
     const r = await getUserCasts(fid, fid, neynarKey, cursor, 150);
     return { items: r.casts, next: r.next?.cursor };
   }
   if (kind === "replies") {
-    const r = await getUserReplies(fid, fid, neynarKey, cursor, directKey);
+    const r = await getUserReplies(fid, fid, neynarKey, cursor, true);
     return { items: r.casts, next: r.next?.cursor };
   }
   if (kind === "unlike") {
-    const r = await getUserLikes(fid, fid, neynarKey, cursor, directKey);
+    const r = await getUserLikes(fid, fid, neynarKey, cursor, true);
     return { items: r.reactions.map(x => x.cast), next: r.next?.cursor };
   }
-  const r = await getUserRecasts(fid, fid, neynarKey, cursor, directKey);
+  const r = await getUserRecasts(fid, fid, neynarKey, cursor, true);
   return { items: r.reactions.map(x => x.cast), next: r.next?.cursor };
 }
 

@@ -92,6 +92,50 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
   }
 }
 
+// ── Neynar direct (uncached) proxy ────────────────────────────────────────────
+// Mounted at /api/fc-direct → req.path already has /api/fc-direct stripped.
+//
+// For high-volume paginated bulk scans (Purge/Cleanup: "fetch my last N
+// casts/replies/likes/recasts") where every request is a unique cursor page
+// anyway — caching wouldn't help and would just pollute the cache — and
+// where the whole point is spreading requests across every configured
+// Neynar key for maximum throughput. Deliberately has NO separate
+// configuration: it rotates through exactly the same automatically-detected
+// key pool as the cached proxy above (neynarThrottle(), fed by whatever's
+// set in NEYNAR_API_KEY / NEYNAR_API_KEY_2.. / NEYNAR_API_KEYS env vars —
+// see neynar-limit.ts). Keys never leave the server; the client only ever
+// sees this proxy's response, never a raw key.
+async function neynarDirectProxy(req: Request, res: Response): Promise<void> {
+  if (!hasAnyNeynarKey()) {
+    res.status(503).json({ error: "Neynar API key not configured on server." }); return;
+  }
+  const neynarPath = req.path;
+  const qs = new URLSearchParams(req.query as Record<string, string>).toString();
+  const upstream = `${NEYNAR_V2}${neynarPath}${qs ? "?" + qs : ""}`;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const selectedKey = await neynarThrottle();
+    try {
+      const r = await fetch(upstream, {
+        headers: { accept: "application/json", api_key: selectedKey },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (r.status === 429) {
+        penalize429(selectedKey);
+        if (attempt < 2) continue; // try again with a different key
+      }
+      const body = await r.json().catch(() => ({}));
+      res.status(r.status).json(body);
+      return;
+    } catch (e) {
+      if (attempt === 2) {
+        res.status(502).json({ error: e instanceof Error ? e.message : "Upstream error" });
+        return;
+      }
+    }
+  }
+}
+
 // ── Hub user normalizer ───────────────────────────────────────────────────────
 type HubMsg = { data?: { fid?: number; userDataBody?: { type?: string; value?: string } } };
 
@@ -467,6 +511,13 @@ export function registerProxyRoutes(app: Express): void {
   app.use("/api/fc", (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") { next(); return; }
     void neynarProxy(req, res);
+  });
+
+  // ── Uncached direct proxy — bulk-scan pagination (Purge/Cleanup) ──────────
+  const fcDirectLimiter = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
+  app.use("/api/fc-direct", fcDirectLimiter, (req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== "GET") { next(); return; }
+    void neynarDirectProxy(req, res);
   });
 
   // ── Official Farcaster mini apps (the exact ranked list the Farcaster /

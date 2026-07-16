@@ -27,7 +27,6 @@ import {
   LifeBuoy, Sparkles, Lock, Zap, ExternalLink, Hash, Type, Wind, Trash2,
 } from "lucide-react";
 import { getUserByFid, type NeynarUser } from "@/lib/neynar";
-import { loadPool, savePool, poolSize } from "@/lib/neynar-pool";
 import { NeynarScoreBadge, XLogo, TelegramLogo, FarcasterLogo } from "@/components/NeynarScoreBadge";
 import {
   SUPPORTED_LANGS, getLangSetting, setPreferredLang, defaultTargetLang,
@@ -189,56 +188,6 @@ function AppSettingsPanel() {
           {clearing ? "Clearing…" : "Clear"}
         </button>
       </div>
-
-      <ApiKeyPoolSection />
-    </div>
-  );
-}
-
-function ApiKeyPoolSection() {
-  const [raw, setRaw] = useState<string>(() => loadPool().join("\n"));
-  const [saved, setSaved] = useState(false);
-  const count = poolSize();
-
-  function handleSave() {
-    const keys = raw.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 8);
-    savePool(keys);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  return (
-    <div className="space-y-3 p-3.5 rounded-xl border border-border bg-muted/20">
-      <div className="flex items-center gap-3">
-        <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground">Neynar API key pool</p>
-            {count > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
-                {count} active
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Paste up to 80 keys (one per line). Purge scans rotate through them for maximum speed.
-          </p>
-        </div>
-      </div>
-      <textarea
-        value={raw}
-        onChange={e => setRaw(e.target.value)}
-        placeholder={"NEYNAR_KEY_1\nNEYNAR_KEY_2\n..."}
-        rows={4}
-        className="w-full text-xs font-mono bg-background border border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:ring-1 focus:ring-primary/40"
-        spellCheck={false}
-      />
-      <button
-        onClick={handleSave}
-        className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
-      >
-        {saved ? "Saved ✓" : "Save pool"}
-      </button>
     </div>
   );
 }
