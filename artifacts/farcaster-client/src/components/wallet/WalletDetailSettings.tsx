@@ -30,6 +30,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
   const revealPrivateKey = useWalletStore(s => s.revealPrivateKey);
   const removeWallet = useWalletStore(s => s.removeWallet);
   const addAccountToWallet = useWalletStore(s => s.addAccountToWallet);
+  const removeAccountFromWallet = useWalletStore(s => s.removeAccountFromWallet);
 
   const renameAccount = useWalletStore(s => s.renameAccount);
 
@@ -45,6 +46,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
   const clipRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [removeConfirm, setRemoveConfirm] = useState(false);
+  const [removeAccountConfirm, setRemoveAccountConfirm] = useState<number | null>(null);
   const [showApprovals, setShowApprovals] = useState(false);
 
   // Gate revealing a seed phrase / private key behind a local PIN — there
@@ -131,6 +133,13 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
     catch (e) { alert(e instanceof Error ? e.message : "Failed to remove."); setRemoveConfirm(false); }
   };
 
+  const doRemoveAccount = () => {
+    if (removeAccountConfirm === null) return;
+    try { removeAccountFromWallet(wallet.id, removeAccountConfirm); }
+    catch (e) { alert(e instanceof Error ? e.message : "Failed to remove account."); }
+    finally { setRemoveAccountConfirm(null); }
+  };
+
   const revealWords = reveal?.kind === "mnemonic" ? reveal.value.split(" ") : [];
 
   return (
@@ -182,6 +191,14 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
                   >
                     <Pencil size={13} />
                   </button>
+                  {wallet.accounts.length > 1 && (
+                    <button
+                      className="px-3 py-2 text-muted-foreground hover:text-destructive transition-colors"
+                      onClick={() => setRemoveAccountConfirm(account.index)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -265,8 +282,8 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
 
       {/* Rename modal */}
       {renameOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6" onClick={() => setRenameOpen(false)}>
-          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6 py-8 overflow-y-auto" onClick={() => setRenameOpen(false)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4 max-h-full overflow-y-auto my-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-foreground">
               {renameTarget?.wallet === true ? "Rename Wallet" : "Rename Account"}
             </h3>
@@ -301,8 +318,8 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
 
       {/* Reveal modal */}
       {reveal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-5" onClick={closeReveal}>
-          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-5 py-8 overflow-y-auto" onClick={closeReveal}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4 max-h-full overflow-y-auto my-auto" onClick={e => e.stopPropagation()}>
             <div>
               <h3 className="text-base font-bold text-foreground">{reveal.kind === "mnemonic" ? "Recovery Phrase" : "Private Key"}</h3>
               {reveal.kind === "key" && wallet.accounts.length > 1 && (
@@ -379,6 +396,22 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
             <div className="flex gap-2">
               <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRemoveConfirm(false)}>Cancel</button>
               <button className="flex-1 py-3 rounded-xl bg-destructive text-white text-sm font-bold" onClick={doRemove}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove account confirm */}
+      {removeAccountConfirm !== null && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-6" onClick={() => setRemoveAccountConfirm(null)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-destructive">Remove Account?</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              This removes {wallet.accounts.find(a => a.index === removeAccountConfirm)?.label || `Account ${removeAccountConfirm + 1}`} from this wallet. Make sure you've backed up its private key if it holds funds — this cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRemoveAccountConfirm(null)}>Cancel</button>
+              <button className="flex-1 py-3 rounded-xl bg-destructive text-white text-sm font-bold" onClick={doRemoveAccount}>Remove</button>
             </div>
           </div>
         </div>
