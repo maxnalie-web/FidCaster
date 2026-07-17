@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useIsPro, ProBadge } from "@/components/ProBadge";
 import { X, Loader2, UserPlus, UserMinus, Users, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
@@ -26,6 +26,7 @@ export function UserProfileSheet({ user, onClose, onViewProfile, zIndex = "z-50"
   const [loading, setLoading] = useState(true);
   const [following, setFollowing] = useState(user?.viewer_context?.following ?? false);
   const [followLoading, setFollowLoading] = useState(false);
+  const followReqIdRef = useRef(0);
   const [followSheet, setFollowSheet] = useState<"followers" | "following" | null>(null);
 
   const canWrite = signerApproved && (Boolean(localSigner) || Boolean(signerUuid)) && Boolean(fid);
@@ -58,6 +59,7 @@ export function UserProfileSheet({ user, onClose, onViewProfile, zIndex = "z-50"
 
   async function handleFollow() {
     if (!canWrite || !fid || !profile) return;
+    const reqId = ++followReqIdRef.current;
     setFollowLoading(true);
     const wasFollowing = following;
     setFollowing(!wasFollowing);
@@ -68,9 +70,10 @@ export function UserProfileSheet({ user, onClose, onViewProfile, zIndex = "z-50"
         await neynarAction(signerUuid, { type: wasFollowing ? "unfollow" : "follow", targetFid: profile.fid });
       }
     } catch {
+      if (followReqIdRef.current !== reqId) return;
       setFollowing(wasFollowing);
     } finally {
-      setFollowLoading(false);
+      if (followReqIdRef.current === reqId) setFollowLoading(false);
     }
   }
 
@@ -127,7 +130,6 @@ export function UserProfileSheet({ user, onClose, onViewProfile, zIndex = "z-50"
                 {!isOwnProfile && canWrite && (
                   <button
                     onClick={handleFollow}
-                    disabled={followLoading}
                     className={cn(
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0",
                       following
