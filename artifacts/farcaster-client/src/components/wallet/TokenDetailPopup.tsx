@@ -34,6 +34,24 @@ const TIMEFRAMES: { label: string; days: number }[] = [
   { label: "1M", days: 30 },
 ];
 
+// GeckoTerminal's network slugs (their public OHLCV API, free/keyless) --
+// distinct from DexScreener's chain slugs used just below.
+const GECKOTERMINAL_NETWORK: Record<string, string> = {
+  Ethereum: "eth",
+  Optimism: "optimism",
+  Base: "base",
+  Arbitrum: "arbitrum",
+};
+
+// Per-timeframe OHLCV candle request: GeckoTerminal buckets by
+// timeframe=minute|hour|day, with an `aggregate` multiplier and a point
+// `limit`.
+const OHLCV_REQUEST: Record<string, { timeframe: "hour" | "day"; aggregate: number; limit: number }> = {
+  "1D": { timeframe: "hour", aggregate: 1, limit: 24 },
+  "1W": { timeframe: "hour", aggregate: 4, limit: 42 },
+  "1M": { timeframe: "day", aggregate: 1, limit: 30 },
+};
+
 function Sparkline({ points, color, up }: { points: PricePoint[]; color: string; up: boolean }) {
   if (points.length < 2) return null;
   const W = 320, H = 80;
@@ -109,17 +127,63 @@ export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor
           }
         } else if (contractAddress) {
           const networkSlug = network === "Base" ? "base" : network === "Arbitrum" ? "arbitrum" : network === "Ethereum" ? "ethereum" : "optimism";
-          const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`, { signal: ac.signal });
-          if (res.ok) {
-            const { pairs } = await res.json();
+          const gtNetwork = GECKOTERMINAL_NETWORK[network] ?? "optimism";
+
+          // Price + 24h change + the DexScreener pair link (kept for the
+          // "view on DexScreener" external-link action) still come from
+          // DexScreener -- those fields ARE real on its response. Only the
+          // chart used a `priceHistory.m5/h1` field that doesn't actually
+          // exist on DexScreener's API, which is why the chart was always
+          // empty for every non-native token. Real OHLCV candles come from
+          // GeckoTerminal's public API instead.
+          let localPrice: number | null = null;
+          let localChange24h: number | null = null;
+
+          const dexRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`, { signal: ac.signal });
+          if (dexRes.ok) {
+            const { pairs } = await dexRes.json();
             const pair = (pairs as any[])?.find(p => p.chainId === networkSlug) ?? pairs?.[0];
             if (pair) {
-              setPrice(parseFloat(pair.priceUsd ?? "0"));
-              setChange24h(pair.priceChange?.h24 ?? null);
+              localPrice = parseFloat(pair.priceUsd ?? "0");
+              localChange24h = pair.priceChange?.h24 ?? null;
+              setPrice(localPrice);
+              setChange24h(localChange24h);
               setDexPair(pair.url);
-              const hist = (pair.priceHistory?.m5 ?? pair.priceHistory?.h1 ?? []) as { timestamp: number; open: number }[];
-              setChartPoints(hist.map(h => ({ t: h.timestamp, p: h.open })));
             }
+          }
+
+          try {
+            const poolsRes = await fetch(
+              `https://api.geckoterminal.com/api/v2/networks/${gtNetwork}/tokens/${contractAddress}/pools?page=1`,
+              { signal: ac.signal, headers: { Accept: "application/json" } },
+            );
+            if (poolsRes.ok) {
+              const poolsData = await poolsRes.json();
+              const topPool = poolsData?.data?.[0];
+              const poolAddress: string | undefined = topPool?.attributes?.address;
+              if (poolAddress) {
+                if (localPrice === null && topPool?.attributes?.base_token_price_usd) {
+                  setPrice(parseFloat(topPool.attributes.base_token_price_usd));
+                }
+                if (localChange24h === null && topPool?.attributes?.price_change_percentage?.h24 != null) {
+                  setChange24h(parseFloat(topPool.attributes.price_change_percentage.h24));
+                }
+                const req = OHLCV_REQUEST[tf.label] ?? OHLCV_REQUEST["1D"];
+                const ohlcvRes = await fetch(
+                  `https://api.geckoterminal.com/api/v2/networks/${gtNetwork}/pools/${poolAddress}/ohlcv/${req.timeframe}?aggregate=${req.aggregate}&limit=${req.limit}`,
+                  { signal: ac.signal, headers: { Accept: "application/json" } },
+                );
+                if (ohlcvRes.ok) {
+                  const ohlcvData = await ohlcvRes.json();
+                  const list = (ohlcvData?.data?.attributes?.ohlcv_list ?? []) as [number, number, number, number, number, number][];
+                  setChartPoints(
+                    list.map(([t, , , , close]) => ({ t: t * 1000, p: close })).sort((a, b) => a.t - b.t),
+                  );
+                }
+              }
+            }
+          } catch {
+            /* GeckoTerminal is best-effort -- price/24h from DexScreener above still stand */
           }
         }
       } catch { /* ignore abort */ }
