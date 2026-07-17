@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FidCaster Docs — User Guide</title>
+<meta name="description" content="The official user documentation for FidCaster: the only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism." />
+<style>
+  :root{
+    --purple:#7c3aed;
+    --purple-light:#a78bfa;
+    --purple-dark:#5b21b6;
+    --bg:#0b0a10;
+    --bg-elev:#131220;
+    --bg-elev-2:#1a1830;
+    --border:#2a2740;
+    --text:#f1eefc;
+    --text-dim:#a9a3c4;
+    --text-dimmer:#736e8f;
+    --accent-green:#22c55e;
+    --accent-red:#ef4444;
+    --accent-blue:#38bdf8;
+    --radius:14px;
+    --mono: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#faf9fd;
+      --bg-elev:#ffffff;
+      --bg-elev-2:#f3f1fa;
+      --border:#e6e2f5;
+      --text:#1c1730;
+      --text-dim:#5c5578;
+      --text-dimmer:#8b84a8;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0a10; --bg-elev:#131220; --bg-elev-2:#1a1830; --border:#2a2740;
+    --text:#f1eefc; --text-dim:#a9a3c4; --text-dimmer:#736e8f;
+  }
+  :root[data-theme="light"]{
+    --bg:#faf9fd; --bg-elev:#ffffff; --bg-elev-2:#f3f1fa; --border:#e6e2f5;
+    --text:#1c1730; --text-dim:#5c5578; --text-dimmer:#8b84a8;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--sans);
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:var(--purple-light);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  code{
+    font-family:var(--mono);
+    background:var(--bg-elev-2);
+    padding:0.15em 0.45em;
+    border-radius:6px;
+    font-size:0.88em;
+    border:1px solid var(--border);
+  }
+  pre{
+    background:#0d0c16;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:18px 20px;
+    overflow-x:auto;
+    font-family:var(--mono);
+    font-size:0.85rem;
+    line-height:1.7;
+    color:#d7d2f0;
+  }
+  :root[data-theme="light"] pre, @media (prefers-color-scheme: light){ pre{ background:#161129; color:#e6e2f8; } }
+  pre code{background:none;border:none;padding:0;}
+
+  /* ===== Top bar ===== */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 24px;
+    background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--border);
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.05rem;letter-spacing:-0.02em;}
+  .brand-badge{
+    width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(135deg,var(--purple),#c026d3);
+    display:flex;align-items:center;justify-content:center;
+    color:white;font-weight:900;font-size:0.95rem;
+    box-shadow:0 4px 18px -4px rgba(124,58,237,.7);
+  }
+  .brand small{
+    display:block;font-weight:500;color:var(--text-dimmer);font-size:0.68rem;margin-top:1px;letter-spacing:0.04em;text-transform:uppercase;
+  }
+  .top-actions{display:flex;align-items:center;gap:10px;}
+  .pill-link{
+    font-size:0.82rem; font-weight:600; color:var(--text-dim);
+    padding:7px 14px; border-radius:999px; border:1px solid var(--border);
+    transition:all .15s ease;
+  }
+  .pill-link:hover{color:var(--text);border-color:var(--purple-light);text-decoration:none;background:var(--bg-elev-2);}
+  .menu-toggle{
+    display:none; background:none; border:1px solid var(--border); border-radius:8px;
+    width:36px;height:36px; color:var(--text); cursor:pointer; align-items:center;justify-content:center;
+  }
+
+  /* ===== Layout ===== */
+  .shell{display:flex; max-width:1400px; margin:0 auto;}
+  .sidebar{
+    width:270px; flex-shrink:0; padding:28px 16px 60px;
+    position:sticky; top:57px; align-self:flex-start; height:calc(100vh - 57px);
+    overflow-y:auto; border-right:1px solid var(--border);
+  }
+  .sidebar-group{margin-bottom:22px;}
+  .sidebar-title{
+    font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--text-dimmer); font-weight:700; padding:0 12px; margin-bottom:8px;
+  }
+  .sidebar a.nav-link{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 12px; border-radius:9px; font-size:0.89rem; font-weight:500;
+    color:var(--text-dim); margin-bottom:2px; transition:all .12s ease;
+  }
+  .sidebar a.nav-link:hover{background:var(--bg-elev-2); color:var(--text); text-decoration:none;}
+  .sidebar a.nav-link.active{
+    background:linear-gradient(90deg, color-mix(in srgb, var(--purple) 18%, transparent), transparent);
+    color:var(--purple-light); font-weight:700;
+  }
+  .nav-link .num{
+    font-family:var(--mono); font-size:0.72rem; width:20px; color:var(--text-dimmer);
+  }
+  .nav-link.active .num{color:var(--purple-light);}
+
+  main{flex:1; min-width:0; padding:0 0 100px;}
+  .content{max-width:820px; margin:0 auto; padding:48px 40px 0;}
+
+  /* ===== Hero ===== */
+  .hero{
+    max-width:1400px; margin:0 auto; padding:70px 40px 60px;
+    text-align:center; position:relative; overflow:hidden;
+  }
+  .hero::before{
+    content:""; position:absolute; top:-200px; left:50%; transform:translateX(-50%);
+    width:900px; height:500px; border-radius:50%;
+    background:radial-gradient(closest-side, rgba(124,58,237,.35), transparent 70%);
+    filter:blur(40px); pointer-events:none;
+  }
+  .hero h1{
+    font-size:clamp(2.2rem,5vw,3.4rem); font-weight:900; letter-spacing:-0.03em;
+    margin:0 0 16px; background:linear-gradient(135deg,var(--text),var(--purple-light) 90%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .hero p{font-size:1.15rem; color:var(--text-dim); max-width:620px; margin:0 auto 30px;}
+  .hero-actions{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; position:relative;}
+  .btn{
+    padding:12px 24px; border-radius:11px; font-weight:700; font-size:0.92rem;
+    display:inline-flex; align-items:center; gap:8px; transition:all .15s ease; border:1px solid transparent;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--purple),#c026d3); color:#fff; box-shadow:0 10px 30px -10px rgba(124,58,237,.6);}
+  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 14px 34px -8px rgba(124,58,237,.75); text-decoration:none;}
+  .btn-ghost{background:var(--bg-elev); border-color:var(--border); color:var(--text);}
+  .btn-ghost:hover{border-color:var(--purple-light); text-decoration:none;}
+
+  .badges-row{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:26px; position:relative;}
+  .chip{
+    font-size:0.74rem; font-weight:700; padding:5px 12px; border-radius:999px;
+    background:var(--bg-elev-2); border:1px solid var(--border); color:var(--text-dim);
+    display:flex; align-items:center; gap:6px;
+  }
+  .chip .dot{width:6px;height:6px;border-radius:50%;background:var(--accent-green);}
+
+  /* ===== Section ===== */
+  section.doc-section{padding-top:64px; scroll-margin-top:80px;}
+  section.doc-section:first-of-type{padding-top:20px;}
+  .section-kicker{
+    font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.09em;
+    color:var(--purple-light); margin-bottom:8px; display:flex; align-items:center; gap:8px;
+  }
+  .section-kicker .step-num{
+    width:22px;height:22px;border-radius:7px; background:var(--bg-elev-2); border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center; font-family:var(--mono); font-size:0.7rem; color:var(--text-dim);
+  }
+  h2{font-size:1.9rem; font-weight:800; letter-spacing:-0.02em; margin:0 0 14px;}
+  h3{font-size:1.25rem; font-weight:750; margin:32px 0 12px; letter-spacing:-0.01em;}
+  p{color:var(--text-dim); margin:0 0 16px; font-size:1rem;}
+  ul,ol{color:var(--text-dim); padding-left:1.3em; margin:0 0 18px;}
+  li{margin-bottom:7px;}
+  li::marker{color:var(--purple-light);}
+  strong{color:var(--text); font-weight:700;}
+
+  .card{
+    background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px 24px; margin:20px 0;
+  }
+  .card-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:22px 0;}
+  .feature-card{
+    background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 20px; transition:border-color .15s ease, transform .15s ease;
+  }
+  .feature-card:hover{border-color:var(--purple-light); transform:translateY(-2px);}
+  .feature-card .ico{font-size:1.4rem; margin-bottom:8px; display:block;}
+  .feature-card h4{margin:0 0 6px; font-size:0.98rem; font-weight:700;}
+  .feature-card p{margin:0; font-size:0.87rem; color:var(--text-dim);}
+
+  table{width:100%; border-collapse:collapse; margin:20px 0; font-size:0.92rem;}
+  th{
+    text-align:left; padding:10px 14px; background:var(--bg-elev-2); color:var(--text-dimmer);
+    font-size:0.74rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;
+    border-bottom:1px solid var(--border);
+  }
+  th:first-child{border-radius:8px 0 0 0;} th:last-child{border-radius:0 8px 0 0;}
+  td{padding:11px 14px; border-bottom:1px solid var(--border); color:var(--text-dim);}
+  tr:last-child td{border-bottom:none;}
+  td code{white-space:nowrap;}
+
+  .callout{
+    display:flex; gap:12px; padding:16px 18px; border-radius:12px; margin:22px 0;
+    border:1px solid var(--border); background:var(--bg-elev);
+  }
+  .callout .ic{font-size:1.2rem; line-height:1;}
+  .callout.warn{border-color:color-mix(in srgb, var(--accent-red) 40%, var(--border)); background:color-mix(in srgb, var(--accent-red) 8%, var(--bg-elev));}
+  .callout.tip{border-color:color-mix(in srgb, var(--accent-green) 40%, var(--border)); background:color-mix(in srgb, var(--accent-green) 8%, var(--bg-elev));}
+  .callout.info{border-color:color-mix(in srgb, var(--accent-blue) 40%, var(--border)); background:color-mix(in srgb, var(--accent-blue) 8%, var(--bg-elev));}
+  .callout p{margin:0; color:var(--text);}
+  .callout p:first-child strong{display:block; margin-bottom:2px;}
+
+  .step-list{list-style:none; padding:0; counter-reset:step; margin:22px 0;}
+  .step-list li{
+    counter-increment:step; position:relative; padding-left:42px; margin-bottom:20px; color:var(--text-dim);
+  }
+  .step-list li::before{
+    content:counter(step); position:absolute; left:0; top:-2px;
+    width:28px; height:28px; border-radius:9px; background:linear-gradient(135deg,var(--purple),#c026d3);
+    color:#fff; font-weight:800; font-size:0.85rem; display:flex; align-items:center; justify-content:center;
+  }
+  .step-list strong{color:var(--text);}
+
+  .divider{height:1px; background:var(--border); margin:56px 0 0;}
+  .section-nav{
+    display:flex; justify-content:space-between; gap:16px; margin-top:36px; padding-top:28px;
+    border-top:1px solid var(--border);
+  }
+  .section-nav a{
+    flex:1; padding:16px 18px; border:1px solid var(--border); border-radius:12px;
+    color:var(--text); background:var(--bg-elev); transition:border-color .15s ease;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .section-nav a:hover{border-color:var(--purple-light); text-decoration:none;}
+  .section-nav a.next{text-align:right; align-items:flex-end;}
+  .section-nav .lbl{font-size:0.72rem; color:var(--text-dimmer); text-transform:uppercase; letter-spacing:0.05em;}
+  .section-nav .ttl{font-weight:700; font-size:0.95rem;}
+
+  .faq-item{border-bottom:1px solid var(--border); padding:18px 0;}
+  .faq-item:first-child{border-top:1px solid var(--border);}
+  .faq-q{font-weight:700; color:var(--text); margin-bottom:8px; display:flex; gap:10px; font-size:0.98rem;}
+  .faq-q .q-mark{color:var(--purple-light); flex-shrink:0;}
+  .faq-a{color:var(--text-dim); margin:0; padding-left:26px; font-size:0.93rem;}
+
+  footer{
+    text-align:center; padding:50px 24px; color:var(--text-dimmer); font-size:0.85rem;
+    border-top:1px solid var(--border); margin-top:60px;
+  }
+
+  @media (max-width:960px){
+    .sidebar{
+      position:fixed; left:0; top:57px; height:calc(100vh - 57px); background:var(--bg);
+      transform:translateX(-100%); transition:transform .2s ease; z-index:40; width:78vw; max-width:300px;
+      box-shadow:20px 0 40px rgba(0,0,0,.3);
+    }
+    .sidebar.open{transform:translateX(0);}
+    .menu-toggle{display:flex;}
+    .content{padding:36px 20px 0;}
+    .hero{padding:48px 20px 40px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <a href="#top" class="brand" style="color:inherit;text-decoration:none;">
+      <span class="brand-badge">F</span>
+      <span>FidCaster<br/><small>User Documentation</small></span>
+    </a>
+  </div>
+  <div class="top-actions">
+    <a class="pill-link" href="https://fidcaster.xyz" target="_blank" rel="noopener">Open App ↗</a>
+    <a class="pill-link" href="../README.md">Developer Docs</a>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-group">
+      <div class="sidebar-title">Overview</div>
+      <a class="nav-link" data-target="top" href="#top"><span class="num">·</span>Introduction</a>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-title">Guide</div>
+      <a class="nav-link" data-target="getting-started" href="#getting-started"><span class="num">01</span>Getting Started</a>
+      <a class="nav-link" data-target="feed-casting" href="#feed-casting"><span class="num">02</span>Feed &amp; Casting</a>
+      <a class="nav-link" data-target="fid-market" href="#fid-market"><span class="num">03</span>FID Market</a>
+      <a class="nav-link" data-target="grow-cleanup" href="#grow-cleanup"><span class="num">04</span>Grow &amp; Clean Up</a>
+      <a class="nav-link" data-target="wallet-security" href="#wallet-security"><span class="num">05</span>Wallet &amp; Security</a>
+      <a class="nav-link" data-target="mini-apps" href="#mini-apps"><span class="num">06</span>Mini Apps &amp; Notifications</a>
+      <a class="nav-link" data-target="mobile" href="#mobile"><span class="num">07</span>Mobile Apps</a>
+      <a class="nav-link" data-target="faq" href="#faq"><span class="num">08</span>FAQ &amp; Support</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="hero" id="top">
+      <h1>Everything you need<br/>to master FidCaster</h1>
+      <p>The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism. This guide covers every feature — precisely, professionally, end to end.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#getting-started">Get Started ↓</a>
+        <a class="btn btn-ghost" href="https://fidcaster.xyz" target="_blank" rel="noopener">Launch App</a>
+      </div>
+      <div class="badges-row">
+        <span class="chip"><span class="dot"></span>Non-custodial</span>
+        <span class="chip"><span class="dot"></span>Optimism Mainnet</span>
+        <span class="chip"><span class="dot"></span>AES-GCM-256 encrypted vault</span>
+        <span class="chip"><span class="dot"></span>iOS &amp; Android</span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- 01 GETTING STARTED -->
+      <section class="doc-section" id="getting-started">
+        <div class="section-kicker"><span class="step-num">01</span>Guide</div>
+        <h2>Getting Started</h2>
+        <p>FidCaster is entirely <strong>client-side</strong> — there's no email/password signup. Your identity <em>is</em> your Farcaster ID (FID), and you sign in with one of three methods below.</p>
+
+        <h3>Sign-in methods</h3>
+        <div class="card-grid">
+          <div class="feature-card">
+            <span class="ico">🔑</span>
+            <h4>Seed Phrase</h4>
+            <p>The primary method. Enter your 12/24-word mnemonic to derive your wallet and signer locally.</p>
+          </div>
+          <div class="feature-card">
+            <span class="ico">👛</span>
+            <h4>External Wallet</h4>
+            <p>Connect MetaMask or any WalletConnect v2-compatible wallet.</p>
+          </div>
+          <div class="feature-card">
+            <span class="ico">📱</span>
+            <h4>Sign In with Farcaster</h4>
+            <p>Scan a QR code and approve in Warpcast for fast, read-only access.</p>
+          </div>
+        </div>
+
+        <h3>1. Seed phrase (primary)</h3>
+        <ol class="step-list">
+          <li><strong>Enter your mnemonic.</strong> Type your existing 12 or 24-word seed phrase on the sign-in screen — or generate a new one if you're creating an account.</li>
+          <li><strong>Local key derivation.</strong> FidCaster derives your custody wallet at <code>m/44'/60'/0'/0/0</code> and your Ed25519 Farcaster signer at <code>m/44'/60'/0'/0/1</code>, entirely inside your browser.</li>
+          <li><strong>Vault encryption.</strong> Your mnemonic is encrypted with <strong>AES-GCM-256</strong>, using a key derived via <strong>PBKDF2 (200,000 iterations)</strong>, and stored in your browser's IndexedDB.</li>
+          <li><strong>On-chain registration.</strong> If needed, your new signer is registered on Farcaster's <strong>Key Registry</strong> contract on Optimism.</li>
+        </ol>
+
+        <div class="callout warn">
+          <span class="ic">⚠️</span>
+          <p><strong>Your seed phrase never leaves your device.</strong> It is never sent to any server. Keep it safe — nobody, including the FidCaster team, can recover it for you.</p>
+        </div>
+
+        <h3>2. External wallet (MetaMask / WalletConnect)</h3>
+        <p>Prefer to use a wallet you already have? Choose "Connect Wallet," sign a message to deterministically derive a Farcaster signer, and register it on-chain — your wallet stays fully under your control.</p>
+
+        <h3>3. Sign In with Farcaster (SIWF)</h3>
+        <p>For fast, read-only access: FidCaster builds an EIP-712 signed-key request locally, shows a QR code, and polls for approval once you confirm it in Warpcast.</p>
+
+        <h3>Returning sessions</h3>
+        <p>After your first login, you only need your <strong>local password</strong> to unlock your encrypted vault on future visits — no need to re-enter your seed phrase.</p>
+
+        <h3>Multi-account management</h3>
+        <p>Add and switch between <strong>multiple Farcaster accounts</strong> in one browser. Each account is stored and managed independently, batch operations for different accounts run concurrently without interfering with each other, and your account list stays in sync across open tabs.</p>
+
+        <div class="section-nav">
+          <span></span>
+          <a class="next" href="#feed-casting"><span class="lbl">Next</span><span class="ttl">Feed &amp; Casting →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 02 FEED & CASTING -->
+      <section class="doc-section" id="feed-casting">
+        <div class="section-kicker"><span class="step-num">02</span>Guide</div>
+        <h2>Feed &amp; Casting</h2>
+        <p>FidCaster gives you four distinct views into the Farcaster network, plus a full-featured composer for posting.</p>
+
+        <h3>Feeds</h3>
+        <table>
+          <thead><tr><th>Feed</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Following</strong></td><td>Casts from accounts you follow, in chronological order</td></tr>
+            <tr><td><strong>For You</strong></td><td>A personalized feed based on your engagement and interests</td></tr>
+            <tr><td><strong>Trending</strong></td><td>The most-engaged casts on the network right now</td></tr>
+            <tr><td><strong>Channels</strong></td><td>Posts scoped to a specific topical channel</td></tr>
+          </tbody>
+        </table>
+        <p>Every feed uses <strong>infinite scroll</strong> — new content loads automatically as you scroll.</p>
+
+        <h3>Writing a cast</h3>
+        <ul>
+          <li>Write your text within Farcaster's standard length limit.</li>
+          <li>Attach an image — uploaded and hosted via <strong>Imgur</strong>.</li>
+          <li>Pick a destination channel.</li>
+          <li>Reply to, or quote, any existing cast.</li>
+        </ul>
+        <p>Every cast is signed locally in your browser and submitted directly as a signed message to a <strong>Farcaster hub</strong> — the FidCaster server is only a technical relay, never a party that can alter or withhold your content.</p>
+
+        <h3>Reactions</h3>
+        <p>All reactions are <strong>on-hub</strong> — written directly to the Farcaster protocol, not a proprietary database:</p>
+        <div class="card-grid">
+          <div class="feature-card"><span class="ico">❤️</span><h4>Like</h4><p>React to any cast instantly.</p></div>
+          <div class="feature-card"><span class="ico">🔁</span><h4>Recast</h4><p>Share a cast to your own followers.</p></div>
+          <div class="feature-card"><span class="ico">💬</span><h4>Quote</h4><p>Add your own commentary above a cast.</p></div>
+          <div class="feature-card"><span class="ico">➕</span><h4>Follow</h4><p>Follow the author directly from their cast.</p></div>
+        </div>
+
+        <h3>Threads</h3>
+        <p>Opening a cast reveals the full conversation — replies and nested replies — and you can respond right from the same view.</p>
+
+        <h3>Search &amp; profiles</h3>
+        <p>Search across <strong>users and casts</strong> simultaneously, powered by Neynar's search infrastructure. Any profile shows display info, follower/following counts, and full cast history — and on your own profile, you can edit your display name, bio, avatar, and username.</p>
+
+        <div class="section-nav">
+          <a href="#getting-started"><span class="lbl">Previous</span><span class="ttl">← Getting Started</span></a>
+          <a class="next" href="#fid-market"><span class="lbl">Next</span><span class="ttl">FID Market →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 03 FID MARKET -->
+      <section class="doc-section" id="fid-market">
+        <div class="section-kicker"><span class="step-num">03</span>Guide</div>
+        <h2>FID Market</h2>
+        <p>The <strong>FID Market</strong> is FidCaster's signature feature: a peer-to-peer marketplace for Farcaster IDs, fully implemented on-chain on <strong>Optimism</strong>. No custodian ever holds your funds or your identity — every trade is atomic and on-chain.</p>
+
+        <div class="callout info">
+          <span class="ic">📜</span>
+          <p><strong>Market contract</strong> — <code>0xcc11C0Bc08bbF8A5C0AAca80E884C6c7CC0eE3c3</code> on Optimism Mainnet.</p>
+        </div>
+
+        <h3>Selling a FID</h3>
+        <ol class="step-list">
+          <li><strong>List it.</strong> From the market page, choose "List."</li>
+          <li><strong>Set a price.</strong> Specify your asking price in ETH.</li>
+          <li><strong>Set a duration.</strong> Choose how long the listing stays active — from 10 minutes to 30 days.</li>
+          <li><strong>Sign the transaction.</strong> Once confirmed, your FID is immediately visible and purchasable on the market.</li>
+        </ol>
+        <p>You can <strong>cancel</strong> your listing at any time before it's bought.</p>
+
+        <h3>Buying a FID</h3>
+        <ol class="step-list">
+          <li><strong>Browse.</strong> Filter and sort the active listings on the market page.</li>
+          <li><strong>Inspect.</strong> Open a listing to see price history, seller info, and its live on-chain state.</li>
+          <li><strong>Buy.</strong> Confirm the transaction — ownership transfers atomically and instantly on Optimism.</li>
+        </ol>
+
+        <div class="callout tip">
+          <span class="ic">💡</span>
+          <p>A <strong>9% protocol fee</strong> applies to every successful trade, automatically deducted from the buy transaction.</p>
+        </div>
+
+        <h3>If your own FID is sold</h3>
+        <p>If the FID tied to your active account gets purchased by someone else, ownership transfers immediately and irreversibly. FidCaster surfaces this with a dedicated screen so you're never left confused about your account state. Be certain before you list.</p>
+
+        <h3>Market transparency</h3>
+        <p>Every <code>Listed</code>, <code>Bought</code>, and <code>Cancelled</code> event is read straight from Optimism — nothing shown in the market activity feed is centralized or unverifiable.</p>
+
+        <div class="section-nav">
+          <a href="#feed-casting"><span class="lbl">Previous</span><span class="ttl">← Feed &amp; Casting</span></a>
+          <a class="next" href="#grow-cleanup"><span class="lbl">Next</span><span class="ttl">Grow &amp; Clean Up →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 04 GROW & CLEANUP -->
+      <section class="doc-section" id="grow-cleanup">
+        <div class="section-kicker"><span class="step-num">04</span>Guide</div>
+        <h2>Grow &amp; Clean Up</h2>
+        <p>The <strong>Follow</strong> page gives you two powerful tools for managing your network at scale: <strong>Grow</strong> (smart batch-follow) and <strong>Clean Up</strong> (automated batch-unfollow).</p>
+
+        <h3>Grow — smart batch-follow</h3>
+        <ol class="step-list">
+          <li><strong>Pick a target.</strong> Search for a profile whose audience you want to grow into — e.g., a large account in your niche.</li>
+          <li><strong>Scan.</strong> FidCaster scans up to <strong>10,000</strong> of that profile's followers or following.</li>
+          <li><strong>Filter precisely.</strong> Narrow the results with min/max follower count, Power Badge only, Farcaster Pro only, sort order, and an exclusion list.</li>
+          <li><strong>Dedup check.</strong> Existing follow status is checked in bulk before anything runs, so you never re-follow someone you already follow.</li>
+          <li><strong>Run it.</strong> A floating progress pill tracks the operation — it survives navigation across the whole app.</li>
+        </ol>
+
+        <div class="card-grid">
+          <div class="feature-card"><span class="ico">📊</span><h4>Follower range</h4><p>Set min/max follower thresholds.</p></div>
+          <div class="feature-card"><span class="ico">⚡</span><h4>Power Badge only</h4><p>Target Warpcast's verified active users.</p></div>
+          <div class="feature-card"><span class="ico">⭐</span><h4>Pro subscribers only</h4><p>Target Farcaster Pro ($10/mo) members.</p></div>
+          <div class="feature-card"><span class="ico">🚫</span><h4>Exclusion list</h4><p>Skip specific FIDs or usernames.</p></div>
+        </div>
+
+        <div class="callout tip">
+          <span class="ic">💡</span>
+          <p>When strict filters (min followers, Power Badge, Pro) are active, FidCaster bypasses the 15-minute local cache and runs a full live scan — so results stay accurate.</p>
+        </div>
+
+        <h3>Clean Up — automated unfollow</h3>
+        <p>Using the same engine, batch-unfollow accounts that don't follow you back — narrowed down with the same advanced filters as Grow.</p>
+
+        <h3>Run multiple accounts at once</h3>
+        <p>If you manage several Farcaster accounts in FidCaster, you can run Grow or Clean Up for <strong>each account independently and simultaneously</strong>. Each operation's state is saved and automatically resumes if you close or reload the page.</p>
+
+        <h3>Rate limiting, by design</h3>
+        <ul>
+          <li>A <strong>1.5-second</strong> gap is enforced between every follow/unfollow action.</li>
+          <li>Signer errors auto-retry up to <strong>3 times</strong>, 90 seconds apart.</li>
+          <li>Rate-limit responses auto-retry up to <strong>3 times</strong>, 62 seconds apart.</li>
+        </ul>
+
+        <div class="section-nav">
+          <a href="#fid-market"><span class="lbl">Previous</span><span class="ttl">← FID Market</span></a>
+          <a class="next" href="#wallet-security"><span class="lbl">Next</span><span class="ttl">Wallet &amp; Security →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 05 WALLET & SECURITY -->
+      <section class="doc-section" id="wallet-security">
+        <div class="section-kicker"><span class="step-num">05</span>Guide</div>
+        <h2>Wallet &amp; Security</h2>
+        <p>Security is FidCaster's foundational design principle. This section explains exactly <strong>what</strong> is stored, <strong>where</strong>, and <strong>how</strong>.</p>
+
+        <h3>Security architecture</h3>
+        <pre><code>Your seed phrase
+      │
+      ▼
+PBKDF2-SHA256  (200,000 iterations, random 16-byte salt)
+      │
+      ▼
+AES-GCM-256 encryption ──► stored in your browser's IndexedDB
+                              (non-extractable CryptoKey)
+
+Signer derivation (browser-only):
+  seed phrase ─► HDKey ─► m/44'/60'/0'/0/1 ─► Ed25519 private key
+                                                      │
+                                                      ▼
+                                        Registered on Farcaster's
+                                        Key Registry (on-chain, Optimism)</code></pre>
+
+        <h3>Guarantees</h3>
+        <div class="card-grid">
+          <div class="feature-card"><span class="ico">🔒</span><h4>Local-only secrets</h4><p>Your seed phrase never leaves your device — always encrypted at rest.</p></div>
+          <div class="feature-card"><span class="ico">🖥️</span><h4>No server custody</h4><p>No server, including FidCaster's own, ever receives your private key.</p></div>
+          <div class="feature-card"><span class="ico">✍️</span><h4>Local signing</h4><p>Signing always happens in your browser, never remotely.</p></div>
+          <div class="feature-card"><span class="ico">⏱️</span><h4>Auto-lock</h4><p>Your session locks automatically on inactivity or a hidden tab.</p></div>
+          <div class="feature-card"><span class="ico">🛡️</span><h4>Rate limiting</h4><p>Every server endpoint enforces request rate limits.</p></div>
+          <div class="feature-card"><span class="ico">✅</span><h4>Input validation</h4><p>Every server route validates FID bounds, hex formats, and addresses.</p></div>
+        </div>
+
+        <h3>Wallet</h3>
+        <p>The wallet panel shows your connected account's <strong>ETH balance</strong> and <strong>recent on-chain transactions</strong>.</p>
+
+        <h3>Recovery address</h3>
+        <p>Every FID has a <strong>recovery address</strong> that can reclaim control if you ever lose access to your primary key. In FidCaster you can view your current recovery address and jump straight to the on-chain transaction to update it.</p>
+
+        <div class="callout tip">
+          <span class="ic">💡</span>
+          <p>We recommend setting your recovery address to a secure, separate wallet — ideally a hardware wallet.</p>
+        </div>
+
+        <h3>Security checklist</h3>
+        <ul>
+          <li>Only ever type your seed phrase on FidCaster's official sign-in screen.</li>
+          <li>Never share your local vault password with anyone.</li>
+          <li>Always double-check transaction details before selling a FID or moving funds.</li>
+          <li>On shared or public devices, always lock or log out when you're done.</li>
+        </ul>
+
+        <div class="section-nav">
+          <a href="#grow-cleanup"><span class="lbl">Previous</span><span class="ttl">← Grow &amp; Clean Up</span></a>
+          <a class="next" href="#mini-apps"><span class="lbl">Next</span><span class="ttl">Mini Apps &amp; Notifications →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 06 MINI APPS -->
+      <section class="doc-section" id="mini-apps">
+        <div class="section-kicker"><span class="step-num">06</span>Guide</div>
+        <h2>Mini Apps &amp; Notifications</h2>
+
+        <h3>Mini Apps</h3>
+        <p>Browse and launch <strong>Farcaster Mini Apps</strong> directly inside FidCaster — no need to leave the app or install anything separately.</p>
+        <ul>
+          <li>The catalog is fetched live from Farcaster's infrastructure.</li>
+          <li>On web, Mini Apps open in an embedded iframe.</li>
+          <li>On mobile (iOS/Android), Mini Apps open in a <strong>native in-app browser</strong> for a smoother, safer experience.</li>
+        </ul>
+
+        <h3>Notifications</h3>
+        <p>The notifications panel is a live feed of everything relevant to your account:</p>
+        <div class="card-grid">
+          <div class="feature-card"><span class="ico">❤️</span><h4>Likes</h4><p>See who liked your casts.</p></div>
+          <div class="feature-card"><span class="ico">🔁</span><h4>Recasts</h4><p>Track shares of your content.</p></div>
+          <div class="feature-card"><span class="ico">➕</span><h4>New follows</h4><p>Know instantly when someone follows you.</p></div>
+          <div class="feature-card"><span class="ico">📣</span><h4>Mentions</h4><p>Catch every time you're tagged in a cast.</p></div>
+        </div>
+        <p>Notifications are grouped by time, and a red badge on the icon shows your unread count.</p>
+
+        <div class="section-nav">
+          <a href="#wallet-security"><span class="lbl">Previous</span><span class="ttl">← Wallet &amp; Security</span></a>
+          <a class="next" href="#mobile"><span class="lbl">Next</span><span class="ttl">Mobile Apps →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 07 MOBILE -->
+      <section class="doc-section" id="mobile">
+        <div class="section-kicker"><span class="step-num">07</span>Guide</div>
+        <h2>Mobile Apps</h2>
+        <p>Beyond the web app, FidCaster ships as a native application for <strong>iOS</strong> and <strong>Android</strong>, built with Capacitor.</p>
+
+        <h3>How mobile differs from web</h3>
+        <p>The feature set is identical to the web experience, with these distinctions:</p>
+        <ul>
+          <li><strong>Mini Apps</strong> open in a native in-app browser rather than an iframe.</li>
+          <li>Secure vault storage leverages the OS's native security capabilities.</li>
+          <li>Navigation and touch interactions are tuned for iOS and Android conventions.</li>
+        </ul>
+
+        <h3>Security on mobile</h3>
+        <p>Exactly as on web: your seed phrase never leaves your device, all signing happens locally, and session auto-lock on inactivity is fully active.</p>
+
+        <div class="section-nav">
+          <a href="#mini-apps"><span class="lbl">Previous</span><span class="ttl">← Mini Apps &amp; Notifications</span></a>
+          <a class="next" href="#faq"><span class="lbl">Next</span><span class="ttl">FAQ &amp; Support →</span></a>
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <!-- 08 FAQ -->
+      <section class="doc-section" id="faq">
+        <div class="section-kicker"><span class="step-num">08</span>Guide</div>
+        <h2>FAQ &amp; Support</h2>
+
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>Does FidCaster ever store or transmit my seed phrase?</div>
+          <p class="faq-a">No. Your seed phrase is never sent to any server. It's encrypted with AES-GCM-256 and kept strictly local to your browser or device (IndexedDB). See <a href="#wallet-security">Wallet &amp; Security</a> for details.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>What if I forget my local password?</div>
+          <p class="faq-a">Since your local password only decrypts the vault on that specific device — and neither it nor your seed phrase is ever stored server-side — the only way back in is signing in again with your <strong>original seed phrase</strong>.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>What's the FID Market fee?</div>
+          <p class="faq-a">A <strong>9%</strong> protocol fee applies to every successful trade, automatically calculated and deducted during the buy transaction.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>Can I cancel a FID listing?</div>
+          <p class="faq-a">Yes — as long as it hasn't been bought yet, you can cancel your listing at any time.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>Is batch-following (Grow) risky for my account?</div>
+          <p class="faq-a">FidCaster enforces sensible, protocol-friendly delays between actions and automatically adapts to Farcaster's rate limits. That said, tune your filters to genuine intent and avoid overly aggressive activity on brand-new accounts.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>Can I manage multiple Farcaster accounts at once?</div>
+          <p class="faq-a">Yes. FidCaster supports adding multiple accounts and running operations like Grow or Clean Up independently and concurrently for each. See <a href="#getting-started">Getting Started</a>.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>Which network powers the FID Market and signer registration?</div>
+          <p class="faq-a">Both run on <strong>Optimism Mainnet</strong>.</p>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q"><span class="q-mark">Q.</span>How do Mini Apps open on mobile?</div>
+          <p class="faq-a">On iOS and Android, Mini Apps open inside a native in-app browser for a safer, smoother experience than a web iframe.</p>
+        </div>
+
+        <h3 style="margin-top:40px;">Need more help?</h3>
+        <p>Check the <a href="../README.md">main project README</a> for full technical details and source code, or open an issue on the project's GitHub repository to report a bug or request a feature.</p>
+
+        <div class="section-nav">
+          <a href="#mobile"><span class="lbl">Previous</span><span class="ttl">← Mobile Apps</span></a>
+          <a class="next" href="#top"><span class="lbl">Back to top</span><span class="ttl">↑ Introduction</span></a>
+        </div>
+      </section>
+
+    </div>
+
+    <footer>
+      FidCaster User Documentation · Built for <a href="https://fidcaster.xyz" target="_blank" rel="noopener">fidcaster.xyz</a>
+    </footer>
+  </main>
+</div>
+
+<script>
+  const toggle = document.getElementById('menuToggle');
+  const sidebar = document.getElementById('sidebar');
+  toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  sidebar.querySelectorAll('a.nav-link').forEach(a=>{
+    a.addEventListener('click', ()=> sidebar.classList.remove('open'));
+  });
+
+  const links = Array.from(document.querySelectorAll('.nav-link'));
+  const sections = links.map(l => document.getElementById(l.dataset.target)).filter(Boolean);
+
+  function setActive(id){
+    links.forEach(l => l.classList.toggle('active', l.dataset.target === id));
+  }
+
+  const observer = new IntersectionObserver((entries)=>{
+    let best = null, bestRatio = 0;
+    entries.forEach(e=>{
+      if(e.isIntersecting && e.intersectionRatio > bestRatio){
+        bestRatio = e.intersectionRatio; best = e.target.id;
+      }
+    });
+    if(best) setActive(best);
+  }, { rootMargin: "-15% 0px -70% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] });
+
+  sections.forEach(s => observer.observe(s));
+  setActive('top');
+</script>
+</body>
+</html>
