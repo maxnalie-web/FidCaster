@@ -5,331 +5,274 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FidCaster Docs — User Guide</title>
 <meta name="description" content="The official user documentation for FidCaster: the only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism." />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --purple:#7c3aed;
-    --purple-light:#a78bfa;
-    --purple-dark:#5b21b6;
-    --bg:#0b0a10;
-    --bg-elev:#131220;
-    --bg-elev-2:#1a1830;
-    --border:#2a2740;
-    --text:#f1eefc;
-    --text-dim:#a9a3c4;
-    --text-dimmer:#736e8f;
-    --accent-green:#22c55e;
-    --accent-red:#ef4444;
-    --accent-blue:#38bdf8;
-    --radius:14px;
-    --mono: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
-  }
-  @media (prefers-color-scheme: light){
-    :root{
-      --bg:#faf9fd;
-      --bg-elev:#ffffff;
-      --bg-elev-2:#f3f1fa;
-      --border:#e6e2f5;
-      --text:#1c1730;
-      --text-dim:#5c5578;
-      --text-dimmer:#8b84a8;
-    }
-  }
-  :root[data-theme="dark"]{
-    --bg:#0b0a10; --bg-elev:#131220; --bg-elev-2:#1a1830; --border:#2a2740;
-    --text:#f1eefc; --text-dim:#a9a3c4; --text-dimmer:#736e8f;
-  }
-  :root[data-theme="light"]{
-    --bg:#faf9fd; --bg-elev:#ffffff; --bg-elev-2:#f3f1fa; --border:#e6e2f5;
-    --text:#1c1730; --text-dim:#5c5578; --text-dimmer:#8b84a8;
-  }
-
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
   body{
-    font-family:var(--sans);
-    background:var(--bg);
-    color:var(--text);
-    line-height:1.65;
+    margin:0; min-height:100vh; color:#fff; overflow-x:hidden;
+    background:#040110;
+    font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     -webkit-font-smoothing:antialiased;
-    overflow-x:hidden;
   }
-  a{color:var(--purple-light);text-decoration:none;}
-  a:hover{text-decoration:underline;}
+  a{color:inherit;}
   code{
-    font-family:var(--mono);
-    background:var(--bg-elev-2);
-    padding:0.15em 0.45em;
-    border-radius:6px;
-    font-size:0.88em;
-    border:1px solid var(--border);
+    font-family:'SF Mono',Menlo,Consolas,monospace;
+    background:rgba(139,92,246,0.12);
+    border:1px solid rgba(139,92,246,0.22);
+    color:#d8ccfb;
+    padding:0.15em 0.5em; border-radius:6px; font-size:0.87em;
   }
   pre{
-    background:#0d0c16;
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    padding:18px 20px;
-    overflow-x:auto;
-    font-family:var(--mono);
-    font-size:0.85rem;
-    line-height:1.7;
-    color:#d7d2f0;
+    background:rgba(10,5,30,0.92);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:1rem; padding:20px 22px; overflow-x:auto;
+    font-family:'SF Mono',Menlo,Consolas,monospace; font-size:0.83rem; line-height:1.7; color:#d8ccfb;
   }
-  :root[data-theme="light"] pre, @media (prefers-color-scheme: light){ pre{ background:#161129; color:#e6e2f8; } }
   pre code{background:none;border:none;padding:0;}
 
-  /* ===== Top bar ===== */
-  .topbar{
-    position:sticky; top:0; z-index:50;
-    display:flex; align-items:center; justify-content:space-between;
-    padding:14px 24px;
-    background:color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter:blur(14px);
-    border-bottom:1px solid var(--border);
-  }
-  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.05rem;letter-spacing:-0.02em;}
-  .brand-badge{
-    width:30px;height:30px;border-radius:9px;
-    background:linear-gradient(135deg,var(--purple),#c026d3);
-    display:flex;align-items:center;justify-content:center;
-    color:white;font-weight:900;font-size:0.95rem;
-    box-shadow:0 4px 18px -4px rgba(124,58,237,.7);
-  }
-  .brand small{
-    display:block;font-weight:500;color:var(--text-dimmer);font-size:0.68rem;margin-top:1px;letter-spacing:0.04em;text-transform:uppercase;
-  }
-  .top-actions{display:flex;align-items:center;gap:10px;}
-  .pill-link{
-    font-size:0.82rem; font-weight:600; color:var(--text-dim);
-    padding:7px 14px; border-radius:999px; border:1px solid var(--border);
-    transition:all .15s ease;
-  }
-  .pill-link:hover{color:var(--text);border-color:var(--purple-light);text-decoration:none;background:var(--bg-elev-2);}
-  .menu-toggle{
-    display:none; background:none; border:1px solid var(--border); border-radius:8px;
-    width:36px;height:36px; color:var(--text); cursor:pointer; align-items:center;justify-content:center;
-  }
+  @keyframes lp-gradient-shift{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+  @keyframes lp-orb-drift{0%{transform:translate(0,0) scale(1);}25%{transform:translate(30px,-20px) scale(1.05);}50%{transform:translate(-20px,30px) scale(.95);}75%{transform:translate(20px,10px) scale(1.03);}100%{transform:translate(0,0) scale(1);}}
+  @keyframes lp-orb-drift-2{0%{transform:translate(0,0) scale(1);}33%{transform:translate(-40px,20px) scale(1.08);}66%{transform:translate(30px,-30px) scale(.92);}100%{transform:translate(0,0) scale(1);}}
+  @keyframes lp-particle-rise{0%{transform:translateY(0);opacity:0;}8%{opacity:1;}92%{opacity:.5;}100%{transform:translateY(-100vh);opacity:0;}}
+  @keyframes lp-grid-move{0%{transform:translateY(0);}100%{transform:translateY(60px);}}
+  @keyframes lp-spin-slow{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+  @keyframes lp-spin-reverse{from{transform:rotate(0deg);}to{transform:rotate(-360deg);}}
+  @keyframes lp-pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
 
-  /* ===== Layout ===== */
-  .shell{display:flex; max-width:1400px; margin:0 auto;}
+  .lp-gradient-text{
+    background:linear-gradient(135deg,#a78bfa 0%,#f0abfc 25%,#818cf8 50%,#c084fc 75%,#a78bfa 100%);
+    background-size:400% 400%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation:lp-gradient-shift 5s ease infinite;
+  }
+  .lp-cta-btn{
+    position:relative; overflow:hidden; display:inline-flex; align-items:center; gap:10px;
+    padding:0.875rem 2.25rem; border-radius:9999px; font-weight:700; font-size:0.95rem;
+    letter-spacing:0.01em; color:#fff; cursor:pointer; border:1px solid rgba(255,255,255,0.18);
+    background:linear-gradient(135deg,#7c3aed 0%,#6366f1 50%,#7c3aed 100%); background-size:200% 200%;
+    animation:lp-gradient-shift 4s ease infinite;
+    box-shadow:0 0 30px rgba(124,58,237,.55),0 0 80px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.15);
+    transition:transform .3s cubic-bezier(.34,1.56,.64,1), box-shadow .3s;
+  }
+  .lp-cta-btn:hover{transform:translateY(-3px) scale(1.03); box-shadow:0 0 50px rgba(124,58,237,.75),0 0 120px rgba(124,58,237,.3),inset 0 1px 0 rgba(255,255,255,.2); text-decoration:none;}
+  .lp-secondary-btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:0.75rem 1.75rem; border-radius:9999px; font-weight:600; font-size:0.9rem; color:rgba(255,255,255,.85);
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); backdrop-filter:blur(8px);
+    transition:all .3s; cursor:pointer;
+  }
+  .lp-secondary-btn:hover{background:rgba(255,255,255,.1); border-color:rgba(167,139,250,.4); color:#fff; transform:translateY(-2px); text-decoration:none;}
+
+  .lp-glass-card{
+    background:rgba(15,8,40,.75); backdrop-filter:blur(20px) saturate(1.4);
+    border:1px solid rgba(139,92,246,.15); border-radius:1.1rem; position:relative;
+  }
+  .lp-feature-card{
+    background:rgba(15,8,40,.6); backdrop-filter:blur(16px);
+    border:1px solid rgba(255,255,255,.06); border-radius:1.1rem; padding:1.5rem;
+    transition:all .4s cubic-bezier(.16,1,.3,1); position:relative;
+  }
+  .lp-feature-card:hover{border-color:rgba(139,92,246,.35); transform:translateY(-6px); box-shadow:0 24px 60px rgba(139,92,246,.18);}
+  .icon-badge{
+    width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:14px;
+    background:linear-gradient(135deg, var(--ic1,#7c3aed), var(--ic2,#a855f7)); box-shadow:0 6px 20px -6px var(--ic1,#7c3aed);
+  }
+  .icon-badge svg{width:19px;height:19px;stroke:#fff;}
+
+  /* ── Background ── */
+  .bg-fixed{position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0;}
+  .bg-base{position:absolute; inset:0; background:radial-gradient(ellipse 80% 60% at 50% -10%, #12052e 0%, #060018 45%, #020008 100%);}
+  .bg-grid{position:absolute; inset:0; background-image:linear-gradient(rgba(139,92,246,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.06) 1px,transparent 1px); background-size:60px 60px; animation:lp-grid-move 8s linear infinite;}
+  .orb1{position:absolute; top:-5%; left:0%; width:60vw; height:60vw; max-width:820px; max-height:820px; border-radius:50%; background:radial-gradient(circle, rgba(124,58,237,.22) 0%, rgba(109,40,217,.07) 45%, transparent 68%); filter:blur(55px); animation:lp-orb-drift 18s ease-in-out infinite;}
+  .orb2{position:absolute; bottom:0%; right:-5%; width:52vw; height:52vw; max-width:700px; max-height:700px; border-radius:50%; background:radial-gradient(circle, rgba(99,102,241,.18) 0%, rgba(79,70,229,.05) 50%, transparent 70%); filter:blur(65px); animation:lp-orb-drift-2 22s ease-in-out infinite;}
+  .orb3{position:absolute; top:45%; left:50%; transform:translateX(-50%); width:35vw; height:35vw; max-width:480px; max-height:480px; border-radius:50%; background:radial-gradient(circle, rgba(192,38,211,.12) 0%, transparent 68%); filter:blur(80px); animation:lp-orb-drift 28s ease-in-out infinite reverse;}
+  .particles span{position:absolute; bottom:-8px; border-radius:50%; animation:lp-particle-rise linear infinite;}
+
+  /* ── Nav ── */
+  .topnav{
+    position:fixed; top:0; left:0; right:0; z-index:60; display:flex; align-items:center; justify-content:space-between;
+    padding:14px 24px; background:rgba(4,1,16,.7); border-bottom:1px solid rgba(255,255,255,.05); backdrop-filter:blur(20px);
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:900; font-size:1.02rem; letter-spacing:-0.02em; text-decoration:none;}
+  .brand-mark{width:30px;height:30px;border-radius:9px; background:linear-gradient(135deg,#7c3aed,#c026d3); display:flex; align-items:center; justify-content:center; font-weight:900; box-shadow:0 4px 18px -4px rgba(124,58,237,.7);}
+  .nav-links{display:flex; align-items:center; gap:22px; font-size:0.86rem; color:rgba(255,255,255,.4);}
+  .nav-links a{text-decoration:none; transition:color .15s;}
+  .nav-links a:hover{color:rgba(255,255,255,.85);}
+  .nav-cta{padding:9px 20px; border-radius:9999px; font-size:0.85rem; font-weight:700; background:rgba(124,58,237,.18); border:1px solid rgba(124,58,237,.35); color:#c4b5fd; text-decoration:none; transition:all .2s;}
+  .nav-cta:hover{background:rgba(124,58,237,.32); border-color:rgba(124,58,237,.6);}
+  .menu-toggle{display:none; background:none; border:1px solid rgba(255,255,255,.15); border-radius:9px; width:38px;height:38px; color:#fff; cursor:pointer; align-items:center; justify-content:center;}
+
+  /* ── Layout ── */
+  .shell{position:relative; z-index:2; display:flex; max-width:1360px; margin:0 auto; padding-top:70px;}
   .sidebar{
-    width:270px; flex-shrink:0; padding:28px 16px 60px;
-    position:sticky; top:57px; align-self:flex-start; height:calc(100vh - 57px);
-    overflow-y:auto; border-right:1px solid var(--border);
+    width:262px; flex-shrink:0; padding:32px 14px 60px; position:sticky; top:70px; align-self:flex-start;
+    height:calc(100vh - 70px); overflow-y:auto;
   }
-  .sidebar-group{margin-bottom:22px;}
-  .sidebar-title{
-    font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em;
-    color:var(--text-dimmer); font-weight:700; padding:0 12px; margin-bottom:8px;
+  .side-kicker{font-size:0.68rem; text-transform:uppercase; letter-spacing:.1em; font-weight:800; color:rgba(255,255,255,.28); padding:0 14px; margin:22px 0 8px;}
+  .side-kicker:first-child{margin-top:0;}
+  .nav-link{
+    display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:10px; font-size:0.87rem; font-weight:600;
+    color:rgba(255,255,255,.5); margin-bottom:2px; text-decoration:none; transition:all .15s;
   }
-  .sidebar a.nav-link{
-    display:flex; align-items:center; gap:10px;
-    padding:8px 12px; border-radius:9px; font-size:0.89rem; font-weight:500;
-    color:var(--text-dim); margin-bottom:2px; transition:all .12s ease;
-  }
-  .sidebar a.nav-link:hover{background:var(--bg-elev-2); color:var(--text); text-decoration:none;}
-  .sidebar a.nav-link.active{
-    background:linear-gradient(90deg, color-mix(in srgb, var(--purple) 18%, transparent), transparent);
-    color:var(--purple-light); font-weight:700;
-  }
-  .nav-link .num{
-    font-family:var(--mono); font-size:0.72rem; width:20px; color:var(--text-dimmer);
-  }
-  .nav-link.active .num{color:var(--purple-light);}
+  .nav-link:hover{background:rgba(255,255,255,.05); color:#fff;}
+  .nav-link.active{background:linear-gradient(90deg, rgba(124,58,237,.22), transparent); color:#c4b5fd;}
+  .nav-link .num{font-size:0.72rem; width:18px; color:rgba(255,255,255,.25); font-weight:700;}
+  .nav-link.active .num{color:#a78bfa;}
 
-  main{flex:1; min-width:0; padding:0 0 100px;}
-  .content{max-width:820px; margin:0 auto; padding:48px 40px 0;}
+  main{flex:1; min-width:0; padding-bottom:100px;}
+  .content{max-width:800px; margin:0 auto; padding:0 36px;}
 
-  /* ===== Hero ===== */
-  .hero{
-    max-width:1400px; margin:0 auto; padding:70px 40px 60px;
-    text-align:center; position:relative; overflow:hidden;
+  /* ── Hero ── */
+  .hero{max-width:1360px; margin:0 auto; padding:64px 36px 56px; text-align:center; position:relative;}
+  .badge-pill{
+    display:inline-flex; align-items:center; gap:8px; padding:7px 16px; border-radius:9999px; font-size:0.75rem; font-weight:700;
+    background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.26); color:#c4b5fd; margin-bottom:24px;
   }
-  .hero::before{
-    content:""; position:absolute; top:-200px; left:50%; transform:translateX(-50%);
-    width:900px; height:500px; border-radius:50%;
-    background:radial-gradient(closest-side, rgba(124,58,237,.35), transparent 70%);
-    filter:blur(40px); pointer-events:none;
-  }
-  .hero h1{
-    font-size:clamp(2.2rem,5vw,3.4rem); font-weight:900; letter-spacing:-0.03em;
-    margin:0 0 16px; background:linear-gradient(135deg,var(--text),var(--purple-light) 90%);
-    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
-  }
-  .hero p{font-size:1.15rem; color:var(--text-dim); max-width:620px; margin:0 auto 30px;}
-  .hero-actions{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; position:relative;}
-  .btn{
-    padding:12px 24px; border-radius:11px; font-weight:700; font-size:0.92rem;
-    display:inline-flex; align-items:center; gap:8px; transition:all .15s ease; border:1px solid transparent;
-  }
-  .btn-primary{background:linear-gradient(135deg,var(--purple),#c026d3); color:#fff; box-shadow:0 10px 30px -10px rgba(124,58,237,.6);}
-  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 14px 34px -8px rgba(124,58,237,.75); text-decoration:none;}
-  .btn-ghost{background:var(--bg-elev); border-color:var(--border); color:var(--text);}
-  .btn-ghost:hover{border-color:var(--purple-light); text-decoration:none;}
+  .badge-pill .dot{width:6px;height:6px;border-radius:50%; background:#34d399; animation:lp-pulse 2s ease-in-out infinite;}
+  .hero h1{font-size:clamp(2.1rem,5vw,3.6rem); font-weight:900; letter-spacing:-0.035em; line-height:1.05; margin:0 0 18px;}
+  .hero p.lead{font-size:1.1rem; color:rgba(255,255,255,.45); max-width:600px; margin:0 auto 8px;}
+  .hero p.sub{font-size:0.9rem; color:rgba(255,255,255,.25); max-width:480px; margin:0 auto 30px;}
+  .hero-actions{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-bottom:28px;}
+  .check-row{display:flex; flex-wrap:wrap; gap:8px 18px; justify-content:center; color:rgba(255,255,255,.3); font-size:0.78rem;}
+  .check-row span{display:flex; align-items:center; gap:6px;}
+  .check-row svg{width:12px;height:12px; stroke:#34d399; flex-shrink:0;}
 
-  .badges-row{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:26px; position:relative;}
-  .chip{
-    font-size:0.74rem; font-weight:700; padding:5px 12px; border-radius:999px;
-    background:var(--bg-elev-2); border:1px solid var(--border); color:var(--text-dim);
-    display:flex; align-items:center; gap:6px;
+  /* ── Sections ── */
+  section.doc-section{padding-top:62px; scroll-margin-top:88px;}
+  section.doc-section:first-of-type{padding-top:12px;}
+  .kicker{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .kicker .step-badge{
+    width:24px;height:24px;border-radius:8px; background:rgba(124,58,237,.15); border:1px solid rgba(124,58,237,.3);
+    display:flex; align-items:center; justify-content:center; font-size:0.68rem; font-weight:800; color:#c4b5fd;
   }
-  .chip .dot{width:6px;height:6px;border-radius:50%;background:var(--accent-green);}
-
-  /* ===== Section ===== */
-  section.doc-section{padding-top:64px; scroll-margin-top:80px;}
-  section.doc-section:first-of-type{padding-top:20px;}
-  .section-kicker{
-    font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.09em;
-    color:var(--purple-light); margin-bottom:8px; display:flex; align-items:center; gap:8px;
-  }
-  .section-kicker .step-num{
-    width:22px;height:22px;border-radius:7px; background:var(--bg-elev-2); border:1px solid var(--border);
-    display:flex;align-items:center;justify-content:center; font-family:var(--mono); font-size:0.7rem; color:var(--text-dim);
-  }
-  h2{font-size:1.9rem; font-weight:800; letter-spacing:-0.02em; margin:0 0 14px;}
-  h3{font-size:1.25rem; font-weight:750; margin:32px 0 12px; letter-spacing:-0.01em;}
-  p{color:var(--text-dim); margin:0 0 16px; font-size:1rem;}
-  ul,ol{color:var(--text-dim); padding-left:1.3em; margin:0 0 18px;}
+  .kicker span.label{font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; color:#a78bfa;}
+  h2{font-size:1.85rem; font-weight:900; letter-spacing:-0.025em; margin:0 0 14px;}
+  h3{font-size:1.2rem; font-weight:750; margin:30px 0 12px; letter-spacing:-0.01em; color:#fff;}
+  p{color:rgba(255,255,255,.5); margin:0 0 16px; font-size:0.97rem;}
+  ul,ol{color:rgba(255,255,255,.5); padding-left:1.25em; margin:0 0 18px;}
   li{margin-bottom:7px;}
-  li::marker{color:var(--purple-light);}
-  strong{color:var(--text); font-weight:700;}
+  li::marker{color:#a78bfa;}
+  strong{color:#fff; font-weight:700;}
 
-  .card{
-    background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius);
-    padding:22px 24px; margin:20px 0;
-  }
   .card-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:22px 0;}
-  .feature-card{
-    background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius);
-    padding:18px 20px; transition:border-color .15s ease, transform .15s ease;
-  }
-  .feature-card:hover{border-color:var(--purple-light); transform:translateY(-2px);}
-  .feature-card .ico{font-size:1.4rem; margin-bottom:8px; display:block;}
-  .feature-card h4{margin:0 0 6px; font-size:0.98rem; font-weight:700;}
-  .feature-card p{margin:0; font-size:0.87rem; color:var(--text-dim);}
+  .feature-card h4{margin:0 0 6px; font-size:0.96rem; font-weight:750; color:#fff;}
+  .feature-card p{margin:0; font-size:0.85rem; color:rgba(255,255,255,.4);}
 
-  table{width:100%; border-collapse:collapse; margin:20px 0; font-size:0.92rem;}
-  th{
-    text-align:left; padding:10px 14px; background:var(--bg-elev-2); color:var(--text-dimmer);
-    font-size:0.74rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;
-    border-bottom:1px solid var(--border);
-  }
-  th:first-child{border-radius:8px 0 0 0;} th:last-child{border-radius:0 8px 0 0;}
-  td{padding:11px 14px; border-bottom:1px solid var(--border); color:var(--text-dim);}
+  table{width:100%; border-collapse:collapse; margin:20px 0; font-size:0.9rem; border-radius:12px; overflow:hidden;}
+  th{text-align:left; padding:11px 16px; background:rgba(139,92,246,.08); color:rgba(255,255,255,.4); font-size:0.7rem; text-transform:uppercase; letter-spacing:.06em; font-weight:800; border-bottom:1px solid rgba(255,255,255,.08);}
+  td{padding:12px 16px; border-bottom:1px solid rgba(255,255,255,.06); color:rgba(255,255,255,.55);}
   tr:last-child td{border-bottom:none;}
-  td code{white-space:nowrap;}
+  td strong{color:#fff;}
 
-  .callout{
-    display:flex; gap:12px; padding:16px 18px; border-radius:12px; margin:22px 0;
-    border:1px solid var(--border); background:var(--bg-elev);
-  }
-  .callout .ic{font-size:1.2rem; line-height:1;}
-  .callout.warn{border-color:color-mix(in srgb, var(--accent-red) 40%, var(--border)); background:color-mix(in srgb, var(--accent-red) 8%, var(--bg-elev));}
-  .callout.tip{border-color:color-mix(in srgb, var(--accent-green) 40%, var(--border)); background:color-mix(in srgb, var(--accent-green) 8%, var(--bg-elev));}
-  .callout.info{border-color:color-mix(in srgb, var(--accent-blue) 40%, var(--border)); background:color-mix(in srgb, var(--accent-blue) 8%, var(--bg-elev));}
-  .callout p{margin:0; color:var(--text);}
-  .callout p:first-child strong{display:block; margin-bottom:2px;}
+  .callout{display:flex; gap:14px; padding:16px 20px; border-radius:1rem; margin:22px 0; align-items:flex-start;}
+  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .callout .icon-wrap svg{width:16px;height:16px; stroke:#fff;}
+  .callout.warn{background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.25);}
+  .callout.warn .icon-wrap{background:linear-gradient(135deg,#ef4444,#f97316);}
+  .callout.tip{background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.25);}
+  .callout.tip .icon-wrap{background:linear-gradient(135deg,#10b981,#34d399);}
+  .callout.info{background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.25);}
+  .callout.info .icon-wrap{background:linear-gradient(135deg,#0ea5e9,#38bdf8);}
+  .callout p{margin:0; color:rgba(255,255,255,.75); font-size:0.9rem;}
+  .callout strong{color:#fff;}
 
   .step-list{list-style:none; padding:0; counter-reset:step; margin:22px 0;}
-  .step-list li{
-    counter-increment:step; position:relative; padding-left:42px; margin-bottom:20px; color:var(--text-dim);
-  }
+  .step-list li{counter-increment:step; position:relative; padding-left:46px; margin-bottom:20px; color:rgba(255,255,255,.5);}
   .step-list li::before{
-    content:counter(step); position:absolute; left:0; top:-2px;
-    width:28px; height:28px; border-radius:9px; background:linear-gradient(135deg,var(--purple),#c026d3);
-    color:#fff; font-weight:800; font-size:0.85rem; display:flex; align-items:center; justify-content:center;
+    content:counter(step); position:absolute; left:0; top:-3px; width:30px; height:30px; border-radius:9px;
+    background:linear-gradient(135deg,#7c3aed,#c026d3); color:#fff; font-weight:800; font-size:0.85rem;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 4px 16px -4px rgba(124,58,237,.6);
   }
-  .step-list strong{color:var(--text);}
+  .step-list strong{color:#fff;}
 
-  .divider{height:1px; background:var(--border); margin:56px 0 0;}
-  .section-nav{
-    display:flex; justify-content:space-between; gap:16px; margin-top:36px; padding-top:28px;
-    border-top:1px solid var(--border);
-  }
+  .divider{height:1px; background:linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent); margin:56px 0 0;}
+  .section-nav{display:flex; justify-content:space-between; gap:16px; margin-top:36px; padding-top:28px; border-top:1px solid rgba(255,255,255,.08);}
   .section-nav a{
-    flex:1; padding:16px 18px; border:1px solid var(--border); border-radius:12px;
-    color:var(--text); background:var(--bg-elev); transition:border-color .15s ease;
-    display:flex; flex-direction:column; gap:4px;
+    flex:1; padding:16px 18px; border:1px solid rgba(255,255,255,.08); border-radius:1rem; background:rgba(15,8,40,.5);
+    color:#fff; text-decoration:none; transition:border-color .2s, transform .2s; display:flex; flex-direction:column; gap:4px;
   }
-  .section-nav a:hover{border-color:var(--purple-light); text-decoration:none;}
+  .section-nav a:hover{border-color:rgba(139,92,246,.4); transform:translateY(-2px);}
   .section-nav a.next{text-align:right; align-items:flex-end;}
-  .section-nav .lbl{font-size:0.72rem; color:var(--text-dimmer); text-transform:uppercase; letter-spacing:0.05em;}
-  .section-nav .ttl{font-weight:700; font-size:0.95rem;}
+  .section-nav .lbl{font-size:0.68rem; color:rgba(255,255,255,.3); text-transform:uppercase; letter-spacing:.05em;}
+  .section-nav .ttl{font-weight:700; font-size:0.92rem;}
 
-  .faq-item{border-bottom:1px solid var(--border); padding:18px 0;}
-  .faq-item:first-child{border-top:1px solid var(--border);}
-  .faq-q{font-weight:700; color:var(--text); margin-bottom:8px; display:flex; gap:10px; font-size:0.98rem;}
-  .faq-q .q-mark{color:var(--purple-light); flex-shrink:0;}
-  .faq-a{color:var(--text-dim); margin:0; padding-left:26px; font-size:0.93rem;}
+  .faq-item{border-bottom:1px solid rgba(255,255,255,.08); padding:18px 0;}
+  .faq-item:first-child{border-top:1px solid rgba(255,255,255,.08);}
+  .faq-q{font-weight:700; color:#fff; margin-bottom:8px; display:flex; gap:10px; font-size:0.96rem; align-items:flex-start;}
+  .faq-q .q-mark{color:#a78bfa; flex-shrink:0;}
+  .faq-a{color:rgba(255,255,255,.5); margin:0; padding-left:26px; font-size:0.9rem;}
 
-  footer{
-    text-align:center; padding:50px 24px; color:var(--text-dimmer); font-size:0.85rem;
-    border-top:1px solid var(--border); margin-top:60px;
-  }
+  footer{text-align:center; padding:50px 24px; color:rgba(255,255,255,.25); font-size:0.82rem; border-top:1px solid rgba(255,255,255,.06); margin-top:60px; position:relative; z-index:2;}
+  footer a{color:#a78bfa; text-decoration:none;}
 
   @media (max-width:960px){
-    .sidebar{
-      position:fixed; left:0; top:57px; height:calc(100vh - 57px); background:var(--bg);
-      transform:translateX(-100%); transition:transform .2s ease; z-index:40; width:78vw; max-width:300px;
-      box-shadow:20px 0 40px rgba(0,0,0,.3);
-    }
+    .sidebar{position:fixed; left:0; top:62px; height:calc(100vh - 62px); background:#07021b; transform:translateX(-100%); transition:transform .25s ease; z-index:55; width:80vw; max-width:300px; box-shadow:20px 0 50px rgba(0,0,0,.5); border-right:1px solid rgba(255,255,255,.08);}
     .sidebar.open{transform:translateX(0);}
     .menu-toggle{display:flex;}
-    .content{padding:36px 20px 0;}
-    .hero{padding:48px 20px 40px;}
+    .nav-links{display:none;}
+    .content{padding:0 20px;}
+    .hero{padding:44px 20px 40px;}
   }
 </style>
 </head>
 <body>
 
-<div class="topbar">
-  <div style="display:flex;align-items:center;gap:10px;">
-    <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    </button>
-    <a href="#top" class="brand" style="color:inherit;text-decoration:none;">
-      <span class="brand-badge">F</span>
-      <span>FidCaster<br/><small>User Documentation</small></span>
-    </a>
-  </div>
-  <div class="top-actions">
-    <a class="pill-link" href="https://fidcaster.xyz" target="_blank" rel="noopener">Open App ↗</a>
-    <a class="pill-link" href="../README.md">Developer Docs</a>
-  </div>
+<div class="bg-fixed">
+  <div class="bg-base"></div>
+  <div class="bg-grid"></div>
+  <div class="orb1"></div>
+  <div class="orb2"></div>
+  <div class="orb3"></div>
+  <div class="particles" id="particles"></div>
 </div>
+
+<nav class="topnav">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <a href="#top" class="brand"><span class="brand-mark">F</span>FidCaster Docs</a>
+  </div>
+  <div class="nav-links">
+    <a href="#getting-started">Guide</a>
+    <a href="#fid-market">FID Market</a>
+    <a href="#faq">FAQ</a>
+  </div>
+  <a class="nav-cta" href="https://fidcaster.xyz" target="_blank" rel="noopener">Open App</a>
+</nav>
 
 <div class="shell">
   <nav class="sidebar" id="sidebar">
-    <div class="sidebar-group">
-      <div class="sidebar-title">Overview</div>
-      <a class="nav-link" data-target="top" href="#top"><span class="num">·</span>Introduction</a>
-    </div>
-    <div class="sidebar-group">
-      <div class="sidebar-title">Guide</div>
-      <a class="nav-link" data-target="getting-started" href="#getting-started"><span class="num">01</span>Getting Started</a>
-      <a class="nav-link" data-target="feed-casting" href="#feed-casting"><span class="num">02</span>Feed &amp; Casting</a>
-      <a class="nav-link" data-target="fid-market" href="#fid-market"><span class="num">03</span>FID Market</a>
-      <a class="nav-link" data-target="grow-cleanup" href="#grow-cleanup"><span class="num">04</span>Grow &amp; Clean Up</a>
-      <a class="nav-link" data-target="wallet-security" href="#wallet-security"><span class="num">05</span>Wallet &amp; Security</a>
-      <a class="nav-link" data-target="mini-apps" href="#mini-apps"><span class="num">06</span>Mini Apps &amp; Notifications</a>
-      <a class="nav-link" data-target="mobile" href="#mobile"><span class="num">07</span>Mobile Apps</a>
-      <a class="nav-link" data-target="faq" href="#faq"><span class="num">08</span>FAQ &amp; Support</a>
-    </div>
+    <div class="side-kicker">Overview</div>
+    <a class="nav-link" data-target="top" href="#top"><span class="num">·</span>Introduction</a>
+    <div class="side-kicker">Guide</div>
+    <a class="nav-link" data-target="getting-started" href="#getting-started"><span class="num">01</span>Getting Started</a>
+    <a class="nav-link" data-target="feed-casting" href="#feed-casting"><span class="num">02</span>Feed &amp; Casting</a>
+    <a class="nav-link" data-target="fid-market" href="#fid-market"><span class="num">03</span>FID Market</a>
+    <a class="nav-link" data-target="grow-cleanup" href="#grow-cleanup"><span class="num">04</span>Grow &amp; Clean Up</a>
+    <a class="nav-link" data-target="wallet-security" href="#wallet-security"><span class="num">05</span>Wallet &amp; Security</a>
+    <a class="nav-link" data-target="mini-apps" href="#mini-apps"><span class="num">06</span>Mini Apps &amp; Notifications</a>
+    <a class="nav-link" data-target="mobile" href="#mobile"><span class="num">07</span>Mobile Apps</a>
+    <a class="nav-link" data-target="faq" href="#faq"><span class="num">08</span>FAQ &amp; Support</a>
   </nav>
 
   <main>
     <div class="hero" id="top">
-      <h1>Everything you need<br/>to master FidCaster</h1>
-      <p>The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism. This guide covers every feature — precisely, professionally, end to end.</p>
+      <div class="badge-pill"><span class="dot"></span>Documentation · Live on Optimism</div>
+      <h1><span class="lp-gradient-text">Master every part</span><br/><span style="color:#fff;">of FidCaster.</span></h1>
+      <p class="lead">The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism.</p>
+      <p class="sub">A precise, complete guide to every feature — written for real use, not marketing.</p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#getting-started">Get Started ↓</a>
-        <a class="btn btn-ghost" href="https://fidcaster.xyz" target="_blank" rel="noopener">Launch App</a>
+        <a class="lp-cta-btn" href="#getting-started">Get Started
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+        <a class="lp-secondary-btn" href="https://fidcaster.xyz" target="_blank" rel="noopener">Launch App</a>
       </div>
-      <div class="badges-row">
-        <span class="chip"><span class="dot"></span>Non-custodial</span>
-        <span class="chip"><span class="dot"></span>Optimism Mainnet</span>
-        <span class="chip"><span class="dot"></span>AES-GCM-256 encrypted vault</span>
-        <span class="chip"><span class="dot"></span>iOS &amp; Android</span>
+      <div class="check-row">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Non-custodial</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Optimism Mainnet</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>AES-GCM-256 vault</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>iOS &amp; Android</span>
       </div>
     </div>
 
@@ -337,24 +280,24 @@
 
       <!-- 01 GETTING STARTED -->
       <section class="doc-section" id="getting-started">
-        <div class="section-kicker"><span class="step-num">01</span>Guide</div>
+        <div class="kicker"><span class="step-badge">01</span><span class="label">Guide</span></div>
         <h2>Getting Started</h2>
         <p>FidCaster is entirely <strong>client-side</strong> — there's no email/password signup. Your identity <em>is</em> your Farcaster ID (FID), and you sign in with one of three methods below.</p>
 
         <h3>Sign-in methods</h3>
         <div class="card-grid">
-          <div class="feature-card">
-            <span class="ico">🔑</span>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#7c3aed;--ic2:#a855f7;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
             <h4>Seed Phrase</h4>
             <p>The primary method. Enter your 12/24-word mnemonic to derive your wallet and signer locally.</p>
           </div>
-          <div class="feature-card">
-            <span class="ico">👛</span>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#6366f1;--ic2:#818cf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>
             <h4>External Wallet</h4>
             <p>Connect MetaMask or any WalletConnect v2-compatible wallet.</p>
           </div>
-          <div class="feature-card">
-            <span class="ico">📱</span>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#a855f7;--ic2:#c084fc;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
             <h4>Sign In with Farcaster</h4>
             <p>Scan a QR code and approve in Warpcast for fast, read-only access.</p>
           </div>
@@ -369,7 +312,7 @@
         </ol>
 
         <div class="callout warn">
-          <span class="ic">⚠️</span>
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
           <p><strong>Your seed phrase never leaves your device.</strong> It is never sent to any server. Keep it safe — nobody, including the FidCaster team, can recover it for you.</p>
         </div>
 
@@ -395,7 +338,7 @@
 
       <!-- 02 FEED & CASTING -->
       <section class="doc-section" id="feed-casting">
-        <div class="section-kicker"><span class="step-num">02</span>Guide</div>
+        <div class="kicker"><span class="step-badge">02</span><span class="label">Guide</span></div>
         <h2>Feed &amp; Casting</h2>
         <p>FidCaster gives you four distinct views into the Farcaster network, plus a full-featured composer for posting.</p>
 
@@ -423,10 +366,22 @@
         <h3>Reactions</h3>
         <p>All reactions are <strong>on-hub</strong> — written directly to the Farcaster protocol, not a proprietary database:</p>
         <div class="card-grid">
-          <div class="feature-card"><span class="ico">❤️</span><h4>Like</h4><p>React to any cast instantly.</p></div>
-          <div class="feature-card"><span class="ico">🔁</span><h4>Recast</h4><p>Share a cast to your own followers.</p></div>
-          <div class="feature-card"><span class="ico">💬</span><h4>Quote</h4><p>Add your own commentary above a cast.</p></div>
-          <div class="feature-card"><span class="ico">➕</span><h4>Follow</h4><p>Follow the author directly from their cast.</p></div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#db2777;--ic2:#f472b6;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+            <h4>Like</h4><p>React to any cast instantly.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#059669;--ic2:#34d399;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+            <h4>Recast</h4><p>Share a cast to your own followers.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#0ea5e9;--ic2:#38bdf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+            <h4>Quote</h4><p>Add your own commentary above a cast.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#7c3aed;--ic2:#a855f7;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg></div>
+            <h4>Follow</h4><p>Follow the author directly from their cast.</p>
+          </div>
         </div>
 
         <h3>Threads</h3>
@@ -445,12 +400,12 @@
 
       <!-- 03 FID MARKET -->
       <section class="doc-section" id="fid-market">
-        <div class="section-kicker"><span class="step-num">03</span>Guide</div>
+        <div class="kicker"><span class="step-badge">03</span><span class="label">Guide</span></div>
         <h2>FID Market</h2>
         <p>The <strong>FID Market</strong> is FidCaster's signature feature: a peer-to-peer marketplace for Farcaster IDs, fully implemented on-chain on <strong>Optimism</strong>. No custodian ever holds your funds or your identity — every trade is atomic and on-chain.</p>
 
         <div class="callout info">
-          <span class="ic">📜</span>
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
           <p><strong>Market contract</strong> — <code>0xcc11C0Bc08bbF8A5C0AAca80E884C6c7CC0eE3c3</code> on Optimism Mainnet.</p>
         </div>
 
@@ -471,7 +426,7 @@
         </ol>
 
         <div class="callout tip">
-          <span class="ic">💡</span>
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>
           <p>A <strong>9% protocol fee</strong> applies to every successful trade, automatically deducted from the buy transaction.</p>
         </div>
 
@@ -491,7 +446,7 @@
 
       <!-- 04 GROW & CLEANUP -->
       <section class="doc-section" id="grow-cleanup">
-        <div class="section-kicker"><span class="step-num">04</span>Guide</div>
+        <div class="kicker"><span class="step-badge">04</span><span class="label">Guide</span></div>
         <h2>Grow &amp; Clean Up</h2>
         <p>The <strong>Follow</strong> page gives you two powerful tools for managing your network at scale: <strong>Grow</strong> (smart batch-follow) and <strong>Clean Up</strong> (automated batch-unfollow).</p>
 
@@ -505,14 +460,26 @@
         </ol>
 
         <div class="card-grid">
-          <div class="feature-card"><span class="ico">📊</span><h4>Follower range</h4><p>Set min/max follower thresholds.</p></div>
-          <div class="feature-card"><span class="ico">⚡</span><h4>Power Badge only</h4><p>Target Warpcast's verified active users.</p></div>
-          <div class="feature-card"><span class="ico">⭐</span><h4>Pro subscribers only</h4><p>Target Farcaster Pro ($10/mo) members.</p></div>
-          <div class="feature-card"><span class="ico">🚫</span><h4>Exclusion list</h4><p>Skip specific FIDs or usernames.</p></div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#6366f1;--ic2:#818cf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+            <h4>Follower range</h4><p>Set min/max follower thresholds.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#eab308;--ic2:#facc15;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+            <h4>Power Badge only</h4><p>Target Warpcast's verified active users.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#a855f7;--ic2:#c084fc;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+            <h4>Pro subscribers only</h4><p>Target Farcaster Pro ($10/mo) members.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#ef4444;--ic2:#f87171;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg></div>
+            <h4>Exclusion list</h4><p>Skip specific FIDs or usernames.</p>
+          </div>
         </div>
 
         <div class="callout tip">
-          <span class="ic">💡</span>
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>
           <p>When strict filters (min followers, Power Badge, Pro) are active, FidCaster bypasses the 15-minute local cache and runs a full live scan — so results stay accurate.</p>
         </div>
 
@@ -539,7 +506,7 @@
 
       <!-- 05 WALLET & SECURITY -->
       <section class="doc-section" id="wallet-security">
-        <div class="section-kicker"><span class="step-num">05</span>Guide</div>
+        <div class="kicker"><span class="step-badge">05</span><span class="label">Guide</span></div>
         <h2>Wallet &amp; Security</h2>
         <p>Security is FidCaster's foundational design principle. This section explains exactly <strong>what</strong> is stored, <strong>where</strong>, and <strong>how</strong>.</p>
 
@@ -562,12 +529,30 @@ Signer derivation (browser-only):
 
         <h3>Guarantees</h3>
         <div class="card-grid">
-          <div class="feature-card"><span class="ico">🔒</span><h4>Local-only secrets</h4><p>Your seed phrase never leaves your device — always encrypted at rest.</p></div>
-          <div class="feature-card"><span class="ico">🖥️</span><h4>No server custody</h4><p>No server, including FidCaster's own, ever receives your private key.</p></div>
-          <div class="feature-card"><span class="ico">✍️</span><h4>Local signing</h4><p>Signing always happens in your browser, never remotely.</p></div>
-          <div class="feature-card"><span class="ico">⏱️</span><h4>Auto-lock</h4><p>Your session locks automatically on inactivity or a hidden tab.</p></div>
-          <div class="feature-card"><span class="ico">🛡️</span><h4>Rate limiting</h4><p>Every server endpoint enforces request rate limits.</p></div>
-          <div class="feature-card"><span class="ico">✅</span><h4>Input validation</h4><p>Every server route validates FID bounds, hex formats, and addresses.</p></div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#7c3aed;--ic2:#a855f7;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+            <h4>Local-only secrets</h4><p>Your seed phrase never leaves your device — always encrypted at rest.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#0ea5e9;--ic2:#38bdf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="9" x2="22" y2="9"/></svg></div>
+            <h4>No server custody</h4><p>No server, including FidCaster's own, ever receives your private key.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#db2777;--ic2:#f472b6;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></div>
+            <h4>Local signing</h4><p>Signing always happens in your browser, never remotely.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#f97316;--ic2:#fb923c;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <h4>Auto-lock</h4><p>Your session locks automatically on inactivity or a hidden tab.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#059669;--ic2:#34d399;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <h4>Rate limiting</h4><p>Every server endpoint enforces request rate limits.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#6366f1;--ic2:#818cf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+            <h4>Input validation</h4><p>Every server route validates FID bounds, hex formats, and addresses.</p>
+          </div>
         </div>
 
         <h3>Wallet</h3>
@@ -577,7 +562,7 @@ Signer derivation (browser-only):
         <p>Every FID has a <strong>recovery address</strong> that can reclaim control if you ever lose access to your primary key. In FidCaster you can view your current recovery address and jump straight to the on-chain transaction to update it.</p>
 
         <div class="callout tip">
-          <span class="ic">💡</span>
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>
           <p>We recommend setting your recovery address to a secure, separate wallet — ideally a hardware wallet.</p>
         </div>
 
@@ -599,7 +584,7 @@ Signer derivation (browser-only):
 
       <!-- 06 MINI APPS -->
       <section class="doc-section" id="mini-apps">
-        <div class="section-kicker"><span class="step-num">06</span>Guide</div>
+        <div class="kicker"><span class="step-badge">06</span><span class="label">Guide</span></div>
         <h2>Mini Apps &amp; Notifications</h2>
 
         <h3>Mini Apps</h3>
@@ -613,10 +598,22 @@ Signer derivation (browser-only):
         <h3>Notifications</h3>
         <p>The notifications panel is a live feed of everything relevant to your account:</p>
         <div class="card-grid">
-          <div class="feature-card"><span class="ico">❤️</span><h4>Likes</h4><p>See who liked your casts.</p></div>
-          <div class="feature-card"><span class="ico">🔁</span><h4>Recasts</h4><p>Track shares of your content.</p></div>
-          <div class="feature-card"><span class="ico">➕</span><h4>New follows</h4><p>Know instantly when someone follows you.</p></div>
-          <div class="feature-card"><span class="ico">📣</span><h4>Mentions</h4><p>Catch every time you're tagged in a cast.</p></div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#db2777;--ic2:#f472b6;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+            <h4>Likes</h4><p>See who liked your casts.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#059669;--ic2:#34d399;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+            <h4>Recasts</h4><p>Track shares of your content.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#7c3aed;--ic2:#a855f7;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg></div>
+            <h4>New follows</h4><p>Know instantly when someone follows you.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#0ea5e9;--ic2:#38bdf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+            <h4>Mentions</h4><p>Catch every time you're tagged in a cast.</p>
+          </div>
         </div>
         <p>Notifications are grouped by time, and a red badge on the icon shows your unread count.</p>
 
@@ -630,7 +627,7 @@ Signer derivation (browser-only):
 
       <!-- 07 MOBILE -->
       <section class="doc-section" id="mobile">
-        <div class="section-kicker"><span class="step-num">07</span>Guide</div>
+        <div class="kicker"><span class="step-badge">07</span><span class="label">Guide</span></div>
         <h2>Mobile Apps</h2>
         <p>Beyond the web app, FidCaster ships as a native application for <strong>iOS</strong> and <strong>Android</strong>, built with Capacitor.</p>
 
@@ -655,7 +652,7 @@ Signer derivation (browser-only):
 
       <!-- 08 FAQ -->
       <section class="doc-section" id="faq">
-        <div class="section-kicker"><span class="step-num">08</span>Guide</div>
+        <div class="kicker"><span class="step-badge">08</span><span class="label">Guide</span></div>
         <h2>FAQ &amp; Support</h2>
 
         <div class="faq-item">
@@ -709,6 +706,22 @@ Signer derivation (browser-only):
 </div>
 
 <script>
+  // particles, matching the landing page's rising-dust effect
+  (function(){
+    const el = document.getElementById('particles');
+    const colors = ["rgba(240,171,252,0.7)","rgba(129,140,248,0.6)","rgba(192,38,211,0.45)","rgba(139,92,246,0.4)"];
+    let html = "";
+    for(let i=0;i<40;i++){
+      const size = (Math.random()*3+0.5).toFixed(2);
+      const left = (Math.random()*100).toFixed(2);
+      const dur = (Math.random()*26+14).toFixed(1);
+      const delay = (Math.random()*22).toFixed(1);
+      const color = colors[i % colors.length];
+      html += `<span style="left:${left}%;width:${size}px;height:${size}px;background:${color};animation-duration:${dur}s;animation-delay:${delay}s;"></span>`;
+    }
+    el.innerHTML = html;
+  })();
+
   const toggle = document.getElementById('menuToggle');
   const sidebar = document.getElementById('sidebar');
   toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
