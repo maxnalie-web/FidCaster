@@ -690,7 +690,7 @@ export function WalletPanel() {
   const usdEquivalent = (() => {
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt)) return "$0.00";
-    if (selectedToken.usdValue == null || selectedToken.balance === 0) return "—";
+    if (selectedToken.usdValue == null || selectedToken.balance === 0) return "-";
     const perToken = selectedToken.usdValue / selectedToken.balance;
     return `$${(amt * perToken).toFixed(2)}`;
   })();
@@ -1180,7 +1180,7 @@ export function WalletPanel() {
                       </p>
                     </div>
                     <p className="text-[15px] font-bold text-foreground">
-                      {tk.usdValue != null ? `$${tk.usdValue.toFixed(2)}` : "—"}
+                      {tk.usdValue != null ? `$${tk.usdValue.toFixed(2)}` : "-"}
                     </p>
                   </button>
                 ))}
@@ -1259,7 +1259,7 @@ export function WalletPanel() {
                     : { backgroundColor: SEND_ACCENT, color: "#fff", boxShadow: `0 8px 24px ${SEND_ACCENT}66` }}
                 >
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : !sendDisabled ? <Send className="w-4 h-4" /> : null}
-                  {isWatchOnly ? "Watch-only — can't send" : sending ? "Sending…" : !amount ? "Enter an Amount" : `Send ${selectedToken.symbol}`}
+                  {isWatchOnly ? "Watch-only - can't send" : sending ? "Sending…" : !amount ? "Enter an Amount" : `Send ${selectedToken.symbol}`}
                 </button>
               </div>
             )}
@@ -1309,7 +1309,7 @@ export function WalletPanel() {
                 ? <CheckCircle2 size={12} className="text-white" />
                 : <Copy size={12} className="text-white/80" />}
               <span className="text-[11px] text-white/80 font-mono">
-                {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—"}
+                {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "-"}
               </span>
             </button>
           </div>
@@ -1344,7 +1344,7 @@ export function WalletPanel() {
         {[
           { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
           { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
-          { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
+          { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet - import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
           { label: "Browser",  icon: Zap,           onClick: () => setShowBrowser(true), disabled: false, color: "#f59e0b" },
         ].map(({ label, icon: Icon, onClick, disabled, color }) => (
           <button

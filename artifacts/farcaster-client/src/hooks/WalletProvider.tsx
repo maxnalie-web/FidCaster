@@ -259,7 +259,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       const NEEDS_FUNDS_MSG =
-        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nWe'll retry automatically once it arrives — no need to tap anything.`;
+        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nWe'll retry automatically once it arrives - no need to tap anything.`;
 
       try {
         // Safety net: if the wallet hangs indefinitely on the signature/tx

@@ -138,7 +138,7 @@ export function DownloadPage() {
           </h1>
           <p className="text-base max-w-lg mx-auto" style={{ color: "rgba(255,255,255,0.35)" }}>
             Native apps for Android and iOS are on the way. In the meantime, install FidCaster
-            as a full-screen app straight from your browser — no App Store needed.
+            as a full-screen app straight from your browser - no App Store needed.
           </p>
         </motion.div>
 
@@ -164,7 +164,7 @@ export function DownloadPage() {
         <PlatformCard
           icon={<Sparkles className="w-6 h-6" />}
           title="Install the web app on iOS"
-          subtitle="No App Store, no waiting — add FidCaster to your Home Screen right now and it opens full-screen, just like a native app."
+          subtitle="No App Store, no waiting - add FidCaster to your Home Screen right now and it opens full-screen, just like a native app."
           badge={<AvailableBadge />}
         >
           <div className="rounded-2xl p-5 space-y-4"
@@ -175,13 +175,13 @@ export function DownloadPage() {
             <Step n={4} icon={null} text={<>Tap <b className="text-white/80">"Add"</b> in the top-right corner.</>} />
           </div>
           <p className="text-white/25 text-xs mt-4">
-            FidCaster now lives on your Home Screen with its own icon — tap it to open full-screen, no browser bar, just like the native app.
+            FidCaster now lives on your Home Screen with its own icon - tap it to open full-screen, no browser bar, just like the native app.
           </p>
         </PlatformCard>
 
         {/* Android PWA note */}
         <p className="text-center text-white/20 text-xs mt-8">
-          On Android? You can already install FidCaster from Chrome too — open the menu (⋮) and tap <b className="text-white/40">"Add to Home screen"</b>.
+          On Android? You can already install FidCaster from Chrome too - open the menu (⋮) and tap <b className="text-white/40">"Add to Home screen"</b>.
         </p>
       </section>
     </div>

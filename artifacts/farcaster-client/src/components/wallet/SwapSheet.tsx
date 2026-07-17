@@ -559,7 +559,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     } catch (e) {
       const msg = (e as Error).message ?? "Failed to prepare transaction";
       toast.error(msg.includes("revert") || msg.includes("execution")
-        ? "Simulation failed — this swap would revert on-chain. Try refreshing quotes."
+        ? "Simulation failed - this swap would revert on-chain. Try refreshing quotes."
         : msg.slice(0, 140));
     } finally {
       setPreparing(false);
@@ -837,7 +837,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
             <div className="flex-1 text-2xl font-black tabular-nums text-muted-foreground min-h-[2rem] flex items-center">
               {selectedQ?.loading
                 ? <Loader2 size={18} className="animate-spin text-muted-foreground" />
-                : selectedQ?.outFmt ? selectedQ.outFmt : "—"}
+                : selectedQ?.outFmt ? selectedQ.outFmt : "-"}
             </div>
             <button onClick={() => { setPickerFor("to"); setPickerChain(isBridge ? toChainId : fromChainId); setSearch(""); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-background border border-border hover:border-primary/40 transition-colors shrink-0 shadow-sm">
@@ -1020,13 +1020,13 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                     {pendingTx.simStatus === "passed" ? (
                       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400">
                         <Check size={13} className="shrink-0 mt-0.5" />
-                        Simulation passed — this transaction should succeed on-chain.
+                        Simulation passed - this transaction should succeed on-chain.
                       </div>
                     ) : (
                       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
                         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
                         {multiStep
-                          ? `Step ${stepIndex + 1} of ${steps.length}: each transaction is signed separately — this one is "${stepLabel}".`
+                          ? `Step ${stepIndex + 1} of ${steps.length}: each transaction is signed separately - this one is "${stepLabel}".`
                           : "Confirm below to sign and send this transaction."}
                       </div>
                     )}

@@ -9,7 +9,7 @@
 
 **The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism.**
 
-Cast. Connect. Trade your Farcaster ID — no registration, no email, just your identity.
+Cast. Connect. Trade your Farcaster ID - no registration, no email, just your identity.
 
 [![Live App](https://img.shields.io/badge/Live-fidcaster.xyz-7c3aed?style=for-the-badge&logo=vercel)](https://fidcaster.xyz)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
@@ -17,7 +17,7 @@ Cast. Connect. Trade your Farcaster ID — no registration, no email, just your 
 [![Vite](https://img.shields.io/badge/Vite-7-646cff?style=for-the-badge&logo=vite)](https://vite.dev/)
 [![Optimism](https://img.shields.io/badge/Optimism-Mainnet-ff0420?style=for-the-badge&logo=ethereum)](https://www.optimism.io/)
 
-📖 **[User Documentation](./docs/index.html)** — the complete, beautifully designed end-user guide
+📖 **[User Documentation](./docs/index.html)** - the complete, beautifully designed end-user guide
 
 </div>
 
@@ -25,9 +25,9 @@ Cast. Connect. Trade your Farcaster ID — no registration, no email, just your 
 
 ## ✨ What is FidCaster?
 
-FidCaster is a **full-featured Farcaster social client** that goes beyond reading and writing casts. It is the first client to natively integrate a **peer-to-peer FID marketplace** directly on Optimism — letting you list, buy, and sell Farcaster IDs without leaving the app.
+FidCaster is a **full-featured Farcaster social client** that goes beyond reading and writing casts. It is the first client to natively integrate a **peer-to-peer FID marketplace** directly on Optimism - letting you list, buy, and sell Farcaster IDs without leaving the app.
 
-Everything runs client-side. Your seed phrase never leaves your device — it is encrypted with **AES-GCM-256 + PBKDF2 (200,000 iterations)** and stored in your browser's IndexedDB vault. Signing happens locally. No server ever sees your private keys.
+Everything runs client-side. Your seed phrase never leaves your device - it is encrypted with **AES-GCM-256 + PBKDF2 (200,000 iterations)** and stored in your browser's IndexedDB vault. Signing happens locally. No server ever sees your private keys.
 
 ---
 
@@ -37,7 +37,7 @@ Everything runs client-side. Your seed phrase never leaves your device — it is
 |---|---|
 | **Social Feed** | Following · For You · Trending · Channels |
 | **Casting** | Rich composer · image upload (Imgur) · threads |
-| **Reactions** | Likes · Recasts · Quotes · Follows — all on-hub |
+| **Reactions** | Likes · Recasts · Quotes · Follows - all on-hub |
 | **FID Market** | List · Buy · Cancel FIDs on Optimism |
 | **Grow / Follow** | Smart batch-follow with Power Badge, Pro, follower filters |
 | **Clean Up** | Batch unfollow non-followers or filtered users |
@@ -77,14 +77,14 @@ artifacts/farcaster-client/
 
 ---
 
-## 📄 Pages — `src/pages/`
+## 📄 Pages - `src/pages/`
 
 | File | Route | Language | Description |
 |---|---|---|---|
 | `LoginPage.tsx` | `/` | TSX | Landing + auth entry. Seed phrase, WalletConnect, and SIWF login flows |
 | `AuthPage.tsx` | `/auth` | TSX | Session unlock for returning users; decrypts vault with stored password |
 | `DashboardPage.tsx` | `/home` | TSX | Main app shell: sidebar nav, feed, notifications, search, profile, wallet panel |
-| `FidMarketPage.tsx` | `/market` | TSX | FID marketplace listing grid — browse, filter, sort active listings |
+| `FidMarketPage.tsx` | `/market` | TSX | FID marketplace listing grid - browse, filter, sort active listings |
 | `FidDetailPage.tsx` | `/market/:fid` | TSX | Single FID detail: price history, buy flow, seller info, on-chain listing |
 | `FollowPage.tsx` | `/follow` | TSX | Grow (batch-follow) + Clean Up (batch-unfollow) with advanced filters |
 | `ThreadPage.tsx` | `/thread/:hash` | TSX | Full conversation thread with reply composer |
@@ -94,79 +94,79 @@ artifacts/farcaster-client/
 
 ---
 
-## 🧩 Components — `src/components/`
+## 🧩 Components - `src/components/`
 
 | File | Language | Purpose |
 |---|---|---|
 | `BatchFollowSheet.tsx` | TSX | Bottom-sheet for configuring and launching batch follow/unfollow operations. Handles preset strategies, filters (min followers, Power Badge, Farcaster Pro), exclusion lists, and live scan progress |
-| `CastCard.tsx` | TSX | Individual cast renderer — author info, text, embeds, images, frames, reaction buttons (like/recast/quote), thread expansion |
-| `CastComposer.tsx` | TSX | Cast creation modal — text input, image upload to Imgur, channel picker, character limit, hub submission |
-| `FarcasterSignIn.tsx` | TSX | Sign In With Farcaster relay flow — generates EIP-712 signed-key request, polls Warpcast for QR approval |
-| `FeedPanel.tsx` | TSX | Feed container — tab switcher (Following / For You / Trending / Channels), infinite scroll, cast rendering |
+| `CastCard.tsx` | TSX | Individual cast renderer - author info, text, embeds, images, frames, reaction buttons (like/recast/quote), thread expansion |
+| `CastComposer.tsx` | TSX | Cast creation modal - text input, image upload to Imgur, channel picker, character limit, hub submission |
+| `FarcasterSignIn.tsx` | TSX | Sign In With Farcaster relay flow - generates EIP-712 signed-key request, polls Warpcast for QR approval |
+| `FeedPanel.tsx` | TSX | Feed container - tab switcher (Following / For You / Trending / Channels), infinite scroll, cast rendering |
 | `FidCasterLogo.tsx` | TSX | Animated SVG logo component |
 | `FidSoldScreen.tsx` | TSX | Full-screen shown when the user's FID has been transferred (sold via market) |
 | `FollowListSheet.tsx` | TSX | Scrollable followers/following list sheet with follow-back actions |
-| `MiniAppsPanel.tsx` | TSX | Farcaster mini apps browser — catalog fetch, in-app iframe or Capacitor in-app-browser |
-| `NotificationsPanel.tsx` | TSX | Notification feed: likes, recasts, follows, mentions — grouped with timestamps |
+| `MiniAppsPanel.tsx` | TSX | Farcaster mini apps browser - catalog fetch, in-app iframe or Capacitor in-app-browser |
+| `NotificationsPanel.tsx` | TSX | Notification feed: likes, recasts, follows, mentions - grouped with timestamps |
 | `PowerBadgeIcon.tsx` | TSX | Purple ⚡ Power Badge icon (Warpcast power users) |
 | `ProBadge.tsx` + `useProStatus` | TSX | Farcaster Pro ($10/mo subscription) badge with server-backed status check |
-| `ProfileCard.tsx` | TSX | Compact user profile card — avatar, bio, follower counts, follow button |
+| `ProfileCard.tsx` | TSX | Compact user profile card - avatar, bio, follower counts, follow button |
 | `ProfilePostsPanel.tsx` | TSX | User's cast history with infinite scroll |
 | `RecoveryPanel.tsx` | TSX | Shows current Farcaster recovery address; links to on-chain update |
 | `SearchPanel.tsx` | TSX | Full-text user and cast search powered by Neynar |
 | `SeedPhraseInput.tsx` | TSX | Secure 12/24-word seed phrase entry with per-word validation and paste support |
-| `SignerSetup.tsx` | TSX | Step-by-step Ed25519 signer activation wizard — key gen → on-chain KeyRegistry tx → hub readiness polling |
+| `SignerSetup.tsx` | TSX | Step-by-step Ed25519 signer activation wizard - key gen → on-chain KeyRegistry tx → hub readiness polling |
 | `ThreadSheet.tsx` | TSX | Side-sheet thread view that opens from cast card interactions |
 | `UsernameChange.tsx` | TSX | Username change flow with availability check and hub update |
-| `UserProfileSheet.tsx` | TSX | Full user profile modal — posts, follow actions, profile stats |
+| `UserProfileSheet.tsx` | TSX | Full user profile modal - posts, follow actions, profile stats |
 | `WalletConnectLogin.tsx` | TSX | MetaMask / WalletConnect login flow using `@walletconnect/ethereum-provider` |
 | `WalletPanel.tsx` | TSX | ETH balance display, recent on-chain transactions |
 
 ---
 
-## 🪝 Hooks — `src/hooks/`
+## 🪝 Hooks - `src/hooks/`
 
 | File | Language | Purpose |
 |---|---|---|
 | `WalletProvider.tsx` | TSX | **Central auth & wallet state provider.** Manages seed phrase decryption, signer derivation, account switching, session lock/unlock, multi-account storage, and wallet client |
 | `BatchOperationContext.tsx` | TSX | **Multi-account batch operation engine.** Per-FID op state (`Map<fid, BatchOp>`), per-FID cancel refs, per-FID localStorage (`fc_batch_v2_{fid}`). Stacked progress pills for concurrent batches across accounts. Auto-resume on page reload |
-| `useWallet.ts` | TS | Context consumer hook — exposes wallet state and all auth actions to any component |
+| `useWallet.ts` | TS | Context consumer hook - exposes wallet state and all auth actions to any component |
 | `useAdminConfig.ts` | TS | Fetches admin config (rate limits, feature flags) from server |
 | `useEthPrice.ts` | TS | Live ETH/USD price from public oracle |
 | `useInfiniteScroll.ts` | TS | IntersectionObserver-based infinite scroll trigger |
 | `useLandingStats.ts` | TS | Fetches live user count and market volume for the landing page |
-| `useMarketWallet.ts` | TS | `window.ethereum` hook for FID Market transactions — no wagmi dependency |
+| `useMarketWallet.ts` | TS | `window.ethereum` hook for FID Market transactions - no wagmi dependency |
 | `use-mobile.tsx` | TSX | Responsive breakpoint detection |
 | `use-toast.ts` | TS | Programmatic toast queue |
 | `useUnreadNotifications.ts` | TS | Polls for unread notification count; drives the red badge |
 
 ---
 
-## 📦 Library — `src/lib/`
+## 📦 Library - `src/lib/`
 
 | File | Language | Purpose |
 |---|---|---|
 | `wallet.ts` | TS | **BIP-39/32 key derivation.** Derives custody wallet at `m/44'/60'/0'/0/0` and Ed25519 Farcaster signer at `m/44'/60'/0'/0/1` using `@scure/bip32` + `@noble/curves/ed25519` |
 | `session-crypto.ts` | TS | **AES-GCM-256 vault.** Encrypts mnemonic with PBKDF2 (200k iterations, random salt) into IndexedDB. Stores non-extractable `CryptoKey` across page reloads. TTL: 30 days |
 | `farcaster-db.ts` | TS | **IndexedDB cache layer.** Five object stores: `feed_cache` (10 min TTL), `profile_cache` (30 min), `notifications_cache` (5 min), `drafts` (no TTL), `follow_list_cache` |
-| `account-store.ts` | TS | Multi-account manager — stores `AccountMeta` (FID, address, username, pfp, signer UUID) in localStorage `fc_accounts_v2`; cross-tab sync via `StorageEvent` |
+| `account-store.ts` | TS | Multi-account manager - stores `AccountMeta` (FID, address, username, pfp, signer UUID) in localStorage `fc_accounts_v2`; cross-tab sync via `StorageEvent` |
 | `contracts.ts` | TS | `viem` public clients for Optimism and Base with multi-RPC fallback. Exports contract ABIs for KeyRegistry, IdRegistry, and FID Market |
-| `neynar.ts` | TS | **Neynar read client.** `getFollowers`, `getFollowing`, `searchUsers`, `getUserByFid`, `getUsersByFids`, `checkFollowStatusBulk`, Power Badge detection — all routed through `/api/fc` proxy |
+| `neynar.ts` | TS | **Neynar read client.** `getFollowers`, `getFollowing`, `searchUsers`, `getUserByFid`, `getUsersByFids`, `checkFollowStatusBulk`, Power Badge detection - all routed through `/api/fc` proxy |
 | `neynar-write.ts` | TS | Neynar write operations (where applicable) |
 | `neynar-signer.ts` | TS | Signer UUID management and approval state |
-| `hub-submit.ts` | TS | **Hub action submitter.** Thin browser-side fetch wrapper — POSTs signed Farcaster messages to `/api/farcaster/*`. Server handles `@farcaster/hub-nodejs` encoding and Neynar hub submission |
+| `hub-submit.ts` | TS | **Hub action submitter.** Thin browser-side fetch wrapper - POSTs signed Farcaster messages to `/api/farcaster/*`. Server handles `@farcaster/hub-nodejs` encoding and Neynar hub submission |
 | `batch-follow-utils.tsx` | TSX | Batch operation utilities: `BatchFilters` type, `applyFilters`, `loadList` (10K scan with IndexedDB bypass for strict filters), Pro status batch-fetch, sort/preset logic |
 | `farcaster-api.ts` | TS | `FarcasterProfile` type definitions and profile fetch helpers |
 | `admin-config.ts` | TS | Admin FID constant and config type |
 | `miniapp-native.ts` | TS | Capacitor in-app browser bridge for opening mini apps natively on iOS/Android |
-| `utils.ts` | TS | `cn()` — Tailwind class merging via `clsx` + `tailwind-merge` |
+| `utils.ts` | TS | `cn()` - Tailwind class merging via `clsx` + `tailwind-merge` |
 | `wallet-events.ts` | TS | Custom event bus for cross-component wallet state changes |
 
 ---
 
-## 🖥️ Server — `server/` *(Development only)*
+## 🖥️ Server - `server/` *(Development only)*
 
-> In production the app is a **pure static SPA** — the Express server is not deployed. All API calls go directly from the browser to Neynar, Farcaster hubs, and Optimism RPC.
+> In production the app is a **pure static SPA** - the Express server is not deployed. All API calls go directly from the browser to Neynar, Farcaster hubs, and Optimism RPC.
 
 | File | Language | Purpose |
 |---|---|---|
@@ -175,12 +175,12 @@ artifacts/farcaster-client/
 | `fid-market-routes.ts` | TS | **FID Market indexer + REST API.** Streams `Listed`/`Bought`/`Cancelled` events from Optimism in 5,000-block chunks, maintains in-memory listing cache, exposes `/api/fid-market/*` endpoints |
 | `farcaster-submit.ts` | TS | **Hub broadcaster.** Receives pre-signed action params, encodes with `@farcaster/hub-nodejs`, submits to `hub-api.neynar.com`. Actions: follow, unfollow, like, unlike, recast, unrecast, cast, delete-cast |
 | `sign-pool.ts` | TS | Worker pool for parallel Ed25519 signing (batch operations) |
-| `signer-worker.ts` | TS | Worker thread — receives unsigned payloads, signs with `@noble/curves/ed25519`, returns signature |
+| `signer-worker.ts` | TS | Worker thread - receives unsigned payloads, signs with `@noble/curves/ed25519`, returns signature |
 | `cache.ts` | TS | In-memory LRU cache with TTL and stale-while-revalidate support |
 | `neynar-limit.ts` | TS | Per-key RPM accounting, `singleFlight` deduplication, `penalize429` backoff |
-| `profile-db.ts` | TS | SQLite-backed profile cache (`better-sqlite3`) — persists profile data between server restarts |
+| `profile-db.ts` | TS | SQLite-backed profile cache (`better-sqlite3`) - persists profile data between server restarts |
 | `metrics.ts` | TS | Request counters and timing metrics |
-| `health.ts` | TS | `GET /health` — uptime + memory stats |
+| `health.ts` | TS | `GET /health` - uptime + memory stats |
 
 ---
 
@@ -204,9 +204,9 @@ artifacts/farcaster-client/
 | **TypeScript** | 5.x | Type safety across 24,000+ lines |
 | **Vite** | 7 | Bundler, dev server, HMR |
 | **Tailwind CSS** | 4 | Utility-first styling |
-| **Framer Motion** | — | Animations (batch pill, sheets, transitions) |
-| **Radix UI** | — | Accessible Dialog, Tabs, Tooltip, Toast primitives |
-| **Lucide React** | — | Icon library |
+| **Framer Motion** | - | Animations (batch pill, sheets, transitions) |
+| **Radix UI** | - | Accessible Dialog, Tabs, Tooltip, Toast primitives |
+| **Lucide React** | - | Icon library |
 | **Wouter** | 3.x | Lightweight client-side router |
 | **Sonner** | 2.x | Toast notifications |
 | **viem** | 2.x | Ethereum/Optimism/Base RPC client |
@@ -272,13 +272,13 @@ Signer derivation (in-browser only):
 ```
 
 **Key guarantees:**
-- ✅ Seed phrase never leaves the browser — encrypted at rest in IndexedDB
-- ✅ Server never receives private keys — signing is always local
-- ✅ Ed25519 signers registered on-chain — cryptographically verifiable
+- ✅ Seed phrase never leaves the browser - encrypted at rest in IndexedDB
+- ✅ Server never receives private keys - signing is always local
+- ✅ Ed25519 signers registered on-chain - cryptographically verifiable
 - ✅ Session auto-locks on inactivity (tab hide, idle timer)
 - ✅ Rate limiting on all server endpoints (global 100/min, actions 200/min)
 - ✅ Input validation on every server route (FID bounds, hex, address regex)
-- ✅ CORS allowlist — only trusted origins reach the Express server
+- ✅ CORS allowlist - only trusted origins reach the Express server
 
 ---
 
@@ -329,8 +329,8 @@ Target profile search
   → Submit actions to Farcaster hub (1.5s between each)
   → Auto-retry signer errors (90s × 3)
   → Auto-retry rate limits (62s × 3)
-  → Floating progress pill — survives page navigation
-  → Per-account isolation — multiple accounts run simultaneously
+  → Floating progress pill - survives page navigation
+  → Per-account isolation - multiple accounts run simultaneously
 ```
 
 **Filters bypass the 15-minute IndexedDB cache** when strict criteria (minFollowers, Power Badge, Farcaster Pro) are set, ensuring accurate results from a full live scan.
@@ -416,7 +416,7 @@ cd artifacts/farcaster-client
 # Build static assets
 pnpm build
 
-# Output: dist/public/ — deploy anywhere (Vercel, Netlify, Cloudflare Pages, any Node host)
+# Output: dist/public/ - deploy anywhere (Vercel, Netlify, Cloudflare Pages, any Node host)
 ```
 
 ### Mobile (iOS)
@@ -445,7 +445,7 @@ pnpm cap:ios   # builds, syncs, opens Xcode
 ## 📁 Full File Reference
 
 <details>
-<summary><strong>src/pages/</strong> — Route-level pages</summary>
+<summary><strong>src/pages/</strong> - Route-level pages</summary>
 
 | File | Lines | Description |
 |---|---|---|
@@ -463,13 +463,13 @@ pnpm cap:ios   # builds, syncs, opens Xcode
 </details>
 
 <details>
-<summary><strong>src/components/</strong> — UI components</summary>
+<summary><strong>src/components/</strong> - UI components</summary>
 
 | File | Description |
 |---|---|
-| `BatchFollowSheet.tsx` | Batch follow sheet — preset strategies, filters, scan progress |
-| `CastCard.tsx` | Cast renderer — text, embeds, reactions, thread expansion |
-| `CastComposer.tsx` | Cast creation — text, images, channel picker |
+| `BatchFollowSheet.tsx` | Batch follow sheet - preset strategies, filters, scan progress |
+| `CastCard.tsx` | Cast renderer - text, embeds, reactions, thread expansion |
+| `CastComposer.tsx` | Cast creation - text, images, channel picker |
 | `FarcasterSignIn.tsx` | SIWF QR/deep-link relay |
 | `FeedPanel.tsx` | Feed tabs + infinite scroll |
 | `FidCasterLogo.tsx` | Animated logo SVG |
@@ -494,7 +494,7 @@ pnpm cap:ios   # builds, syncs, opens Xcode
 </details>
 
 <details>
-<summary><strong>src/lib/</strong> — Core business logic</summary>
+<summary><strong>src/lib/</strong> - Core business logic</summary>
 
 | File | Description |
 |---|---|
@@ -517,7 +517,7 @@ pnpm cap:ios   # builds, syncs, opens Xcode
 </details>
 
 <details>
-<summary><strong>server/</strong> — Development API server</summary>
+<summary><strong>server/</strong> - Development API server</summary>
 
 | File | Description |
 |---|---|
@@ -539,13 +539,13 @@ pnpm cap:ios   # builds, syncs, opens Xcode
 
 ## 🌐 Deployment
 
-FidCaster deploys as a **pure static site** (`dist/public/`). No server is required in production — all API calls go directly from the browser to:
+FidCaster deploys as a **pure static site** (`dist/public/`). No server is required in production - all API calls go directly from the browser to:
 
-- [Neynar API](https://neynar.com) — social data
-- [hub-api.neynar.com](https://hub-api.neynar.com) — hub message submission
-- [Optimism RPC](https://mainnet.optimism.io) — on-chain reads
-- [api.warpcast.com](https://api.warpcast.com) — SIWF + mini app discovery
-- [api.imgur.com](https://api.imgur.com) — image hosting
+- [Neynar API](https://neynar.com) - social data
+- [hub-api.neynar.com](https://hub-api.neynar.com) - hub message submission
+- [Optimism RPC](https://mainnet.optimism.io) - on-chain reads
+- [api.warpcast.com](https://api.warpcast.com) - SIWF + mini app discovery
+- [api.imgur.com](https://api.imgur.com) - image hosting
 
 The Express server only runs locally in development to proxy around CORS restrictions and provide FID Market indexing.
 
@@ -553,7 +553,7 @@ The Express server only runs locally in development to proxy around CORS restric
 
 ## 📜 License
 
-MIT — see [LICENSE](LICENSE)
+MIT - see [LICENSE](LICENSE)
 
 ---
 

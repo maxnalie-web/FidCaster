@@ -234,7 +234,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
           return respond(req.id, [addr]);
         }
         if (req.method !== "eth_requestAccounts" && !connected) {
-          return respond(req.id, undefined, { code: 4100, message: "Unauthorized — connect the wallet first." });
+          return respond(req.id, undefined, { code: 4100, message: "Unauthorized - connect the wallet first." });
         }
         setPendingQueue(q => [...q, { id: req.id, method: req.method, params: req.params }]);
         return;
@@ -947,7 +947,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
               {currentRequest.method === "eth_sendTransaction" && (
                 <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
                   <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                  This transaction is not simulated first — only approve if you trust this site.
+                  This transaction is not simulated first - only approve if you trust this site.
                 </div>
               )}
               {pendingQueue.length > 1 && (
@@ -1016,7 +1016,7 @@ function RequestSummary({ request, address, network }: { request: PendingRequest
       <div className="rounded-xl border border-border/50 bg-muted/30 divide-y divide-border/40 text-sm">
         <div className="flex items-center justify-between px-4 py-2.5">
           <span className="text-muted-foreground">To</span>
-          <span className="font-mono text-xs text-foreground">{tx.to ? truncAddr(tx.to) : "—"}</span>
+          <span className="font-mono text-xs text-foreground">{tx.to ? truncAddr(tx.to) : "-"}</span>
         </div>
         <div className="flex items-center justify-between px-4 py-2.5">
           <span className="text-muted-foreground">Value</span>

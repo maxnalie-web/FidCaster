@@ -257,7 +257,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     const wallet = wallets.find(w => w.id === walletId);
     if (!wallet) throw new Error("Wallet not found.");
     if (wallet.accounts.length <= 1) {
-      throw new Error("Can't remove the last account — remove the whole wallet instead.");
+      throw new Error("Can't remove the last account - remove the whole wallet instead.");
     }
     const nextAccounts = wallet.accounts.filter(a => a.index !== accountIndex);
     const nextWallets = wallets.map(w => w.id === walletId ? { ...w, accounts: nextAccounts } : w);

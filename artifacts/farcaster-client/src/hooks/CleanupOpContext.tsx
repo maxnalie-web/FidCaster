@@ -230,7 +230,7 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
           if (isAlreadyGone) return "skipped";
           if (isRateLimit && retries < 3) {
             retries++;
-            update("Rate limited — waiting 15s…");
+            update("Rate limited - waiting 15s…");
             await new Promise<void>(r => setTimeout(r, 15_000));
             continue;
           }

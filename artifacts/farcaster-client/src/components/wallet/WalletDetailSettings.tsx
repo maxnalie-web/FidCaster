@@ -271,7 +271,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
             icon={<Trash2 size={15} className={isRemoveDisabled ? "text-muted-foreground" : "text-destructive"} />}
             iconColor={isRemoveDisabled ? "#6b7280" : "#ef4444"}
             title="Remove Wallet"
-            desc={isRemoveDisabled ? "Linked to Farcaster account — sign out to remove" : "Delete from this device"}
+            desc={isRemoveDisabled ? "Linked to Farcaster account - sign out to remove" : "Delete from this device"}
             onClick={() => !isRemoveDisabled && setRemoveConfirm(true)}
             disabled={isRemoveDisabled}
             destructive={!isRemoveDisabled}
@@ -390,7 +390,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
           <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-destructive">Remove Wallet?</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Make sure you've backed up your recovery phrase or private key — this cannot be undone.
+              Make sure you've backed up your recovery phrase or private key - this cannot be undone.
             </p>
             <div className="flex gap-2">
               <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRemoveConfirm(false)}>Cancel</button>
@@ -406,7 +406,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
           <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-destructive">Remove Account?</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              This removes {wallet.accounts.find(a => a.index === removeAccountConfirm)?.label || `Account ${removeAccountConfirm + 1}`} from this wallet. Make sure you've backed up its private key if it holds funds — this cannot be undone.
+              This removes {wallet.accounts.find(a => a.index === removeAccountConfirm)?.label || `Account ${removeAccountConfirm + 1}`} from this wallet. Make sure you've backed up its private key if it holds funds - this cannot be undone.
             </p>
             <div className="flex gap-2">
               <button className="flex-1 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground" onClick={() => setRemoveAccountConfirm(null)}>Cancel</button>

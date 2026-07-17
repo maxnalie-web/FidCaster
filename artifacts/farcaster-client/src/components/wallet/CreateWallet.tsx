@@ -104,7 +104,7 @@ export function CreateWallet({ onDone, onBack }: Props) {
                 <span className="text-sm font-bold text-foreground">Your keys, your funds</span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                We'll generate a 12-word recovery phrase. Write it down and store it somewhere safe —
+                We'll generate a 12-word recovery phrase. Write it down and store it somewhere safe -
                 it's the only way to recover your wallet if you lose this device.
               </p>
             </div>

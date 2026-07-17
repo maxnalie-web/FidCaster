@@ -2,12 +2,12 @@
 
 A full-featured Farcaster client with a built-in peer-to-peer FID marketplace on Optimism.
 
-> The main application lives in [`artifacts/farcaster-client/`](./artifacts/farcaster-client/README.md) — see the full documentation there.
+> The main application lives in [`artifacts/farcaster-client/`](./artifacts/farcaster-client/README.md) - see the full documentation there.
 
 ## Quick links
 
 - [Full README & docs](./artifacts/farcaster-client/README.md)
-- [User Documentation](./artifacts/farcaster-client/docs/index.html) — polished end-user guide covering every feature
+- [User Documentation](./artifacts/farcaster-client/docs/index.html) - polished end-user guide covering every feature
 - [Source code](./artifacts/farcaster-client/src/)
 - [Server](./artifacts/farcaster-client/server/)
 

@@ -243,7 +243,7 @@ export function TokenDetailPopup({ tokenKey, name, symbol, network, networkColor
               </div>
             ) : (
               <p className="text-[32px] font-black text-foreground tabular-nums leading-tight">
-                {price !== null ? `$${price < 0.01 ? price.toExponential(4) : price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                {price !== null ? `$${price < 0.01 ? price.toExponential(4) : price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
               </p>
             )}
             {change24h !== null && (
