@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useWalletStore, type Wallet } from "@/store/walletStore";
 import { PinGate } from "@/components/wallet/PinGate";
+import { WalletAvatar } from "./WalletAvatar";
 
 interface Props {
   onClose: () => void;
@@ -92,12 +93,13 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors"
                 onClick={() => setExpandedId(expanded ? null : wallet.id)}
               >
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-black text-white text-xs shadow-sm"
-                  style={{ backgroundColor: wallet.color }}
-                >
-                  {wallet.accounts[0]?.address ? wallet.accounts[0].address.slice(2, 4).toUpperCase() : wallet.label.slice(0, 2).toUpperCase()}
-                </div>
+                <WalletAvatar
+                  label={wallet.label}
+                  color={wallet.color}
+                  seed={wallet.accounts[0]?.address}
+                  size={36}
+                  className="shadow-sm"
+                />
                 <div className="flex-1 text-left min-w-0">
                   <div className="text-sm font-semibold text-foreground truncate">{wallet.label}</div>
                   <div className="text-xs text-muted-foreground">

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isHex, hexToString, isAddress, formatEther, type WalletClient } from "viem";
 import { loadLastSession, saveLastSession, loadHistory, addHistoryEntry, clearHistory, type HistoryEntry } from "@/lib/browserHistory";
+import { WalletAvatar } from "./WalletAvatar";
 
 const NETWORK_CONFIG = {
   optimism: { label: "Optimism", short: "OP",   color: "#ff0420", chainId: 10 },
@@ -177,7 +178,6 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
 
   const address    = activeAccount?.address ?? "";
   const walletColor = activeWallet?.color ?? "#6366f1";
-  const walletEmoji = activeWallet?.emoji ?? "💼";
   const walletLabel = activeWallet?.label ?? "Wallet";
 
   // Keep the provider bridge (inside the iframe) in sync with connection
@@ -568,12 +568,10 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
                 <div className="flex flex-col items-center gap-3">
                   <div
-                    className="w-14 h-14 rounded-3xl flex items-center justify-center border"
+                    className="w-14 h-14 rounded-3xl flex items-center justify-center border overflow-hidden"
                     style={{ background: `linear-gradient(135deg, ${walletColor}30, ${walletColor}10)`, borderColor: `${walletColor}30` }}
                   >
-                    <span className="text-xl font-black leading-none" style={{ color: walletColor }}>
-                      {address ? address.slice(2, 4).toUpperCase() : walletLabel.slice(0, 2).toUpperCase()}
-                    </span>
+                    <WalletAvatar label={walletLabel} color={walletColor} seed={address} size={40} />
                   </div>
                   <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                   <p className="text-xs text-muted-foreground">{domain}</p>
@@ -605,15 +603,12 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
             className="relative shrink-0 active:scale-95 transition-transform"
           >
             <div
-              className="w-9 h-9 rounded-full flex items-center justify-center border-2"
+              className="w-9 h-9 rounded-full flex items-center justify-center border-2 overflow-hidden"
               style={{
-                background: `linear-gradient(135deg, ${walletColor}ee, ${walletColor}77)`,
                 borderColor: `${walletColor}60`,
               }}
             >
-              <span className="text-[13px] font-black text-white leading-none select-none">
-                {address ? address.slice(2, 4).toUpperCase() : walletLabel.slice(0, 2).toUpperCase()}
-              </span>
+              <WalletAvatar label={walletLabel} color={walletColor} seed={address} size={32} />
             </div>
             {isConnected && (
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-background" />
