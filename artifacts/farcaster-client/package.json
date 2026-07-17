@@ -32,7 +32,7 @@
     "@farcaster/miniapp-host": "^0.3.0",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
-    "@scure/bip32": "^1.6.2",
+    "@scure/bip32": "^2.2.0",
     "@scure/bip39": "^1.5.4",
     "@walletconnect/ethereum-provider": "^2.23.10",
     "@walletconnect/sign-client": "^2.23.10",
