@@ -161,7 +161,20 @@ export function ThreadPage() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <span className="font-bold text-base text-foreground flex-1">Conversation</span>
+          <span className="font-bold text-base text-foreground flex-1 flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0">Conversation</span>
+            {cast?.channel ? (
+              <>
+                <span className="font-normal text-muted-foreground shrink-0">in</span>
+                {cast.channel.image_url ? (
+                  <img src={cast.channel.image_url} alt="" className="w-4 h-4 rounded-full shrink-0" />
+                ) : (
+                  <span className="w-4 h-4 rounded-full bg-accent shrink-0" />
+                )}
+                <span className="truncate">{cast.channel.name}</span>
+              </>
+            ) : null}
+          </span>
         </div>
       </header>
 
