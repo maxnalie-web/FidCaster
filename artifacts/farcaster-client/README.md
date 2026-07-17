@@ -17,6 +17,8 @@ Cast. Connect. Trade your Farcaster ID — no registration, no email, just your 
 [![Vite](https://img.shields.io/badge/Vite-7-646cff?style=for-the-badge&logo=vite)](https://vite.dev/)
 [![Optimism](https://img.shields.io/badge/Optimism-Mainnet-ff0420?style=for-the-badge&logo=ethereum)](https://www.optimism.io/)
 
+📖 **[User Documentation](./docs/index.html)** — the complete, beautifully designed end-user guide
+
 </div>
 
 ---
