@@ -7,6 +7,7 @@ A full-featured Farcaster client with a built-in peer-to-peer FID marketplace on
 ## Quick links
 
 - [Full README & docs](./artifacts/farcaster-client/README.md)
+- [User Documentation (فارسی)](./artifacts/farcaster-client/docs/README.md) — end-user guide covering every feature
 - [Source code](./artifacts/farcaster-client/src/)
 - [Server](./artifacts/farcaster-client/server/)
 
