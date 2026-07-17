@@ -6,7 +6,7 @@ import {
 import { formatUnits, parseUnits, encodeFunctionData, type Address } from "viem";
 import { optimism, base, mainnet, arbitrum, polygon } from "viem/chains";
 import { createChainWalletClient, getPublicClientForChain } from "@/lib/wallet";
-import { getTokenList, searchClankerTokens, searchTokenList, type DiscoveredToken } from "@/lib/token-list";
+import { fetchTokenByAddress, getTokenList, isTokenAddress, searchClankerTokens, searchTokenList, type DiscoveredToken } from "@/lib/token-list";
 
 const ERC20_BAL_ABI = [{
   name: "balanceOf", type: "function", stateMutability: "view",
@@ -302,6 +302,22 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         .catch(() => { if (!cancelled) setClankerResults([]); });
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
+  }, [search, pickerChain, pickerFor]);
+
+  // Pasting a token's contract address directly should always find it, even
+  // when it's not in the curated list, 1inch's list, or Clanker's index (a
+  // brand-new or obscure token) -- reads symbol/name/decimals straight off
+  // the contract as a last resort. Same fix ported to the native app's
+  // SwapScreen.tsx.
+  const [addressLookupResult, setAddressLookupResult] = useState<DiscoveredToken | null>(null);
+  useEffect(() => {
+    if (!pickerFor || !isTokenAddress(search)) {
+      setAddressLookupResult(null);
+      return;
+    }
+    let cancelled = false;
+    fetchTokenByAddress(pickerChain, search.trim()).then(t => { if (!cancelled) setAddressLookupResult(t); });
+    return () => { cancelled = true; };
   }, [search, pickerChain, pickerFor]);
 
   const [quotes,          setQuotes]          = useState<QuoteResult[]>(emptyQuotes);
@@ -1162,7 +1178,13 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                     !curated.some(c => c.address.toLowerCase() === d.address.toLowerCase()) &&
                     !discovered.some(c => c.address.toLowerCase() === d.address.toLowerCase()),
                 );
-                return [...curated, ...discovered, ...clanker];
+                const combined = [...curated, ...discovered, ...clanker];
+                // On-chain address lookup only ever adds a result when
+                // nothing above already resolved the same address.
+                const addressResult = addressLookupResult && !combined.some(c => c.address.toLowerCase() === addressLookupResult.address.toLowerCase())
+                  ? [addressLookupResult]
+                  : [];
+                return [...combined, ...addressResult];
               })()
                 .map(tk => (
                   <button key={`${tk.chainId}-${tk.address}`}

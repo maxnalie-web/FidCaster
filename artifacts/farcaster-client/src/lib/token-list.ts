@@ -8,6 +8,9 @@
 // more addresses by hand (a wrong hardcoded ERC-20 address here would be a
 // real funds-safety bug, not just a display one). Same module ported to the
 // native app's core/token-list.ts.
+import { getContract } from "viem";
+import { getPublicClientForChain } from "@/lib/wallet";
+
 export interface DiscoveredToken {
   symbol: string;
   name: string;
@@ -73,17 +76,52 @@ export async function getTokenList(chainId: number): Promise<DiscoveredToken[]> 
 // picker never has to render an unbounded result set -- 1inch's own map
 // ordering roughly favors more established tokens first, which is a
 // reasonable proxy for relevance without fetching per-token liquidity data.
+// Address is matched too (not just symbol/name) so pasting a full contract
+// address finds it directly when it's already indexed here.
 export function searchTokenList(list: DiscoveredToken[], query: string, limit = 40): DiscoveredToken[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const results: DiscoveredToken[] = [];
   for (const t of list) {
-    if (t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q)) {
+    if (t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q) || t.address.toLowerCase() === q) {
       results.push(t);
       if (results.length >= limit) break;
     }
   }
   return results;
+}
+
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+
+export function isTokenAddress(query: string): boolean {
+  return EVM_ADDRESS_RE.test(query.trim());
+}
+
+const ERC20_META_ABI = [
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+] as const;
+
+// Last-resort fallback: pasting a contract address that isn't in the
+// curated list, 1inch's list, or Clanker's index (a brand-new or obscure
+// token) still works by reading symbol/name/decimals directly from the
+// contract on-chain. Only ever called with a value that already passed
+// isTokenAddress -- never guesses at an address, only resolves one the user
+// explicitly supplied, so there's no funds-safety risk from a wrong lookup.
+// Same function ported to the native app's core/token-list.ts.
+export async function fetchTokenByAddress(chainId: number, address: string): Promise<DiscoveredToken | null> {
+  if (!isTokenAddress(address)) return null;
+  try {
+    const client = getPublicClientForChain(chainId);
+    const contract = getContract({ address: address as `0x${string}`, abi: ERC20_META_ABI, client });
+    const symbol = await contract.read.symbol();
+    const name = await contract.read.name().catch(() => symbol);
+    const decimals = await contract.read.decimals();
+    return { symbol, name: name || symbol, address, decimals, chainId, logo: "" };
+  } catch {
+    return null; // not a contract, not an ERC-20, or the RPC call failed
+  }
 }
 
 // Clanker (clanker.world) is a token-launch platform on Base -- most of
