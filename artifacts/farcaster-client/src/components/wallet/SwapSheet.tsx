@@ -289,6 +289,13 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     source: string;
   } | null>(null);
   const [preparing, setPreparing] = useState(false);
+  // Which leg of a multi-transaction swap (reset allowance -> approve ->
+  // swap) is next. Previously a single "Sign & Send" click silently chained
+  // every leg back-to-back with no checkpoint in between -- each blockchain
+  // transaction now gets its own explicit confirmation click instead, reset
+  // to 0 whenever a fresh pendingTx is prepared. Same fix ported to the
+  // native app's SwapScreen.tsx.
+  const [stepIndex, setStepIndex] = useState(0);
 
   // Live wallet balance for the "from" token
   const [fromBalance, setFromBalance] = useState<bigint | null>(null);
@@ -548,6 +555,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         gasEstimate,
         source: src,
       });
+      setStepIndex(0);
     } catch (e) {
       const msg = (e as Error).message ?? "Failed to prepare transaction";
       toast.error(msg.includes("revert") || msg.includes("execution")
@@ -558,9 +566,25 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     }
   }
 
-  /* ── Confirm & sign (runs after the user approves the review popup) ─── */
-  async function confirmAndSend() {
+  // The ordered legs of this pendingTx, each requiring its own explicit
+  // confirmation click -- never auto-chained. Reset (USDT-style allowance
+  // reset) and approve are each a real on-chain transaction with their own
+  // signature; so is the swap/bridge itself.
+  function swapSteps(tx: NonNullable<typeof pendingTx>): Array<"reset" | "approve" | "swap"> {
+    const steps: Array<"reset" | "approve" | "swap"> = [];
+    if (tx.needsApproval) {
+      if (tx.needsReset) steps.push("reset");
+      steps.push("approve");
+    }
+    steps.push("swap");
+    return steps;
+  }
+
+  /* ── Confirm & sign ONE step, in response to an explicit user click ──── */
+  async function confirmCurrentStep() {
     if (!pendingTx || swapping) return;
+    const steps = swapSteps(pendingTx);
+    const step = steps[stepIndex];
     setSwapping(true);
     try {
       let wc = fcWalletClient;
@@ -572,18 +596,21 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       const chainWc = createChainWalletClient(wc.account, fromChainId);
       const pub = getPublicClientForChain(fromChainId);
 
-      if (pendingTx.needsApproval && pendingTx.spender && pendingTx.approveAmount !== undefined) {
-        if (pendingTx.needsReset) {
-          const resetHash = await chainWc.sendTransaction({
-            account: chainWc.account!,
-            chain: fromChain.viem,
-            to: fromToken.address as Address,
-            data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [pendingTx.spender, 0n] }),
-            value: 0n,
-          });
-          toast.info(`Resetting ${fromToken.symbol} allowance…`);
-          await pub.waitForTransactionReceipt({ hash: resetHash, timeout: 60_000 });
-        }
+      if (step === "reset") {
+        const resetHash = await chainWc.sendTransaction({
+          account: chainWc.account!,
+          chain: fromChain.viem,
+          to: fromToken.address as Address,
+          data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [pendingTx.spender!, 0n] }),
+          value: 0n,
+        });
+        toast.info(`Resetting ${fromToken.symbol} allowance…`);
+        await pub.waitForTransactionReceipt({ hash: resetHash, timeout: 60_000 });
+        setStepIndex(i => i + 1);
+        return;
+      }
+
+      if (step === "approve") {
         const approveHash = await chainWc.sendTransaction({
           account: chainWc.account!,
           chain: fromChain.viem,
@@ -591,14 +618,17 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           data: encodeFunctionData({
             abi: ERC20_APPROVE_ABI,
             functionName: "approve",
-            args: [pendingTx.spender, pendingTx.approveAmount],
+            args: [pendingTx.spender!, pendingTx.approveAmount!],
           }),
           value: 0n,
         });
-        toast.info(`Approving ${fromToken.symbol}…`);
+        toast.success(`${fromToken.symbol} approved.`);
         await pub.waitForTransactionReceipt({ hash: approveHash, timeout: 60_000 });
+        setStepIndex(i => i + 1);
+        return;
       }
 
+      // step === "swap"
       const hash = await chainWc.sendTransaction({
         account: chainWc.account!,
         chain: fromChain.viem,
@@ -611,6 +641,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       });
 
       setPendingTx(null);
+      setStepIndex(0);
       setTxHash(hash);
       toast.success(isBridge ? "Bridge submitted!" : "Swap submitted!");
       setAmount("");
@@ -935,7 +966,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
       {/* Confirm transaction popup — centered, shows simulation result before signing */}
       {pendingTx && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => !swapping && setPendingTx(null)}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => { if (!swapping) { setPendingTx(null); setStepIndex(0); } }}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="relative w-full max-w-sm bg-card rounded-3xl border border-border shadow-2xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
@@ -976,30 +1007,47 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                 )}
               </div>
 
-              {pendingTx.simStatus === "passed" ? (
-                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400">
-                  <Check size={13} className="shrink-0 mt-0.5" />
-                  Simulation passed — this transaction should succeed on-chain.
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
-                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                  {pendingTx.needsReset
-                    ? `Requires resetting then re-approving ${fromToken.symbol} first — 3 transactions will be signed.`
-                    : `Requires a one-time ${fromToken.symbol} approval first — 2 transactions will be signed.`}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground text-center">Nothing is signed until you confirm below.</p>
+              {(() => {
+                const steps = swapSteps(pendingTx);
+                const step = steps[stepIndex];
+                const multiStep = steps.length > 1;
+                const stepLabel =
+                  step === "reset" ? `Reset ${fromToken.symbol} Allowance`
+                  : step === "approve" ? `Approve ${fromToken.symbol}`
+                  : "Sign & Send";
+                return (
+                  <>
+                    {pendingTx.simStatus === "passed" ? (
+                      <div className="flex items-start gap-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400">
+                        <Check size={13} className="shrink-0 mt-0.5" />
+                        Simulation passed — this transaction should succeed on-chain.
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                        <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                        {multiStep
+                          ? `Step ${stepIndex + 1} of ${steps.length}: each transaction is signed separately — this one is "${stepLabel}".`
+                          : "Confirm below to sign and send this transaction."}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground text-center">Nothing is signed until you confirm below.</p>
+                  </>
+                );
+              })()}
             </div>
             <div className="px-5 pb-5 flex gap-2">
-              <button onClick={() => setPendingTx(null)} disabled={swapping}
+              <button onClick={() => { setPendingTx(null); setStepIndex(0); }} disabled={swapping}
                 className="flex-1 py-3.5 rounded-xl border border-border text-sm font-bold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={confirmAndSend} disabled={swapping}
+              <button onClick={confirmCurrentStep} disabled={swapping}
                 className="flex-1 py-3.5 rounded-xl text-white text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
                 style={{ backgroundColor: walletColor }}>
-                {swapping ? <><Loader2 size={14} className="animate-spin" /> Signing…</> : "Sign & Send"}
+                {swapping
+                  ? <><Loader2 size={14} className="animate-spin" /> Signing…</>
+                  : swapSteps(pendingTx)[stepIndex] === "reset" ? `Reset ${fromToken.symbol} Allowance`
+                  : swapSteps(pendingTx)[stepIndex] === "approve" ? `Approve ${fromToken.symbol}`
+                  : "Sign & Send"}
               </button>
             </div>
           </div>

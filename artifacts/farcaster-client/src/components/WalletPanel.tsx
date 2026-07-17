@@ -1548,10 +1548,24 @@ export function WalletPanel() {
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-bold tabular-nums" style={{ color: item.direction === "received" ? "#10b981" : "var(--foreground)" }}>
-                          {item.direction === "received" ? "+" : item.valueEth > 0 ? "-" : ""}
-                          {item.valueEth > 0 ? `${formatBal(item.valueEth, 4)} ETH` : "—"}
-                        </p>
+                        {item.valueEth > 0 ? (
+                          <p className="text-sm font-bold tabular-nums" style={{ color: item.direction === "received" ? "#10b981" : "var(--foreground)" }}>
+                            {item.direction === "received" ? "+" : "-"}
+                            {formatBal(item.valueEth, 4)} ETH
+                          </p>
+                        ) : item.contractName ? (
+                          // No native ETH moved (a token approval, a
+                          // token-for-token swap, or a plain contract call)
+                          // -- previously always showed a bare "—" here even
+                          // though the contract/token name was already
+                          // fetched (used only in the subtitle for
+                          // sent/interacted rows), which read as broken.
+                          // Falls back to the contract's tagged name (e.g.
+                          // the token being approved, or the router being
+                          // called) instead. Same fix ported to the native
+                          // app's WalletPanelScreen.tsx.
+                          <p className="text-xs font-semibold text-muted-foreground truncate max-w-[120px]">{item.contractName}</p>
+                        ) : null}
                         <p className="text-[10px] text-muted-foreground">{formatRelativeTime(item.timestamp)}</p>
                       </div>
                     </a>
