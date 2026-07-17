@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { KeyRound, FileKey, Eye, BookUser, ChevronRight } from "lucide-react";
+import { KeyRound, FileKey, Eye, BookUser, ChevronRight, Link2 } from "lucide-react";
 import { useWalletStore, type WalletKind } from "@/store/walletStore";
 import { AddressBookSheet } from "@/components/wallet/AddressBookSheet";
+import { WalletConnectSessions } from "@/components/wallet/WalletConnectSessions";
 
 function kindIcon(kind: WalletKind) {
   if (kind === "seed") return <KeyRound size={15} className="text-primary" />;
@@ -22,6 +23,7 @@ interface Props {
 export function WalletSettings({ onSelectWallet, onBack }: Props) {
   const wallets = useWalletStore(s => s.wallets);
   const [showAddressBook, setShowAddressBook] = useState(false);
+  const [showWcSessions, setShowWcSessions] = useState(false);
 
   if (showAddressBook) {
     return (
@@ -52,8 +54,19 @@ export function WalletSettings({ onSelectWallet, onBack }: Props) {
               </div>
               <ChevronRight size={15} className="text-muted-foreground" />
             </button>
+            <button className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors border-t border-border/50" onClick={() => setShowWcSessions(true)}>
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                <Link2 size={15} className="text-primary" />
+              </div>
+              <div className="flex-1 text-left">
+                <div className="text-sm font-semibold text-foreground">Connected dApps</div>
+                <div className="text-xs text-muted-foreground">WalletConnect sessions</div>
+              </div>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
           </div>
         </div>
+        {showWcSessions && <WalletConnectSessions onClose={() => setShowWcSessions(false)} />}
 
         <div className="space-y-1.5">
           <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-1">Your Wallets</p>
