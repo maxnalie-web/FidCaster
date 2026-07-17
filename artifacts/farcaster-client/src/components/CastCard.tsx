@@ -215,6 +215,8 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const [recastCount, setRecastCount] = useState(cast.reactions.recasts_count);
   const [likeLoading, setLikeLoading] = useState(false);
   const [recastLoading, setRecastLoading] = useState(false);
+  const likeReqIdRef = useRef(0);
+  const recastReqIdRef = useRef(0);
   const [likeError, setLikeError] = useState(false);
   const [recastError, setRecastError] = useState(false);
   const [deleted, setDeleted] = useState(() => {
@@ -377,12 +379,13 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   }
 
   async function handleLike() {
-    if (!fid || likeLoading) return;
+    if (!fid) return;
     if (!canWrite) {
       toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer.");
       return;
     }
     const wasLiked = liked;
+    const reqId = ++likeReqIdRef.current;
     hapticTap();
     setLiked(!wasLiked); setLikeCount((c) => c + (wasLiked ? -1 : 1));
     setLikeLoading(true); setLikeError(false);
@@ -393,20 +396,22 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
         await neynarAction(signerUuid, { type: wasLiked ? "unlike" : "like", castHash: cast.hash });
       }
     } catch (e) {
+      if (likeReqIdRef.current !== reqId) return;
       setLiked(wasLiked); setLikeCount((c) => c + (wasLiked ? 1 : -1)); setLikeError(true);
       const msg = e instanceof Error ? e.message : "Like failed";
       toast.error(msg.includes("SIGNER_NOT_REGISTERED") ? "Signer not registered · go to Profile → Settings → Signer." : msg.slice(0, 120));
       setTimeout(() => setLikeError(false), 2000);
-    } finally { setLikeLoading(false); }
+    } finally { if (likeReqIdRef.current === reqId) setLikeLoading(false); }
   }
 
   async function handleRecast() {
-    if (!fid || recastLoading) return;
+    if (!fid) return;
     if (!canWrite) {
       toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer.");
       return;
     }
     const wasRecasted = recasted;
+    const reqId = ++recastReqIdRef.current;
     hapticTap();
     setRecasted(!wasRecasted); setRecastCount((c) => c + (wasRecasted ? -1 : 1));
     setRecastLoading(true); setRecastError(false);
@@ -417,11 +422,12 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
         await neynarAction(signerUuid, { type: wasRecasted ? "unrecast" : "recast", castHash: cast.hash });
       }
     } catch (e) {
+      if (recastReqIdRef.current !== reqId) return;
       setRecasted(wasRecasted); setRecastCount((c) => c + (wasRecasted ? 1 : -1)); setRecastError(true);
       const msg = e instanceof Error ? e.message : "Recast failed";
       toast.error(msg.includes("SIGNER_NOT_REGISTERED") ? "Signer not registered." : msg.slice(0, 120));
       setTimeout(() => setRecastError(false), 2000);
-    } finally { setRecastLoading(false); }
+    } finally { if (recastReqIdRef.current === reqId) setRecastLoading(false); }
   }
 
   async function handleDelete() {
@@ -669,7 +675,6 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             <div className="relative" ref={recastMenuRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
-                disabled={recastLoading}
                 title={noWriteTitle}
                 className={cn(
                   "flex items-center gap-1 px-2.5 py-2.5 rounded-full transition-colors",
@@ -701,7 +706,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
             </div>
             <button
               onClick={handleLike}
-              disabled={!canWrite || likeLoading}
+              disabled={!canWrite}
               title={noWriteTitle}
               className={cn(
                 "flex items-center gap-1 px-2.5 py-2.5 rounded-full transition-colors",
@@ -953,7 +958,6 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
               <div className="relative" ref={recastMenuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); if (!canWrite) { toast.error(autoSignerLoading ? "Signer is still being set up…" : "Signer not registered · go to Profile → Settings → Signer."); return; } setShowRecastMenu((v) => !v); }}
-                  disabled={recastLoading}
                   title={noWriteTitle}
                   className={cn(
                     "flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors text-sm",
@@ -987,7 +991,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
 
               <button
                 onClick={handleLike}
-                disabled={!canWrite || likeLoading}
+                disabled={!canWrite}
                 title={noWriteTitle}
                 className={cn(
                   "flex items-center gap-1 px-1.5 py-1.5 rounded-full transition-colors text-sm",

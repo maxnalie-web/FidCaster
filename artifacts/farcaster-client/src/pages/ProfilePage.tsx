@@ -349,6 +349,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
   const [profileError, setProfileError] = useState<string | null>(null);
   const [following, setFollowing] = useState(() => cachedProfile?.following ?? false);
   const [followLoading, setFollowLoading] = useState(false);
+  const followReqIdRef = useRef(0);
   const [followSheet, setFollowSheet] = useState<"followers" | "following" | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
@@ -559,6 +560,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
 
   async function handleFollow() {
     if (!canWrite || !myFid) return;
+    const reqId = ++followReqIdRef.current;
     setFollowLoading(true);
     const wasFollowing = following;
     setFollowing(!wasFollowing);
@@ -572,6 +574,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
       }
       toast.success(wasFollowing ? "Unfollowed" : "Now following");
     } catch (e: unknown) {
+      if (followReqIdRef.current !== reqId) return;
       setFollowing(wasFollowing);
       const msg = e instanceof Error ? e.message : wasFollowing ? "Unfollow failed" : "Follow failed";
       if (msg.includes("SIGNER_NOT_REGISTERED")) {
@@ -580,7 +583,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
         toast.error(msg.slice(0, 120));
       }
     } finally {
-      setFollowLoading(false);
+      if (followReqIdRef.current === reqId) setFollowLoading(false);
     }
   }
 
@@ -822,7 +825,6 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
                         {canWrite && (
                           <button
                             onClick={handleFollow}
-                            disabled={followLoading}
                             className={cn(
                               "flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition-all border",
                               following
