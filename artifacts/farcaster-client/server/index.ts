@@ -884,6 +884,36 @@ app.get("/api/nfts/:chain/:address", nftLimiter, async (req, res) => {
   }
 });
 
+// Generic OpenSea v2 pass-through, distinct from the account-NFT-listing
+// route above: the native app's client (core/opensea.ts) needs arbitrary
+// collection-metadata reads -- /chain/{slug}/contract/{address} (name,
+// image, safelist verification), /collections/{slug}/stats (floor price),
+// and /chain/{slug}/contract/{address}/nfts/{tokenId} (per-token traits) --
+// so rather than add a bespoke route per shape, this mirrors whatever path
+// OpenSea's own v2 API exposes under /api/opensea/*, GET-only, same key
+// attached server-side. Fixed upstream host (api.opensea.io), so this is
+// NOT an open proxy / SSRF risk the way a user-suppliable-URL proxy would
+// be -- see ssrf-guard.ts's warning for that different, unrelated case.
+app.use("/api/opensea", nftLimiter, async (req, res) => {
+  if (req.method !== "GET") { res.status(405).json({ error: "Method not allowed" }); return; }
+  if (!OPENSEA_KEY) { res.status(503).json({ error: "OpenSea API key not configured" }); return; }
+  try {
+    const r = await fetch(`https://api.opensea.io/api/v2${req.url}`, {
+      headers: { "X-API-KEY": OPENSEA_KEY, accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const data = await r.json().catch(() => null);
+    if (!r.ok) {
+      res.status(r.status).json(data ?? { error: `OpenSea error ${r.status}` });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: "OpenSea proxy failed", detail: String(e) });
+  }
+});
+
 // ── In-app browser proxy ─────────────────────────────────────────────────────
 // Strips X-Frame-Options / CSP frame-ancestors so external sites load in the
 // wallet browser iframe. Injects <base> so relative links resolve correctly.
