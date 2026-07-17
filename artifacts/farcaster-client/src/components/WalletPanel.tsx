@@ -1549,7 +1549,7 @@ export function WalletPanel() {
                       </div>
                       <div className="text-right shrink-0">
                         {item.valueEth > 0 ? (
-                          <p className="text-sm font-bold tabular-nums" style={{ color: item.direction === "received" ? "#10b981" : "var(--foreground)" }}>
+                          <p className="text-sm font-bold tabular-nums" style={{ color: item.direction === "received" ? "#10b981" : "hsl(var(--foreground))" }}>
                             {item.direction === "received" ? "+" : "-"}
                             {formatBal(item.valueEth, 4)} ETH
                           </p>
