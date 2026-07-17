@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
 import { SignerSetupPopup } from "@/components/SignerSetupPopup";
+import { WalletConnectRequestModal } from "@/components/wallet/WalletConnectRequestModal";
 import { MinimizedMiniAppBar } from "@/components/MinimizedMiniAppBar";
 import { MiniAppIframeModal } from "@/components/MiniAppIframeModal";
 import { BatchProgressPill } from "@/components/BatchProgressPill";
@@ -147,6 +148,7 @@ function App() {
         </WouterRouter>
         <BatchProgressPill />
         <SignerSetupPopup />
+        <WalletConnectRequestModal />
         {false && <MinimizedMiniAppBar />}
         {false && <MiniAppIframeModal />}
         <Toaster

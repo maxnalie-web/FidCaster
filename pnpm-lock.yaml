@@ -156,9 +156,7 @@ overrides:
   ws: '>=8.21.0'
 
 patchedDependencies:
-  elliptic@6.6.1:
-    hash: 5c1ee9cbf0a1e34557a1c4ad8dc31674656badb24dae300fd254ad3aacf4aac3
-    path: patches/elliptic@6.6.1.patch
+  elliptic@6.6.1: 5c1ee9cbf0a1e34557a1c4ad8dc31674656badb24dae300fd254ad3aacf4aac3
 
 importers:
 
@@ -225,6 +223,15 @@ importers:
       '@walletconnect/ethereum-provider':
         specifier: ^2.23.10
         version: 2.23.10(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.1.0)(typescript@5.9.3)(use-sync-external-store@1.6.0(react@19.1.0))(utf-8-validate@6.0.6)(zod@3.25.76)
+      '@walletconnect/sign-client':
+        specifier: ^2.23.10
+        version: 2.23.10(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+      '@walletconnect/types':
+        specifier: ^2.23.10
+        version: 2.23.10
+      '@walletconnect/utils':
+        specifier: ^2.23.10
+        version: 2.23.10(typescript@5.9.3)(zod@3.25.76)
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
