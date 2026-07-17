@@ -85,3 +85,42 @@ export function searchTokenList(list: DiscoveredToken[], query: string, limit = 
   }
   return results;
 }
+
+// Clanker (clanker.world) is a token-launch platform on Base -- most of
+// what it deploys is small/new enough that 1inch's list above never picks
+// it up. clanker.world's own public tokens API (free, keyless, server-side
+// search) covers exactly that gap: real Base-deployed contract addresses,
+// same funds-safety reasoning as the 1inch list above (never hand-typing
+// addresses). Clanker's factory always deploys standard 18-decimal ERC-20s.
+// Same function ported to the native app's core/token-list.ts.
+const CLANKER_CHAIN_ID = 8453; // Base only -- Clanker doesn't deploy elsewhere
+
+interface ClankerApiToken {
+  contract_address: string;
+  name: string;
+  symbol: string;
+  img_url?: string;
+  chain_id: number;
+}
+
+export async function searchClankerTokens(query: string, limit = 20): Promise<DiscoveredToken[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const r = await fetch(`https://www.clanker.world/api/tokens?search=${encodeURIComponent(q)}`, {
+    signal: AbortSignal.timeout(TOKEN_LIST_TIMEOUT_MS),
+    headers: { Accept: "application/json" },
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const body = (await r.json()) as { data?: ClankerApiToken[] };
+  return (body.data ?? [])
+    .filter(t => t.chain_id === CLANKER_CHAIN_ID)
+    .slice(0, limit)
+    .map(t => ({
+      symbol: t.symbol,
+      name: t.name,
+      address: t.contract_address,
+      decimals: 18,
+      chainId: CLANKER_CHAIN_ID,
+      logo: t.img_url ?? "",
+    }));
+}
