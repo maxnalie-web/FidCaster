@@ -43,6 +43,44 @@ async function fetchNfts(chain: Chain, address: string, cursor?: string): Promis
   return r.json();
 }
 
+// Collection-level enrichment (verification + floor price) via the generic
+// OpenSea proxy (/api/opensea/*, same backend, no client-side key) — our
+// `Chain` values already match OpenSea's own chain slugs 1:1, no mapping
+// needed. Distinct from fetchNfts above, which lists an account's owned
+// NFTs; this resolves one collection's metadata, called once per unique
+// held contract and cached for the session.
+interface CollectionInfo { verified: boolean; floorPriceEth: number | null }
+const collectionCache = new Map<string, CollectionInfo | null>();
+
+async function openseaFetch(path: string): Promise<any | null> {
+  try {
+    const r = await fetch(`/api/opensea${path}`, { signal: AbortSignal.timeout(8_000) });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchCollectionInfo(chain: Chain, contractAddress: string): Promise<CollectionInfo | null> {
+  const cacheKey = `${chain}:${contractAddress.toLowerCase()}`;
+  if (collectionCache.has(cacheKey)) return collectionCache.get(cacheKey) ?? null;
+
+  const contract = await openseaFetch(`/chain/${chain}/contract/${contractAddress}`);
+  const slug: string | undefined = contract?.collection;
+  if (!slug) {
+    collectionCache.set(cacheKey, null);
+    return null;
+  }
+  const stats = await openseaFetch(`/collections/${slug}/stats`);
+  const info: CollectionInfo = {
+    verified: contract?.safelist_request_status === "verified" || contract?.safelist_request_status === "approved",
+    floorPriceEth: stats?.total?.floor_price ?? null,
+  };
+  collectionCache.set(cacheKey, info);
+  return info;
+}
+
 interface Props {
   address: string;
 }
@@ -57,6 +95,8 @@ export function NftGallery({ address }: Props) {
   const [chainData, setChainData] = useState<Record<Chain, ChainNfts>>({
     optimism: emptyChain(), base: emptyChain(), arbitrum: emptyChain(), ethereum: emptyChain(),
   });
+  const [showHidden, setShowHidden] = useState(false);
+  const [collectionInfo, setCollectionInfo] = useState<Map<string, CollectionInfo | null>>(new Map());
 
   const loadChain = useCallback(async (chain: Chain, cursor?: string) => {
     setChainData(prev => ({
@@ -97,7 +137,48 @@ export function NftGallery({ address }: Props) {
   const allItems: Array<NftItem & { chain: Chain }> = CHAINS.flatMap(c =>
     chainData[c].items.map(n => ({ ...n, chain: c }))
   );
-  const displayed   = filter === "all" ? allItems : allItems.filter(n => n.chain === filter);
+
+  // Resolve each unique held collection's real OpenSea data in the
+  // background (verification + floor price) — cached per contract, so this
+  // never re-fetches the same collection twice across renders.
+  useEffect(() => {
+    if (allItems.length === 0) return;
+    const unique = new Map<string, { chain: Chain; contract: string }>();
+    for (const item of allItems) {
+      const key = `${item.chain}:${item.contract.toLowerCase()}`;
+      if (!collectionInfo.has(key) && !unique.has(key)) unique.set(key, { chain: item.chain, contract: item.contract });
+    }
+    if (unique.size === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const { chain, contract } of unique.values()) {
+        const info = await fetchCollectionInfo(chain, contract);
+        if (cancelled) return;
+        setCollectionInfo(prev => new Map(prev).set(`${chain}:${contract.toLowerCase()}`, info));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems.length]);
+
+  const infoFor = (n: NftItem & { chain: Chain }) => collectionInfo.get(`${n.chain}:${n.contract.toLowerCase()}`);
+  // Real OpenSea verification (when available) overrides the local
+  // heuristic in both directions: a collection OpenSea confirms verified is
+  // never hidden even without an image, and — the more common case — a
+  // collection OpenSea has no record of at all (most airdropped spam) is
+  // hidden even if it has a plausible-looking image/name.
+  const isJunk = (n: NftItem & { chain: Chain }): boolean => {
+    const info = infoFor(n);
+    if (info) return !info.verified;
+    return !(n.display_image_url || n.image_url) || !n.collection;
+  };
+  const byFloorDesc = (a: NftItem & { chain: Chain }, b: NftItem & { chain: Chain }) =>
+    (infoFor(b)?.floorPriceEth ?? -1) - (infoFor(a)?.floorPriceEth ?? -1);
+
+  const filteredItems = filter === "all" ? allItems : allItems.filter(n => n.chain === filter);
+  const visibleItems  = filteredItems.filter(n => !isJunk(n)).sort(byFloorDesc);
+  const hiddenItems   = filteredItems.filter(isJunk);
+  const displayed     = showHidden ? [...visibleItems, ...hiddenItems] : visibleItems;
   const isLoading   = CHAINS.some(c => chainData[c].loading && !chainData[c].loaded);
   const totalCount  = allItems.length;
 
@@ -196,12 +277,27 @@ export function NftGallery({ address }: Props) {
               </div>
               <div className="p-2">
                 <p className="text-[11px] font-bold text-foreground truncate">{nft.name || `#${nft.identifier}`}</p>
-                <p className="text-[9px] text-muted-foreground truncate">{nft.collection}</p>
+                <p className="text-[9px] text-muted-foreground truncate">
+                  {nft.collection}
+                  {infoFor(nft)?.floorPriceEth != null ? ` · Floor ${infoFor(nft)!.floorPriceEth!.toFixed(3)} ETH` : ""}
+                </p>
               </div>
             </button>
           );
         })}
       </div>
+
+      {/* Unverified/spam collections — display only, never blocks an item
+          from being seen, just collapsed by default so a wallet full of
+          airdropped junk doesn't bury the real holdings. */}
+      {hiddenItems.length > 0 && (
+        <button
+          onClick={() => setShowHidden(v => !v)}
+          className="w-full flex items-center justify-center py-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {showHidden ? "Hide" : `${hiddenItems.length} hidden collection${hiddenItems.length === 1 ? "" : "s"}`}
+        </button>
+      )}
 
       {/* Load more — pages whichever chain(s) still have a next cursor */}
       {chainsWithMore.length > 0 && (
