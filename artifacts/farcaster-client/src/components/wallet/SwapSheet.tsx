@@ -6,6 +6,7 @@ import {
 import { formatUnits, parseUnits, encodeFunctionData, type Address } from "viem";
 import { optimism, base, mainnet, arbitrum, polygon } from "viem/chains";
 import { createChainWalletClient, getPublicClientForChain } from "@/lib/wallet";
+import { getTokenList, searchTokenList, type DiscoveredToken } from "@/lib/token-list";
 
 const ERC20_BAL_ABI = [{
   name: "balanceOf", type: "function", stateMutability: "view",
@@ -266,6 +267,23 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
   const [pickerFor,   setPickerFor]   = useState<"from" | "to" | null>(null);
   const [pickerChain, setPickerChain] = useState<ChainId>(10);
   const [search,      setSearch]      = useState("");
+  // Full per-chain token universe (thousands of real, address-verified
+  // entries via 1inch's public list) for search results -- the small
+  // curated TOKENS array above stays the default/no-search view so the
+  // picker isn't a giant unfiltered list, but typing a query now searches
+  // everything swappable on this chain instead of only ~10 hand-picked
+  // tokens. Same fix ported to the native app's SwapScreen.tsx.
+  const [chainTokenList, setChainTokenList] = useState<DiscoveredToken[]>([]);
+
+  useEffect(() => {
+    if (!pickerFor) return;
+    let cancelled = false;
+    setChainTokenList([]);
+    getTokenList(pickerChain)
+      .then(list => { if (!cancelled) setChainTokenList(list); })
+      .catch(() => { /* search just falls back to the curated list on failure */ });
+    return () => { cancelled = true; };
+  }, [pickerChain, pickerFor]);
 
   const [quotes,          setQuotes]          = useState<QuoteResult[]>(emptyQuotes);
   const [selectedSource,  setSelectedSource]  = useState("lifi");
@@ -333,10 +351,24 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
   const fromChain = CHAINS.find(c => c.id === fromChainId)!;
   const toChain   = CHAINS.find(c => c.id === effectiveToChainId)!;
 
+  // Previously nothing checked the entered amount against the wallet's
+  // actual balance before fetching quotes and simulating a "transaction" --
+  // aggregators happily quote (and the eth_call sim sometimes doesn't
+  // revert on) an amount the wallet doesn't hold, which read as "it'll
+  // work" when it never could. Blocks quote display/review/swap outright
+  // once the amount exceeds fromBalance. Same fix ported to the native
+  // app's SwapScreen.tsx.
+  let insufficientBalance = false;
+  try {
+    insufficientBalance = !!amount && fromBalance !== null && parseUnits(amount, fromToken.decimals) > fromBalance;
+  } catch {
+    /* invalid/partial numeric input -- not a balance problem */
+  }
+
   /* ── Quote fetching ─────────────────────────────────────────────────── */
   const fetchAll = useCallback(async () => {
     const num = parseFloat(amount);
-    if (!amount || isNaN(num) || num <= 0) { setQuotes(emptyQuotes()); return; }
+    if (!amount || isNaN(num) || num <= 0 || insufficientBalance) { setQuotes(emptyQuotes()); return; }
     if (quoteCtrl.current) quoteCtrl.current.abort();
     const ctrl = new AbortController();
     quoteCtrl.current = ctrl;
@@ -385,7 +417,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         update(k, { error: "Cross-chain: use LI.FI" });
       }
     }
-  }, [amount, fromToken, toToken, fromChainId, effectiveToChainId, isBridge, address, fromChain]);
+  }, [amount, fromToken, toToken, fromChainId, effectiveToChainId, isBridge, address, fromChain, insufficientBalance]);
 
   useEffect(() => {
     const t = setTimeout(fetchAll, 600);
@@ -403,7 +435,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
   /* ── Prepare (build tx + allowance check + simulation) ──────────────── */
   async function prepare() {
-    if (!selectedQ?.outFmt || !amount || swapping || preparing) return;
+    if (!selectedQ?.outFmt || !amount || swapping || preparing || insufficientBalance) return;
     setPreparing(true);
     try {
       let txTo: string | undefined;
@@ -938,13 +970,15 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
 
         {/* Review button — opens the confirmation popup, nothing is signed yet */}
         <button onClick={prepare}
-          disabled={!selectedQ?.outFmt || !amount || swapping || preparing || !!selectedQ?.loading}
+          disabled={!selectedQ?.outFmt || !amount || swapping || preparing || !!selectedQ?.loading || insufficientBalance}
           className="w-full py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-40 transition-all flex items-center justify-center gap-2"
           style={{
-            backgroundColor: walletColor,
-            boxShadow: selectedQ?.outFmt ? `0 6px 20px ${walletColor}44` : undefined,
+            backgroundColor: insufficientBalance ? "hsl(var(--destructive))" : walletColor,
+            boxShadow: selectedQ?.outFmt && !insufficientBalance ? `0 6px 20px ${walletColor}44` : undefined,
           }}>
-          {swapping
+          {insufficientBalance
+            ? `Insufficient ${fromToken.symbol} balance`
+            : swapping
             ? <><Loader2 size={15} className="animate-spin" /> Processing…</>
             : preparing
             ? <><Loader2 size={15} className="animate-spin" /> Simulating…</>
@@ -1084,12 +1118,26 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto pb-4">
-              {TOKENS
-                .filter(t => t.chainId === pickerChain && (
+              {(() => {
+                const curated = TOKENS.filter(t => t.chainId === pickerChain && (
                   search === "" ||
                   t.symbol.toLowerCase().includes(search.toLowerCase()) ||
                   t.name.toLowerCase().includes(search.toLowerCase())
-                ))
+                ));
+                // Typing a query also searches the full live per-chain token
+                // list (thousands of real, address-verified entries via
+                // 1inch), not just the ~10 curated ones above -- excludes
+                // anything already shown from the curated set (keeps the
+                // curated entry, e.g. its correctness notes, as the single
+                // source of truth for that address rather than listing it
+                // twice). Same fix ported to the native app's SwapScreen.tsx.
+                const discovered = search !== ""
+                  ? searchTokenList(chainTokenList, search).filter(
+                      d => !curated.some(c => c.address.toLowerCase() === d.address.toLowerCase()),
+                    )
+                  : [];
+                return [...curated, ...discovered];
+              })()
                 .map(tk => (
                   <button key={`${tk.chainId}-${tk.address}`}
                     onClick={() => {
@@ -1115,10 +1163,20 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                       setPickerFor(null); setAmount(""); setTxHash(null);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors">
-                    <img src={tk.logo} alt="" className="w-8 h-8 rounded-full bg-muted/20" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+                    <div className="relative w-8 h-8 shrink-0">
+                      <img src={tk.logo} alt="" className="w-8 h-8 rounded-full bg-muted/20" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+                      {/* Network badge -- which chain this specific token entry
+                          lives on, since the same symbol (e.g. USDC, ETH)
+                          appears once per chain in this list and was otherwise
+                          indistinguishable at a glance without reading the
+                          subtitle. Same fix ported to the native app's
+                          SwapScreen.tsx. */}
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-[1.5px] border-card"
+                        style={{ backgroundColor: CHAINS.find(c => c.id === tk.chainId)?.color }} />
+                    </div>
                     <div className="flex-1 text-left">
                       <p className="text-sm font-bold text-foreground">{tk.symbol}</p>
-                      <p className="text-[11px] text-muted-foreground">{tk.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{tk.name} · {CHAINS.find(c => c.id === tk.chainId)?.label}</p>
                     </div>
                     {((pickerFor === "from" && tk.address === fromToken.address && tk.chainId === fromToken.chainId) ||
                       (pickerFor === "to"   && tk.address === toToken.address   && tk.chainId === toToken.chainId)) && (
