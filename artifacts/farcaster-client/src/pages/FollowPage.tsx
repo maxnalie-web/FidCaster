@@ -754,7 +754,7 @@ export function FollowPage() {
       )}
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border">
+      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="h-[53px] flex items-center gap-3 px-4 max-w-[900px] mx-auto w-full">
           <button
             onClick={() => navigate("/dashboard")}

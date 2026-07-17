@@ -162,7 +162,7 @@ function EditSheet({
 
   return (
     <div className="fixed inset-0 z-[80] bg-background flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border bg-background/95 backdrop-blur-sm">
+      <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border bg-background/95 backdrop-blur-sm" style={{ paddingTop: "calc(0.875rem + env(safe-area-inset-top))" }}>
         <button
           onClick={onClose}
           className="p-2 -ml-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -172,7 +172,7 @@ function EditSheet({
         <span className="text-base font-bold">Edit profile</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {!signerApproved || !localSigner ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center px-6">
             <AlertCircle className="w-8 h-8 text-amber-500 opacity-60" />
@@ -615,7 +615,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
           name · matches the profile's own identity the way the full banner
           does further down the page. */}
       {(showHeader ?? !embedded) && (
-        <header className="sticky top-0 z-40 border-b border-border/50 overflow-hidden">
+        <header className="sticky top-0 z-40 border-b border-border/50 overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
           {user?.profile?.banner?.url && (
             <div className="absolute inset-0 -z-10">
               <img src={user.profile.banner.url} alt="" className="w-full h-full object-cover scale-110 blur-md" />

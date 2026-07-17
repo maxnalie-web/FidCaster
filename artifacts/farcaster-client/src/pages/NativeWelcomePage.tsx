@@ -26,7 +26,11 @@ export function NativeWelcomePage() {
   return (
     <div
       className="fixed inset-0 flex flex-col items-center justify-center px-8 text-white overflow-hidden"
-      style={{ background: "#0E111B" }}
+      style={{
+        background: "#0E111B",
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
     >
       <div className="absolute inset-0 pointer-events-none" style={{
         background: "radial-gradient(ellipse 70% 50% at 50% 35%, rgba(124,58,237,0.22) 0%, transparent 70%)",

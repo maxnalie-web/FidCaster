@@ -1,14 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* PWA safe-area: when installed to home screen (standalone mode), push content
-   below the OS status bar. Native (Capacitor) builds handle this separately via
-   StatusBar.setOverlaysWebView({ overlay: false }), so this only fires for PWAs. */
-@media (display-mode: standalone) {
-  body {
-    padding-top: env(safe-area-inset-top);
-  }
-}
+/* PWA safe-area: when installed to home screen (standalone mode), keep content
+   clear of the OS status bar / home indicator. Native (Capacitor) builds handle
+   this separately via StatusBar.setOverlaysWebView({ overlay: false }), so this
+   only fires for PWAs.
+   NOTE: applied directly on each viewport-pinned header/nav/fixed-shell element
+   (not on `body`) — a `position: fixed` element ignores an ancestor's padding
+   box entirely, and sticky headers inside nested scroll containers wouldn't
+   pick up body's padding either, so a single body-level rule silently misses
+   most of the app's actual top bars. Search for `env(safe-area-inset-` to find
+   every place this is applied. */
 
 @custom-variant dark (&:is(.dark *));
 
