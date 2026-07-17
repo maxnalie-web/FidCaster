@@ -6,7 +6,7 @@ import {
 import { formatUnits, parseUnits, encodeFunctionData, type Address } from "viem";
 import { optimism, base, mainnet, arbitrum, polygon } from "viem/chains";
 import { createChainWalletClient, getPublicClientForChain } from "@/lib/wallet";
-import { getTokenList, searchTokenList, type DiscoveredToken } from "@/lib/token-list";
+import { getTokenList, searchClankerTokens, searchTokenList, type DiscoveredToken } from "@/lib/token-list";
 
 const ERC20_BAL_ABI = [{
   name: "balanceOf", type: "function", stateMutability: "view",
@@ -284,6 +284,25 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       .catch(() => { /* search just falls back to the curated list on failure */ });
     return () => { cancelled = true; };
   }, [pickerChain, pickerFor]);
+
+  // Clanker (clanker.world) launches new tokens on Base fast enough that
+  // 1inch's list above rarely has them yet -- clanker.world's own public
+  // search API fills that gap. Server-side search, so it's queried directly
+  // (debounced) rather than pulling a full list like getTokenList does.
+  const [clankerResults, setClankerResults] = useState<DiscoveredToken[]>([]);
+  useEffect(() => {
+    if (!pickerFor || pickerChain !== 8453 || !search.trim()) {
+      setClankerResults([]);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      searchClankerTokens(search)
+        .then(list => { if (!cancelled) setClankerResults(list); })
+        .catch(() => { if (!cancelled) setClankerResults([]); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, pickerChain, pickerFor]);
 
   const [quotes,          setQuotes]          = useState<QuoteResult[]>(emptyQuotes);
   const [selectedSource,  setSelectedSource]  = useState("lifi");
@@ -1136,7 +1155,14 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                       d => !curated.some(c => c.address.toLowerCase() === d.address.toLowerCase()),
                     )
                   : [];
-                return [...curated, ...discovered];
+                // Clanker-launched tokens (clanker.world, Base-only) -- new
+                // enough that 1inch's list rarely has them yet.
+                const clanker = clankerResults.filter(
+                  d =>
+                    !curated.some(c => c.address.toLowerCase() === d.address.toLowerCase()) &&
+                    !discovered.some(c => c.address.toLowerCase() === d.address.toLowerCase()),
+                );
+                return [...curated, ...discovered, ...clanker];
               })()
                 .map(tk => (
                   <button key={`${tk.chainId}-${tk.address}`}
