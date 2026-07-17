@@ -15,6 +15,7 @@ const NETWORK_CONFIG = {
   base:     { label: "Base",     short: "Base", color: "#0052ff", chainId: 8453 },
   arbitrum: { label: "Arbitrum", short: "Arb",  color: "#28a0f0", chainId: 42161 },
   ethereum: { label: "Ethereum", short: "ETH",  color: "#627eea", chainId: 1 },
+  polygon:  { label: "Polygon",  short: "Poly", color: "#8247e5", chainId: 137 },
 } as const;
 
 type Network = keyof typeof NETWORK_CONFIG;
@@ -23,12 +24,14 @@ const CHAIN_ID_HEX: Record<Network, string> = {
   base: "0x2105",      // 8453
   arbitrum: "0xa4b1",  // 42161
   ethereum: "0x1",     // 1
+  polygon: "0x89",     // 137
 };
 const CHAIN_ID_TO_NETWORK: Record<string, Network> = {
   "0xa": "optimism",
   "0x2105": "base",
   "0xa4b1": "arbitrum",
   "0x1": "ethereum",
+  "0x89": "polygon",
 };
 function isNetwork(v: string): v is Network {
   return v in NETWORK_CONFIG;
