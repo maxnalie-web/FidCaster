@@ -225,7 +225,7 @@ export function AuthPage() {
 
   if (isCheckingSession) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center" style={{ background: "#040110" }}>
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: "#040110", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="relative flex flex-col items-center gap-4">
           <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
           <p className="text-white/25 text-xs tracking-widest uppercase">Checking session…</p>
@@ -238,7 +238,11 @@ export function AuthPage() {
 
   return (
     <div className="relative min-h-screen text-white overflow-hidden flex flex-col items-center justify-center px-4 py-8"
-      style={{ background: "#040110" }}>
+      style={{
+        background: "#040110",
+        paddingTop: "max(2rem, calc(1rem + env(safe-area-inset-top)))",
+        paddingBottom: "max(2rem, calc(1rem + env(safe-area-inset-bottom)))",
+      }}>
 
       {/* Background */}
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
@@ -274,8 +278,8 @@ export function AuthPage() {
               navigate("/");
             }
           }}
-          className="fixed top-5 left-5 flex items-center gap-2 text-white/30 hover:text-white/70 transition-colors text-sm font-medium"
-          style={{ zIndex: 10 }}
+          className="fixed left-5 flex items-center gap-2 text-white/30 hover:text-white/70 transition-colors text-sm font-medium"
+          style={{ zIndex: 10, top: "calc(1.25rem + env(safe-area-inset-top))" }}
         >
           <ArrowLeft className="w-4 h-4" />
           {currentStep === "phrase" || currentStep === "setPassword" ? "Back" : "Back"}

@@ -487,8 +487,9 @@ function MobileDrawer({
           "fixed top-0 left-0 bottom-0 z-[56] w-72 bg-background border-r border-border flex flex-col transition-transform duration-300 ease-out md:hidden",
           open ? "translate-x-0" : "-translate-x-full"
         )}
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="p-5 pt-10">
+        <div className="p-5" style={{ paddingTop: "max(2.5rem, env(safe-area-inset-top))" }}>
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => { onNavigateToProfile(); onClose(); }}
