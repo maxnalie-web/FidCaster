@@ -1,6 +1,7 @@
 import React from "react";
 import { Plus, KeyRound, FileKey, Eye, ChevronRight } from "lucide-react";
 import { useWalletStore } from "@/store/walletStore";
+import { WalletAvatar } from "./WalletAvatar";
 
 type AddMode = "create" | "import" | "import-key" | "watch";
 
@@ -77,12 +78,13 @@ export function WalletsList({ onAdd, onSelectWallet, onBack }: Props) {
                     {isActive && (
                       <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
                     )}
-                    <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center font-black text-white text-sm shadow-lg"
-                      style={{ backgroundColor: wallet.color }}
-                    >
-                      {firstAccount?.address ? firstAccount.address.slice(2, 4).toUpperCase() : wallet.label.slice(0, 2).toUpperCase()}
-                    </div>
+                    <WalletAvatar
+                      label={wallet.label}
+                      color={wallet.color}
+                      seed={firstAccount?.address}
+                      size={48}
+                      className="shadow-lg"
+                    />
                     <div className="text-center min-w-0 w-full">
                       <div className="text-xs font-bold text-foreground truncate">{wallet.label}</div>
                       <div className="text-[10px] text-muted-foreground font-mono truncate">

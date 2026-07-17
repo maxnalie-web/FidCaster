@@ -6,6 +6,7 @@ import {
 import { TokenApprovalsSheet } from "@/components/wallet/TokenApprovalsSheet";
 import { PinGate } from "@/components/wallet/PinGate";
 import { useWalletStore, type WalletKind } from "@/store/walletStore";
+import { WalletAvatar } from "./WalletAvatar";
 
 function kindLabel(kind: WalletKind): string {
   if (kind === "seed") return "Recovery phrase wallet";
@@ -152,9 +153,7 @@ export function WalletDetailSettings({ walletId, onBack }: Props) {
       <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
         {/* Identity card */}
         <div className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0" style={{ backgroundColor: wallet.color }}>
-            {wallet.emoji}
-          </div>
+          <WalletAvatar label={wallet.label} color={wallet.color} seed={wallet.accounts[0]?.address} size={48} />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-foreground truncate">{wallet.label}</div>
             <div className="text-xs text-muted-foreground">{kindLabel(wallet.kind)}</div>
