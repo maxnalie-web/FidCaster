@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FidCaster Docs — User Guide</title>
-<meta name="description" content="The official user documentation for FidCaster: the only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism." />
+<title>Getting Started — FidCaster Docs</title>
+<meta name="description" content="FidCaster user documentation: Getting Started." />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;}
@@ -244,9 +244,9 @@
 <div class="shell">
   <nav class="sidebar" id="sidebar">
     <div class="side-kicker">Overview</div>
-    <a class="nav-link active" href="index.html"><span class="num">·</span>Introduction</a>
+    <a class="nav-link" href="index.html"><span class="num">·</span>Introduction</a>
     <div class="side-kicker">Guide</div>
-    <a class="nav-link" href="getting-started.html"><span class="num">01</span>Getting Started</a>
+    <a class="nav-link active" href="getting-started.html"><span class="num">01</span>Getting Started</a>
     <a class="nav-link" href="feed-casting.html"><span class="num">02</span>Feed & Casting</a>
     <a class="nav-link" href="fid-market.html"><span class="num">03</span>FID Market</a>
     <a class="nav-link" href="grow-cleanup.html"><span class="num">04</span>Grow & Clean Up</a>
@@ -257,60 +257,60 @@
   </nav>
 
   <main>
-<div class="hero" id="top">
-      <div class="badge-pill"><span class="dot"></span>Documentation · Live on Optimism</div>
-      <h1><span class="lp-gradient-text">Master every part</span><br/><span style="color:#fff;">of FidCaster.</span></h1>
-      <p class="lead">The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism.</p>
-      <p class="sub">A precise, complete guide to every feature — written for real use, not marketing.</p>
-      <div class="hero-actions">
-        <a class="lp-cta-btn" href="#getting-started">Get Started
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-        <a class="lp-secondary-btn" href="https://fidcaster.xyz" target="_blank" rel="noopener">Launch App</a>
-      </div>
-      <div class="check-row">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Non-custodial</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Optimism Mainnet</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>AES-GCM-256 vault</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>iOS &amp; Android</span>
-      </div>
-    </div>
 
     <div class="content">
 
       <section class="doc-section" style="padding-top:12px;">
-        <div class="kicker"><span class="step-badge">·</span><span class="label">Guide</span></div>
-        <h2>Documentation Contents</h2>
-        <p>Pick a section below, or use the sidebar to jump straight to what you need.</p>
+<div class="kicker"><span class="step-badge">01</span><span class="label">Guide</span></div>
+        <h2>Getting Started</h2>
+        <p>FidCaster is entirely <strong>client-side</strong> — there's no email/password signup. Your identity <em>is</em> your Farcaster ID (FID), and you sign in with one of three methods below.</p>
+
+        <h3>Sign-in methods</h3>
         <div class="card-grid">
-          <a class="lp-feature-card feature-card" href="getting-started.html" style="text-decoration:none;">
-            <h4>01 · Getting Started</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="feed-casting.html" style="text-decoration:none;">
-            <h4>02 · Feed & Casting</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="fid-market.html" style="text-decoration:none;">
-            <h4>03 · FID Market</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="grow-cleanup.html" style="text-decoration:none;">
-            <h4>04 · Grow & Clean Up</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="wallet-security.html" style="text-decoration:none;">
-            <h4>05 · Wallet & Security</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="mini-apps.html" style="text-decoration:none;">
-            <h4>06 · Mini Apps & Notifications</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="mobile.html" style="text-decoration:none;">
-            <h4>07 · Mobile Apps</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="faq.html" style="text-decoration:none;">
-            <h4>08 · FAQ & Support</h4>
-          </a>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#7c3aed;--ic2:#a855f7;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+            <h4>Seed Phrase</h4>
+            <p>The primary method. Enter your 12/24-word mnemonic to derive your wallet and signer locally.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#6366f1;--ic2:#818cf8;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>
+            <h4>External Wallet</h4>
+            <p>Connect MetaMask or any WalletConnect v2-compatible wallet.</p>
+          </div>
+          <div class="lp-feature-card feature-card">
+            <div class="icon-badge" style="--ic1:#a855f7;--ic2:#c084fc;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
+            <h4>Sign In with Farcaster</h4>
+            <p>Scan a QR code and approve in Warpcast for fast, read-only access.</p>
+          </div>
         </div>
+
+        <h3>1. Seed phrase (primary)</h3>
+        <ol class="step-list">
+          <li><strong>Enter your mnemonic.</strong> Type your existing 12 or 24-word seed phrase on the sign-in screen — or generate a new one if you're creating an account.</li>
+          <li><strong>Local key derivation.</strong> FidCaster derives your custody wallet at <code>m/44'/60'/0'/0/0</code> and your Ed25519 Farcaster signer at <code>m/44'/60'/0'/0/1</code>, entirely inside your browser.</li>
+          <li><strong>Vault encryption.</strong> Your mnemonic is encrypted with <strong>AES-GCM-256</strong>, using a key derived via <strong>PBKDF2 (200,000 iterations)</strong>, and stored in your browser's IndexedDB.</li>
+          <li><strong>On-chain registration.</strong> If needed, your new signer is registered on Farcaster's <strong>Key Registry</strong> contract on Optimism.</li>
+        </ol>
+
+        <div class="callout warn">
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+          <p><strong>Your seed phrase never leaves your device.</strong> It is never sent to any server. Keep it safe — nobody, including the FidCaster team, can recover it for you.</p>
+        </div>
+
+        <h3>2. External wallet (MetaMask / WalletConnect)</h3>
+        <p>Prefer to use a wallet you already have? Choose "Connect Wallet," sign a message to deterministically derive a Farcaster signer, and register it on-chain — your wallet stays fully under your control.</p>
+
+        <h3>3. Sign In with Farcaster (SIWF)</h3>
+        <p>For fast, read-only access: FidCaster builds an EIP-712 signed-key request locally, shows a QR code, and polls for approval once you confirm it in Warpcast.</p>
+
+        <h3>Returning sessions</h3>
+        <p>After your first login, you only need your <strong>local password</strong> to unlock your encrypted vault on future visits — no need to re-enter your seed phrase.</p>
+
+        <h3>Multi-account management</h3>
+        <p>Add and switch between <strong>multiple Farcaster accounts</strong> in one browser. Each account is stored and managed independently, batch operations for different accounts run concurrently without interfering with each other, and your account list stays in sync across open tabs.</p>
         <div class="section-nav">
-          <span></span>
-          <a class="next" href="getting-started.html"><span class="lbl">Next</span><span class="ttl">Getting Started →</span></a>
+          <a href="index.html"><span class="lbl">Previous</span><span class="ttl">← Introduction</span></a>
+          <a class="next" href="feed-casting.html"><span class="lbl">Next</span><span class="ttl">Feed & Casting →</span></a>
         </div>
       </section>
 

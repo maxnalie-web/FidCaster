@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FidCaster Docs — User Guide</title>
-<meta name="description" content="The official user documentation for FidCaster: the only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism." />
+<title>FID Market — FidCaster Docs</title>
+<meta name="description" content="FidCaster user documentation: FID Market." />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;}
@@ -244,11 +244,11 @@
 <div class="shell">
   <nav class="sidebar" id="sidebar">
     <div class="side-kicker">Overview</div>
-    <a class="nav-link active" href="index.html"><span class="num">·</span>Introduction</a>
+    <a class="nav-link" href="index.html"><span class="num">·</span>Introduction</a>
     <div class="side-kicker">Guide</div>
     <a class="nav-link" href="getting-started.html"><span class="num">01</span>Getting Started</a>
     <a class="nav-link" href="feed-casting.html"><span class="num">02</span>Feed & Casting</a>
-    <a class="nav-link" href="fid-market.html"><span class="num">03</span>FID Market</a>
+    <a class="nav-link active" href="fid-market.html"><span class="num">03</span>FID Market</a>
     <a class="nav-link" href="grow-cleanup.html"><span class="num">04</span>Grow & Clean Up</a>
     <a class="nav-link" href="wallet-security.html"><span class="num">05</span>Wallet & Security</a>
     <a class="nav-link" href="mini-apps.html"><span class="num">06</span>Mini Apps & Notifications</a>
@@ -257,60 +257,48 @@
   </nav>
 
   <main>
-<div class="hero" id="top">
-      <div class="badge-pill"><span class="dot"></span>Documentation · Live on Optimism</div>
-      <h1><span class="lp-gradient-text">Master every part</span><br/><span style="color:#fff;">of FidCaster.</span></h1>
-      <p class="lead">The only Farcaster client with a built-in peer-to-peer FID marketplace on Optimism.</p>
-      <p class="sub">A precise, complete guide to every feature — written for real use, not marketing.</p>
-      <div class="hero-actions">
-        <a class="lp-cta-btn" href="#getting-started">Get Started
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        </a>
-        <a class="lp-secondary-btn" href="https://fidcaster.xyz" target="_blank" rel="noopener">Launch App</a>
-      </div>
-      <div class="check-row">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Non-custodial</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Optimism Mainnet</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>AES-GCM-256 vault</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>iOS &amp; Android</span>
-      </div>
-    </div>
 
     <div class="content">
 
       <section class="doc-section" style="padding-top:12px;">
-        <div class="kicker"><span class="step-badge">·</span><span class="label">Guide</span></div>
-        <h2>Documentation Contents</h2>
-        <p>Pick a section below, or use the sidebar to jump straight to what you need.</p>
-        <div class="card-grid">
-          <a class="lp-feature-card feature-card" href="getting-started.html" style="text-decoration:none;">
-            <h4>01 · Getting Started</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="feed-casting.html" style="text-decoration:none;">
-            <h4>02 · Feed & Casting</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="fid-market.html" style="text-decoration:none;">
-            <h4>03 · FID Market</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="grow-cleanup.html" style="text-decoration:none;">
-            <h4>04 · Grow & Clean Up</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="wallet-security.html" style="text-decoration:none;">
-            <h4>05 · Wallet & Security</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="mini-apps.html" style="text-decoration:none;">
-            <h4>06 · Mini Apps & Notifications</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="mobile.html" style="text-decoration:none;">
-            <h4>07 · Mobile Apps</h4>
-          </a>
-          <a class="lp-feature-card feature-card" href="faq.html" style="text-decoration:none;">
-            <h4>08 · FAQ & Support</h4>
-          </a>
+<div class="kicker"><span class="step-badge">03</span><span class="label">Guide</span></div>
+        <h2>FID Market</h2>
+        <p>The <strong>FID Market</strong> is FidCaster's signature feature: a peer-to-peer marketplace for Farcaster IDs, fully implemented on-chain on <strong>Optimism</strong>. No custodian ever holds your funds or your identity — every trade is atomic and on-chain.</p>
+
+        <div class="callout info">
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
+          <p><strong>Market contract</strong> — <code>0xcc11C0Bc08bbF8A5C0AAca80E884C6c7CC0eE3c3</code> on Optimism Mainnet.</p>
         </div>
+
+        <h3>Selling a FID</h3>
+        <ol class="step-list">
+          <li><strong>List it.</strong> From the market page, choose "List."</li>
+          <li><strong>Set a price.</strong> Specify your asking price in ETH.</li>
+          <li><strong>Set a duration.</strong> Choose how long the listing stays active — from 10 minutes to 30 days.</li>
+          <li><strong>Sign the transaction.</strong> Once confirmed, your FID is immediately visible and purchasable on the market.</li>
+        </ol>
+        <p>You can <strong>cancel</strong> your listing at any time before it's bought.</p>
+
+        <h3>Buying a FID</h3>
+        <ol class="step-list">
+          <li><strong>Browse.</strong> Filter and sort the active listings on the market page.</li>
+          <li><strong>Inspect.</strong> Open a listing to see price history, seller info, and its live on-chain state.</li>
+          <li><strong>Buy.</strong> Confirm the transaction — ownership transfers atomically and instantly on Optimism.</li>
+        </ol>
+
+        <div class="callout tip">
+          <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>
+          <p>A <strong>9% protocol fee</strong> applies to every successful trade, automatically deducted from the buy transaction.</p>
+        </div>
+
+        <h3>If your own FID is sold</h3>
+        <p>If the FID tied to your active account gets purchased by someone else, ownership transfers immediately and irreversibly. FidCaster surfaces this with a dedicated screen so you're never left confused about your account state. Be certain before you list.</p>
+
+        <h3>Market transparency</h3>
+        <p>Every <code>Listed</code>, <code>Bought</code>, and <code>Cancelled</code> event is read straight from Optimism — nothing shown in the market activity feed is centralized or unverifiable.</p>
         <div class="section-nav">
-          <span></span>
-          <a class="next" href="getting-started.html"><span class="lbl">Next</span><span class="ttl">Getting Started →</span></a>
+          <a href="feed-casting.html"><span class="lbl">Previous</span><span class="ttl">← Feed & Casting</span></a>
+          <a class="next" href="grow-cleanup.html"><span class="lbl">Next</span><span class="ttl">Grow & Clean Up →</span></a>
         </div>
       </section>
 
