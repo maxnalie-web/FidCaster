@@ -663,6 +663,7 @@ export default function FidDetailPage() {
     && effectiveAddr.toLowerCase() === data.listing.seller.toLowerCase());
 
   const isMyFid = myFid !== null && Number(myFid) === fid;
+  const isSignedIn = !!myFid;
 
   const statusInfo = data.listing.active
     ? data.buyable
@@ -673,9 +674,9 @@ export default function FidDetailPage() {
     : { text: "Not Listed", cls: "bg-muted text-muted-foreground border-border" };
 
   return (
-    <div className="min-h-screen bg-background pb-28 md:pb-0">
-      <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[240px]">
+    <div className={cn("min-h-screen bg-background", isSignedIn ? "pb-28 md:pb-0" : "pb-8")}>
+      {isSignedIn && <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />}
+      <div className={isSignedIn ? "md:ml-[240px]" : ""}>
       {showComposer && (
         <ComposeModal onClose={() => setShowComposer(false)} onPublished={() => setShowComposer(false)} />
       )}
@@ -1319,7 +1320,7 @@ export default function FidDetailPage() {
         </div>
       </div>
 
-      <BottomNav />
+      {isSignedIn && <BottomNav />}
       </div>
     </div>
   );

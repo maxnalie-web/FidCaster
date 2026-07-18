@@ -131,6 +131,7 @@ export default function FidMarketPage() {
   const watchlist = useWatchlistStore();
   const watchlistActivity = loadActivityFeed();
   const myFidNum = myFid ? Number(myFid) : null;
+  const isSignedIn = !!myFid;
   const {
     wallet: extWallet,
     connect: connectExt,
@@ -267,9 +268,9 @@ export default function FidMarketPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-28 md:pb-8">
-      <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />
-      <div className="md:ml-[240px]">
+    <div className={cn("min-h-screen bg-background", isSignedIn ? "pb-28 md:pb-8" : "pb-8")}>
+      {isSignedIn && <DesktopSidebar active="market" onCast={() => setShowComposer(true)} />}
+      <div className={isSignedIn ? "md:ml-[240px]" : ""}>
 
       {/* ── Header ── */}
       <header className="sticky top-0 z-40 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>
@@ -1119,7 +1120,7 @@ export default function FidMarketPage() {
 
       </div>
 
-      <BottomNav />
+      {isSignedIn && <BottomNav />}
       </div>
 
       {showComposer && (
