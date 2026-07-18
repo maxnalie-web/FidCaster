@@ -6,7 +6,7 @@
  *   2. Among the rest, pick the one with the fewest uploads this month.
  * This is a simple even-load proxy (assumes roughly similar file sizes
  * across uploads rather than tracking real bytes/credits, which would need
- * extra calls to Cloudinary's Admin API) — good enough to keep N accounts
+ * extra calls to Cloudinary's Admin API) - good enough to keep N accounts
  * roughly balanced without adding latency to the upload path.
  */
 import { resolve, dirname } from "path";
@@ -83,7 +83,7 @@ export function recordAccountUpload(accountId: number): void {
   db()?.increment(accountId, thisMonthStamp());
 }
 
-// ── Failure cooldown (in-memory, per-process — resets on restart, which is
+// ── Failure cooldown (in-memory, per-process - resets on restart, which is
 // fine: a fresh process deserves a clean shot at every account) ────────────
 const cooldownUntil = new Map<number, number>();
 

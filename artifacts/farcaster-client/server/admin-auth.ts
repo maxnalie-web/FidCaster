@@ -1,17 +1,17 @@
 /**
- * Real server-side admin authentication — replaces the old client-only PIN
+ * Real server-side admin authentication - replaces the old client-only PIN
  * (a SHA-256 hash compared entirely in the browser, against a value also
  * stored in the browser's own localStorage: trivially bypassable by anyone
  * who opens devtools, since there was nothing on the server to actually
  * check against).
  *
- * Model: a single admin password (ADMIN_PASSWORD env var, required — this
+ * Model: a single admin password (ADMIN_PASSWORD env var, required - this
  * module fails closed if it's unset, never falls back to an open door).
  * A successful login gets a signed, time-limited session token in an
  * httpOnly cookie; every other /api/admin/* route verifies that signature
  * server-side before doing anything. The token itself carries no secret
  * data (just an expiry), so there's nothing sensitive to leak if it were
- * ever read — its only job is proving it was issued by this server.
+ * ever read - its only job is proving it was issued by this server.
  */
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import type { Request, Response, NextFunction } from "express";
@@ -22,8 +22,8 @@ const COOKIE_NAME = "fc_admin_session";
 function getSecret(): string | null {
   // Falls back to ADMIN_PASSWORD so a deployment doesn't need a second
   // secret just to sign sessions, but a dedicated ADMIN_SESSION_SECRET is
-  // preferred if set (lets the password be rotated without invalidating —
-  // or being derivable from — the signing key).
+  // preferred if set (lets the password be rotated without invalidating -
+  // or being derivable from - the signing key).
   return process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD || null;
 }
 
@@ -47,7 +47,7 @@ export function checkAdminPassword(password: string): boolean {
   if (!real || !password) return false;
   // Constant-time compare of fixed-size buffers. The actual length is baked
   // into the compared bytes (as a prefix) rather than checked separately
-  // with a plain `===` afterward — a trailing non-constant-time length check
+  // with a plain `===` afterward - a trailing non-constant-time length check
   // would leak length via its own timing, defeating the point of using
   // timingSafeEqual in the first place. Padding both to 128 bytes first
   // also avoids timingSafeEqual throwing on mismatched buffer sizes.
@@ -80,7 +80,7 @@ export function verifySessionToken(token: string | undefined): boolean {
   return safeEqual(sig, expected);
 }
 
-/** No cookie-parser dependency in this project — a signed single cookie is
+/** No cookie-parser dependency in this project - a signed single cookie is
  * simple enough to read straight off the raw header. */
 function getCookie(req: Request, name: string): string | undefined {
   const header = req.headers.cookie;
@@ -97,7 +97,7 @@ export function hasValidAdminSession(req: Request): boolean {
   return verifySessionToken(getCookie(req, COOKIE_NAME));
 }
 
-/** Express middleware — 401s any /api/admin/* route without a valid session. */
+/** Express middleware - 401s any /api/admin/* route without a valid session. */
 export function requireAdminSession(req: Request, res: Response, next: NextFunction): void {
   if (!hasValidAdminSession(req)) {
     res.status(401).json({ error: "Admin session required" });

@@ -825,7 +825,7 @@ export function DashboardPage() {
     if (walletError && (walletError.startsWith("Connect your wallet") || walletError.startsWith("Session locked"))) {
       setWalletNotice(walletError);
     } else {
-      // Error cleared (e.g. wallet now connected) or it's a different error —
+      // Error cleared (e.g. wallet now connected) or it's a different error -
       // dismiss the sticky notice so it doesn't linger after the issue resolves.
       setWalletNotice(null);
       if (walletError) toast.error(walletError);
@@ -1169,7 +1169,7 @@ export function DashboardPage() {
         {/* Hidden on the profile tab: ProfilePage renders its own banner-blur
             sticky header there (showHeader below) so "my profile" looks the
             same whether reached via the bottom nav or via tapping an avatar
-            elsewhere in the app — previously this generic bar and that richer
+            elsewhere in the app - previously this generic bar and that richer
             header were two different-looking headers for the same profile. */}
         {mainTab !== "profile" && (
         <header className="md:hidden sticky top-0 z-30 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>

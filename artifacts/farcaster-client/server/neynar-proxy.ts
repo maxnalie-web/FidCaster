@@ -11,15 +11,15 @@ const HUB_BASE  = "https://hub.pinata.cloud/v1";
 // ── TTL rules (ms) ────────────────────────────────────────────────────────────
 // req.path here is ALREADY stripped of the mount prefix by Express app.use()
 function ttlFor(path: string): number {
-  if (path.includes("/notifications"))     return  300_000; // 5 min  — was 1 min (5× saving)
+  if (path.includes("/notifications"))     return  300_000; // 5 min  - was 1 min (5× saving)
   if (path.includes("/feed/trending"))     return  300_000; // 5 min  global
   if (path.includes("/feed"))              return  120_000; // 2 min  personalized
   if (path.includes("/user/bulk"))         return  600_000; // 10 min profiles
   if (path.includes("/user/search"))       return   60_000; // 1 min  search
   if (path.includes("/cast/search"))       return   60_000;
   if (path.includes("/cast/conversation")) return   45_000; // 45s   thread · keep comments fresh (SWR + throttle protect the rate limit)
-  if (path.includes("/followers"))         return  900_000; // 15 min — was 3 min (5× saving)
-  if (path.includes("/following"))         return  900_000; // 15 min — was 3 min
+  if (path.includes("/followers"))         return  900_000; // 15 min - was 3 min (5× saving)
+  if (path.includes("/following"))         return  900_000; // 15 min - was 3 min
   if (path.includes("/reactions"))         return  180_000; // 3 min
   if (path.includes("/frame/catalog"))     return  600_000; // 10 min
   if (path.includes("/feed/user"))         return  120_000; // 2 min
@@ -72,7 +72,7 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    // Hard miss — single-flight: concurrent identical requests share one Neynar call
+    // Hard miss - single-flight: concurrent identical requests share one Neynar call
     metrics.incCacheMiss();
     const data = await singleFlight(cacheKey, async () => {
       const cached2 = cacheGet(cacheKey);
@@ -97,12 +97,12 @@ async function neynarProxy(req: Request, res: Response): Promise<void> {
 //
 // For high-volume paginated bulk scans (Purge/Cleanup: "fetch my last N
 // casts/replies/likes/recasts") where every request is a unique cursor page
-// anyway — caching wouldn't help and would just pollute the cache — and
+// anyway - caching wouldn't help and would just pollute the cache - and
 // where the whole point is spreading requests across every configured
 // Neynar key for maximum throughput. Deliberately has NO separate
 // configuration: it rotates through exactly the same automatically-detected
 // key pool as the cached proxy above (neynarThrottle(), fed by whatever's
-// set in NEYNAR_API_KEY / NEYNAR_API_KEY_2.. / NEYNAR_API_KEYS env vars —
+// set in NEYNAR_API_KEY / NEYNAR_API_KEY_2.. / NEYNAR_API_KEYS env vars -
 // see neynar-limit.ts). Keys never leave the server; the client only ever
 // sees this proxy's response, never a raw key.
 async function neynarDirectProxy(req: Request, res: Response): Promise<void> {
@@ -206,7 +206,7 @@ async function hubGenericProxy(req: Request, res: Response): Promise<void> {
   }
 }
 
-// ── Follow list — Neynar native endpoint (one reliable call per page) ─────────
+// ── Follow list - Neynar native endpoint (one reliable call per page) ─────────
 // Earlier this used the public Hub (linksByTargetFid + user/bulk), but the free
 // Hub (pinata) rate-limits a busy server IP, so deep pages of huge accounts threw
 // 502s / fell back to raw FIDs. Since the server key does 300 RPM, Neynar's own
@@ -261,7 +261,7 @@ async function followListHandler(mode: "followers" | "following", req: Request, 
       const cached = cacheGet(cacheKey);
       if (cached !== undefined) return cached as FollowPage;
       const r = await fetchFollowList(mode, fid, viewerFid, cursor);
-      cacheSet(cacheKey, r, 900_000); // 15 min — matches ttlFor("/followers")
+      cacheSet(cacheKey, r, 900_000); // 15 min - matches ttlFor("/followers")
       return r;
     });
     res.setHeader("X-Cache", "MISS");
@@ -273,7 +273,7 @@ async function followListHandler(mode: "followers" | "following", req: Request, 
 
 // ── Raw follow-graph scan via free hubs (zero Neynar credits) ─────────────────
 // linksByTargetFid / linksByFid return up to ~2000 link messages per call with
-// reverse=true (newest first) — 20× fewer calls than Neynar's 100-user pages and
+// reverse=true (newest first) - 20× fewer calls than Neynar's 100-user pages and
 // completely free. Used by the Grow fast path, which only needs FIDs up front
 // and hydrates profiles lazily through the SQLite-backed /user/bulk cache.
 //
@@ -346,7 +346,7 @@ async function linkFidsHandler(req: Request, res: Response): Promise<void> {
       for (const i of tryOrder) {
         try {
           const page = await fetchLinkFidsFromHub(LINK_HUBS[i], i, type, fid, pageToken);
-          cacheSet(cacheKey, page, 600_000); // 10 min — follow graphs change slowly
+          cacheSet(cacheKey, page, 600_000); // 10 min - follow graphs change slowly
           return page;
         } catch (e) {
           lastErr = e;
@@ -379,7 +379,7 @@ async function bulkUserHandler(req: Request, res: Response): Promise<void> {
   const qs = new URLSearchParams(req.query as Record<string, string>).toString();
   const { hits, misses } = getCachedProfiles(fids);
 
-  // All served from SQLite cache — no Neynar call needed
+  // All served from SQLite cache - no Neynar call needed
   if (misses.length === 0) {
     const users = fids.map(f => hits.get(f)).filter(Boolean);
     res.setHeader("X-Cache", "DB-HIT");
@@ -460,7 +460,7 @@ export function registerProxyRoutes(app: Express): void {
           throw err;
         }
         const d = await r.json();
-        cacheSet(cacheKey, d, 300_000); // 5 min — matches ttlFor("/notifications")
+        cacheSet(cacheKey, d, 300_000); // 5 min - matches ttlFor("/notifications")
         return d;
       });
       res.setHeader("X-Cache", "MISS");
@@ -486,7 +486,7 @@ export function registerProxyRoutes(app: Express): void {
   });
 
   // Both hub routes below fetch a free third-party hub (hub.pinata.cloud)
-  // directly, with no per-key throttle underneath — unlike the Neynar routes
+  // directly, with no per-key throttle underneath - unlike the Neynar routes
   // above. index.ts's global limiter deliberately skips /api/hub/* (assuming
   // Neynar-layer throttling, which doesn't apply here), so this is the only
   // rate limit in front of either of them; without it a client could drive
@@ -502,7 +502,7 @@ export function registerProxyRoutes(app: Express): void {
     void hubGenericProxy(req, res);
   });
 
-  // ── Bulk user lookup — SQLite profile cache (cross-user, persistent 12h) ──
+  // ── Bulk user lookup - SQLite profile cache (cross-user, persistent 12h) ──
   app.get("/api/fc/farcaster/user/bulk", (req: Request, res: Response) => {
     void bulkUserHandler(req, res);
   });
@@ -513,7 +513,7 @@ export function registerProxyRoutes(app: Express): void {
     void neynarProxy(req, res);
   });
 
-  // ── Uncached direct proxy — bulk-scan pagination (Purge/Cleanup) ──────────
+  // ── Uncached direct proxy - bulk-scan pagination (Purge/Cleanup) ──────────
   const fcDirectLimiter = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
   app.use("/api/fc-direct", fcDirectLimiter, (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") { next(); return; }
@@ -522,7 +522,7 @@ export function registerProxyRoutes(app: Express): void {
 
   // ── Official Farcaster mini apps (the exact ranked list the Farcaster /
   //    Base app shows) ────────────────────────────────────────────────────────
-  // Source: api.farcaster.xyz/v1/top-frameapps — a PUBLIC, unauthenticated
+  // Source: api.farcaster.xyz/v1/top-frameapps - a PUBLIC, unauthenticated
   // endpoint (no Neynar, no API key). #1 is Spor, FasterTasks ≈ #64, etc.
   // We paginate to gather the full ranked catalog (~200 apps). Cached 5 min.
   app.get("/api/mini-apps", async (_req: Request, res: Response) => {

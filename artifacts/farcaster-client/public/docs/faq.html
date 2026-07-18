@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FAQ & Support — FidCaster Docs</title>
+<title>FAQ & Support - FidCaster Docs</title>
 <meta name="description" content="FidCaster user documentation: FAQ & Support." />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -75,9 +75,9 @@
   .lp-feature-card:hover{border-color:rgba(139,92,246,.35); transform:translateY(-6px); box-shadow:0 24px 60px rgba(139,92,246,.18);}
   .icon-badge{
     width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:14px;
-    background:linear-gradient(135deg, var(--ic1,#7c3aed), var(--ic2,#a855f7)); box-shadow:0 6px 20px -6px var(--ic1,#7c3aed);
+    background:rgba(124,58,237,.15); border:1px solid rgba(124,58,237,.3);
   }
-  .icon-badge svg{width:19px;height:19px;stroke:#fff;}
+  .icon-badge svg{width:19px;height:19px;stroke:#c4b5fd;}
 
   /* ── Background ── */
   .bg-fixed{position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0;}
@@ -165,14 +165,17 @@
   td strong{color:#fff;}
 
   .callout{display:flex; gap:14px; padding:16px 20px; border-radius:1rem; margin:22px 0; align-items:flex-start;}
-  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
-  .callout .icon-wrap svg{width:16px;height:16px; stroke:#fff;}
+  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border:1px solid transparent;}
+  .callout .icon-wrap svg{width:16px;height:16px;}
   .callout.warn{background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.25);}
-  .callout.warn .icon-wrap{background:linear-gradient(135deg,#ef4444,#f97316);}
+  .callout.warn .icon-wrap{background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.3);}
+  .callout.warn .icon-wrap svg{stroke:#f87171;}
   .callout.tip{background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.25);}
-  .callout.tip .icon-wrap{background:linear-gradient(135deg,#10b981,#34d399);}
+  .callout.tip .icon-wrap{background:rgba(52,211,153,.12); border-color:rgba(52,211,153,.3);}
+  .callout.tip .icon-wrap svg{stroke:#34d399;}
   .callout.info{background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.25);}
-  .callout.info .icon-wrap{background:linear-gradient(135deg,#0ea5e9,#38bdf8);}
+  .callout.info .icon-wrap{background:rgba(56,189,248,.12); border-color:rgba(56,189,248,.3);}
+  .callout.info .icon-wrap svg{stroke:#38bdf8;}
   .callout p{margin:0; color:rgba(255,255,255,.75); font-size:0.9rem;}
   .callout strong{color:#fff;}
 
@@ -270,7 +273,7 @@
         </div>
         <div class="faq-item">
           <div class="faq-q"><span class="q-mark">Q.</span>What if I forget my local password?</div>
-          <p class="faq-a">Since your local password only decrypts the vault on that specific device — and neither it nor your seed phrase is ever stored server-side — the only way back in is signing in again with your <strong>original seed phrase</strong>.</p>
+          <p class="faq-a">Since your local password only decrypts the vault on that specific device - and neither it nor your seed phrase is ever stored server-side - the only way back in is signing in again with your <strong>original seed phrase</strong>.</p>
         </div>
         <div class="faq-item">
           <div class="faq-q"><span class="q-mark">Q.</span>What's the FID Market fee?</div>
@@ -278,7 +281,7 @@
         </div>
         <div class="faq-item">
           <div class="faq-q"><span class="q-mark">Q.</span>Can I cancel a FID listing?</div>
-          <p class="faq-a">Yes — as long as it hasn't been bought yet, you can cancel your listing at any time.</p>
+          <p class="faq-a">Yes - as long as it hasn't been bought yet, you can cancel your listing at any time.</p>
         </div>
         <div class="faq-item">
           <div class="faq-q"><span class="q-mark">Q.</span>Is batch-following (Grow) risky for my account?</div>

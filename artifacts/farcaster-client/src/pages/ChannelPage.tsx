@@ -34,7 +34,7 @@ export function ChannelPage() {
   useEffect(() => {
     // Wait for the wallet's own fid to be ready · fetching with viewer_fid=0
     // before the session finishes restoring is rejected by the API outright.
-    // Keyed on (id, viewerFid) together — not just id — so switching accounts
+    // Keyed on (id, viewerFid) together - not just id - so switching accounts
     // while sitting on the same channel route re-fetches viewer-scoped state
     // (follow status, personalized feed) instead of leaving the previous
     // account's data on screen.
@@ -114,7 +114,7 @@ export function ChannelPage() {
           </div>
         ) : channel ? (
           <>
-            {/* Banner and avatar never overlap — some channel banners already have their
+            {/* Banner and avatar never overlap - some channel banners already have their
                 own logo/wordmark baked into the image, which looked broken/doubled-up
                 whenever our avatar sat on top of it. */}
             <div className="relative h-28 w-full overflow-hidden bg-gradient-to-br from-primary/20 via-violet-400/10 to-indigo-400/15">

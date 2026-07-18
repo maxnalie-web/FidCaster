@@ -52,11 +52,11 @@ function YourAppsRow({ apps, onOpen }: { apps: AddedMiniApp[]; onOpen: (app: Min
 }
 
 /* ─── Connect-wallet banner ─────────────────────────────────────────────────
- * Shown when there's no wallet address to hand mini apps at all — e.g. a
+ * Shown when there's no wallet address to hand mini apps at all - e.g. a
  * "Sign In With Farcaster" (Warpcast QR) login, which is read-only and never
  * links an EVM wallet. Per Farcaster's own mini-app spec, the HOST is
  * responsible for getting the user connected before a mini app even asks
- * (mini apps aren't supposed to show their own wallet-selector dialog) — so
+ * (mini apps aren't supposed to show their own wallet-selector dialog) - so
  * rather than silently handing mini apps a null address and letting every
  * wallet-dependent feature in them quietly fail, this offers the same
  * ad-hoc "connect a wallet without changing your Farcaster login" flow FID
@@ -193,7 +193,7 @@ export function MiniAppsPanel() {
   const [, navigate] = useLocation();
 
   // Falls back to an ad-hoc-connected wallet (useMarketWallet) when the
-  // user's actual login has none — see ConnectWalletBanner above for why.
+  // user's actual login has none - see ConnectWalletBanner above for why.
   const effectiveAddress = address ?? extWallet?.address ?? null;
   const effectiveWalletClient = walletClient ?? extWallet?.walletClient ?? null;
 
@@ -212,7 +212,7 @@ export function MiniAppsPanel() {
 
   // Native (Capacitor APK/iOS) opens the app in a native WebView with a real
   // SDK bridge. On web/PWA, opens it in an in-app iframe modal with the same
-  // real Farcaster context + wallet exposed (see miniapp-iframe-host.ts) —
+  // real Farcaster context + wallet exposed (see miniapp-iframe-host.ts) -
   // previously a bare window.open() with nothing injected, indistinguishable
   // from just visiting the site.
   const openApp = useCallback(async (app: MiniApp) => {

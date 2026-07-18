@@ -51,7 +51,7 @@ export function upsertAccountMeta(meta: AccountMeta): void {
 }
 
 /** Patches just the profile fields (username/displayName/pfpUrl) for an
- * account, leaving address/signerUuid/authMethod untouched — used to
+ * account, leaving address/signerUuid/authMethod untouched - used to
  * self-heal a cached account entry that was written with a network-failure
  * placeholder once the real profile is fetched successfully. */
 export function updateAccountMetaProfile(

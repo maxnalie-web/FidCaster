@@ -1,11 +1,11 @@
 /**
  * Real server-side persistence for admin-configured site settings and API
- * secrets — replaces the old localStorage-only model, where every setting
+ * secrets - replaces the old localStorage-only model, where every setting
  * only ever applied to the browser of whoever happened to open the admin
  * panel and never reached any other visitor of the actual site.
  *
  * Two separate tables, deliberately: `public_config` is served to every
- * visitor unauthenticated (branding, theme, copy, feature flags — nothing
+ * visitor unauthenticated (branding, theme, copy, feature flags - nothing
  * sensitive), `secrets` is only ever read/written by an authenticated admin
  * request and is never included in any public response.
  */
@@ -19,7 +19,7 @@ const requireCjs = createRequire(import.meta.url);
 export interface AdminSecrets {
   neynarApiKey: string;
   imgurClientId: string;
-  /** JSON-encoded array of {cloudName, apiKey, apiSecret} — same shape as
+  /** JSON-encoded array of {cloudName, apiKey, apiSecret} - same shape as
    * the CLOUDINARY_ACCOUNTS env var; when set here it takes priority over
    * the env var, letting the admin add/rotate accounts without a redeploy. */
   cloudinaryAccountsJson: string;

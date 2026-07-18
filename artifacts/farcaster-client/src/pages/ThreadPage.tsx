@@ -54,7 +54,7 @@ export function ThreadPage() {
     const cached = _threadCache.get(cacheKeyBase);
     if (cached) {
       setLoading(false);
-      // behavior: "auto" is required here — the global `html { scroll-behavior:
+      // behavior: "auto" is required here - the global `html { scroll-behavior:
       // smooth }` (index.css) would otherwise animate this restore, making a
       // cached revisit visibly scroll down from the top instead of just
       // already being at the right spot.

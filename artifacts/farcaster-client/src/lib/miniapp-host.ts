@@ -21,20 +21,20 @@ import { isMiniAppAdded, addMiniAppToStore } from "./miniapp-added-store";
  * Real host-side implementation of the Farcaster Mini App SDK protocol for
  * mini apps opened in the native (Capacitor) in-app WebView.
  *
- * Every mini app bundles the official `@farcaster/miniapp-sdk`, which — when
+ * Every mini app bundles the official `@farcaster/miniapp-sdk`, which - when
  * it detects `window.ReactNativeWebView` (satisfied by the document-start
- * script in miniapp-native.ts) — talks to its host over a Comlink RPC channel
+ * script in miniapp-native.ts) - talks to its host over a Comlink RPC channel
  * carried by `window.ReactNativeWebView.postMessage` / a `messageFromNative`
  * DOM event. This file is the OTHER end of that channel: it wires up
  * `@farcaster/miniapp-host`'s Comlink-based RPC dispatcher (`exposeToEndpoint`)
  * to `@capgo/capacitor-inappbrowser`'s own bridge (`messageFromWebview` /
  * `postMessage` / `executeScript`) instead of the react-native-webview ref
- * the SDK's own React Native adapter uses — same protocol, different
+ * the SDK's own React Native adapter uses - same protocol, different
  * transport, since we're a Capacitor app rather than a React Native one.
  *
  * Without this, a mini app's SDK calls (get user context, check wallet
  * accounts, etc.) go out over `window.ReactNativeWebView.postMessage` and
- * nothing on the host side is listening — the mini app's SDK sits waiting
+ * nothing on the host side is listening - the mini app's SDK sits waiting
  * for a reply that never arrives, which is the likely cause of mini apps
  * both failing to detect the Farcaster user/wallet AND feeling slow/stuck.
  */
@@ -43,10 +43,10 @@ import { isMiniAppAdded, addMiniAppToStore } from "./miniapp-added-store";
 // signed in as a real Farcaster user and see a real connected address, but
 // anything that would move funds or need a signature (sendTransaction,
 // personal_sign, typed-data signing, token swaps/sends) is rejected with a
-// standard EIP-1193 "unsupported method" error instead of hanging — safer to
+// standard EIP-1193 "unsupported method" error instead of hanging - safer to
 // ship a clean "not yet supported" than to guess at wiring real signing
 // through an SDK bridge that can't be tested against a device here.
-const DEFAULT_CHAIN_ID_HEX = "0x2105"; // Base — the default chain most mini apps expect
+const DEFAULT_CHAIN_ID_HEX = "0x2105"; // Base - the default chain most mini apps expect
 const SUPPORTED_CAIP2_CHAINS = ["eip155:8453"]; // Base only, for now
 
 export function createEthProvider(address: `0x${string}` | null): Provider.Provider<undefined, true> {
@@ -150,11 +150,11 @@ export function toMiniAppContext(profile: FarcasterProfile | null, added = false
 /**
  * Real "Sign In With Farcaster" (SIWF): builds the standard SIWE-compatible
  * message (@farcaster/auth-client's buildSignInMessage, same message format
- * Warpcast itself produces — domain/uri come from the mini app's own origin,
+ * Warpcast itself produces - domain/uri come from the mini app's own origin,
  * matching how a real Farcaster client fills those in rather than trusting
  * the mini app to supply them) and signs it with the user's own connected
  * wallet (personal_sign). This lets mini apps that gate real functionality
- * behind a verifiable identity (mints, allocations, etc. — context.user.fid
+ * behind a verifiable identity (mints, allocations, etc. - context.user.fid
  * alone isn't enough since a malicious host could fake it) actually work,
  * instead of unconditionally rejecting sdk.actions.signIn() and leaving
  * those apps stuck showing "please open this inside a real Farcaster

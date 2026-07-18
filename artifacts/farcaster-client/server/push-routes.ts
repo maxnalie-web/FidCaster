@@ -10,7 +10,7 @@
  *   - Copy the webhook's secret -> NEYNAR_WEBHOOK_SECRET env var
  * From then on this file keeps the webhook's target_fids/mentioned_fids
  * filters in sync with whoever has a push token registered, via Neynar's
- * update-webhook API — no further dashboard edits needed as users opt in.
+ * update-webhook API - no further dashboard edits needed as users opt in.
  *
  * Known gap: Neynar's cast.created filter only supports author_fids /
  * mentioned_fids (no "reply to this fid" filter), so a reply that does NOT
@@ -39,7 +39,7 @@ async function syncNeynarWebhookTargets(): Promise<void> {
   const apiKey = process.env.NEYNAR_API_KEY;
   const webhookId = process.env.NEYNAR_WEBHOOK_ID;
   const webhookUrl = process.env.PUSH_WEBHOOK_URL; // e.g. https://fidcaster.xyz/api/push/webhook
-  if (!apiKey || !webhookId || !webhookUrl) return; // not configured yet — no-op
+  if (!apiKey || !webhookId || !webhookUrl) return; // not configured yet - no-op
 
   const fids = getAllRegisteredFids();
   try {
@@ -66,7 +66,7 @@ async function syncNeynarWebhookTargets(): Promise<void> {
   }
 }
 
-// Debounced — a burst of registrations shouldn't fire one PUT per request.
+// Debounced - a burst of registrations shouldn't fire one PUT per request.
 function scheduleWebhookSync(): void {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => { syncNeynarWebhookTargets(); }, 5_000);
@@ -115,7 +115,7 @@ async function handleCastCreated(data: NeynarCast & { mentioned_profiles?: Neyna
   const isReply = !!data.parent_author?.fid;
 
   // Reply that also lands as a cast.created mention (parent_author fid is
-  // in our mentioned_fids filter set) — de-dupe against the mention branch
+  // in our mentioned_fids filter set) - de-dupe against the mention branch
   // below by preferring the reply framing when both apply.
   if (isReply && data.parent_author?.fid && data.parent_author.fid !== actor.fid) {
     await pushToFid(data.parent_author.fid, {
@@ -138,8 +138,8 @@ async function handleCastCreated(data: NeynarCast & { mentioned_profiles?: Neyna
 
 export function registerPushRoutes(app: Express): void {
   // Bodies are already JSON-parsed by index.ts's global dispatcher
-  // (smallJsonParser for these two paths, webhookJsonParser — which also
-  // captures req.rawBody for signature verification — for the webhook path).
+  // (smallJsonParser for these two paths, webhookJsonParser - which also
+  // captures req.rawBody for signature verification - for the webhook path).
   app.post("/api/push/register-token", registerLimiter, async (req: Request, res: Response) => {
     const { fid, fcmToken, platform } = req.body as { fid?: number; fcmToken?: string; platform?: string };
     if (!isValidFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
@@ -163,7 +163,7 @@ export function registerPushRoutes(app: Express): void {
 
   app.post("/api/push/webhook", webhookLimiter, async (req: Request, res: Response) => {
     if (!verifyNeynarSignature(req)) { res.status(401).json({ error: "Invalid signature" }); return; }
-    // Ack immediately — Neynar retries on slow/non-2xx responses, and the
+    // Ack immediately - Neynar retries on slow/non-2xx responses, and the
     // actual FCM fan-out below can take longer than a webhook's timeout.
     res.status(200).json({ ok: true });
     try {

@@ -12,21 +12,21 @@ import {
   Message,
 } from "@farcaster/hub-nodejs";
 
-// Free public hubs — no Neynar credits, raced in parallel first.
-// Prefer HTTPS-port hubs (443) — port 2281 is commonly blocked on cloud providers.
+// Free public hubs - no Neynar credits, raced in parallel first.
+// Prefer HTTPS-port hubs (443) - port 2281 is commonly blocked on cloud providers.
 //
 // CUSTOM_HUB_URL (env): point this at YOUR OWN Snapchain hub for truly unlimited,
 // zero-credit writes with no Neynar dependency. A hub runs for free forever on an
 // Oracle Cloud "Always Free" ARM instance (4 cores / 24 GB). When set it's raced
-// FIRST — if it accepts, no credits are spent and Neynar is never touched.
+// FIRST - if it accepts, no credits are spent and Neynar is never touched.
 const STATIC_FREE_HUB_URLS = [
   "https://api.hub.wevm.dev",                      // wevm/viem team (HTTPS 443)
   "https://hub.pinata.cloud",                       // Pinata public hub (HTTPS 443)
-  "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281 — may be blocked)
+  "https://hoyt.farcaster.xyz:2281",               // Merkle hub (port 2281 - may be blocked)
   "https://hub.farcaster.standardcrypto.vc:2281",  // Standard Crypto (port 2281)
 ];
 
-// Read lazily, not at module top level — ESM import evaluation order runs
+// Read lazily, not at module top level - ESM import evaluation order runs
 // this before server/index.ts's own .env-loading code, which would silently
 // capture undefined for a CUSTOM_HUB_URL set only via the .env file (same
 // bug class already fixed in cloudinary-upload.ts and neynar-limit.ts).
@@ -35,15 +35,15 @@ function getFreeHubUrls(): string[] {
   return custom ? [custom.replace(/\/$/, ""), ...STATIC_FREE_HUB_URLS] : STATIC_FREE_HUB_URLS;
 }
 
-// Neynar hub — costs credits per submission; used only when ALL free hubs fail.
+// Neynar hub - costs credits per submission; used only when ALL free hubs fail.
 const NEYNAR_HUB_URL = "https://hub-api.neynar.com";
 
-/** Read every NEYNAR_API_KEY* env var — used for key rotation below. */
+/** Read every NEYNAR_API_KEY* env var - used for key rotation below. */
 export function getAllNeynarKeys(): string[] {
   const keys: string[] = [];
   const p = process.env.NEYNAR_API_KEY;
   if (p) keys.push(p);
-  // Scan the whole range WITHOUT breaking on a gap — keys are often numbered with
+  // Scan the whole range WITHOUT breaking on a gap - keys are often numbered with
   // holes (e.g. _16 missing but _17…_20 present); an early break would silently
   // drop every key after the first gap.
   for (let i = 2; i <= 55; i++) {
@@ -96,9 +96,9 @@ async function tryHubOnce(
  * Submit already-signed protobuf bytes to Farcaster hubs.
  *
  * Strategy:
- *  Phase 1 — Race ALL free hubs simultaneously (Promise.any + AbortController).
+ *  Phase 1 - Race ALL free hubs simultaneously (Promise.any + AbortController).
  *             First hub to accept aborts the siblings → 0 credits consumed.
- *  Phase 2 — Only if every free hub failed: try Neynar keys SEQUENTIALLY in
+ *  Phase 2 - Only if every free hub failed: try Neynar keys SEQUENTIALLY in
  *             round-robin order → ~1 request (and 1 credit) per action, and the
  *             server IP never bursts N parallel requests per action.
  */
@@ -106,7 +106,7 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
   const message = Message.decode(msgBytes);
   const msgHash = Buffer.from(message.hash).toString("hex");
 
-  // Phase 1: race free hubs (parallel, no credits) — cancel siblings on first win.
+  // Phase 1: race free hubs (parallel, no credits) - cancel siblings on first win.
   // Short 2.5s timeout: some free hubs (e.g. the :2281-port ones) are unreachable on
   // many networks and would otherwise hang the whole Promise.any for 8s before we
   // fall through to Neynar. A reachable free hub responds well under 2.5s anyway.
@@ -132,7 +132,7 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
   // Phase 2: all free hubs failed → try Neynar keys ONE AT A TIME (round-robin).
   // The old approach fired every key in PARALLEL, so each action sent N simultaneous
   // requests to hub-api.neynar.com from this single server IP. At ~40 actions/min with
-  // 19 keys that's ~760 req/min from one IP — tripping Neynar's per-IP limit even with
+  // 19 keys that's ~760 req/min from one IP - tripping Neynar's per-IP limit even with
   // a single user ("1 user rate-limits itself"). Sequential rotation sends ~1 request
   // per action and spreads consecutive actions across all keys, so neither a single
   // key nor the server IP gets hammered. We only advance to the next key on transient
@@ -154,7 +154,7 @@ export async function submitSignedBytes(msgBytes: Uint8Array): Promise<string> {
       const msg = String(e);
       errs.push(msg);
       // Permanent validation failure (bad/deleted target FID) that is NOT a
-      // signer-sync issue — rotating keys is pointless, stop now.
+      // signer-sync issue - rotating keys is pointless, stop now.
       if (/validation_failure/i.test(msg) && !/signer/i.test(msg)) {
         throw new Error(msg);
       }
@@ -334,7 +334,7 @@ async function buildMessage(
 
 /**
  * Sign a Farcaster message and return the serialised protobuf bytes (base64).
- * Does NOT submit to any hub — the caller (browser) does the submission directly,
+ * Does NOT submit to any hub - the caller (browser) does the submission directly,
  * distributing hub traffic across each user's own IP instead of the server's IP.
  *
  * Strategy:
@@ -355,7 +355,7 @@ export async function signFarcasterAction(
       return await signInPool(signerPrivateKeyHex, fid, action);
     }
   } catch {
-    // pool not ready — fall through to main-thread signing
+    // pool not ready - fall through to main-thread signing
   }
 
   // ── 2. Main-thread fallback ───────────────────────────────────────────────

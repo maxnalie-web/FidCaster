@@ -65,7 +65,7 @@ function AuthRedirect() {
     if (fid && (location === "/" || location === "/login")) navigate("/dashboard");
     // The installed app (Capacitor/PWA) never shows the marketing landing
     // page's "Client / FID Market / Features" scroll page meant for a
-    // browser tab — but it also shouldn't snap straight into the sign-in
+    // browser tab - but it also shouldn't snap straight into the sign-in
     // form with zero transition. "/" itself forks in Router() below: an
     // installed app renders NativeWelcomePage there instead of LoginPage,
     // so no redirect is needed at all for that case anymore.

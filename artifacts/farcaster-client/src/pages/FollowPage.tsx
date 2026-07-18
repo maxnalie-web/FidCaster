@@ -712,7 +712,7 @@ export function FollowPage() {
   }
 
   function applyPreset(presetFilters: Partial<BatchFilters>, id: Preset) {
-    // Presets reset everything to a known baseline EXCEPT the FID range —
+    // Presets reset everything to a known baseline EXCEPT the FID range -
     // that's a simple universal constraint the user sets independently of
     // which preset is active, and presets don't know about it, so folding it
     // into DEFAULT_FILTERS here would silently wipe out a range typed in
@@ -1075,7 +1075,7 @@ export function FollowPage() {
                         {/* Farcaster's purple badge IS the Pro-subscriber badge · there is no
                             separate badge, so this is the only toggle for it (a second
                             "Purple badge only" toggle used to exist here, checking the same
-                            thing under a different name — removed). */}
+                            thing under a different name - removed). */}
                         <Toggle label="Farcaster Pro only" sub="Paid subscribers ($10/mo) · rare, high intent" checked={filters.onlyPro} onChange={v => updateFilter("onlyPro", v)} icon={<ProBadge size={14} />} />
                       </div>
                     </>

@@ -56,7 +56,7 @@ const optimismClient = createPublicClient({
   ),
 });
 
-// Dedicated lightweight client for contract reads — uses same fallback pool as optimismClient
+// Dedicated lightweight client for contract reads - uses same fallback pool as optimismClient
 // but without rank probing (avoids extra RPC calls during batch scans)
 const readClient = createPublicClient({
   chain: optimism,
@@ -118,7 +118,7 @@ const fidMarketAbi = [
   },
 ] as const;
 
-// Real on-chain topic hashes (verified from live logs — event names in bytecode differ from ABI guesses)
+// Real on-chain topic hashes (verified from live logs - event names in bytecode differ from ABI guesses)
 const LISTED_TOPIC   = "0xfb1726c338f0dfd05a26a0e8764ed02544cf83687d8d0f82eb3e177d35e47c4e" as `0x${string}`;
 const CANCELLED_TOPIC = "0x26deca31ff8139a06c52453ce8985d34f7648a6d9af1d283c4063d052c355a0f" as `0x${string}`;
 // Bought topic candidates (no trades yet; will auto-detect from first real trade)
@@ -165,7 +165,7 @@ export interface CachedActivity {
   priceEth: string;
   blockNumber: number;
   transactionHash: string;
-  /** Unix seconds — unified sort key across real events (approx from block) and
+  /** Unix seconds - unified sort key across real events (approx from block) and
    *  synthetic listed entries (exact listedAt). Lets us interleave correctly. */
   ts: number;
 }
@@ -194,9 +194,9 @@ class TtlCache<V> {
   prune() { const now = Date.now(); for (const [k, v] of this.store) if (now > v.exp) this.store.delete(k); }
 }
 
-const fidInfoCache  = new TtlCache<unknown>(5 * 60_000);   // Neynar profiles — 5 min
-const walletFidCache = new TtlCache<number | null>(10 * 60_000); // wallet→FID — 10 min
-const fidDataCache  = new TtlCache<unknown>(30_000);         // per-FID listing — 30 s
+const fidInfoCache  = new TtlCache<unknown>(5 * 60_000);   // Neynar profiles - 5 min
+const walletFidCache = new TtlCache<number | null>(10 * 60_000); // wallet→FID - 10 min
+const fidDataCache  = new TtlCache<unknown>(30_000);         // per-FID listing - 30 s
 
 // Prune expired entries every 10 minutes
 setInterval(() => { fidInfoCache.prune(); walletFidCache.prune(); fidDataCache.prune(); }, 10 * 60_000);
@@ -230,7 +230,7 @@ function loadTrackedFids() {
         if (Number.isInteger(fid) && fid > 0 && trackedFids.size < MAX_TRACKED_FIDS) trackedFids.add(fid);
       }
     }
-  } catch { /* no file yet — first run */ }
+  } catch { /* no file yet - first run */ }
 }
 
 function persistTrackedFids() {
@@ -245,7 +245,7 @@ function persistTrackedFids() {
 
 // Chunks fetched with bounded concurrency, not one-at-a-time. The initial
 // discovery scan now covers up to 1.3M blocks (30-day listings, see
-// INITIAL_SCAN_RANGE) — that's ~260 chunks per topic at the old fully
+// INITIAL_SCAN_RANGE) - that's ~260 chunks per topic at the old fully
 // sequential pace, several minutes of wall-clock time against free public
 // RPC nodes. In practice that was slow/fragile enough (timeouts, rate
 // limits) to leave trackedFids empty and the whole market page blank.
@@ -338,7 +338,7 @@ async function readFidListing(fid: number): Promise<CachedListing | null> {
   }
 }
 
-// Raw activity snapshots — accumulated across scans so the feed stays complete.
+// Raw activity snapshots - accumulated across scans so the feed stays complete.
 // Each refresh only scans a recent block window; replacing (not merging) these
 // would shrink the feed to the last ~27h after the wide initial scan. We merge +
 // dedup by txHash:type:fid and cap so activity grows and persists between scans.
@@ -367,7 +367,7 @@ function rebuildActivity() {
 
   // Synthetic "listed" entries from the CURRENT on-chain listings. The public RPC
   // can't reliably return getLogs for old/wide ranges, so a listing's original
-  // Listed event is often missing from the scan — but the listing itself is real
+  // Listed event is often missing from the scan - but the listing itself is real
   // (readFidListing). Synthesizing from listingsCache guarantees the activity feed
   // reflects every active listing. We skip fids already covered by a real event.
   const realListedFids = new Set(realListings.map(e => e.fid));
@@ -382,7 +382,7 @@ function rebuildActivity() {
     }));
 
   // Collect txHashes that produced a real listing.
-  // list() first cancels any existing listing (emitting Cancelled) then emits Listed —
+  // list() first cancels any existing listing (emitting Cancelled) then emits Listed -
   // all in the same transaction. Those Cancelled events are NOT user-initiated cancels;
   // they're a re-list. Filter them out so only standalone cancels appear in the feed.
   const relistTxHashes = new Set(realListings.map(e => e.transactionHash));
@@ -461,7 +461,7 @@ async function refreshListings() {
     _pendingListedActivity = mergeActivity(_pendingListedActivity, listedActivity);
     _pendingCancelledActivity = mergeActivity(_pendingCancelledActivity, cancelledActivity);
 
-    // Check ALL tracked FIDs on-chain — readFidListing returns null for delisted ones
+    // Check ALL tracked FIDs on-chain - readFidListing returns null for delisted ones
     const fidsToCheck = Array.from(trackedFids);
     const results: CachedListing[] = [];
     for (let i = 0; i < fidsToCheck.length; i += 10) {
@@ -475,9 +475,9 @@ async function refreshListings() {
     // Guard against transient RPC failures: readFidListing returns null both for a
     // genuinely-delisted FID and for an RPC error. A scan returning 0 active while we
     // track FIDs and previously had listings is almost always a mass RPC hiccup, not
-    // every listing vanishing at once — keep the previous cache instead of clearing it.
+    // every listing vanishing at once - keep the previous cache instead of clearing it.
     if (results.length === 0 && trackedFids.size > 0 && listingsCache.length > 0) {
-      console.warn(`[FidMarket] 0 active from ${trackedFids.size} tracked but cache had ${listingsCache.length} — keeping previous (likely RPC failure)`);
+      console.warn(`[FidMarket] 0 active from ${trackedFids.size} tracked but cache had ${listingsCache.length} - keeping previous (likely RPC failure)`);
     } else {
       listingsCache = results;
       listingsCacheTime = Date.now();
@@ -834,7 +834,7 @@ export function registerFidMarketRoutes(app: Express) {
         optimismClient.estimateFeesPerGas(),
       ]);
 
-      // estimateGas simulates the call — if it throws, the tx will revert on-chain.
+      // estimateGas simulates the call - if it throws, the tx will revert on-chain.
       // Propagate the revert reason immediately instead of silently falling back.
       let gasEstimate: bigint;
       try {

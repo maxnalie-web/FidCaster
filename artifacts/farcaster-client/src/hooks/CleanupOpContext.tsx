@@ -5,7 +5,7 @@
 // threaded follow-graph-specific state through cast-shaped data.
 //
 // Runs with real concurrency (5 lanes in parallel, not sequential like
-// follow/unfollow) — deleting/un-reacting your own content doesn't carry
+// follow/unfollow) - deleting/un-reacting your own content doesn't carry
 // the "look like a follow-spam bot" risk profile, and the whole point of
 // this tool is clearing large volumes quickly.
 //
@@ -230,7 +230,7 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
           if (isAlreadyGone) return "skipped";
           if (isRateLimit && retries < 3) {
             retries++;
-            update("Rate limited — waiting 15s…");
+            update("Rate limited - waiting 15s…");
             await new Promise<void>(r => setTimeout(r, 15_000));
             continue;
           }

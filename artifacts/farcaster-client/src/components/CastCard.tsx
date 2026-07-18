@@ -38,7 +38,7 @@ const IMAGE_DOMAINS = [
 
 /** Brand "F" mark used in place of the heart on casts that mention Fidcaster ·
  * outline-only unliked, filled (via currentColor, toggled purple by the
- * parent button's className) once liked — same on/off pattern as the heart. */
+ * parent button's className) once liked - same on/off pattern as the heart. */
 function FMark({ className, filled }: { className?: string; filled: boolean }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none">
@@ -231,7 +231,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
   const menuRef = useRef<HTMLDivElement>(null);
   // Tracks where a touch/click gesture started (position + page scrollY) so
   // openThread() can tell a real tap apart from a scroll/drag that merely
-  // ends over this card. A plain onClick alone isn't reliable here — some
+  // ends over this card. A plain onClick alone isn't reliable here - some
   // WebViews (seen on the native Android build) fire a click even when the
   // touch moved a fair distance as part of a scroll, especially on a
   // "touch to stop momentum scrolling" gesture · which made every reply in a
@@ -326,7 +326,7 @@ export function CastCard({ cast, viewerFid, onViewProfile, compact, expanded }: 
     if (expanded) return;
     const target = e.target as HTMLElement;
     if (target.closest("button") || target.closest("a")) return;
-    // Ignore this "click" if the gesture that produced it actually moved —
+    // Ignore this "click" if the gesture that produced it actually moved -
     // either the finger travelled a real distance, or the page scrolled
     // between touch-down and touch-up (e.g. a "touch to stop scrolling" tap).
     // Without this, scrolling through a reply list on the native app felt

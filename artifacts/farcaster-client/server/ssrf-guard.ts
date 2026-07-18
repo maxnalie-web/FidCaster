@@ -3,7 +3,7 @@
  * (currently just the in-app DeFi browser proxy).
  *
  * Before this existed, /api/browser-proxy validated only that the URL started
- * with http:// or https:// — nothing stopped it from being pointed at the
+ * with http:// or https:// - nothing stopped it from being pointed at the
  * server's own internal network: cloud metadata endpoints
  * (http://169.254.169.254/...), other services on localhost/the private
  * network, etc. The server would dutifully fetch it and hand the response
@@ -11,7 +11,7 @@
  *
  * This checks the ACTUAL resolved IP address(es) of the target host against
  * the private/reserved ranges, not just the hostname text (a hostname can
- * look like anything and still resolve to 127.0.0.1 or a private IP — DNS
+ * look like anything and still resolve to 127.0.0.1 or a private IP - DNS
  * rebinding is exactly this trick). It also has to be re-checked on every
  * redirect hop, since a URL that resolves to something public can still
  * redirect the request to an internal address.
@@ -58,7 +58,7 @@ function isBlockedIPv6(ip: string): boolean {
   if (lower === "::1" || lower === "::") return true;
   if (lower.startsWith("fe80:") || lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb")) return true; // link-local fe80::/10
   if (/^f[c-d]/.test(lower)) return true; // unique local fc00::/7
-  // IPv4-mapped (::ffff:a.b.c.d) — unwrap and check the embedded v4 address
+  // IPv4-mapped (::ffff:a.b.c.d) - unwrap and check the embedded v4 address
   const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isBlockedIPv4(mapped[1]);
   return false;
@@ -68,7 +68,7 @@ function isBlockedIp(ip: string): boolean {
   const family = isIP(ip);
   if (family === 4) return isBlockedIPv4(ip);
   if (family === 6) return isBlockedIPv6(ip);
-  return true; // unrecognized — fail closed
+  return true; // unrecognized - fail closed
 }
 
 const BLOCKED_HOSTNAME_SUFFIXES = [".local", ".internal", ".localhost"];
@@ -87,7 +87,7 @@ export async function isUrlSafeToFetch(rawUrl: string): Promise<{ safe: boolean;
   }
 
   // URL.hostname keeps the brackets around an IPv6 literal (e.g. "[::1]"),
-  // which isIP() doesn't recognize — strip them before checking.
+  // which isIP() doesn't recognize - strip them before checking.
   const bareHost = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
 
   // If the hostname is already a literal IP, check it directly.
@@ -95,7 +95,7 @@ export async function isUrlSafeToFetch(rawUrl: string): Promise<{ safe: boolean;
     return isBlockedIp(bareHost) ? { safe: false, reason: "blocked IP literal" } : { safe: true };
   }
 
-  // Otherwise resolve DNS and check every returned address (A + AAAA) — an
+  // Otherwise resolve DNS and check every returned address (A + AAAA) - an
   // attacker-controlled or rebinding DNS name could point anywhere.
   try {
     const records = await dns.lookup(hostname, { all: true, verbatim: true });
@@ -113,7 +113,7 @@ const MAX_REDIRECTS = 5;
 
 /**
  * fetch() that re-validates the destination on every redirect hop, not just
- * the initial URL — a URL that resolves to something public can still
+ * the initial URL - a URL that resolves to something public can still
  * redirect the actual request to an internal address.
  */
 export async function safeFetch(initialUrl: string, init: RequestInit): Promise<Response> {
@@ -126,7 +126,7 @@ export async function safeFetch(initialUrl: string, init: RequestInit): Promise<
     const res = await fetch(currentUrl, { ...init, redirect: "manual" });
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
-      if (!location) return res; // no Location header — nothing to follow, return as-is
+      if (!location) return res; // no Location header - nothing to follow, return as-is
       currentUrl = new URL(location, currentUrl).toString();
       continue;
     }

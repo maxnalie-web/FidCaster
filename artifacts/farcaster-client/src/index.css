@@ -6,7 +6,7 @@
    this separately via StatusBar.setOverlaysWebView({ overlay: false }), so this
    only fires for PWAs.
    NOTE: applied directly on each viewport-pinned header/nav/fixed-shell element
-   (not on `body`) — a `position: fixed` element ignores an ancestor's padding
+   (not on `body`) - a `position: fixed` element ignores an ancestor's padding
    box entirely, and sticky headers inside nested scroll containers wouldn't
    pick up body's padding either, so a single body-level rule silently misses
    most of the app's actual top bars. Search for `env(safe-area-inset-` to find

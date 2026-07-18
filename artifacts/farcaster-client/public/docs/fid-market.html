@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FID Market — FidCaster Docs</title>
+<title>FID Market - FidCaster Docs</title>
 <meta name="description" content="FidCaster user documentation: FID Market." />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -75,9 +75,9 @@
   .lp-feature-card:hover{border-color:rgba(139,92,246,.35); transform:translateY(-6px); box-shadow:0 24px 60px rgba(139,92,246,.18);}
   .icon-badge{
     width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:14px;
-    background:linear-gradient(135deg, var(--ic1,#7c3aed), var(--ic2,#a855f7)); box-shadow:0 6px 20px -6px var(--ic1,#7c3aed);
+    background:rgba(124,58,237,.15); border:1px solid rgba(124,58,237,.3);
   }
-  .icon-badge svg{width:19px;height:19px;stroke:#fff;}
+  .icon-badge svg{width:19px;height:19px;stroke:#c4b5fd;}
 
   /* ── Background ── */
   .bg-fixed{position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0;}
@@ -165,14 +165,17 @@
   td strong{color:#fff;}
 
   .callout{display:flex; gap:14px; padding:16px 20px; border-radius:1rem; margin:22px 0; align-items:flex-start;}
-  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
-  .callout .icon-wrap svg{width:16px;height:16px; stroke:#fff;}
+  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border:1px solid transparent;}
+  .callout .icon-wrap svg{width:16px;height:16px;}
   .callout.warn{background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.25);}
-  .callout.warn .icon-wrap{background:linear-gradient(135deg,#ef4444,#f97316);}
+  .callout.warn .icon-wrap{background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.3);}
+  .callout.warn .icon-wrap svg{stroke:#f87171;}
   .callout.tip{background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.25);}
-  .callout.tip .icon-wrap{background:linear-gradient(135deg,#10b981,#34d399);}
+  .callout.tip .icon-wrap{background:rgba(52,211,153,.12); border-color:rgba(52,211,153,.3);}
+  .callout.tip .icon-wrap svg{stroke:#34d399;}
   .callout.info{background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.25);}
-  .callout.info .icon-wrap{background:linear-gradient(135deg,#0ea5e9,#38bdf8);}
+  .callout.info .icon-wrap{background:rgba(56,189,248,.12); border-color:rgba(56,189,248,.3);}
+  .callout.info .icon-wrap svg{stroke:#38bdf8;}
   .callout p{margin:0; color:rgba(255,255,255,.75); font-size:0.9rem;}
   .callout strong{color:#fff;}
 
@@ -263,18 +266,18 @@
       <section class="doc-section" style="padding-top:12px;">
 <div class="kicker"><span class="step-badge">03</span><span class="label">Guide</span></div>
         <h2>FID Market</h2>
-        <p>The <strong>FID Market</strong> is FidCaster's signature feature: a peer-to-peer marketplace for Farcaster IDs, fully implemented on-chain on <strong>Optimism</strong>. No custodian ever holds your funds or your identity — every trade is atomic and on-chain.</p>
+        <p>The <strong>FID Market</strong> is FidCaster's signature feature: a peer-to-peer marketplace for Farcaster IDs, fully implemented on-chain on <strong>Optimism</strong>. No custodian ever holds your funds or your identity - every trade is atomic and on-chain.</p>
 
         <div class="callout info">
           <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></div>
-          <p><strong>Market contract</strong> — <code>0xcc11C0Bc08bbF8A5C0AAca80E884C6c7CC0eE3c3</code> on Optimism Mainnet.</p>
+          <p><strong>Market contract</strong> - <code>0xcc11C0Bc08bbF8A5C0AAca80E884C6c7CC0eE3c3</code> on Optimism Mainnet.</p>
         </div>
 
         <h3>Selling a FID</h3>
         <ol class="step-list">
           <li><strong>List it.</strong> From the market page, choose "List."</li>
           <li><strong>Set a price.</strong> Specify your asking price in ETH.</li>
-          <li><strong>Set a duration.</strong> Choose how long the listing stays active — from 10 minutes to 30 days.</li>
+          <li><strong>Set a duration.</strong> Choose how long the listing stays active - from 10 minutes to 30 days.</li>
           <li><strong>Sign the transaction.</strong> Once confirmed, your FID is immediately visible and purchasable on the market.</li>
         </ol>
         <p>You can <strong>cancel</strong> your listing at any time before it's bought.</p>
@@ -283,7 +286,7 @@
         <ol class="step-list">
           <li><strong>Browse.</strong> Filter and sort the active listings on the market page.</li>
           <li><strong>Inspect.</strong> Open a listing to see price history, seller info, and its live on-chain state.</li>
-          <li><strong>Buy.</strong> Confirm the transaction — ownership transfers atomically and instantly on Optimism.</li>
+          <li><strong>Buy.</strong> Confirm the transaction - ownership transfers atomically and instantly on Optimism.</li>
         </ol>
 
         <div class="callout tip">
@@ -295,7 +298,7 @@
         <p>If the FID tied to your active account gets purchased by someone else, ownership transfers immediately and irreversibly. FidCaster surfaces this with a dedicated screen so you're never left confused about your account state. Be certain before you list.</p>
 
         <h3>Market transparency</h3>
-        <p>Every <code>Listed</code>, <code>Bought</code>, and <code>Cancelled</code> event is read straight from Optimism — nothing shown in the market activity feed is centralized or unverifiable.</p>
+        <p>Every <code>Listed</code>, <code>Bought</code>, and <code>Cancelled</code> event is read straight from Optimism - nothing shown in the market activity feed is centralized or unverifiable.</p>
         <div class="section-nav">
           <a href="feed-casting.html"><span class="lbl">Previous</span><span class="ttl">← Feed & Casting</span></a>
           <a class="next" href="grow-cleanup.html"><span class="lbl">Next</span><span class="ttl">Grow & Clean Up →</span></a>

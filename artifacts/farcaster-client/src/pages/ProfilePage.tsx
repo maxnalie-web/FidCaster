@@ -42,8 +42,8 @@ type TabData = {
 const BLANK_TAB: TabData = { items: [], cursor: undefined, loaded: false, loading: false };
 
 // Module-level (survives unmount) so pressing back after opening a reply/cast
-// from this profile's tabs returns here instantly — same tab, same scroll
-// position — instead of remounting fresh and landing back on "Casts" at the
+// from this profile's tabs returns here instantly - same tab, same scroll
+// position - instead of remounting fresh and landing back on "Casts" at the
 // top. Keyed by viewer+target since viewer-specific state (following, liked)
 // differs per account.
 const _profileCache = new Map<string, {
@@ -459,7 +459,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
 
     // A cache hit on the component's very first effect run means this is a
     // "came back to a profile I was already on" remount (e.g. browser back
-    // from a cast opened out of the Replies tab) — restore state (tab,
+    // from a cast opened out of the Replies tab) - restore state (tab,
     // scroll, data) instantly instead of resetting to Casts/top, then just
     // refresh in the background so it doesn't go stale.
     if (isInitialMount) {
@@ -1134,7 +1134,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
         </button>
       )}
 
-      {/* ── Compose popup — the sidebar's persistent Cast button can open this
+      {/* ── Compose popup - the sidebar's persistent Cast button can open this
           from anyone's profile, but the optimistic "add to my casts tab"
           update below only makes sense when it's actually your own. ── */}
       {showComposer && (
@@ -1154,7 +1154,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
 
       {/* Standalone route (e.g. /profile/:fid reached from a followers/
           following list, search, or a cast author) has no surrounding chrome
-          of its own — unlike the "own profile" tab embedded in DashboardPage,
+          of its own - unlike the "own profile" tab embedded in DashboardPage,
           which already supplies a bottom nav. Without this, navigating into
           someone else's profile left mobile/tablet users with no way back to
           the main tabs short of the browser/hardware back button. */}

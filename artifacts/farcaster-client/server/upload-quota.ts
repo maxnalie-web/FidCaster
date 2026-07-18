@@ -1,5 +1,5 @@
 /**
- * Per-FID daily upload quota — SQLite-backed, same lightweight pattern as
+ * Per-FID daily upload quota - SQLite-backed, same lightweight pattern as
  * user-prefs.ts. Protects the Cloudinary account from a single account (or
  * script) burning through the monthly credit allowance; real cast/profile
  * usage never comes close to this number.
@@ -73,7 +73,7 @@ function todayStamp(): string {
 }
 
 /** Returns true if this FID is still under its daily upload quota. Fails
- * open (allows the upload) if the quota store is unavailable — a missing
+ * open (allows the upload) if the quota store is unavailable - a missing
  * SQLite dependency shouldn't take uploads down entirely, the per-IP rate
  * limiter on the route is still in effect either way. */
 export function isUnderUploadQuota(fid: number): boolean {

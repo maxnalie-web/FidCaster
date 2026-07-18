@@ -18,11 +18,11 @@ export type DesktopSidebarActive =
  * Persistent left nav for md+ viewports, shared by every top-level page.
  * DashboardPage.tsx has its own inline copy of this exact sidebar (with the
  * prominent "Cast" button) since it needs to drive its own tab state
- * directly rather than navigate by URL — but every OTHER top-level route
+ * directly rather than navigate by URL - but every OTHER top-level route
  * (Channels, Channel detail, FID Market, FID detail, Grow, Thread, the
  * standalone Profile route) rendered NO desktop sidebar at all, just a
  * centered content column with empty space on both sides and no way to
- * reach Cast/Home/Wallet/etc. without the mobile-only bottom nav — on a
+ * reach Cast/Home/Wallet/etc. without the mobile-only bottom nav - on a
  * wide viewport that's effectively "no navigation, no Cast button." This
  * mirrors DashboardPage's sidebar (reusing its AddAccountModal /
  * AccountDropdownPanel) but navigates via URL like BottomNav.tsx does.

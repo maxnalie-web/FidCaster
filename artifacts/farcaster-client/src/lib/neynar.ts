@@ -59,7 +59,7 @@ export function xAccount(user: NeynarUser): string | undefined {
 
 /** Short location label · just the city (Twitter-style), falling back to state/country.
  *  Neynar's geocoder sometimes prefixes a city with a parenthetical qualifier like
- *  "(Old) Ottawa" (a neighborhood/historic-district label from its data source) —
+ *  "(Old) Ottawa" (a neighborhood/historic-district label from its data source) -
  *  that reads as noise to a viewer, so strip a leading "(...)" before displaying. */
 export function formatLocation(user: NeynarUser): string | undefined {
   const a = user.profile?.location?.address;
@@ -138,7 +138,7 @@ function headers(key: string) {
 /** Uncached direct-passthrough proxy · used by high-volume paginated bulk
  *  scans (Purge/Cleanup) where every page is a unique cursor anyway, so the
  *  normal cached proxy's caching would be pointless. The server rotates
- *  through every Neynar key it has configured (env vars only — see
+ *  through every Neynar key it has configured (env vars only - see
  *  server/neynar-limit.ts) to spread load; no key of any kind is ever sent
  *  from or handled by the browser. */
 export async function directNeynarGet<T>(path: string): Promise<T> {

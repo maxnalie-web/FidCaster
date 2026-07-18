@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Getting Started — FidCaster Docs</title>
+<title>Getting Started - FidCaster Docs</title>
 <meta name="description" content="FidCaster user documentation: Getting Started." />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -75,9 +75,9 @@
   .lp-feature-card:hover{border-color:rgba(139,92,246,.35); transform:translateY(-6px); box-shadow:0 24px 60px rgba(139,92,246,.18);}
   .icon-badge{
     width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:14px;
-    background:linear-gradient(135deg, var(--ic1,#7c3aed), var(--ic2,#a855f7)); box-shadow:0 6px 20px -6px var(--ic1,#7c3aed);
+    background:rgba(124,58,237,.15); border:1px solid rgba(124,58,237,.3);
   }
-  .icon-badge svg{width:19px;height:19px;stroke:#fff;}
+  .icon-badge svg{width:19px;height:19px;stroke:#c4b5fd;}
 
   /* ── Background ── */
   .bg-fixed{position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0;}
@@ -165,14 +165,17 @@
   td strong{color:#fff;}
 
   .callout{display:flex; gap:14px; padding:16px 20px; border-radius:1rem; margin:22px 0; align-items:flex-start;}
-  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
-  .callout .icon-wrap svg{width:16px;height:16px; stroke:#fff;}
+  .callout .icon-wrap{width:32px;height:32px;border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border:1px solid transparent;}
+  .callout .icon-wrap svg{width:16px;height:16px;}
   .callout.warn{background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.25);}
-  .callout.warn .icon-wrap{background:linear-gradient(135deg,#ef4444,#f97316);}
+  .callout.warn .icon-wrap{background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.3);}
+  .callout.warn .icon-wrap svg{stroke:#f87171;}
   .callout.tip{background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.25);}
-  .callout.tip .icon-wrap{background:linear-gradient(135deg,#10b981,#34d399);}
+  .callout.tip .icon-wrap{background:rgba(52,211,153,.12); border-color:rgba(52,211,153,.3);}
+  .callout.tip .icon-wrap svg{stroke:#34d399;}
   .callout.info{background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.25);}
-  .callout.info .icon-wrap{background:linear-gradient(135deg,#0ea5e9,#38bdf8);}
+  .callout.info .icon-wrap{background:rgba(56,189,248,.12); border-color:rgba(56,189,248,.3);}
+  .callout.info .icon-wrap svg{stroke:#38bdf8;}
   .callout p{margin:0; color:rgba(255,255,255,.75); font-size:0.9rem;}
   .callout strong{color:#fff;}
 
@@ -263,7 +266,7 @@
       <section class="doc-section" style="padding-top:12px;">
 <div class="kicker"><span class="step-badge">01</span><span class="label">Guide</span></div>
         <h2>Getting Started</h2>
-        <p>FidCaster is entirely <strong>client-side</strong> — there's no email/password signup. Your identity <em>is</em> your Farcaster ID (FID), and you sign in with one of three methods below.</p>
+        <p>FidCaster is entirely <strong>client-side</strong> - there's no email/password signup. Your identity <em>is</em> your Farcaster ID (FID), and you sign in with one of three methods below.</p>
 
         <h3>Sign-in methods</h3>
         <div class="card-grid">
@@ -286,7 +289,7 @@
 
         <h3>1. Seed phrase (primary)</h3>
         <ol class="step-list">
-          <li><strong>Enter your mnemonic.</strong> Type your existing 12 or 24-word seed phrase on the sign-in screen — or generate a new one if you're creating an account.</li>
+          <li><strong>Enter your mnemonic.</strong> Type your existing 12 or 24-word seed phrase on the sign-in screen - or generate a new one if you're creating an account.</li>
           <li><strong>Local key derivation.</strong> FidCaster derives your custody wallet at <code>m/44'/60'/0'/0/0</code> and your Ed25519 Farcaster signer at <code>m/44'/60'/0'/0/1</code>, entirely inside your browser.</li>
           <li><strong>Vault encryption.</strong> Your mnemonic is encrypted with <strong>AES-GCM-256</strong>, using a key derived via <strong>PBKDF2 (200,000 iterations)</strong>, and stored in your browser's IndexedDB.</li>
           <li><strong>On-chain registration.</strong> If needed, your new signer is registered on Farcaster's <strong>Key Registry</strong> contract on Optimism.</li>
@@ -294,17 +297,17 @@
 
         <div class="callout warn">
           <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-          <p><strong>Your seed phrase never leaves your device.</strong> It is never sent to any server. Keep it safe — nobody, including the FidCaster team, can recover it for you.</p>
+          <p><strong>Your seed phrase never leaves your device.</strong> It is never sent to any server. Keep it safe - nobody, including the FidCaster team, can recover it for you.</p>
         </div>
 
         <h3>2. External wallet (MetaMask / WalletConnect)</h3>
-        <p>Prefer to use a wallet you already have? Choose "Connect Wallet," sign a message to deterministically derive a Farcaster signer, and register it on-chain — your wallet stays fully under your control.</p>
+        <p>Prefer to use a wallet you already have? Choose "Connect Wallet," sign a message to deterministically derive a Farcaster signer, and register it on-chain - your wallet stays fully under your control.</p>
 
         <h3>3. Sign In with Farcaster (SIWF)</h3>
         <p>For fast, read-only access: FidCaster builds an EIP-712 signed-key request locally, shows a QR code, and polls for approval once you confirm it in Warpcast.</p>
 
         <h3>Returning sessions</h3>
-        <p>After your first login, you only need your <strong>local password</strong> to unlock your encrypted vault on future visits — no need to re-enter your seed phrase.</p>
+        <p>After your first login, you only need your <strong>local password</strong> to unlock your encrypted vault on future visits - no need to re-enter your seed phrase.</p>
 
         <h3>Multi-account management</h3>
         <p>Add and switch between <strong>multiple Farcaster accounts</strong> in one browser. Each account is stored and managed independently, batch operations for different accounts run concurrently without interfering with each other, and your account list stays in sync across open tabs.</p>

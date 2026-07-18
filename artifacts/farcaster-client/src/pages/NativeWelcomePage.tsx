@@ -5,7 +5,7 @@ import { FidCasterLogo } from "@/components/FidCasterLogo";
 import { XLogo, TelegramLogo, FarcasterLogo } from "@/components/NeynarScoreBadge";
 /**
  * First screen an installed app (Capacitor native, or an installed/standalone
- * PWA) shows when logged out — replaces the old behavior of redirecting
+ * PWA) shows when logged out - replaces the old behavior of redirecting
  * straight from the splash screen into the login form with zero transition.
  * Distinct on purpose from both the marketing LoginPage (a browser-tab
  * landing page full of feature sections) and AuthPage (the actual sign-in

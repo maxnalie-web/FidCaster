@@ -143,7 +143,7 @@ const WALLET_TIMEOUT_MS = 90_000;
 
 /** Wraps a wallet request (sign/send) with a timeout · WalletConnect sessions
  * in particular can hang forever with no rejection event if the user just
- * backs out of the wallet app instead of explicitly tapping "Reject" — this
+ * backs out of the wallet app instead of explicitly tapping "Reject" - this
  * turns that into a normal, recoverable error instead of a spinner stuck on
  * "Sign transfer…" indefinitely. */
 function withWalletTimeout<T>(p: Promise<T>): Promise<T> {
@@ -157,7 +157,7 @@ function withWalletTimeout<T>(p: Promise<T>): Promise<T> {
 
 /** WalletConnect v2 rejects a request with this exact message when the
  * connected wallet's session never approved the address for Optimism
- * (eip155:10) — e.g. it only approved mainnet at pairing time and a later
+ * (eip155:10) - e.g. it only approved mainnet at pairing time and a later
  * `wallet_switchEthereumChain` call switched the wallet's active network
  * client-side without extending the WC session's authorized accounts. The
  * raw viem/RPC error ("Invalid parameters: must provide a permitted
@@ -172,7 +172,7 @@ function friendlyTxError(err: unknown): string {
     return "Request rejected in your wallet.";
   }
   // Wallet/viem errors are frequently multi-paragraph (raw message data,
-  // details, docs links, version strings) — show only the first line, and
+  // details, docs links, version strings) - show only the first line, and
   // cap its length, so the error card never overflows its container.
   const firstLine = (msg || "Transaction failed").split("\n")[0].trim();
   return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
@@ -408,7 +408,7 @@ export default function FidDetailPage() {
       // Without an explicit gas limit, some wallets (seen with Rainbow/
       // MetaMask over WalletConnect) run their own conservative client-side
       // simulation on this call and show a false "this transaction is likely
-      // to fail" warning even though it would succeed once broadcast — same
+      // to fail" warning even though it would succeed once broadcast - same
       // false-positive documented in lib/contracts.ts's signer-registration
       // flow. A real on-chain gas estimate with headroom avoids that; if the
       // estimate itself fails, fall through and let the wallet decide (its
@@ -894,7 +894,7 @@ export default function FidDetailPage() {
                       <Wallet className="w-4 h-4 text-muted-foreground shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-foreground">FidCaster wallet</p>
-                        <p className="text-[11px] font-mono text-muted-foreground truncate">{myAddress ? shortAddr(myAddress) : "—"}</p>
+                        <p className="text-[11px] font-mono text-muted-foreground truncate">{myAddress ? shortAddr(myAddress) : "-"}</p>
                       </div>
                       {usingLocalWallet && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
                     </button>

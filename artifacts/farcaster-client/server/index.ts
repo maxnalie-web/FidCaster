@@ -40,12 +40,12 @@ try {
     const val = match[2].trim().replace(/^["']|["']$/g, "");
     if (!(key in process.env)) process.env[key] = val;
   }
-} catch { /* .env not found — rely on real env vars */ }
+} catch { /* .env not found - rely on real env vars */ }
 
 const app = express();
 app.set("trust proxy", 1);
 // In production the artifact routes traffic to PORT (set to 5173 in artifact.toml).
-// In dev the server runs on API_PORT (3001) and Vite proxies /api/* to it — API_PORT
+// In dev the server runs on API_PORT (3001) and Vite proxies /api/* to it - API_PORT
 // must win over PORT here, since dev tooling may set PORT for Vite's own dev server.
 const PORT = Number(process.env.API_PORT ?? process.env.PORT ?? "3001");
 const START_TIME = Date.now();
@@ -78,7 +78,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       // challenges.cloudflare.com is the CAPTCHA widget shown on the admin
       // login form after repeated failed attempts (see TURNSTILE_SITE_KEY /
-      // TURNSTILE_SECRET_KEY below) — allowed unconditionally since it's a
+      // TURNSTILE_SECRET_KEY below) - allowed unconditionally since it's a
       // fixed, narrow, trusted addition; the widget script itself is only
       // ever loaded client-side if TURNSTILE_SITE_KEY is actually configured.
       scriptSrc: ["'self'", "https://challenges.cloudflare.com"],
@@ -92,7 +92,7 @@ app.use(helmet({
       // domain-verification iframe outright · both are real causes of "wallet
       // connect" issues, not just cosmetic.
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.reown.com"],
-      // blob: matters here specifically — the Reown/WalletConnect wallet-list
+      // blob: matters here specifically - the Reown/WalletConnect wallet-list
       // modal loads wallet icons through blob URLs (fetched then re-rendered),
       // and worker-src falls back to script-src ('self' only) unless set
       // explicitly, which would silently break its QR/crypto web worker too.
@@ -100,7 +100,7 @@ app.use(helmet({
       mediaSrc: ["'self'", "https:", "blob:"],
       workerSrc: ["'self'", "blob:"],
       connectSrc: ["'self'", "https:", "wss:"],
-      // "https:" (not a fixed allowlist) — mini apps embedded via
+      // "https:" (not a fixed allowlist) - mini apps embedded via
       // MiniAppIframeModal are, by design, arbitrary third-party origins;
       // same reasoning already applied to imgSrc/connectSrc for arbitrary
       // Farcaster content. The iframe itself never gets our own origin's
@@ -118,7 +118,7 @@ app.use(helmet({
     : false,
 }));
 
-// The app never uses camera/mic/geolocation/USB/payment APIs — deny them by
+// The app never uses camera/mic/geolocation/USB/payment APIs - deny them by
 // default so an XSS or a compromised third-party script embedded anywhere
 // couldn't invoke a permission prompt for capabilities we never asked for.
 app.use((_req, res, next) => {
@@ -132,7 +132,7 @@ app.use((_req, res, next) => {
 app.use(cors({
   origin: (origin, callback) => {
     // No Origin header = non-browser client (curl, server-to-server). Allow GET,
-    // block write methods via the CORS preflight mechanism being skipped — real
+    // block write methods via the CORS preflight mechanism being skipped - real
     // protection on write paths is the rate limiter + input validation below.
     if (!origin) return callback(null, false);
     const allowed = ALLOWED_ORIGINS.some((re) => re.test(origin));
@@ -150,7 +150,7 @@ app.use(cors({
 }));
 
 app.use(compression());
-// Small default body limit for every route — the 70MB base64 upload payload
+// Small default body limit for every route - the 70MB base64 upload payload
 // is the exception, not the norm, and applying it globally meant any cheap
 // endpoint (e.g. /api/translate) would accept a 70MB body from an
 // unauthenticated caller, letting a handful of requests exhaust server
@@ -161,12 +161,12 @@ const smallJsonParser = express.json({ limit: "256kb" });
 const uploadJsonParser = express.json({ limit: "70mb" }); // images ≤10MB (~13.3MB base64) + video ≤50MB (~66.7MB base64)
 // Admin config saves (custom CSS, copy text, etc.) are capped at 2MB by
 // MAX_CONFIG_BYTES below, and user-prefs values (custom feed logo data-URLs)
-// are capped at 3MB by MAX_VALUE_BYTES in user-prefs.ts — give these routes
+// are capped at 3MB by MAX_VALUE_BYTES in user-prefs.ts - give these routes
 // enough room, but nowhere near the upload route's 70MB.
 const mediumJsonParser = express.json({ limit: "3mb" });
 const MEDIUM_BODY_PATHS = new Set(["/api/admin/config", "/api/admin/secrets", "/api/user-prefs"]);
 // Neynar webhook signatures (see push-routes.ts) are computed over the exact
-// raw bytes of the request body — capture them via `verify` before JSON
+// raw bytes of the request body - capture them via `verify` before JSON
 // parsing discards the original buffer.
 const webhookJsonParser = express.json({
   limit: "256kb",
@@ -179,7 +179,7 @@ app.use((req, res, next) => {
   return smallJsonParser(req, res, next);
 });
 
-// Global limiter — skip follow/following list endpoints (already protected by Neynar throttle)
+// Global limiter - skip follow/following list endpoints (already protected by Neynar throttle)
 // and skip Neynar read proxy endpoints (caching + throttle handle them).
 // Batch follow scans can make 50–100 requests per minute for large lists; the global
 // cap must not block them. Each unique IP can still burst up to 600 requests/min total.
@@ -204,7 +204,7 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Action limiter — covers follow/unfollow/like/recast/cast per IP.
+// Action limiter - covers follow/unfollow/like/recast/cast per IP.
 // 300/min allows up to 150 batch actions per 30s window without lockout.
 const actionLimiter = rateLimit({
   windowMs: 60_000,
@@ -251,9 +251,9 @@ async function fetchFarcasterStats(): Promise<{ userCount: number; dailyCasts: n
         if (r.ok) {
           const d = await r.json() as any;
           // numMessages is cumulative; we can't derive daily from it alone
-          // Just store it — the UI can show total messages
+          // Just store it - the UI can show total messages
           const total = d?.dbStats?.numMessages || 0;
-          if (total > 0) dailyCasts = null; // not daily — skip
+          if (total > 0) dailyCasts = null; // not daily - skip
         }
       }
     } catch {}
@@ -270,12 +270,12 @@ const VALID_ACTIONS = new Set<string>([
 ]);
 
 // ── Internal observability ─────────────────────────────────────────────────────
-// Not proxied to the public — only reachable directly on the server port.
+// Not proxied to the public - only reachable directly on the server port.
 // Shows cache hit/miss ratio, SWR refreshes, hub success/fail, SQLite queue peak.
 // Defense in depth: this is meant to be reachable only by whoever can hit the
 // server port directly (not proxied to the public per the comment below),
 // but that's an infrastructure assumption, not something this file can
-// verify — a reverse-proxy misconfiguration that forwards everything would
+// verify - a reverse-proxy misconfiguration that forwards everything would
 // otherwise leak internal cache/health stats to any visitor. Check the raw
 // socket address (not req.ip, which honors X-Forwarded-For and is therefore
 // spoofable by anyone who can already reach this route) and require loopback.
@@ -295,7 +295,7 @@ let _hubKeyIdx = 0;
 
 // Dedicated, low-privilege keys that are SAFE to hand to the browser for hub
 // submitMessage from each user's own IP (restores per-IP scaling). Set these to
-// THROWAWAY Neynar keys with a strict spending cap in the Neynar dashboard — a key
+// THROWAWAY Neynar keys with a strict spending cap in the Neynar dashboard - a key
 // sent to a browser is always readable in devtools and cannot be encrypted away, so
 // the mitigation is blast-radius (a capped key), never secrecy. NEVER put your main
 // read keys here. Format: NEYNAR_HUB_KEYS=key1,key2  (comma-separated).
@@ -304,7 +304,7 @@ function getHubPublicKeys(): string[] {
     .split(",").map(s => s.trim()).filter(Boolean);
 }
 
-// Own limiter — a leaked key is used against Neynar directly (bypassing us), so this
+// Own limiter - a leaked key is used against Neynar directly (bypassing us), so this
 // only throttles harvesting of the token, not post-leak abuse. Cap on Neynar does that.
 const hubTokenLimiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
 
@@ -343,7 +343,7 @@ const NEYNAR_V2 = "https://api.neynar.com/v2";
 // ── Native Warpcast Signed Key Request (one-step SIWF write access, no Neynar) ─
 // Per Farcaster protocol, the requesting app must sign the key-request metadata with
 // its OWN app FID + custody key. APP_FID/APP_MNEMONIC are FidCaster's one-time identity
-// (NOT the per-user seed). Each user just scans a QR and approves in Warpcast — seedless.
+// (NOT the per-user seed). Each user just scans a QR and approves in Warpcast - seedless.
 const SIGNED_KEY_REQUEST_VALIDATOR = "0x00000000fc700472606ed4fa22623acf62c60553" as const;
 const SIGNED_KEY_REQUEST_DOMAIN = {
   name: "Farcaster SignedKeyRequestValidator",
@@ -570,7 +570,7 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
     console.error("[server] action error:", msg);
     metrics.incHubFail();
     // bad_request.validation_failure = target FID deleted/deactivated/invalid.
-    // This is permanent for that FID — tell client to skip it, not retry.
+    // This is permanent for that FID - tell client to skip it, not retry.
     if (msg.includes("validation_failure") || msg.includes("bad_request.validation_failure")) {
       res.status(422).json({ skip: true, error: msg });
     } else {
@@ -579,10 +579,10 @@ app.post("/api/farcaster/action", actionLimiter, async (req, res) => {
   }
 });
 
-// ── Submit pre-signed protobuf bytes — races free hubs + all Neynar keys in parallel ──
+// ── Submit pre-signed protobuf bytes - races free hubs + all Neynar keys in parallel ──
 // Browser signs locally and POSTs raw bytes here; no private key transmitted.
 // Server calls submitSignedBytes() which uses Promise.any() to race every hub target.
-// First to accept wins instantly — no sequential retries, no rate-limit waits.
+// First to accept wins instantly - no sequential retries, no rate-limit waits.
 app.post("/api/farcaster/submit-bytes", actionLimiter, async (req, res) => {
   try {
     const { bytes } = req.body as { bytes?: string };
@@ -613,7 +613,7 @@ app.post("/api/farcaster/submit-bytes", actionLimiter, async (req, res) => {
   }
 });
 
-// ── Browser-direct hub submission — sign only, no hub round-trip from server ──
+// ── Browser-direct hub submission - sign only, no hub round-trip from server ──
 // The browser receives the signed protobuf bytes and submits directly to public hubs,
 // distributing traffic across each user's IP instead of funnelling through one server IP.
 // This endpoint is a pure signing service: validate → build → sign → return bytes.
@@ -646,10 +646,10 @@ app.post("/api/farcaster/sign-message", actionLimiter, async (req, res) => {
 });
 
 // ── Media upload proxy ──────────────────────────────────────────────────────
-// Primary path is Cloudinary (our own account, signed server-side — the API
+// Primary path is Cloudinary (our own account, signed server-side - the API
 // secret must never reach the client). Imgur/catbox remain as fallbacks for
 // resilience if Cloudinary isn't configured or has an outage, but they're
-// both third-party free tiers this app doesn't control — freeimage.host's
+// both third-party free tiers this app doesn't control - freeimage.host's
 // old shared demo key dying (rate-limited/revoked with zero notice, since it
 // was shared across countless unrelated projects) is exactly why uploads
 // went down app-wide before Cloudinary was wired in.
@@ -666,7 +666,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
       res.status(429).json({ error: `Daily upload limit reached (${DAILY_UPLOAD_LIMIT}/day). Try again tomorrow.` });
       return;
     }
-    // Strip optional data URL prefix — keep only raw base64
+    // Strip optional data URL prefix - keep only raw base64
     const base64 = imageDataUrl.includes(",") ? imageDataUrl.split(",")[1] : imageDataUrl;
     const buffer = Buffer.from(base64, "base64");
     const isVideo = mimeType.startsWith("video/");
@@ -711,7 +711,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
 
     const ext = mimeType.split("/")[1]?.split(";")[0] || (isVideo ? "mp4" : "jpg");
 
-    // For videos: use litterbox.catbox.moe — temporary CDN (up to 72h), returns direct
+    // For videos: use litterbox.catbox.moe - temporary CDN (up to 72h), returns direct
     // litter.catbox.moe/xxx.mp4 URL that Warpcast detects as video and plays inline.
     // (catbox.moe permanent endpoint blocks cloud server IPs; litterbox does not.)
     if (isVideo) {
@@ -739,7 +739,7 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
       }
     }
 
-    // Last-resort fallback: tmpfiles.org — free, no API key, images + video.
+    // Last-resort fallback: tmpfiles.org - free, no API key, images + video.
     // Note: tmpfiles.org serves HTML pages for video URLs so Warpcast won't show
     // a video preview; this is only a last-ditch fallback so the upload doesn't fail.
     const form = new FormData();
@@ -765,9 +765,9 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
   }
 });
 
-// ── Cast translation (free, no API key — Google's public translate endpoint) ──
+// ── Cast translation (free, no API key - Google's public translate endpoint) ──
 // Supports exactly 8 languages, always including Farsi per product requirement.
-// Small in-memory LRU cache keyed by (text, target lang) — the same viral cast
+// Small in-memory LRU cache keyed by (text, target lang) - the same viral cast
 // gets translated by many viewers to the same language, so caching avoids
 // re-hitting the upstream endpoint for identical requests.
 const SUPPORTED_TRANSLATE_LANGS = new Set([
@@ -776,7 +776,7 @@ const SUPPORTED_TRANSLATE_LANGS = new Set([
 ]);
 const translateCache = new Map<string, { text: string; at: number; detected?: string }>();
 const TRANSLATE_CACHE_MAX = 500;
-const TRANSLATE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h — translations don't change
+const TRANSLATE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h - translations don't change
 
 const translateLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
 
@@ -936,7 +936,7 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
     return;
   }
   // helmet() above applies its own CSP/frame/cross-origin headers to every
-  // route by default, including this one — 'self' in that policy means OUR
+  // route by default, including this one - 'self' in that policy means OUR
   // origin, so it silently blocked every script on the proxied page (both
   // the target site's own bundle and the nav script injected below) even
   // after the target's own CSP/X-Frame-Options were stripped further down.
@@ -951,8 +951,8 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
   res.removeHeader("Cross-Origin-Embedder-Policy");
   try {
     // safeFetch validates the target's ACTUAL resolved IP (not just the URL
-    // text) against private/reserved/loopback/link-local ranges — including
-    // the cloud metadata address — and re-checks on every redirect hop, so
+    // text) against private/reserved/loopback/link-local ranges - including
+    // the cloud metadata address - and re-checks on every redirect hop, so
     // this can't be pointed at the server's own internal network (SSRF).
     // See ssrf-guard.ts for what specifically is blocked and why.
     const upstream = await safeFetch(targetUrl, {
@@ -964,7 +964,7 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       signal: AbortSignal.timeout(15_000),
     });
 
-    // Build a clean response header map — strip frame-blocking directives.
+    // Build a clean response header map - strip frame-blocking directives.
     // The whole CSP is dropped (not just frame-ancestors): the proxied document
     // is served from OUR origin, so any 'self'-based upstream policy would
     // block every one of the page's own scripts/styles and it renders as a
@@ -983,15 +983,15 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       let html = await upstream.text();
       // Many sites (Uniswap, OpenSea, ...) ALSO ship CSP as an in-body <meta>
       // tag, which the header-strip above never touches. Since the document
-      // is served from OUR origin, that meta tag's 'self' resolves to us —
-      // not the target site — so it blocks every one of the page's own
+      // is served from OUR origin, that meta tag's 'self' resolves to us -
+      // not the target site - so it blocks every one of the page's own
       // scripts (and our injected nav script below) from running at all,
       // leaving a permanently blank page. Strip it same as the header.
       html = html.replace(
         /<meta[^>]+http-equiv=["']content-security-policy(?:-report-only)?["'][^>]*>/gi,
         ""
       );
-      // Strip any <base> tag the page ships itself — if it's relative (e.g.
+      // Strip any <base> tag the page ships itself - if it's relative (e.g.
       // <base href="/">, common in Angular/webpack builds), it would resolve
       // against OUR origin (the document is served from /api/browser-proxy),
       // not the target site's, breaking every relative script/style/API
@@ -1006,7 +1006,7 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       // page's path/query/hash. Every client-side router (React Router, the
       // frameworks Uniswap/Aave/OpenSea/etc. all ship) reads
       // window.location.pathname to decide what to render, matches nothing,
-      // and renders a blank/404 screen — this is what actually produces a
+      // and renders a blank/404 screen - this is what actually produces a
       // blank page for ANY site, not just malformed ones. history.replaceState
       // can rewrite the path/query/hash (same-origin change, allowed) before
       // the target's own bundle runs, so the router sees the real route.
@@ -1039,7 +1039,7 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       // Bridges window.ethereum (EIP-1193 + EIP-6963) to the parent page over
       // postMessage. Every account/chain/signing request is relayed to
       // DeFiBrowserSheet.tsx, which is the only place that ever touches the
-      // real wallet client — this script itself never sees any key material.
+      // real wallet client - this script itself never sees any key material.
       // Without this, "Connect Wallet" inside the framed dApp had nothing to
       // talk to at all (no window.ethereum existed), so the browser could
       // load pages but never actually interact with them.
@@ -1137,7 +1137,7 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
     }
   } catch (e) {
     // A bare JSON error body rendered inside the iframe is visually
-    // indistinguishable from a blank page — render something a user
+    // indistinguishable from a blank page - render something a user
     // actually sees instead of silently leaving them staring at nothing.
     const message = String(e instanceof Error ? e.message : e).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
     res.status(502).set({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).send(
@@ -1163,7 +1163,7 @@ const adminLoginLimiter = rateLimit({
   message: { error: "Too many login attempts. Try again later." },
 });
 
-// Tighter than the 600/min global cap — a stolen/leaked session token
+// Tighter than the 600/min global cap - a stolen/leaked session token
 // shouldn't be able to hammer config/secret writes at the same rate as
 // ordinary read traffic.
 const adminWriteLimiter = rateLimit({
@@ -1175,7 +1175,7 @@ const adminWriteLimiter = rateLimit({
 });
 
 // Optional CAPTCHA gate (Cloudflare Turnstile) after repeated failed admin
-// login attempts — entirely inert unless TURNSTILE_SITE_KEY/SECRET_KEY are
+// login attempts - entirely inert unless TURNSTILE_SITE_KEY/SECRET_KEY are
 // both set, so existing deployments that haven't configured Turnstile see no
 // behavior change at all. Failure counts are per-IP, in-memory, and reset on
 // a successful login or after the same window the rate limiter itself uses.
@@ -1218,7 +1218,7 @@ async function verifyTurnstile(token: string, secretKey: string, ip: string): Pr
   }
 }
 
-// Public — the Turnstile site key is meant to be embedded in client HTML
+// Public - the Turnstile site key is meant to be embedded in client HTML
 // (it's not a secret, only TURNSTILE_SECRET_KEY is); this just tells the
 // login form whether to render the widget and with which key.
 app.get("/api/admin/login-config", (req, res) => {
@@ -1246,7 +1246,7 @@ app.post("/api/admin/login", adminLoginLimiter, async (req, res) => {
   const { password } = req.body as { password?: string };
   if (!password || typeof password !== "string" || !checkAdminPassword(password)) {
     // Deliberately identical response/timing-shape for "wrong password" and
-    // "no such thing" — nothing here reveals whether admin is configured.
+    // "no such thing" - nothing here reveals whether admin is configured.
     recordFailedLogin(ip);
     res.status(401).json({ error: "Invalid password", captchaRequired: keys ? captchaRequired(ip) : undefined });
     return;
@@ -1267,9 +1267,9 @@ app.get("/api/admin/session", (req, res) => {
   res.json({ valid: hasValidAdminSession(req) });
 });
 
-const MAX_CONFIG_BYTES = 2 * 1024 * 1024; // 2MB — generous for JSON settings incl. custom CSS
+const MAX_CONFIG_BYTES = 2 * 1024 * 1024; // 2MB - generous for JSON settings incl. custom CSS
 
-// Public, unauthenticated — every visitor's app load fetches this so admin
+// Public, unauthenticated - every visitor's app load fetches this so admin
 // settings actually apply site-wide instead of only in the editing browser.
 app.get("/api/public-config", (_req, res) => {
   const json = getPublicConfig();
@@ -1321,13 +1321,13 @@ app.put("/api/admin/secrets", requireAdminSession, adminWriteLimiter, (req, res)
 });
 
 // ── Production static file serving ────────────────────────────────────────────
-// In production the Express server is the only process — it serves the React
+// In production the Express server is the only process - it serves the React
 // SPA and all API routes. Vite's dev server handles this in development.
 if (process.env.NODE_ENV === "production") {
   const __dir = dirname(fileURLToPath(import.meta.url));
   const distPath = resolve(__dir, "../dist/public");
   if (existsSync(distPath)) {
-    // Redirect the old /docs/index.html URL to the clean /docs/ one — only the
+    // Redirect the old /docs/index.html URL to the clean /docs/ one - only the
     // clean path should be reachable, so this must run before express.static
     // below would otherwise serve the file directly at its literal path.
     app.get("/docs/index.html", (_req: express.Request, res: express.Response) => {
@@ -1335,7 +1335,7 @@ if (process.env.NODE_ENV === "production") {
     });
 
     // Only files under assets/ have content-hashed names (safe to cache for a
-    // year — a changed file gets a new filename). Everything else served from
+    // year - a changed file gets a new filename). Everything else served from
     // the public root (logo, icons, manifest, service worker, robots.txt) keeps
     // its filename across deploys, so a long maxAge here means a browser that
     // ever cached a bad response for one of these (e.g. hitting the SPA
@@ -1348,7 +1348,7 @@ if (process.env.NODE_ENV === "production") {
       etag: true,
       setHeaders: (res: express.Response, filePath: string) => {
         if (filePath.endsWith(".html")) {
-          // HTML files must never be cached — they reference hashed assets
+          // HTML files must never be cached - they reference hashed assets
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         } else if (!filePath.includes(`${sep}assets${sep}`)) {
           res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
@@ -1356,7 +1356,7 @@ if (process.env.NODE_ENV === "production") {
       },
     }));
 
-    // /docs and /docs/ serve the static docs site's own index.html — express.static
+    // /docs and /docs/ serve the static docs site's own index.html - express.static
     // has index:false above (so the SPA fallback owns directory-less app routes),
     // which otherwise left these two paths falling through to the React SPA instead
     // of the docs page.
@@ -1365,14 +1365,14 @@ if (process.env.NODE_ENV === "production") {
       res.sendFile(resolve(distPath, "docs/index.html"));
     });
 
-    // SPA fallback — any non-/api/* path serves index.html
+    // SPA fallback - any non-/api/* path serves index.html
     app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
       if (req.path.startsWith("/api/")) { next(); return; }
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.sendFile(resolve(distPath, "index.html"));
     });
   } else {
-    console.warn("[server] dist/public not found — run `pnpm build` first");
+    console.warn("[server] dist/public not found - run `pnpm build` first");
   }
 }
 
@@ -1387,7 +1387,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
     return;
   }
   // body-parser (express.json) throws this for a body over the configured
-  // limit — surface it as the 413 it actually is, not a generic 500.
+  // limit - surface it as the 413 it actually is, not a generic 500.
   if ((err as { type?: string }).type === "entity.too.large" || (err as { status?: number }).status === 413) {
     res.status(413).json({ error: "Request body too large" });
     return;
@@ -1399,7 +1399,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
 const server = app.listen(PORT, host, () => {
   console.log(`[farcaster-server] listening on ${host}:${PORT} (${process.env.NODE_ENV ?? "development"})`);
-  // Spin up worker thread pool for ed25519 signing — offloads CPU from main loop.
+  // Spin up worker thread pool for ed25519 signing - offloads CPU from main loop.
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
@@ -1410,7 +1410,7 @@ const server = app.listen(PORT, host, () => {
 });
 
 function shutdown(signal: string) {
-  console.log(`[farcaster-server] ${signal} received — shutting down gracefully`);
+  console.log(`[farcaster-server] ${signal} received - shutting down gracefully`);
   server.close(() => {
     console.log("[farcaster-server] closed");
     process.exit(0);

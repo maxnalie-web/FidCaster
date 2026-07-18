@@ -1,6 +1,6 @@
 /**
  * Tiny module-level pub-sub for "which mini app (if any) is currently
- * minimized" — needs to be visible app-wide (a small floating restore pill,
+ * minimized" - needs to be visible app-wide (a small floating restore pill,
  * see MinimizedMiniAppBar.tsx), not just inside whatever component opened the
  * mini app, since the user can navigate anywhere in FidCaster while it's
  * minimized in the background.

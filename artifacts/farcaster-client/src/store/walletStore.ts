@@ -257,7 +257,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     const wallet = wallets.find(w => w.id === walletId);
     if (!wallet) throw new Error("Wallet not found.");
     if (wallet.accounts.length <= 1) {
-      throw new Error("Can't remove the last account — remove the whole wallet instead.");
+      throw new Error("Can't remove the last account - remove the whole wallet instead.");
     }
     const nextAccounts = wallet.accounts.filter(a => a.index !== accountIndex);
     const nextWallets = wallets.map(w => w.id === walletId ? { ...w, accounts: nextAccounts } : w);
@@ -370,7 +370,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     return deriveWalletAccount(mnemonic, account.index);
   },
 
-  // Chain-agnostic counterpart to getActiveWalletClient — used by callers
+  // Chain-agnostic counterpart to getActiveWalletClient - used by callers
   // (e.g. the in-app DeFi browser) that need to sign/send on any chain the
   // app supports (Optimism/Base/Ethereum/Arbitrum/Polygon), not just the
   // two hardcoded above.

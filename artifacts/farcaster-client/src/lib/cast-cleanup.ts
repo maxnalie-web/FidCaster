@@ -21,7 +21,7 @@ async function fetchPage(
 ): Promise<{ items: NeynarCast[]; next?: string }> {
   // Bulk-scan pages (replies/likes/recasts) always use the server's fast,
   // uncached direct-passthrough route, which transparently rotates through
-  // however many Neynar keys are configured server-side (env vars) — no
+  // however many Neynar keys are configured server-side (env vars) - no
   // client-side pool/config of any kind.
   if (kind === "casts") {
     const r = await getUserCasts(fid, fid, neynarKey, cursor, 150);
@@ -40,7 +40,7 @@ async function fetchPage(
 }
 
 // Absolute cap on pages scanned when a targetUsername filter is narrow
-// (e.g. a user with 1 recast of @someone buried 40 pages back) — without
+// (e.g. a user with 1 recast of @someone buried 40 pages back) - without
 // this, a filter that never reaches N matches would page through the
 // account's entire history.
 const MAX_PAGES = 200;

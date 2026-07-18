@@ -2,9 +2,9 @@
  * In-memory cache with Stale-While-Revalidate (SWR) support.
  *
  * SWR guarantees:
- *  1. Only ONE background refresh per key at any time — `revalidating` Map holds
+ *  1. Only ONE background refresh per key at any time - `revalidating` Map holds
  *     the in-flight Promise so concurrent requests share it, never duplicate it.
- *  2. Hard-expired entries are served as stale while a refresh is in flight —
+ *  2. Hard-expired entries are served as stale while a refresh is in flight -
  *     this prevents a stampede on the singleFlight below when the entry crosses
  *     the hard TTL boundary mid-refresh.
  *  3. Fresh hits (<80% TTL) are served immediately with no side effects.
@@ -23,7 +23,7 @@ export function cacheGet(key: string): unknown | undefined {
   const e = store.get(key);
   if (!e) return undefined;
   if (Date.now() > e.expiresAt) {
-    // Don't evict if a background refresh is already running —
+    // Don't evict if a background refresh is already running -
     // serve stale data to avoid a singleFlight stampede.
     if (revalidating.has(key)) return e.data;
     store.delete(key);
@@ -61,7 +61,7 @@ export function cacheGetSWR(
 
   // Soft-expired: kick off a single shared refresh if none is running.
   // Wrapped in a 10s race-timeout so a hung Neynar call never holds the
-  // revalidating lock indefinitely — the key simply stays stale until
+  // revalidating lock indefinitely - the key simply stays stale until
   // the next SWR window fires a fresh attempt.
   if (now > e.softExpiresAt && !inFlight) {
     metrics.incSwrRefresh();

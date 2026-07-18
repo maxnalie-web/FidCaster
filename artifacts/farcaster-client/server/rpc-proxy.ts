@@ -1,13 +1,13 @@
 /**
  * Server-side JSON-RPC proxy for Optimism & Base.
  *
- * Why: the browser hitting public RPCs directly runs into two walls —
+ * Why: the browser hitting public RPCs directly runs into two walls -
  *   1. CORS: several public nodes reject browser POSTs → "Failed to fetch".
  *   2. Rate limits: free tiers (1rpc, ankr) cap per-IP; a busy user burns them.
  *
  * This proxy forwards each JSON-RPC call from the SERVER against a POOL of public
  * endpoints, racing several of them in parallel per request (Promise.any) instead
- * of trying one at a time — response time is the fastest node's latency, not the
+ * of trying one at a time - response time is the fastest node's latency, not the
  * sum of every slow/dead one tried in sequence. Reads (eth_getBalance, eth_call,
  * ...) race RACE_SIZE_READ nodes; eth_sendRawTransaction races RACE_SIZE_SEND
  * nodes so the tx also propagates to multiple mempools at once. If the whole race
@@ -151,7 +151,7 @@ async function attempt(url: string, body: RpcBody, isSend: boolean, timeoutMs: n
   }
 }
 
-// How many nodes to fire in parallel per request. Reads race a wide field —
+// How many nodes to fire in parallel per request. Reads race a wide field -
 // latency = the fastest responder, not a sum of sequential timeouts. Sends
 // race a smaller field (broadcasting to N mempools at once is enough; no
 // need to hit every node for a write).
@@ -175,7 +175,7 @@ async function handleRpc(pool: string[], poolKey: string, req: Request, res: Res
   const rest = order.slice(raceSize);
   let lastErr: unknown;
 
-  // Race the primary batch — first authoritative answer wins.
+  // Race the primary batch - first authoritative answer wins.
   try {
     const { json } = await Promise.any(primary.map((url) => attempt(url, body, isSend, timeoutMs)));
     res.json(json);

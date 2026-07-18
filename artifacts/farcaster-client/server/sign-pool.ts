@@ -6,7 +6,7 @@
  * threads frees the main event loop and multiplies throughput by N.
  *
  * Round-robin dispatch: each signing request goes to the next worker in rotation.
- * Workers are async — each handles many concurrent requests without blocking.
+ * Workers are async - each handles many concurrent requests without blocking.
  *
  * Graceful fallback: if worker creation fails (e.g. tsx/ESM not available in
  * the environment), the pool reports as unavailable and callers fall back to
@@ -51,7 +51,7 @@ function makeWorker(scriptPath: string): Worker {
   });
 
   w.on("error", err => {
-    console.warn("[sign-pool] worker error — disabling pool, falling back to main thread:", err.message);
+    console.warn("[sign-pool] worker error - disabling pool, falling back to main thread:", err.message);
     available = false; // any worker crash → whole pool marked unavailable
   });
 
@@ -78,7 +78,7 @@ export function initSignPool(): boolean {
   }
 }
 
-/** Returns false if pool is not running — caller should fall back to main thread. */
+/** Returns false if pool is not running - caller should fall back to main thread. */
 export function poolAvailable(): boolean {
   return available && pool.length > 0;
 }
