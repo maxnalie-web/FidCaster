@@ -8,6 +8,7 @@ import {
 } from "viem";
 import { optimism } from "viem/chains";
 import { singleFlight } from "./neynar-limit.js";
+import { logUserAction, type ActionType } from "./db/actions-ledger.js";
 
 const VALID_ETH_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const VALID_HEX_STRING = /^0x[0-9a-fA-F]+$/;
@@ -401,6 +402,38 @@ function rebuildActivity() {
     seen.add(key);
     return true;
   }).slice(0, 100);
+
+  // Points ledger: real on-chain events only (skip synthListed — those have a
+  // synthetic `listing-{fid}` transactionHash, not a real proof) and skip
+  // dedup's 100-item display cap — the ledger is the permanent record, not a
+  // feed. logUserAction() is idempotent on (action_type, proof), so re-scanning
+  // overlapping block ranges every poll cycle is safe to call unconditionally.
+  syncMarketEventsToLedger([...realListings, ..._pendingSoldActivity, ...realCancels]);
+}
+
+/**
+ * Server-observed on-chain events are the strongest possible proof (Tier 1
+ * of the points system — see the airdrop plan) so these are logged already
+ * `verified`. The seller of a listing/cancel IS that FID's owner, so `fid`
+ * is the correct party to credit. A `sold` event's buyer is a wallet
+ * address, not necessarily this traded FID's owner — resolving buyer wallet
+ * → buyer's own FID (via the existing /api/fid-market/wallet-fid lookup)
+ * for correct buy-side crediting is a follow-up; the buyer address is kept
+ * in payload so that resolution can run as a later batch pass without
+ * re-scanning the chain.
+ */
+function syncMarketEventsToLedger(events: CachedActivity[]): void {
+  for (const e of events) {
+    if (!e.transactionHash || !e.fid) continue;
+    const actionType: ActionType = e.type === "listed" ? "market_list" : e.type === "sold" ? "market_buy" : "market_cancel";
+    logUserAction({
+      fid: e.fid,
+      actionType,
+      payload: { seller: e.seller, buyer: e.buyer ?? null, priceWei: e.priceWei, blockNumber: e.blockNumber },
+      proof: e.transactionHash,
+      verified: true,
+    }).catch((err) => console.error(`[FidMarket] ledger sync failed for ${actionType} ${e.transactionHash}:`, err));
+  }
 }
 
 async function refreshListings() {

@@ -8,6 +8,7 @@ import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
 import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
+import { reportGrowCampaignStart, reportGrowCampaignComplete } from "@/lib/grow-report";
 import { loadSignerPrivKey } from "@/lib/account-store";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";
@@ -223,12 +224,24 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     let skipped = initialSkipped;
     const pf = prefiltered;
 
+    const campaignId = `${key}-${Date.now()}`;
+    const campaignStartedAt = Date.now();
+
     upsertOp(key, {
-      id: `${key}-${Date.now()}`,
+      id: campaignId,
       myFid, accountLabel, mode, phase: "running",
       done, total, errors, skipped, prefiltered: pf, label,
       hiddenFromStack: initialHidden,
     });
+
+    // Points ledger: report the campaign's existence + claimed target list now,
+    // before any follows run · a background job later samples targetFids
+    // against the real follow graph to verify this actually happened (see
+    // grow-report.ts). Skip resumed batches (initialDone > 0) — those already
+    // reported on their original start.
+    if (initialDone === 0) {
+      reportGrowCampaignStart({ fid: myFid, campaignId, mode, targetFids: fids });
+    }
 
     const attempt = (targetFid: number) =>
       hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
@@ -338,6 +351,14 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         ? { ...prev, done, errors, skipped, phase: cancelRef.current ? "cancelled" : "done", waitMsg: undefined }
         : null
     );
+
+    // Only report completion when this run also reported the start — a resumed
+    // batch (initialDone > 0, after a page reload) generates a fresh campaignId
+    // that has no matching campaign-start row, so reporting it here would leave
+    // an orphaned "complete" event the verification job can never match.
+    if (initialDone === 0) {
+      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, startedAt: campaignStartedAt });
+    }
   }, [upsertOp]);
 
   // ── Fresh start (pre-filters already-followed/unfollowed) ───────────────────

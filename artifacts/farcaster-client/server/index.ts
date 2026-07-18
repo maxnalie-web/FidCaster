@@ -9,6 +9,8 @@ import rateLimit from "express-rate-limit";
 import { mnemonicToAccount } from "viem/accounts";
 import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type FarcasterAction } from "./farcaster-submit.js";
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
+import { registerActionsRoutes } from "./actions-routes.js";
+import { runMigrations } from "./db/client.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { registerRpcProxy } from "./rpc-proxy.js";
 import { safeFetch } from "./ssrf-guard.js";
@@ -810,6 +812,10 @@ app.post("/api/translate", translateLimiter, async (req, res) => {
 registerFidMarketRoutes(app);
 registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
+registerActionsRoutes(app); // Points/airdrop action ledger (user_actions) — no-ops if DATABASE_URL unset
+
+// Points ledger schema — idempotent, no-ops if DATABASE_URL isn't set.
+runMigrations().catch((e) => console.error("[db] migration failed:", e));
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.
