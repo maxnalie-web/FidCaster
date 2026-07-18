@@ -27,6 +27,7 @@ const ERC20_APPROVE_ABI = [{
 }] as const;
 import { useWalletStore } from "@/store/walletStore";
 import { useWallet } from "@/hooks/useWallet";
+import { useEthPrice } from "@/hooks/useEthPrice";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -34,11 +35,11 @@ const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 /* ─── Chains ──────────────────────────────────────────────────────────────── */
 const CHAINS = [
-  { id: 10    as const, label: "Optimism", short: "OP",   color: "#ff0420", ooKey: "optimism", kyberKey: "optimism",  viem: optimism  },
-  { id: 8453  as const, label: "Base",     short: "BASE", color: "#0052ff", ooKey: "base",     kyberKey: "base",       viem: base      },
-  { id: 1     as const, label: "Ethereum", short: "ETH",  color: "#627EEA", ooKey: "eth",      kyberKey: "ethereum",   viem: mainnet   },
-  { id: 42161 as const, label: "Arbitrum", short: "ARB",  color: "#28a0f0", ooKey: "arbitrum", kyberKey: "arbitrum",   viem: arbitrum  },
-  { id: 137   as const, label: "Polygon",  short: "POL",  color: "#8247E5", ooKey: "polygon",  kyberKey: "polygon",    viem: polygon   },
+  { id: 10    as const, label: "Optimism", short: "OP",   color: "#ff0420", ooKey: "optimism", kyberKey: "optimism",  viem: optimism, logo: "https://assets.coingecko.com/asset_platforms/images/72/small/optimism.png", nativeSymbol: "ETH" },
+  { id: 8453  as const, label: "Base",     short: "BASE", color: "#0052ff", ooKey: "base",     kyberKey: "base",       viem: base, logo: "https://assets.coingecko.com/asset_platforms/images/131/small/base-network.png", nativeSymbol: "ETH" },
+  { id: 1     as const, label: "Ethereum", short: "ETH",  color: "#627EEA", ooKey: "eth",      kyberKey: "ethereum",   viem: mainnet, logo: "https://assets.coingecko.com/coins/images/279/small/ethereum.png", nativeSymbol: "ETH" },
+  { id: 42161 as const, label: "Arbitrum", short: "ARB",  color: "#28a0f0", ooKey: "arbitrum", kyberKey: "arbitrum",   viem: arbitrum, logo: "https://assets.coingecko.com/asset_platforms/images/94/small/arbitrum_one.jpg", nativeSymbol: "ETH" },
+  { id: 137   as const, label: "Polygon",  short: "POL",  color: "#8247E5", ooKey: "polygon",  kyberKey: "polygon",    viem: polygon, logo: "https://assets.coingecko.com/asset_platforms/images/15/small/polygon_pos.png", nativeSymbol: "POL" },
 ];
 type ChainId = typeof CHAINS[number]["id"];
 
@@ -255,6 +256,7 @@ type Tab = "swap" | "bridge";
 export function SwapSheet({ address, walletColor, onClose }: Props) {
   const { walletClient: fcWalletClient } = useWallet();
   const getActiveWalletClient = useWalletStore(s => s.getActiveWalletClient);
+  const ethPrice = useEthPrice();
 
   const [tab, setTab] = useState<Tab>("swap");
 
@@ -339,6 +341,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     approveAmount?: bigint;
     simStatus: "passed" | "after-approval";
     gasEstimate?: bigint;
+    gasPriceWei?: bigint;
     source: string;
   } | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -609,6 +612,14 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         } catch { /* keep aggregator-provided gas */ }
       }
 
+      // Gas price for converting the unit estimate above into an ETH/USD
+      // figure in the confirm modal — "246113 units" means nothing to most
+      // users, an ETH amount with a $ approximation does.
+      let gasPriceWei: bigint | undefined;
+      try {
+        gasPriceWei = await pub.getGasPrice();
+      } catch { /* modal falls back to showing raw units */ }
+
       setPendingTx({
         txTo: txTo as Address,
         txData: txData as `0x${string}`,
@@ -620,6 +631,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         approveAmount: sellAmount,
         simStatus,
         gasEstimate,
+        gasPriceWei,
         source: src,
       });
       setStepIndex(0);
@@ -743,9 +755,16 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     setMaxLoading(true);
     try {
       const pub = getPublicClientForChain(fromChainId);
-      const [gasPrice, baseGas] = await Promise.all([
-        pub.getGasPrice(),
-        pub.estimateGas({ account: address, to: address, value: 1n }).catch(() => 21_000n),
+      // A slow/unresponsive RPC here previously left the MAX button spinning
+      // indefinitely — race the estimate against a 4s timeout so a bad RPC
+      // falls back to the flat reserve below instead of hanging.
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000));
+      const [gasPrice, baseGas] = await Promise.race([
+        Promise.all([
+          pub.getGasPrice(),
+          pub.estimateGas({ account: address, to: address, value: 1n }).catch(() => 21_000n),
+        ]),
+        timeout,
       ]);
       // A swap/bridge transaction costs meaningfully more than a plain
       // transfer (router logic, DEX calls) and the exact router isn't known
@@ -866,7 +885,10 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
               className="flex-1 bg-transparent text-2xl font-black text-foreground outline-none tabular-nums min-w-0" />
             <button onClick={() => { setPickerFor("from"); setPickerChain(fromChainId); setSearch(""); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-background border border-border hover:border-primary/40 transition-colors shrink-0 shadow-sm">
-              <img src={fromToken.logo} alt="" className="w-4 h-4 rounded-full" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+              <img src={fromToken.logo} alt="" className="w-4 h-4 rounded-full shrink-0" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+              <img src={CHAINS.find(c => c.id === fromToken.chainId)?.logo} alt=""
+                className="w-[13px] h-[13px] rounded-full border border-border shrink-0"
+                onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
               <span className="text-sm font-bold">{fromToken.symbol}</span>
               <ChevronDown size={12} className="text-muted-foreground" />
             </button>
@@ -908,7 +930,10 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
             </div>
             <button onClick={() => { setPickerFor("to"); setPickerChain(isBridge ? toChainId : fromChainId); setSearch(""); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-background border border-border hover:border-primary/40 transition-colors shrink-0 shadow-sm">
-              <img src={toToken.logo} alt="" className="w-4 h-4 rounded-full" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+              <img src={toToken.logo} alt="" className="w-4 h-4 rounded-full shrink-0" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+              <img src={CHAINS.find(c => c.id === toToken.chainId)?.logo} alt=""
+                className="w-[13px] h-[13px] rounded-full border border-border shrink-0"
+                onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
               <span className="text-sm font-bold">{toToken.symbol}</span>
               <ChevronDown size={12} className="text-muted-foreground" />
             </button>
@@ -1060,8 +1085,16 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-muted-foreground">Network</span>
-                  <span className="font-medium text-foreground">
-                    {fromChain.label}{isBridge ? ` → ${toChain.label}` : ""}
+                  <span className="font-medium text-foreground flex items-center gap-1.5">
+                    <img src={fromChain.logo} alt="" className="w-[15px] h-[15px] rounded-full" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+                    {fromChain.label}
+                    {isBridge && (
+                      <>
+                        <span className="text-muted-foreground">→</span>
+                        <img src={toChain.logo} alt="" className="w-[15px] h-[15px] rounded-full" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+                        {toChain.label}
+                      </>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
@@ -1071,7 +1104,21 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                 {pendingTx.gasEstimate !== undefined && (
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-muted-foreground">Est. gas</span>
-                    <span className="font-medium text-foreground font-mono">{pendingTx.gasEstimate.toLocaleString()} units</span>
+                    {pendingTx.gasPriceWei ? (() => {
+                      const costEth = parseFloat(formatUnits(pendingTx.gasEstimate! * pendingTx.gasPriceWei!, 18));
+                      const nativeSymbol = fromChain.nativeSymbol;
+                      const usd = nativeSymbol === "ETH" && ethPrice ? costEth * ethPrice : null;
+                      return (
+                        <div className="text-right">
+                          <span className="font-medium text-foreground font-mono">
+                            {costEth < 0.0001 ? costEth.toExponential(2) : costEth.toFixed(6)} {nativeSymbol}
+                          </span>
+                          {usd != null && <p className="text-xs text-muted-foreground">≈ ${usd.toFixed(2)}</p>}
+                        </div>
+                      );
+                    })() : (
+                      <span className="font-medium text-foreground font-mono">{pendingTx.gasEstimate.toLocaleString()} units</span>
+                    )}
                   </div>
                 )}
               </div>
