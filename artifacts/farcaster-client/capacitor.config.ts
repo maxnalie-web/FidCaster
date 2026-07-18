@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * Capacitor config — wraps the FidCaster web build as a native iOS/Android app.
+ * Capacitor config - wraps the FidCaster web build as a native iOS/Android app.
  *
  * The native shell exists primarily so mini apps can run embedded: a native
  * WebView lets us inject JS at document-start to satisfy each app's

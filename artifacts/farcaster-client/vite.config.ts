@@ -10,7 +10,7 @@ const isReplit = process.env.REPL_ID !== undefined;
 
 // Vite only auto-loads VITE_-prefixed vars. APP_FID / APP_MNEMONIC / etc. live in
 // .env WITHOUT that prefix (they're server-side secrets), so load the full env
-// explicitly here and fold in real process.env — otherwise SIWF's app identity is
+// explicitly here and fold in real process.env - otherwise SIWF's app identity is
 // blank in the browser build ("VITE_APP_FID / VITE_APP_MNEMONIC missing").
 const fileEnv = loadEnv(process.env.NODE_ENV ?? "development", import.meta.dirname, "");
 const env = { ...fileEnv, ...process.env };
@@ -27,7 +27,7 @@ export default defineConfig({
       manifest: {
         name: "FidCaster",
         short_name: "FidCaster",
-        description: "FidCaster — a luxury Farcaster client. Your keys, your identity.",
+        description: "FidCaster - a luxury Farcaster client. Your keys, your identity.",
         start_url: "/",
         scope: "/",
         display: "standalone",
@@ -45,7 +45,7 @@ export default defineConfig({
       workbox: {
         // Precache only the built static assets · API responses must never be
         // precached/cached by the service worker (this app already had bugs
-        // from stale server-side caching — a SW cache on top would make that
+        // from stale server-side caching - a SW cache on top would make that
         // far worse and much harder to diagnose).
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff,woff2}"],
         // The main JS chunk is a few MB (a separate, pre-existing code-splitting
@@ -104,7 +104,7 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   define: {
-    // Use the merged `env` (loadEnv file vars + process.env) — the non-VITE_
+    // Use the merged `env` (loadEnv file vars + process.env) - the non-VITE_
     // secrets live only in .env, so process.env.APP_FID is undefined here and
     // would bake blank credentials into the build (breaking SIWF).
     "import.meta.env.VITE_WALLETCONNECT_PROJECT_ID": JSON.stringify(
@@ -123,7 +123,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
-    // No source maps in the shipped build — esbuild's default minifier already
+    // No source maps in the shipped build - esbuild's default minifier already
     // shortens identifiers, but terser's mangle+compress passes go further
     // (property mangling off by default since it can break code that accesses
     // object keys as strings, e.g. JSON responses) and its dead-code removal
@@ -155,7 +155,7 @@ export default defineConfig({
         "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
         "img-src 'self' data: blob: https:",
         "connect-src 'self' https: wss: ws:",
-        // Mini apps run inside iframes — allow any https origin to be framed.
+        // Mini apps run inside iframes - allow any https origin to be framed.
         "frame-src 'self' https: https://verify.walletconnect.com https://verify.walletconnect.org",
         // Allow Replit canvas to embed this dev preview in an iframe.
         "frame-ancestors 'self' https://*.replit.com https://*.repl.co https://*.replit.dev https://*.worf.replit.dev https://*.spock.replit.dev",
@@ -198,7 +198,7 @@ export default defineConfig({
         "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
         "img-src 'self' data: blob: https:",
         "connect-src 'self' https: wss:",
-        // Mini apps run inside iframes — allow any https origin to be framed.
+        // Mini apps run inside iframes - allow any https origin to be framed.
         "frame-src 'self' https:",
         "object-src 'none'",
         "base-uri 'self'",

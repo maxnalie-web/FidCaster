@@ -7,7 +7,7 @@ inside an official client. They detect this in **their own JavaScript** by
 reading `document.referrer` and `window.ReactNativeWebView`, then matching
 against a hardcoded allowlist (`farcaster.xyz`, `warpcast.com`, `base.app`,
 `coinbase.com`). In a **web iframe** we cannot touch a cross-origin document, so
-those apps stay blank — this is browser-enforced and unbypassable on the web.
+those apps stay blank - this is browser-enforced and unbypassable on the web.
 
 A **native WebView** can inject JavaScript at *document-start* (before the app's
 own code runs), which is exactly how Base / the Farcaster app do it. We inject a
@@ -64,7 +64,7 @@ WebView with the document-start spoof and should render instead of going blank.
   (`InAppBrowser` `messageFromWebview` / `postMessage`) using
   `exposeToEndpoint` from `@farcaster/miniapp-host`, so the app also receives the
   signed-in **context** (fid/username) and an **auto-connected wallet**
-  (EIP-1193 provider) — the `ReactNativeWebView` shim already forwards the SDK's
+  (EIP-1193 provider) - the `ReactNativeWebView` shim already forwards the SDK's
   messages to the app; only the native-side responder remains.
 
 The injection script and native opener live in `src/lib/miniapp-native.ts`.
