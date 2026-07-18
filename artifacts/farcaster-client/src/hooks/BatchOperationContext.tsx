@@ -5,6 +5,7 @@ import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, 
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
+import { reportGrowCampaignStart, reportGrowCampaignComplete } from "@/lib/grow-report";
 import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
@@ -223,12 +224,21 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     let skipped = initialSkipped;
     const pf = prefiltered;
 
+    // Campaign tracking for the action ledger (new batches only, not resumed ones)
+    const campaignId       = `${key}-${Date.now()}`;
+    const campaignStartedAt = Date.now();
+    const isNewCampaign    = initialDone === 0;
+
     upsertOp(key, {
-      id: `${key}-${Date.now()}`,
+      id: campaignId,
       myFid, accountLabel, mode, phase: "running",
       done, total, errors, skipped, prefiltered: pf, label,
       hiddenFromStack: initialHidden,
     });
+
+    if (isNewCampaign) {
+      reportGrowCampaignStart({ fid: myFid, campaignId, mode, targetFids: fids });
+    }
 
     const attempt = (targetFid: number) =>
       hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
@@ -329,6 +339,10 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
       update();
       if (i + concurrency < fids.length && !cancelRef.current)
         await new Promise(r => setTimeout(r, concurrency > 1 ? FOUNDER_CHUNK_DELAY_MS : DELAY_MS));
+    }
+
+    if (isNewCampaign) {
+      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, startedAt: campaignStartedAt });
     }
 
     clearBatch(myFid, mode);

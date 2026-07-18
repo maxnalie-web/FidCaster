@@ -314,20 +314,28 @@ async function submit(
 ): Promise<void> {
   // ── 1. Sign locally (private key never leaves the browser) ──────────────────
   let signedBytes: string | null = null;
+  let msgHash:     string | null = null;
   try {
-    const { bytes } = await buildAndSignLocal(new Uint8Array(privateKey), fid, action);
+    const { bytes, hash } = await buildAndSignLocal(new Uint8Array(privateKey), fid, action);
     signedBytes = bytes;
+    msgHash     = hash;
 
     // 1a. Cloudflare Worker (if configured) · the api_key lives as a Worker secret,
     //     never in the browser. CORS handled, edge IPs, free. No-op if unset.
-    if (await tryWorkerHubSubmit(bytes)) return;
+    if (await tryWorkerHubSubmit(bytes)) {
+      reportToLedger(fid, action.type, hash);
+      return;
+    }
 
     // 1b. PRIMARY: submit straight to Neynar from THIS browser using the dedicated
-    //     capped key (per-IP scaling). No-op → falls through to the server relay.
+    //     capped key (per-IP scaling). No-op -> falls through to the server relay.
     const direct = await tryNeynarBrowserSubmit(bytes);
-    if (direct === "ok") return;
+    if (direct === "ok") {
+      reportToLedger(fid, action.type, hash);
+      return;
+    }
     if (direct === "skip") throw new Error("PERMANENT_SKIP · target FID is invalid or deleted");
-    // direct === "fail" → fall through to the server relay below.
+    // direct === "fail" -> fall through to the server relay below.
   } catch (err) {
     // A permanent-skip is a real result the caller must see, not a transient failure.
     if (err instanceof Error && err.message.startsWith("PERMANENT_SKIP")) throw err;
@@ -338,11 +346,32 @@ async function submit(
   //     Signed bytes only · the private key stays in the browser.
   if (signedBytes) {
     await submitBytesRelay(signedBytes);
+    if (msgHash) reportToLedger(fid, action.type, msgHash);
     return;
   }
 
   // ── 3. Absolute last resort: full relay with re-signing (signing-failure path) ─
+  // No msgHash here (local signing failed), so we cannot report to the ledger.
   await serverRelay(relayBody);
+}
+
+// ─── Action ledger reporting ──────────────────────────────────────────────────
+// Fire-and-forget: called after a successful hub submission.
+// The message hash is cryptographically bound to the FID's ed25519 signer key -
+// it cannot be fabricated for another FID without stealing their private key.
+// A background verification job spot-checks these hashes against Neynar/hub.
+
+type LedgerActionType = "cast" | "like" | "unlike" | "recast" | "unrecast" | "follow" | "unfollow";
+const LEDGER_ACTION_TYPES = new Set<string>(["cast","like","unlike","recast","unrecast","follow","unfollow"]);
+
+function reportToLedger(fid: number, actionType: string, proof: string): void {
+  if (!LEDGER_ACTION_TYPES.has(actionType)) return;
+  fetch("/api/actions/log", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ fid, actionType, proof }),
+    signal:  AbortSignal.timeout(8_000),
+  }).catch(() => { /* best-effort, never blocks UI */ });
 }
 
 // ─── public API (same signatures as before) ───────────────────────────────────

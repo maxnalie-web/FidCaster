@@ -8,6 +8,7 @@ import {
 } from "viem";
 import { optimism } from "viem/chains";
 import { singleFlight } from "./neynar-limit.js";
+import { logUserAction, type ActionType } from "./db/ledger.js";
 
 const VALID_ETH_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const VALID_HEX_STRING = /^0x[0-9a-fA-F]+$/;
@@ -395,12 +396,47 @@ function rebuildActivity() {
 
   // Deduplicate by transactionHash+type (guards against overlapping scan windows)
   const seen = new Set<string>();
-  activityCache = merged.filter(e => {
+  const deduped = merged.filter(e => {
     const key = `${e.transactionHash}:${e.type}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 100);
+  });
+
+  // Sync ALL deduped on-chain events to the action ledger (before the display cap).
+  // logUserAction() is idempotent on (action_type, proof) so re-scanning
+  // overlapping block ranges every poll cycle is safe to call unconditionally.
+  syncMarketEventsToLedger(deduped);
+
+  activityCache = deduped.slice(0, 100);
+}
+
+/**
+ * Log on-chain market events as verified ledger rows.
+ * The server observed these from the chain directly, so verified=true immediately -
+ * no background job needed for these. The buyer's wallet -> FID resolution is
+ * a follow-up (buyer address is kept in payload for a later batch pass).
+ */
+function syncMarketEventsToLedger(events: CachedActivity[]): void {
+  for (const e of events) {
+    if (!e.transactionHash || !e.fid) continue;
+    const actionType: ActionType =
+      e.type === "listed"    ? "market_list" :
+      e.type === "sold"      ? "market_buy"  :
+                               "market_cancel";
+    logUserAction({
+      fid: e.fid,
+      actionType,
+      payload: {
+        seller:      e.seller,
+        buyer:       e.buyer ?? null,
+        priceWei:    e.priceWei,
+        blockNumber: e.blockNumber,
+      },
+      proof:    e.transactionHash,
+      verified: true,
+    }).catch((err: Error) => console.warn(`[ledger] market sync failed (${e.transactionHash}):`, err.message));
+  }
 }
 
 async function refreshListings() {
