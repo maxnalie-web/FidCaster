@@ -19,6 +19,19 @@ const NETWORK_CONFIG = {
   polygon:  { label: "Polygon",  short: "Poly", color: "#8247e5", chainId: 137 },
 } as const;
 
+// Block explorer to resolve a raw address or ENS name against, per network —
+// searching a wallet address used to fall through to a server-proxied Google
+// search, which Google reliably blocks/challenges for a cookie-less
+// datacenter fetch, leaving the frame blank. Addresses/ENS names have a
+// concrete real destination, so send them there directly instead.
+const EXPLORER_BASE: Record<Network, string> = {
+  optimism: "https://optimistic.etherscan.io/address/",
+  base: "https://basescan.org/address/",
+  arbitrum: "https://arbiscan.io/address/",
+  ethereum: "https://etherscan.io/address/",
+  polygon: "https://polygonscan.com/address/",
+};
+
 type Network = keyof typeof NETWORK_CONFIG;
 const CHAIN_ID_HEX: Record<Network, string> = {
   optimism: "0xa",     // 10
@@ -95,12 +108,26 @@ function getDomain(rawUrl: string): string {
   catch { return rawUrl; }
 }
 
-function normalizeUrl(raw: string): string {
+function isEthAddress(raw: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(raw);
+}
+
+function isEnsName(raw: string): boolean {
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.eth$/i.test(raw);
+}
+
+// Returns a URL to load in the iframe, or `{ external }` when the input is a
+// free-text search — that case used to be proxied through a server-side
+// fetch of google.com/search, which Google blocks/challenges without a real
+// browser session (no cookies, datacenter IP), leaving the frame permanently
+// blank. Opening it in a real tab instead uses the user's own browser/IP.
+function normalizeUrl(raw: string, explorerBase: string): { url: string } | { external: string } | null {
   const t = raw.trim();
-  if (!t) return "";
-  if (/^https?:\/\//.test(t)) return t;
-  if (t.includes(".") && !t.includes(" ")) return "https://" + t;
-  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
+  if (!t) return null;
+  if (isEthAddress(t) || isEnsName(t)) return { url: explorerBase + t };
+  if (/^https?:\/\//.test(t)) return { url: t };
+  if (t.includes(".") && !t.includes(" ")) return { url: "https://" + t };
+  return { external: `https://www.google.com/search?q=${encodeURIComponent(t)}` };
 }
 
 function truncAddr(addr: string): string {
@@ -353,8 +380,13 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   }
 
   const navigate = useCallback((raw: string) => {
-    const norm = normalizeUrl(raw);
-    if (!norm) return;
+    const result = normalizeUrl(raw, EXPLORER_BASE[network]);
+    if (!result) return;
+    if ("external" in result) {
+      window.open(result.external, "_blank", "noreferrer");
+      return;
+    }
+    const norm = result.url;
     setUrl(norm);
     setInputUrl(norm);
     setIsEditing(false);
@@ -362,7 +394,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
     setIframeKey(k => k + 1);
     setIsConnected(false);
     setPendingQueue([]); // the old page (and its pending requests) is gone
-  }, []);
+  }, [network]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
