@@ -236,14 +236,14 @@
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: linear-gradient(135deg, #7c3aed, #c026d3);
-  color: #fff;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  color: #c4b5fd;
   font-weight: 800;
   font-size: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px -4px rgba(124, 58, 237, 0.6);
 }
 
 .docs-prose .step-list strong {
