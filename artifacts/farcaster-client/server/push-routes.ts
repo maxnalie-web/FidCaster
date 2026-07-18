@@ -24,7 +24,7 @@ import rateLimit from "express-rate-limit";
 import {
   addPushToken, removePushToken, getPushTokensForFid, getAllRegisteredFids, pruneInvalidTokens,
 } from "./push-token-store.js";
-import { sendPushToTokens } from "./fcm.js";
+import { sendPushToTokens, isFcmConfigured } from "./fcm.js";
 
 const registerLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 const webhookLimiter = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
@@ -186,5 +186,16 @@ export function registerPushRoutes(app: Express): void {
     } catch (e) {
       console.warn("[push] webhook handling error:", (e as Error).message);
     }
+  });
+
+  // Temporary diagnostic, no secrets exposed -- remove once push delivery is confirmed working end-to-end.
+  app.get("/api/push/debug-status", (req: Request, res: Response) => {
+    const fid = Number(req.query.fid);
+    res.json({
+      fcmConfigured: isFcmConfigured(),
+      neynarWebhookConfigured: !!(process.env.NEYNAR_API_KEY && process.env.NEYNAR_WEBHOOK_ID && process.env.PUSH_WEBHOOK_URL),
+      tokenCountForFid: Number.isFinite(fid) && fid > 0 ? getPushTokensForFid(fid).length : null,
+      totalRegisteredFids: getAllRegisteredFids().length,
+    });
   });
 }
