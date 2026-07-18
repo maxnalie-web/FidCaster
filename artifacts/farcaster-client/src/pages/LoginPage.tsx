@@ -667,15 +667,7 @@ export function LoginPage() {
             transition={{ delay: 0.55, duration: 0.5 }}
             className="flex flex-wrap items-center gap-4 justify-center lg:justify-start"
           >
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
-              style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.15)" }}>
-              <Users className="w-3 h-3" style={{ color: "#a78bfa" }} />
-              <span style={{ color: "rgba(255,255,255,0.5)" }}>Farcaster users:</span>
-              <span className={cn(
-                "font-bold transition-all duration-700",
-                netUsers === "·" ? "text-white/20" : "text-violet-300"
-              )}>{netUsers}</span>
-            </div>
+
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
               style={{ background: "rgba(162,28,175,0.08)", border: "1px solid rgba(162,28,175,0.15)" }}>
               <TrendingUp className="w-3 h-3" style={{ color: "#e879f9" }} />
