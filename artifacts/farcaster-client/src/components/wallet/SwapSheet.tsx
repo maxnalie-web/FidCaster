@@ -35,10 +35,10 @@ const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 /* ─── Chains ──────────────────────────────────────────────────────────────── */
 const CHAINS = [
-  { id: 10    as const, label: "Optimism", short: "OP",   color: "#ff0420", ooKey: "optimism", kyberKey: "optimism",  viem: optimism, logo: "https://assets.coingecko.com/asset_platforms/images/72/small/optimism.png", nativeSymbol: "ETH" },
+  { id: 10    as const, label: "Optimism", short: "OP",   color: "#ff0420", ooKey: "optimism", kyberKey: "optimism",  viem: optimism, logo: "https://assets.coingecko.com/coins/images/25244/small/Optimism.png", nativeSymbol: "ETH" },
   { id: 8453  as const, label: "Base",     short: "BASE", color: "#0052ff", ooKey: "base",     kyberKey: "base",       viem: base, logo: "https://assets.coingecko.com/asset_platforms/images/131/small/base-network.png", nativeSymbol: "ETH" },
   { id: 1     as const, label: "Ethereum", short: "ETH",  color: "#627EEA", ooKey: "eth",      kyberKey: "ethereum",   viem: mainnet, logo: "https://assets.coingecko.com/coins/images/279/small/ethereum.png", nativeSymbol: "ETH" },
-  { id: 42161 as const, label: "Arbitrum", short: "ARB",  color: "#28a0f0", ooKey: "arbitrum", kyberKey: "arbitrum",   viem: arbitrum, logo: "https://assets.coingecko.com/asset_platforms/images/94/small/arbitrum_one.jpg", nativeSymbol: "ETH" },
+  { id: 42161 as const, label: "Arbitrum", short: "ARB",  color: "#28a0f0", ooKey: "arbitrum", kyberKey: "arbitrum",   viem: arbitrum, logo: "https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg", nativeSymbol: "ETH" },
   { id: 137   as const, label: "Polygon",  short: "POL",  color: "#8247E5", ooKey: "polygon",  kyberKey: "polygon",    viem: polygon, logo: "https://assets.coingecko.com/asset_platforms/images/15/small/polygon_pos.png", nativeSymbol: "POL" },
 ];
 type ChainId = typeof CHAINS[number]["id"];
