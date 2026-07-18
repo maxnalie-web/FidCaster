@@ -172,7 +172,7 @@ function MockAppPreview() {
           <div className="flex-1 mx-3 flex items-center gap-2 px-3 py-1 rounded-md text-xs"
             style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.3)" }}>
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            fidcaster.app
+            fidcaster.xyz
           </div>
           <div className="w-4 h-4 rounded text-white/20 flex items-center justify-center">
             <ExternalLink className="w-3 h-3" />

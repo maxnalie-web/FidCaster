@@ -396,9 +396,12 @@ html.reduce-motion *::after {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  @keyframes lp-grid-move {
-    0% { transform: translateY(0px); }
-    100% { transform: translateY(60px); }
+  @keyframes lp-aurora {
+    0%   { transform: translateY(0px)   scale(1);    filter: hue-rotate(0deg)   brightness(1);   opacity: 0.75; }
+    20%  { transform: translateY(-18px) scale(1.03); filter: hue-rotate(22deg)  brightness(1.1); opacity: 1;    }
+    45%  { transform: translateY(-8px)  scale(0.97); filter: hue-rotate(-12deg) brightness(0.9); opacity: 0.8;  }
+    70%  { transform: translateY(12px)  scale(1.02); filter: hue-rotate(18deg)  brightness(1.05);opacity: 0.9;  }
+    100% { transform: translateY(0px)   scale(1);    filter: hue-rotate(0deg)   brightness(1);   opacity: 0.75; }
   }
   @keyframes lp-scan-line {
     0% { top: 0%; }
@@ -564,7 +567,13 @@ html.reduce-motion *::after {
     pointer-events: none;
   }
   .lp-grid-bg {
-    animation: lp-grid-move 8s linear infinite;
+    background:
+      radial-gradient(ellipse 75% 55% at 10% 25%,  rgba(124, 58,237,0.22) 0%, transparent 58%),
+      radial-gradient(ellipse 60% 70% at 90% 15%,  rgba( 99,102,241,0.16) 0%, transparent 55%),
+      radial-gradient(ellipse 80% 45% at 55% 95%,  rgba(192, 38,211,0.14) 0%, transparent 58%),
+      radial-gradient(ellipse 55% 65% at 75% 55%,  rgba(139, 92,246,0.12) 0%, transparent 52%),
+      radial-gradient(ellipse 45% 50% at 25% 75%,  rgba( 79, 70,229,0.10) 0%, transparent 55%);
+    animation: lp-aurora 18s ease-in-out infinite;
   }
 
   /* ─── Profile banner ─── */
