@@ -532,6 +532,7 @@ export function LoginPage() {
           <a href="#client" className="hover:text-white/70 transition-colors">Client</a>
           <a href="#market" className="hover:text-white/70 transition-colors">FID Market</a>
           <a href="#features" className="hover:text-white/70 transition-colors">Features</a>
+          <a href="/docs/index.html" className="hover:text-white/70 transition-colors">Docs</a>
           <button onClick={() => navigate("/download")} className="hover:text-white/70 transition-colors">Download</button>
         </div>
         <button
@@ -917,6 +918,7 @@ export function LoginPage() {
           </div>
           <div className="flex items-center gap-6 text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
             <a href="/download" className="hover:text-white/50 transition-colors">Download</a>
+            <a href="/docs/index.html" className="hover:text-white/50 transition-colors">Docs</a>
             <span>© {new Date().getFullYear()} FidCaster</span>
           </div>
           {/* Social icons */}
