@@ -1,127 +1,97 @@
 /**
- * Persistent SQLite store for registered push tokens, keyed by (fid, token).
- * Mirrors the WAL + better-sqlite3 pattern already used by profile-db.ts.
+ * Persistent PostgreSQL store for registered push tokens, keyed by (fid, token).
+ * Uses Replit's built-in managed PostgreSQL (DATABASE_URL) so tokens survive
+ * autoscale cold-starts and redeployments — unlike the old SQLite store which
+ * lived on an ephemeral filesystem that was wiped between instances.
  */
 
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
-import { createRequire } from "module";
+import { Pool } from "pg";
 
-const requireCjs = createRequire(import.meta.url);
+let _pool: Pool | null = null;
 
-type Db = {
-  add: (fid: number, token: string, platform: string) => void;
-  remove: (fid: number, token: string) => void;
-  tokensForFid: (fid: number) => string[];
-  tokensForFids: (fids: number[]) => Map<number, string[]>;
-  distinctFids: () => number[];
-  removeTokens: (tokens: string[]) => void;
-};
+function pool(): Pool {
+  if (!_pool) {
+    _pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+    _pool.on("error", (err) => {
+      console.warn("[push-token-store] pg pool error:", err.message);
+    });
+  }
+  return _pool;
+}
 
-let _db: Db | null = null;
-let _initTried = false;
-
-function initDb(): Db | null {
+/** Ensure the table exists (idempotent — called once at startup). */
+export async function initPushTokenStore(): Promise<void> {
   try {
-    const Database = requireCjs("better-sqlite3");
-    const __dir = dirname(fileURLToPath(import.meta.url));
-    const dbPath = resolve(__dir, "../push-tokens.sqlite");
-    const sqlite = new Database(dbPath) as import("better-sqlite3").Database;
-
-    sqlite.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous  = NORMAL;
+    await pool().query(`
       CREATE TABLE IF NOT EXISTS push_tokens (
         fid        INTEGER NOT NULL,
         token      TEXT    NOT NULL,
-        platform   TEXT    NOT NULL,
-        updated_at INTEGER NOT NULL,
+        platform   TEXT    NOT NULL DEFAULT 'android',
+        updated_at BIGINT  NOT NULL,
         PRIMARY KEY (fid, token)
       );
       CREATE INDEX IF NOT EXISTS push_tokens_fid ON push_tokens(fid);
     `);
+  } catch (e) {
+    console.warn("[push-token-store] init error:", (e as Error).message);
+  }
+}
 
-    const stmtAdd = sqlite.prepare(
-      "INSERT OR REPLACE INTO push_tokens (fid, token, platform, updated_at) VALUES (?, ?, ?, ?)",
+export async function addPushToken(fid: number, token: string, platform: string): Promise<void> {
+  try {
+    await pool().query(
+      `INSERT INTO push_tokens (fid, token, platform, updated_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (fid, token) DO UPDATE
+         SET platform = EXCLUDED.platform, updated_at = EXCLUDED.updated_at`,
+      [fid, token, platform, Date.now()],
     );
-    const stmtRemove = sqlite.prepare("DELETE FROM push_tokens WHERE fid = ? AND token = ?");
-    const stmtByFid = sqlite.prepare<[number], { token: string }>(
-      "SELECT token FROM push_tokens WHERE fid = ?",
+  } catch (e) {
+    console.warn("[push-token-store] addPushToken error:", (e as Error).message);
+  }
+}
+
+export async function removePushToken(fid: number, token: string): Promise<void> {
+  try {
+    await pool().query("DELETE FROM push_tokens WHERE fid = $1 AND token = $2", [fid, token]);
+  } catch (e) {
+    console.warn("[push-token-store] removePushToken error:", (e as Error).message);
+  }
+}
+
+export async function getPushTokensForFid(fid: number): Promise<string[]> {
+  try {
+    const { rows } = await pool().query<{ token: string }>(
+      "SELECT token FROM push_tokens WHERE fid = $1",
+      [fid],
     );
-    const stmtDistinctFids = sqlite.prepare<[], { fid: number }>(
+    return rows.map((r) => r.token);
+  } catch (e) {
+    console.warn("[push-token-store] getPushTokensForFid error:", (e as Error).message);
+    return [];
+  }
+}
+
+export async function getAllRegisteredFids(): Promise<number[]> {
+  try {
+    const { rows } = await pool().query<{ fid: number }>(
       "SELECT DISTINCT fid FROM push_tokens",
     );
-    const stmtRemoveToken = sqlite.prepare("DELETE FROM push_tokens WHERE token = ?");
-
-    return {
-      add(fid, token, platform) {
-        try {
-          stmtAdd.run(fid, token, platform, Date.now());
-        } catch (e) {
-          console.warn("[push-token-store] write failed, token not persisted:", (e as Error).message);
-        }
-      },
-      remove(fid, token) {
-        try {
-          stmtRemove.run(fid, token);
-        } catch (e) {
-          console.warn("[push-token-store] delete failed:", (e as Error).message);
-        }
-      },
-      tokensForFid(fid) {
-        return stmtByFid.all(fid).map((r) => r.token);
-      },
-      tokensForFids(fids) {
-        const out = new Map<number, string[]>();
-        for (const fid of fids) out.set(fid, stmtByFid.all(fid).map((r) => r.token));
-        return out;
-      },
-      distinctFids() {
-        return stmtDistinctFids.all().map((r) => r.fid);
-      },
-      removeTokens(tokens) {
-        const tx = sqlite.transaction((toks: string[]) => {
-          for (const t of toks) stmtRemoveToken.run(t);
-        });
-        tx(tokens);
-      },
-    };
+    return rows.map((r) => r.fid);
   } catch (e) {
-    console.warn("[push-token-store] better-sqlite3 unavailable, push tokens will not persist:", (e as Error).message);
-    return null;
+    console.warn("[push-token-store] getAllRegisteredFids error:", (e as Error).message);
+    return [];
   }
 }
 
-function db(): Db | null {
-  if (!_initTried) {
-    _initTried = true;
-    _db = initDb();
+export async function pruneInvalidTokens(tokens: string[]): Promise<void> {
+  if (tokens.length === 0) return;
+  try {
+    await pool().query(
+      "DELETE FROM push_tokens WHERE token = ANY($1::text[])",
+      [tokens],
+    );
+  } catch (e) {
+    console.warn("[push-token-store] pruneInvalidTokens error:", (e as Error).message);
   }
-  return _db;
-}
-
-export function addPushToken(fid: number, token: string, platform: string): void {
-  db()?.add(fid, token, platform);
-}
-
-export function removePushToken(fid: number, token: string): void {
-  db()?.remove(fid, token);
-}
-
-export function getPushTokensForFid(fid: number): string[] {
-  return db()?.tokensForFid(fid) ?? [];
-}
-
-export function getPushTokensForFids(fids: number[]): Map<number, string[]> {
-  return db()?.tokensForFids(fids) ?? new Map();
-}
-
-export function getAllRegisteredFids(): number[] {
-  return db()?.distinctFids() ?? [];
-}
-
-// Called after FCM reports a token as UNREGISTERED/NOT_FOUND - the device
-// uninstalled the app or the token rotated without us hearing about it.
-export function pruneInvalidTokens(tokens: string[]): void {
-  if (tokens.length) db()?.removeTokens(tokens);
 }

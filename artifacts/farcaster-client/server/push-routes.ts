@@ -3,19 +3,8 @@
  * turns "someone liked/recast/mentioned you" Farcaster events into FCM
  * pushes for registered devices.
  *
- * One-time setup (Neynar Dashboard -> Webhooks -> New Webhook):
- *   - Target URL: <API_BASE_URL>/api/push/webhook
- *   - Events: reaction.created, cast.created
- *   - Copy the webhook's id -> NEYNAR_WEBHOOK_ID env var
- *   - Copy the webhook's secret -> NEYNAR_WEBHOOK_SECRET env var
- * From then on this file keeps the webhook's target_fids/mentioned_fids
- * filters in sync with whoever has a push token registered, via Neynar's
- * update-webhook API - no further dashboard edits needed as users opt in.
- *
- * Known gap: Neynar's cast.created filter only supports author_fids /
- * mentioned_fids (no "reply to this fid" filter), so a reply that does NOT
- * @-mention the original author won't trigger a push. Likes, recasts, and
- * mentions (including replies that mention) all work.
+ * Token store is backed by Replit PostgreSQL (persists across autoscale
+ * cold-starts and redeployments - unlike the old SQLite store).
  */
 
 import type { Express, Request, Response } from "express";
@@ -27,21 +16,22 @@ import {
 import { sendPushToTokens, isFcmConfigured } from "./fcm.js";
 
 const registerLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
-const webhookLimiter = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
+const webhookLimiter  = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
 
-const FID_MAX = 1_000_000_000;
-const isValidFid = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v > 0 && v < FID_MAX;
+const FID_MAX    = 1_000_000_000;
+const isValidFid = (v: unknown): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v > 0 && v < FID_MAX;
 
-// ── Keep the Neynar webhook's fid filters in sync with our token store ──────
+// ── Keep the Neynar webhook's fid filters in sync with our token store ───────
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function syncNeynarWebhookTargets(): Promise<void> {
-  const apiKey = process.env.NEYNAR_API_KEY;
-  const webhookId = process.env.NEYNAR_WEBHOOK_ID;
-  const webhookUrl = process.env.PUSH_WEBHOOK_URL; // e.g. https://fidcaster.xyz/api/push/webhook
-  if (!apiKey || !webhookId || !webhookUrl) return; // not configured yet - no-op
+  const apiKey     = process.env.NEYNAR_API_KEY;
+  const webhookId  = process.env.NEYNAR_WEBHOOK_ID;
+  const webhookUrl = process.env.PUSH_WEBHOOK_URL;
+  if (!apiKey || !webhookId || !webhookUrl) return;
 
-  const fids = getAllRegisteredFids();
+  const fids = await getAllRegisteredFids();
   try {
     const r = await fetch("https://api.neynar.com/v2/farcaster/webhook/", {
       method: "PUT",
@@ -52,7 +42,7 @@ async function syncNeynarWebhookTargets(): Promise<void> {
         url: webhookUrl,
         subscription: {
           "reaction.created": { target_fids: fids },
-          "cast.created": { mentioned_fids: fids },
+          "cast.created":     { mentioned_fids: fids },
         },
       }),
       signal: AbortSignal.timeout(10_000),
@@ -60,13 +50,14 @@ async function syncNeynarWebhookTargets(): Promise<void> {
     if (!r.ok) {
       const t = await r.text().catch(() => "");
       console.warn(`[push] Neynar webhook sync failed: ${r.status} ${t.slice(0, 200)}`);
+    } else {
+      console.log(`[push] Neynar webhook synced — ${fids.length} fid(s) registered`);
     }
   } catch (e) {
     console.warn("[push] Neynar webhook sync error:", (e as Error).message);
   }
 }
 
-// Debounced - a burst of registrations shouldn't fire one PUT per request.
 function scheduleWebhookSync(): void {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => { syncNeynarWebhookTargets(); }, 5_000);
@@ -88,66 +79,67 @@ function verifyNeynarSignature(req: Request): boolean {
 type NeynarUser = { fid: number; username?: string; display_name?: string };
 type NeynarCast = { hash: string; text?: string; author?: NeynarUser };
 
-async function pushToFid(targetFid: number, payload: { title: string; body: string; data: Record<string, string> }): Promise<void> {
-  const tokens = getPushTokensForFid(targetFid);
+async function pushToFid(
+  targetFid: number,
+  payload: { title: string; body: string; data: Record<string, string> },
+): Promise<void> {
+  const tokens = await getPushTokensForFid(targetFid);
   if (tokens.length === 0) return;
   const { invalidTokens } = await sendPushToTokens(tokens, payload);
-  pruneInvalidTokens(invalidTokens);
+  await pruneInvalidTokens(invalidTokens);
 }
 
-async function handleReactionCreated(data: { reaction_type?: string; user?: NeynarUser; cast?: NeynarCast }): Promise<void> {
+async function handleReactionCreated(
+  data: { reaction_type?: string; user?: NeynarUser; cast?: NeynarCast },
+): Promise<void> {
   const targetFid = data.cast?.author?.fid;
-  const actor = data.user;
-  if (!targetFid || !actor || actor.fid === targetFid) return; // ignore self-reactions
-  const isLike = data.reaction_type === "like";
+  const actor     = data.user;
+  if (!targetFid || !actor || actor.fid === targetFid) return;
+  const isLike    = data.reaction_type === "like";
   const actorName = actor.display_name || actor.username || `fid ${actor.fid}`;
   await pushToFid(targetFid, {
-    title: isLike ? "لایک جدید" : "ریکست جدید",
-    body: isLike ? `${actorName} کست شما را لایک کرد` : `${actorName} کست شما را ریکست کرد`,
-    data: { type: isLike ? "like" : "recast", castHash: data.cast?.hash ?? "", actorFid: String(actor.fid) },
+    title: isLike ? "New like" : "New recast",
+    body:  isLike ? `${actorName} liked your cast` : `${actorName} recasted your cast`,
+    data:  { type: isLike ? "like" : "recast", castHash: data.cast?.hash ?? "", actorFid: String(actor.fid) },
   });
 }
 
-async function handleCastCreated(data: NeynarCast & { mentioned_profiles?: NeynarUser[]; parent_author?: { fid?: number } }): Promise<void> {
+async function handleCastCreated(
+  data: NeynarCast & { mentioned_profiles?: NeynarUser[]; parent_author?: { fid?: number } },
+): Promise<void> {
   const actor = data.author;
   if (!actor) return;
   const actorName = actor.display_name || actor.username || `fid ${actor.fid}`;
-  const isReply = !!data.parent_author?.fid;
+  const isReply   = !!data.parent_author?.fid;
 
-  // Reply that also lands as a cast.created mention (parent_author fid is
-  // in our mentioned_fids filter set) - de-dupe against the mention branch
-  // below by preferring the reply framing when both apply.
   if (isReply && data.parent_author?.fid && data.parent_author.fid !== actor.fid) {
     await pushToFid(data.parent_author.fid, {
-      title: "پاسخ جدید",
-      body: `${actorName} به کست شما پاسخ داد`,
-      data: { type: "reply", castHash: data.hash, actorFid: String(actor.fid) },
+      title: "New reply",
+      body:  `${actorName} replied to your cast`,
+      data:  { type: "reply", castHash: data.hash, actorFid: String(actor.fid) },
     });
   }
 
   for (const mentioned of data.mentioned_profiles ?? []) {
     if (mentioned.fid === actor.fid) continue;
-    if (isReply && mentioned.fid === data.parent_author?.fid) continue; // already handled above
+    if (isReply && mentioned.fid === data.parent_author?.fid) continue;
     await pushToFid(mentioned.fid, {
-      title: "منشن جدید",
-      body: `${actorName} شما را منشن کرد`,
-      data: { type: "mention", castHash: data.hash, actorFid: String(actor.fid) },
+      title: "New mention",
+      body:  `${actorName} mentioned you`,
+      data:  { type: "mention", castHash: data.hash, actorFid: String(actor.fid) },
     });
   }
 }
 
 export function registerPushRoutes(app: Express): void {
-  // Bodies are already JSON-parsed by index.ts's global dispatcher
-  // (smallJsonParser for these two paths, webhookJsonParser - which also
-  // captures req.rawBody for signature verification - for the webhook path).
   app.post("/api/push/register-token", registerLimiter, async (req: Request, res: Response) => {
     try {
       const { fid, fcmToken, platform } = req.body as { fid?: number; fcmToken?: string; platform?: string };
-      if (!isValidFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
+      if (!isValidFid(fid))                                    { res.status(400).json({ error: "Invalid fid" }); return; }
       if (!fcmToken || typeof fcmToken !== "string" || fcmToken.length < 10 || fcmToken.length > 4096) {
         res.status(400).json({ error: "Invalid fcmToken" }); return;
       }
-      addPushToken(fid, fcmToken, platform === "ios" ? "ios" : "android");
+      await addPushToken(fid, fcmToken, platform === "ios" ? "ios" : "android");
       scheduleWebhookSync();
       res.json({ ok: true });
     } catch (e) {
@@ -162,7 +154,7 @@ export function registerPushRoutes(app: Express): void {
       if (!isValidFid(fid) || !fcmToken || typeof fcmToken !== "string") {
         res.status(400).json({ error: "Invalid fid or fcmToken" }); return;
       }
-      removePushToken(fid, fcmToken);
+      await removePushToken(fid, fcmToken);
       scheduleWebhookSync();
       res.json({ ok: true });
     } catch (e) {
@@ -173,8 +165,6 @@ export function registerPushRoutes(app: Express): void {
 
   app.post("/api/push/webhook", webhookLimiter, async (req: Request, res: Response) => {
     if (!verifyNeynarSignature(req)) { res.status(401).json({ error: "Invalid signature" }); return; }
-    // Ack immediately - Neynar retries on slow/non-2xx responses, and the
-    // actual FCM fan-out below can take longer than a webhook's timeout.
     res.status(200).json({ ok: true });
     try {
       const body = req.body as { type?: string; data?: unknown };
@@ -188,14 +178,20 @@ export function registerPushRoutes(app: Express): void {
     }
   });
 
-  // Temporary diagnostic, no secrets exposed -- remove once push delivery is confirmed working end-to-end.
-  app.get("/api/push/debug-status", (req: Request, res: Response) => {
-    const fid = Number(req.query.fid);
-    res.json({
-      fcmConfigured: isFcmConfigured(),
-      neynarWebhookConfigured: !!(process.env.NEYNAR_API_KEY && process.env.NEYNAR_WEBHOOK_ID && process.env.PUSH_WEBHOOK_URL),
-      tokenCountForFid: Number.isFinite(fid) && fid > 0 ? getPushTokensForFid(fid).length : null,
-      totalRegisteredFids: getAllRegisteredFids().length,
-    });
+  // Diagnostic endpoint - no secrets exposed.
+  app.get("/api/push/debug-status", async (req: Request, res: Response) => {
+    try {
+      const fid  = Number(req.query.fid);
+      const fids = await getAllRegisteredFids();
+      res.json({
+        fcmConfigured:            isFcmConfigured(),
+        neynarWebhookConfigured:  !!(process.env.NEYNAR_API_KEY && process.env.NEYNAR_WEBHOOK_ID && process.env.PUSH_WEBHOOK_URL),
+        totalRegisteredFids:      fids.length,
+        tokenCountForFid:         Number.isFinite(fid) && fid > 0 ? (await getPushTokensForFid(fid)).length : null,
+        store:                    "postgresql",
+      });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
   });
 }

@@ -12,6 +12,7 @@ import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { registerRpcProxy } from "./rpc-proxy.js";
 import { registerPushRoutes } from "./push-routes.js";
+import { initPushTokenStore } from "./push-token-store.js";
 import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
@@ -1386,6 +1387,7 @@ const server = app.listen(PORT, host, () => {
   // Spin up worker thread pool for ed25519 signing - offloads CPU from main loop.
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
+  initPushTokenStore(); // warm up pg pool + ensure table exists
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
   // Hydrate the admin-configured Neynar key (if any was saved via the admin
   // panel in a previous run) into the in-memory rate limiter on boot.
