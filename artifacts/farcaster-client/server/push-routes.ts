@@ -141,24 +141,34 @@ export function registerPushRoutes(app: Express): void {
   // (smallJsonParser for these two paths, webhookJsonParser - which also
   // captures req.rawBody for signature verification - for the webhook path).
   app.post("/api/push/register-token", registerLimiter, async (req: Request, res: Response) => {
-    const { fid, fcmToken, platform } = req.body as { fid?: number; fcmToken?: string; platform?: string };
-    if (!isValidFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
-    if (!fcmToken || typeof fcmToken !== "string" || fcmToken.length < 10 || fcmToken.length > 4096) {
-      res.status(400).json({ error: "Invalid fcmToken" }); return;
+    try {
+      const { fid, fcmToken, platform } = req.body as { fid?: number; fcmToken?: string; platform?: string };
+      if (!isValidFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
+      if (!fcmToken || typeof fcmToken !== "string" || fcmToken.length < 10 || fcmToken.length > 4096) {
+        res.status(400).json({ error: "Invalid fcmToken" }); return;
+      }
+      addPushToken(fid, fcmToken, platform === "ios" ? "ios" : "android");
+      scheduleWebhookSync();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[push] register-token error:", (e as Error).message);
+      res.status(500).json({ error: "Internal error" });
     }
-    addPushToken(fid, fcmToken, platform === "ios" ? "ios" : "android");
-    scheduleWebhookSync();
-    res.json({ ok: true });
   });
 
   app.post("/api/push/unregister-token", registerLimiter, async (req: Request, res: Response) => {
-    const { fid, fcmToken } = req.body as { fid?: number; fcmToken?: string };
-    if (!isValidFid(fid) || !fcmToken || typeof fcmToken !== "string") {
-      res.status(400).json({ error: "Invalid fid or fcmToken" }); return;
+    try {
+      const { fid, fcmToken } = req.body as { fid?: number; fcmToken?: string };
+      if (!isValidFid(fid) || !fcmToken || typeof fcmToken !== "string") {
+        res.status(400).json({ error: "Invalid fid or fcmToken" }); return;
+      }
+      removePushToken(fid, fcmToken);
+      scheduleWebhookSync();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[push] unregister-token error:", (e as Error).message);
+      res.status(500).json({ error: "Internal error" });
     }
-    removePushToken(fid, fcmToken);
-    scheduleWebhookSync();
-    res.json({ ok: true });
   });
 
   app.post("/api/push/webhook", webhookLimiter, async (req: Request, res: Response) => {

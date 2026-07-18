@@ -55,10 +55,18 @@ function initDb(): Db | null {
 
     return {
       add(fid, token, platform) {
-        stmtAdd.run(fid, token, platform, Date.now());
+        try {
+          stmtAdd.run(fid, token, platform, Date.now());
+        } catch (e) {
+          console.warn("[push-token-store] write failed, token not persisted:", (e as Error).message);
+        }
       },
       remove(fid, token) {
-        stmtRemove.run(fid, token);
+        try {
+          stmtRemove.run(fid, token);
+        } catch (e) {
+          console.warn("[push-token-store] delete failed:", (e as Error).message);
+        }
       },
       tokensForFid(fid) {
         return stmtByFid.all(fid).map((r) => r.token);
