@@ -41,3 +41,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_ua_type_proof
 CREATE INDEX IF NOT EXISTS idx_ua_verified_excl_created
   ON user_actions (created_at DESC)
   WHERE verified = true AND excluded = false;
+
+-- Referrals: each user can only be referred once
+CREATE TABLE IF NOT EXISTS referrals (
+  id            BIGSERIAL PRIMARY KEY,
+  referrer_fid  BIGINT      NOT NULL,
+  referred_fid  BIGINT      NOT NULL,
+  code          TEXT        NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_ref_referred  ON referrals (referred_fid);
+CREATE        INDEX IF NOT EXISTS idx_ref_referrer   ON referrals (referrer_fid);

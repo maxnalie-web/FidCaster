@@ -14,7 +14,11 @@ import { registerRpcProxy } from "./rpc-proxy.js";
 import { registerPushRoutes } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
 import { registerActionsRoutes } from "./actions-routes.js";
+import { registerPointsRoutes } from "./points-routes.js";
 import { initLedger } from "./db/ledger.js";
+import { startVerificationJob } from "./verification-job.js";
+import { startSybilDetector } from "./sybil-detector.js";
+import { startWatchers } from "./watcher.js";
 import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
@@ -824,6 +828,7 @@ registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
 registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
 registerActionsRoutes(app); // Points/airdrop action ledger — no-ops if DATABASE_URL unset
+registerPointsRoutes(app);  // Leaderboard, snapshot, referral, watcher health
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.
@@ -1392,6 +1397,9 @@ const server = app.listen(PORT, host, () => {
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
   initLedger().catch((e) => console.error("[ledger] init failed:", e));
+  startVerificationJob();   // background: verify hub action proofs against Neynar
+  startSybilDetector();     // background: hourly fraud exclusion rules
+  startWatchers();          // background: data-gap monitors + /api/watchers/health
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
   // Hydrate the admin-configured Neynar key (if any was saved via the admin
   // panel in a previous run) into the in-memory rate limiter on boot.

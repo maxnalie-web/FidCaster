@@ -14,30 +14,13 @@
  *   - All functions no-op quietly if DATABASE_URL is not set.
  */
 
-import { Pool } from "pg";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "url";
-
-// ── Pool ─────────────────────────────────────────────────────────────────────
-
-let _pool: Pool | null = null;
-
-function getPool(): Pool | null {
-  if (_pool) return _pool;
-  const url = process.env.DATABASE_URL;
-  if (!url) return null;
-  _pool = new Pool({
-    connectionString: url,
-    ssl: url.includes("sslmode=disable") ? undefined : { rejectUnauthorized: false },
-    max: 5,
-  });
-  _pool.on("error", (e) => console.warn("[ledger] pg pool error:", e.message));
-  return _pool;
-}
+import { getPool, isDbConfigured } from "./pool.js";
 
 export function isLedgerConfigured(): boolean {
-  return !!process.env.DATABASE_URL;
+  return isDbConfigured();
 }
 
 // ── Migration (idempotent) ────────────────────────────────────────────────────
