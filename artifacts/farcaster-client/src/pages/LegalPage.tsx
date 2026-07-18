@@ -172,14 +172,14 @@ function TermsContent({ onSwitch }: { onSwitch: () => void }) {
   return (
     <div className="max-w-3xl">
       <Callout icon="📋">
-        <strong className="text-white">TL;DR —</strong> FidCaster is an open-source client for the Farcaster protocol. Your private keys stay on your device. We sell nothing. Using the service means you accept these terms.
+        <strong className="text-white">TL;DR -</strong> FidCaster is an open-source client for the Farcaster protocol. Your private keys stay on your device. We sell nothing. Using the service means you accept these terms.
       </Callout>
 
       <SectionHeading>1. Acceptance</SectionHeading>
       <P>By accessing or using FidCaster (fidcaster.xyz and all subdomains, mobile apps, and related services), you agree to these Terms. If you don't agree, please don't use the service.</P>
 
       <SectionHeading>2. What FidCaster Is</SectionHeading>
-      <P>FidCaster is a user interface (client) for the decentralized Farcaster protocol. We don't store, control, or own your identity or messages — everything lives on Farcaster's public infrastructure (hubs and Optimism smart contracts).</P>
+      <P>FidCaster is a user interface (client) for the decentralized Farcaster protocol. We don't store, control, or own your identity or messages - everything lives on Farcaster's public infrastructure (hubs and Optimism smart contracts).</P>
 
       <SubHeading>2.1 Key Management</SubHeading>
       <P>Your private keys and seed phrase are stored exclusively on your device, encrypted with AES-GCM-256. They are never sent to our servers. You are solely responsible for keeping them safe.</P>
@@ -229,16 +229,16 @@ function PrivacyContent({ onSwitch }: { onSwitch: () => void }) {
   return (
     <div className="max-w-3xl">
       <Callout icon="🔒">
-        <strong className="text-white">TL;DR —</strong> We don't sell your data. Private keys never touch our servers. Your Farcaster data is public by nature — we just display it.
+        <strong className="text-white">TL;DR -</strong> We don't sell your data. Private keys never touch our servers. Your Farcaster data is public by nature - we just display it.
       </Callout>
 
       <SectionHeading>1. What We Don't Collect</SectionHeading>
       <P>FidCaster does <strong className="text-white">not</strong> collect, store, or process:</P>
       <BulletList icon="✗" items={[
-        "Private keys, seed phrases, or passwords — these live only on your device.",
+        "Private keys, seed phrases, or passwords - these live only on your device.",
         "Email addresses, real names, phone numbers, or any identity data beyond your Farcaster profile.",
         "Browsing history or in-app behavior.",
-        "Payment information — transactions go directly to the blockchain.",
+        "Payment information - transactions go directly to the blockchain.",
       ]} />
 
       <SectionHeading>2. What We Do Use</SectionHeading>
@@ -261,7 +261,7 @@ function PrivacyContent({ onSwitch }: { onSwitch: () => void }) {
       <P>FidCaster uses the following third-party services:</P>
       <div className="space-y-2 my-4">
         {[
-          { name: "Neynar", desc: "Farcaster read/write API — delivers public protocol data." },
+          { name: "Neynar", desc: "Farcaster read/write API - delivers public protocol data." },
           { name: "Cloudinary", desc: "Upload and hosting of profile images and cast media." },
           { name: "Optimism / Base RPC", desc: "Sending blockchain transactions for signer registration and FID Market." },
           { name: "Blockscout", desc: "Fetching ERC-20 token balances for your wallet." },
@@ -270,14 +270,14 @@ function PrivacyContent({ onSwitch }: { onSwitch: () => void }) {
       <P>Each of these services has its own independent privacy policy.</P>
 
       <SectionHeading>4. Data Sharing</SectionHeading>
-      <P>We do <strong className="text-white">not</strong> sell, rent, or transfer your information to third parties — except:</P>
+      <P>We do <strong className="text-white">not</strong> sell, rent, or transfer your information to third parties - except:</P>
       <BulletList items={[
         "Legal requirements or court orders (only server logs would be available).",
         "Data you yourself have published to the public Farcaster protocol.",
       ]} />
 
       <SectionHeading>5. Security</SectionHeading>
-      <P>AES-GCM-256 encryption with a PBKDF2-derived key (200,000 iterations) protects your local vault. Server communication is encrypted over HTTPS. That said, no system is 100% secure — always store your seed phrase in a safe place.</P>
+      <P>AES-GCM-256 encryption with a PBKDF2-derived key (200,000 iterations) protects your local vault. Server communication is encrypted over HTTPS. That said, no system is 100% secure - always store your seed phrase in a safe place.</P>
 
       <SectionHeading>6. Your Rights</SectionHeading>
       <P>Since we don't store personal data, data deletion requests to us are moot. To remove data from the Farcaster protocol itself, use the protocol's own tools (e.g. the Key Registry contract on Optimism).</P>
