@@ -564,10 +564,6 @@ html.reduce-motion *::after {
     pointer-events: none;
   }
   .lp-grid-bg {
-    background-image:
-      linear-gradient(rgba(139,92,246,0.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(139,92,246,0.06) 1px, transparent 1px);
-    background-size: 60px 60px;
     animation: lp-grid-move 8s linear infinite;
   }
 
