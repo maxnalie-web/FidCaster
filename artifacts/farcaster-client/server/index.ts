@@ -1349,6 +1349,15 @@ if (process.env.NODE_ENV === "production") {
       },
     }));
 
+    // /docs and /docs/ serve the static docs site's own index.html — express.static
+    // has index:false above (so the SPA fallback owns directory-less app routes),
+    // which otherwise left these two paths falling through to the React SPA instead
+    // of the docs page.
+    app.get(["/docs", "/docs/"], (_req: express.Request, res: express.Response) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.sendFile(resolve(distPath, "docs/index.html"));
+    });
+
     // SPA fallback — any non-/api/* path serves index.html
     app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
       if (req.path.startsWith("/api/")) { next(); return; }
