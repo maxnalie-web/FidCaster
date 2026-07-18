@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Home, Bell, Search, Wallet, User, TrendingUp, Tag, Hash, Sun, Moon,
-  MoreHorizontal, UserCircle, PenSquare, Layers, Settings,
+  MoreHorizontal, UserCircle, PenSquare, Layers, Settings, ShieldCheck,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useTheme } from "@/App";
@@ -112,6 +112,13 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
             <Hash className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
             <span className="text-[0.9375rem] text-foreground/85">Channels</span>
           </button>
+
+          {fidNum === 16333 && (
+            <button onClick={() => navigate("/admin")} className={cn("sidebar-item", active === "admin" && "active")}>
+              <ShieldCheck className={cn("w-[22px] h-[22px] shrink-0", active === "admin" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "admin" ? 2.5 : 2} />
+              <span className={cn("text-[0.9375rem]", active === "admin" ? "text-foreground" : "text-foreground/85")}>Admin</span>
+            </button>
+          )}
 
           <button onClick={() => navigate("/dashboard?tab=profile&section=settings")} className={cn("sidebar-item", active === "settings" && "active")}>
             <Settings className={cn("w-[22px] h-[22px] shrink-0", active === "settings" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "settings" ? 2.5 : 2} />

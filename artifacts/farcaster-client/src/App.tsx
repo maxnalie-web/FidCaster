@@ -20,6 +20,7 @@ import { FollowPage } from "@/pages/FollowPage";
 import { DownloadPage } from "@/pages/DownloadPage";
 import { LegalPage } from "@/pages/LegalPage";
 import { DocsPage } from "@/pages/DocsPage";
+import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
@@ -122,6 +123,7 @@ function Router() {
         <Route path="/legal/:tab" component={LegalPage} />
         <Route path="/docs" component={DocsPage} />
         <Route path="/docs/:section" component={DocsPage} />
+        <Route path="/admin" component={AdminDashboardPage} />
         <Route>
           <div className="min-h-screen bg-background flex items-center justify-center">
             <div className="text-center text-muted-foreground space-y-3">
