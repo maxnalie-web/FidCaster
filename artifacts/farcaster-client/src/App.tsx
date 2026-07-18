@@ -18,6 +18,7 @@ import FidMarketPage from "@/pages/FidMarketPage";
 import FidDetailPage from "@/pages/FidDetailPage";
 import { FollowPage } from "@/pages/FollowPage";
 import { DownloadPage } from "@/pages/DownloadPage";
+import { DocsPage } from "@/pages/DocsPage";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyStoredAppSettings } from "@/lib/app-settings";
@@ -95,6 +96,8 @@ function Router() {
         <Route path="/market/:id" component={FidDetailPage} />
         <Route path="/follow" component={FollowPage} />
         <Route path="/download" component={DownloadPage} />
+        <Route path="/docs" component={DocsPage} />
+        <Route path="/docs/:section" component={DocsPage} />
         <Route>
           <div className="min-h-screen bg-background flex items-center justify-center">
             <div className="text-center text-muted-foreground space-y-3">
