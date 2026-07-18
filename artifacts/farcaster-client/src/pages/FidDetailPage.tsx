@@ -4,7 +4,7 @@ import { useParams, useLocation } from "wouter";
 import { useWallet } from "@/hooks/useWallet";
 import {
   ArrowLeft, RefreshCw, ExternalLink, Copy, Check,
-  Tag, AlertTriangle, Loader2, CheckCircle2, ChevronLeft, LogIn,
+  Tag, AlertTriangle, Loader2, CheckCircle2, ChevronLeft, ChevronDown, LogIn,
   DollarSign, Clock, Wallet, X,
 } from "lucide-react";
 import { useMarketWallet } from "@/hooks/useMarketWallet";
@@ -243,8 +243,16 @@ export default function FidDetailPage() {
 
   // mnemonic & wallet auth both have a walletClient in WalletContext; farcaster auth needs extWallet
   const isLocalWalletAuth = authMethod === "mnemonic" || authMethod === "wallet";
-  const effectiveWC = isLocalWalletAuth ? walletClient : extWallet?.walletClient;
-  const effectiveAddr = (isLocalWalletAuth ? myAddress : extWallet?.address) as Address | undefined;
+  const hasLocalWallet = isLocalWalletAuth && !!walletClient && !!myAddress;
+  // A local-wallet-auth user can still opt to fund a buy/list/delist from a
+  // separately connected external wallet instead -- see the "Fund with"
+  // picker in the trading panel. Farcaster-only accounts have no local
+  // wallet at all, so they're always on the external path.
+  const [fundingSource, setFundingSource] = useState<"local" | "external" | null>(null);
+  const [showWalletPicker, setShowWalletPicker] = useState(false);
+  const usingLocalWallet = hasLocalWallet && fundingSource !== "external";
+  const effectiveWC = usingLocalWallet ? walletClient : extWallet?.walletClient;
+  const effectiveAddr = (usingLocalWallet ? myAddress : extWallet?.address) as Address | undefined;
 
   const [data, setData] = useState<FidData | null>(null);
   const [info, setInfo] = useState<FidInfo | null>(null);
@@ -367,12 +375,9 @@ export default function FidDetailPage() {
   }
 
   async function executeBuy() {
-    // wallet-auth uses WalletContext directly; mnemonic and farcaster auth need extWallet.
-    const canBuy = authMethod === "wallet" ? (!!walletClient && !!myAddress) : !!extWallet;
-    if (!canBuy || !data?.listing.active || !data.listing.seller) return;
-    const buyerWc = authMethod === "wallet" ? walletClient : extWallet?.walletClient;
-    const buyerAddr = (authMethod === "wallet" ? myAddress : extWallet?.address) as Address | undefined;
-    if (!buyerWc || !buyerAddr) return;
+    const buyerWc = effectiveWC;
+    const buyerAddr = effectiveAddr;
+    if (!buyerWc || !buyerAddr || !data?.listing.active || !data.listing.seller) return;
 
     hapticPress();
     setBuyPhase("signing");
@@ -457,7 +462,7 @@ export default function FidDetailPage() {
       const priceWei = parseEther(sellerReceivesEth as `${number}`);
 
       // mnemonic: LocalAccount has the private key; MetaMask/extWallet: use address string
-      const sigAccount = authMethod === "mnemonic"
+      const sigAccount = (usingLocalWallet && authMethod === "mnemonic")
         ? listWC.account as LocalAccount
         : listAddr as Address;
 
@@ -497,7 +502,7 @@ export default function FidDetailPage() {
       }
 
       let txHash: `0x${string}`;
-      if (isLocalWalletAuth) {
+      if (usingLocalWallet) {
         txHash = await withWalletTimeout(sendDirect({ to: FID_MARKET_ADDRESS, data: listData }));
       } else {
         // Explicit gas hint avoids a false "likely to fail" warning some
@@ -555,7 +560,7 @@ export default function FidDetailPage() {
       }
 
       let txHash: `0x${string}`;
-      if (isLocalWalletAuth) {
+      if (usingLocalWallet) {
         txHash = await sendDirect({ to: FID_MARKET_ADDRESS, data: cancelData });
       } else {
         let delistGas: bigint | undefined;
@@ -585,8 +590,7 @@ export default function FidDetailPage() {
   }
 
   function handleBuy() {
-    // wallet-auth uses WalletContext directly; others need extWallet
-    const buyerAddr = authMethod === "wallet" ? myAddress : extWallet?.address;
+    const buyerAddr = effectiveAddr;
     if (!buyerAddr || !data?.listing.priceWei) return;
     const priceWei = BigInt(data.listing.priceWei);
     const feePaid = priceWei + (priceWei * BigInt(FEE_BPS)) / BigInt(10000);
@@ -865,6 +869,63 @@ export default function FidDetailPage() {
 
         {/* Trading panel */}
         <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-4">
+          {hasLocalWallet && (
+            <div className="relative">
+              <button
+                onClick={() => setShowWalletPicker(v => !v)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/60 bg-muted/30 text-xs hover:border-foreground/30 transition-colors"
+              >
+                <Wallet className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">Fund with</span>
+                <span className="ml-auto font-mono text-foreground">
+                  {effectiveAddr ? shortAddr(effectiveAddr) : "Not connected"}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              </button>
+
+              {showWalletPicker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowWalletPicker(false)} />
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-popover border border-border rounded-2xl p-1.5 shadow-2xl z-50 space-y-0.5">
+                    <button
+                      onClick={() => { setFundingSource("local"); setShowWalletPicker(false); }}
+                      className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left hover:bg-muted/60 transition-colors", usingLocalWallet && "bg-primary/10")}
+                    >
+                      <Wallet className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-foreground">FidCaster wallet</p>
+                        <p className="text-[11px] font-mono text-muted-foreground truncate">{myAddress ? shortAddr(myAddress) : "—"}</p>
+                      </div>
+                      {usingLocalWallet && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (extWallet) {
+                          setFundingSource("external");
+                          setShowWalletPicker(false);
+                        } else {
+                          setShowWalletPicker(false);
+                          connectExt();
+                        }
+                      }}
+                      className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left hover:bg-muted/60 transition-colors", !usingLocalWallet && "bg-primary/10")}
+                    >
+                      <Wallet className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-foreground">External wallet</p>
+                        <p className="text-[11px] font-mono text-muted-foreground truncate">
+                          {extWallet ? shortAddr(extWallet.address) : connectingExt ? "Connecting…" : "Tap to connect"}
+                        </p>
+                      </div>
+                      {!usingLocalWallet && extWallet && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {!isLocalWalletAuth && isMyFid && !effectiveIsOwner && !effectiveIsSeller ? (
             /* Farcaster-auth user: owns this FID by FID match but needs a custody wallet for on-chain actions */
             <div className="py-4 text-center space-y-3">
@@ -1117,8 +1178,8 @@ export default function FidDetailPage() {
           ) : data.buyable ? (
             /* Buy · wallet-auth uses WalletContext; others need an external wallet */
             <div className="space-y-3">
-              {authMethod === "wallet" && myAddress ? (
-                /* wallet-auth · buyer wallet already in WalletContext */
+              {usingLocalWallet && myAddress ? (
+                /* local wallet-auth (mnemonic or wallet) · buyer wallet already in WalletContext */
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20 text-xs">
                     <div className="flex items-center gap-2 text-muted-foreground">
