@@ -29,6 +29,15 @@ import { MiniAppIframeModal } from "@/components/MiniAppIframeModal";
 import { BatchProgressPill } from "@/components/BatchProgressPill";
 import { isInstalledApp } from "@/lib/miniapp-native";
 
+// docs.fidcaster.xyz is DNS/edge-routed to this same app (see server/index.ts),
+// so it needs to render docs content at "/" itself rather than the marketing
+// landing page - the edge only forwards the request, it doesn't rewrite the
+// URL the browser (and therefore wouter) actually sees.
+export function isDocsSubdomain(): boolean {
+  if (typeof window === "undefined") return false;
+  return /^docs\.(www\.)?fidcaster\.(xyz|com)$/i.test(window.location.hostname);
+}
+
 export type Theme = "light" | "dark";
 
 export function getTheme(): Theme {
@@ -81,6 +90,18 @@ function AuthRedirect() {
 }
 
 function Router() {
+  // docs.fidcaster.xyz only ever renders the docs - no marketing landing page,
+  // no app routes reachable there. Section paths have no "/docs" prefix on
+  // this host since the hostname itself already says "docs".
+  if (isDocsSubdomain()) {
+    return (
+      <Switch>
+        <Route path="/" component={DocsPage} />
+        <Route path="/:section" component={DocsPage} />
+      </Switch>
+    );
+  }
+
   return (
     <>
       <AuthRedirect />
