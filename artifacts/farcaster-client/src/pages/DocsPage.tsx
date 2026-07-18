@@ -2,9 +2,18 @@ import { useEffect, useState } from "react";
 import { useLocation, useRoute, Link } from "wouter";
 import { ArrowLeft, Menu, X } from "lucide-react";
 import { FidCasterLogo } from "@/components/FidCasterLogo";
+import { isDocsSubdomain } from "@/App";
 import { DOC_SECTIONS, type DocSection } from "@/pages/docsContent";
 import { cn } from "@/lib/utils";
 import "./docs-content.css";
+
+// On docs.fidcaster.xyz, sections live at "/getting-started" etc. (no "/docs"
+// prefix - the hostname already says "docs"). On the main domain they live at
+// "/docs/getting-started". Both cases are served by the same DocsPage.
+function sectionHref(onDocsHost: boolean, id?: string): string {
+  if (onDocsHost) return id ? `/${id}` : "/";
+  return id ? `/docs/${id}` : "/docs";
+}
 
 /* Mirrors LoginPage/DownloadPage's background tone so the docs feel like
    part of the same site instead of a separately-styled static page. */
@@ -32,12 +41,12 @@ function BackgroundGlow() {
 
 const OVERVIEW_ID = "";
 
-function SidebarLinks({ activeId, onNavigate }: { activeId: string; onNavigate?: () => void }) {
+function SidebarLinks({ activeId, onDocsHost, onNavigate }: { activeId: string; onDocsHost: boolean; onNavigate?: () => void }) {
   return (
     <>
       <div className="text-[0.68rem] uppercase tracking-[0.1em] font-extrabold text-white/25 px-3.5 mb-2">Overview</div>
       <Link
-        href="/docs"
+        href={sectionHref(onDocsHost)}
         onClick={onNavigate}
         className={cn(
           "flex items-center gap-2.5 px-3.5 py-2.5 rounded-[10px] text-[0.87rem] font-semibold mb-0.5 no-underline transition-colors",
@@ -51,7 +60,7 @@ function SidebarLinks({ activeId, onNavigate }: { activeId: string; onNavigate?:
       {DOC_SECTIONS.map((s) => (
         <Link
           key={s.id}
-          href={`/docs/${s.id}`}
+          href={sectionHref(onDocsHost, s.id)}
           onClick={onNavigate}
           className={cn(
             "flex items-center gap-2.5 px-3.5 py-2.5 rounded-[10px] text-[0.87rem] font-semibold mb-0.5 no-underline transition-colors",
@@ -66,7 +75,7 @@ function SidebarLinks({ activeId, onNavigate }: { activeId: string; onNavigate?:
   );
 }
 
-function IntroContent() {
+function IntroContent({ onDocsHost }: { onDocsHost: boolean }) {
   return (
     <div className="max-w-[800px] mx-auto px-6 md:px-9 pt-10 md:pt-16 pb-24">
       <div className="text-center mb-14">
@@ -94,7 +103,7 @@ function IntroContent() {
         {DOC_SECTIONS.map((s) => (
           <Link
             key={s.id}
-            href={`/docs/${s.id}`}
+            href={sectionHref(onDocsHost, s.id)}
             className="rounded-[1.1rem] p-6 no-underline transition-all hover:-translate-y-1"
             style={{ background: "rgba(15,8,40,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}
           >
@@ -129,9 +138,19 @@ function SectionNav({ prev, next }: { prev: { href: string; label: string } | nu
 
 export function DocsPage() {
   const [, navigate] = useLocation();
-  const [, params] = useRoute<{ section?: string }>("/docs/:section");
-  const section = params?.section;
+  const onDocsHost = isDocsSubdomain();
+  const [, prefixedParams] = useRoute<{ section?: string }>("/docs/:section");
+  const [, hostParams] = useRoute<{ section?: string }>("/:section");
+  const section = onDocsHost ? hostParams?.section : prefixedParams?.section;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // "Back home" always means the marketing site's actual root - on the docs
+  // subdomain, wouter's own "/" already resolves to the docs overview here,
+  // so this has to be a real cross-host navigation, not a relative one.
+  const goHome = () => {
+    if (onDocsHost) window.location.href = "https://fidcaster.xyz";
+    else navigate("/");
+  };
 
   const current: DocSection | undefined = section ? DOC_SECTIONS.find((s) => s.id === section) : undefined;
   const activeId = current ? current.id : OVERVIEW_ID;
@@ -144,9 +163,14 @@ export function DocsPage() {
 
   const idx = current ? DOC_SECTIONS.findIndex((s) => s.id === current.id) : -1;
   const prev = current
-    ? (idx > 0 ? { href: `/docs/${DOC_SECTIONS[idx - 1].id}`, label: DOC_SECTIONS[idx - 1].label } : { href: "/docs", label: "Introduction" })
+    ? (idx > 0 ? { href: sectionHref(onDocsHost, DOC_SECTIONS[idx - 1].id), label: DOC_SECTIONS[idx - 1].label } : { href: sectionHref(onDocsHost), label: "Introduction" })
     : null;
-  const next = current && idx < DOC_SECTIONS.length - 1 ? { href: `/docs/${DOC_SECTIONS[idx + 1].id}`, label: DOC_SECTIONS[idx + 1].label } : null;
+  const next = current && idx < DOC_SECTIONS.length - 1 ? { href: sectionHref(onDocsHost, DOC_SECTIONS[idx + 1].id), label: DOC_SECTIONS[idx + 1].label } : null;
+
+  // Cross-links inside the section content (e.g. the FAQ pointing at Wallet &
+  // Security) are hardcoded to "/docs/<id>" in docsContent.ts - strip that
+  // prefix on the docs subdomain where sections live at "/<id>" instead.
+  const sectionHtml = current ? (onDocsHost ? current.html.replace(/href="\/docs\//g, 'href="/') : current.html) : "";
 
   return (
     <div className="relative min-h-screen text-white overflow-x-hidden" style={{ background: "#040110" }}>
@@ -166,18 +190,18 @@ export function DocsPage() {
           >
             {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <button onClick={() => navigate("/")} className="flex items-center gap-2.5">
+          <button onClick={goHome} className="flex items-center gap-2.5">
             <FidCasterLogo size={26} showName={false} />
             <span className="text-white font-black text-base" style={{ letterSpacing: "-0.02em" }}>FidCaster Docs</span>
           </button>
         </div>
         <div className="hidden md:flex items-center gap-6 text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
-          <Link href="/docs/getting-started" className="hover:text-white/70 transition-colors no-underline">Guide</Link>
-          <Link href="/docs/fid-market" className="hover:text-white/70 transition-colors no-underline">FID Market</Link>
-          <Link href="/docs/faq" className="hover:text-white/70 transition-colors no-underline">FAQ</Link>
+          <Link href={sectionHref(onDocsHost, "getting-started")} className="hover:text-white/70 transition-colors no-underline">Guide</Link>
+          <Link href={sectionHref(onDocsHost, "fid-market")} className="hover:text-white/70 transition-colors no-underline">FID Market</Link>
+          <Link href={sectionHref(onDocsHost, "faq")} className="hover:text-white/70 transition-colors no-underline">FAQ</Link>
         </div>
         <button
-          onClick={() => navigate("/")}
+          onClick={goHome}
           className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
           style={{ background: "rgba(124,58,237,0.18)", border: "1px solid rgba(124,58,237,0.35)", color: "#c4b5fd" }}
         >
@@ -188,21 +212,21 @@ export function DocsPage() {
 
       <div className="flex max-w-[1360px] mx-auto pt-[70px] relative" style={{ zIndex: 1 }}>
         <aside className="hidden md:block w-[262px] shrink-0 sticky top-[70px] self-start py-8 px-3.5 overflow-y-auto" style={{ height: "calc(100vh - 70px)" }}>
-          <SidebarLinks activeId={activeId} />
+          <SidebarLinks activeId={activeId} onDocsHost={onDocsHost} />
         </aside>
 
         {mobileNavOpen && (
           <div className="md:hidden fixed inset-0 z-40" style={{ top: 62 }}>
             <div className="absolute inset-0 bg-black/60" onClick={() => setMobileNavOpen(false)} />
             <aside className="relative w-[80vw] max-w-[300px] h-full overflow-y-auto py-6 px-3.5" style={{ background: "#07021b", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
-              <SidebarLinks activeId={activeId} onNavigate={() => setMobileNavOpen(false)} />
+              <SidebarLinks activeId={activeId} onDocsHost={onDocsHost} onNavigate={() => setMobileNavOpen(false)} />
             </aside>
           </div>
         )}
 
         <main className="flex-1 min-w-0">
           {!current ? (
-            <IntroContent />
+            <IntroContent onDocsHost={onDocsHost} />
           ) : (
             <div className="max-w-[800px] mx-auto px-6 md:px-9 pt-10 md:pt-16 pb-24">
               <div className="flex items-center gap-2.5 mb-2.5">
@@ -212,7 +236,7 @@ export function DocsPage() {
                 </span>
                 <span className="text-[0.72rem] font-extrabold uppercase tracking-[0.09em]" style={{ color: "#a78bfa" }}>Guide</span>
               </div>
-              <div className="docs-prose" dangerouslySetInnerHTML={{ __html: current.html }} />
+              <div className="docs-prose" dangerouslySetInnerHTML={{ __html: sectionHtml }} />
               <SectionNav prev={prev} next={next} />
             </div>
           )}
