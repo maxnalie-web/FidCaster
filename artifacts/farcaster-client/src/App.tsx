@@ -18,6 +18,7 @@ import FidMarketPage from "@/pages/FidMarketPage";
 import FidDetailPage from "@/pages/FidDetailPage";
 import { FollowPage } from "@/pages/FollowPage";
 import { DownloadPage } from "@/pages/DownloadPage";
+import { LegalPage } from "@/pages/LegalPage";
 import { DocsPage } from "@/pages/DocsPage";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -117,6 +118,8 @@ function Router() {
         <Route path="/market/:id" component={FidDetailPage} />
         <Route path="/follow" component={FollowPage} />
         <Route path="/download" component={DownloadPage} />
+        <Route path="/legal" component={LegalPage} />
+        <Route path="/legal/:tab" component={LegalPage} />
         <Route path="/docs" component={DocsPage} />
         <Route path="/docs/:section" component={DocsPage} />
         <Route>
