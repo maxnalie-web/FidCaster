@@ -1327,6 +1327,13 @@ if (process.env.NODE_ENV === "production") {
   const __dir = dirname(fileURLToPath(import.meta.url));
   const distPath = resolve(__dir, "../dist/public");
   if (existsSync(distPath)) {
+    // Redirect the old /docs/index.html URL to the clean /docs/ one — only the
+    // clean path should be reachable, so this must run before express.static
+    // below would otherwise serve the file directly at its literal path.
+    app.get("/docs/index.html", (_req: express.Request, res: express.Response) => {
+      res.redirect(301, "/docs/");
+    });
+
     // Only files under assets/ have content-hashed names (safe to cache for a
     // year — a changed file gets a new filename). Everything else served from
     // the public root (logo, icons, manifest, service worker, robots.txt) keeps
