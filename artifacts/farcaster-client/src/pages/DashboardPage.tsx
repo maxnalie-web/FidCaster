@@ -541,10 +541,17 @@ function MobileDrawer({
             <Tag className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">FID Market</span>
           </button>
-          <button onClick={() => { navigate("/dashboard?tab=miniapps"); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
-            <Layers className="w-4 h-4 shrink-0" />
-            <span className="flex-1 text-left font-medium">Mini Apps</span>
-          </button>
+          {/* Mini Apps is intentionally absent here -- it's gated off
+              everywhere else on web (miniAppsAllowed = false in both
+              DashboardPage's own VALID_TABS/sidebarItems and
+              DesktopSidebar.tsx: no ?tab=miniapps route, no host bridge, no
+              wallet-signing UI for it). This mobile/PWA drawer used to be
+              the one place that still linked to it, landing on a tab that
+              doesn't actually exist in VALID_TABS. Mini apps only run in
+              the native app's embedded WebView + wallet bridge -- see
+              fidcaster-native's core/miniapp-bridge.ts. Re-add this row
+              alongside flipping miniAppsAllowed to true elsewhere if/when
+              a real web-hosted mini-app runtime ships. */}
           <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground/80 hover:text-foreground hover:bg-accent transition-colors">
             <Settings className="w-4 h-4 shrink-0" />
             <span className="flex-1 text-left font-medium">Settings</span>
@@ -825,8 +832,12 @@ export function DashboardPage() {
     }
   }, [walletError]);
 
-  // Mini Apps is native/PWA-only (a plain web tab has no in-app browser or
-  // SDK bridge to run them in) — hidden on plain web tabs.
+  // Mini Apps needs an embedded WebView + wallet-signing bridge to actually
+  // run one (fidcaster-native's core/miniapp-bridge.ts) -- this web build
+  // (including installed-as-PWA and mobile-browser sessions, which run the
+  // exact same bundle with no runtime distinction from a plain browser tab)
+  // has neither, so it stays off everywhere here until a real web-hosted
+  // mini-app runtime ships.
   const miniAppsAllowed = false;
   const VALID_TABS: MainTab[] = ["feed", "notifications", "search", "wallet", "profile", ...(miniAppsAllowed ? (["miniapps"] as MainTab[]) : [])];
   const [mainTab, setMainTab] = useState<MainTab>(() => {
