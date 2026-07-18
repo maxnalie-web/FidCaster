@@ -991,9 +991,27 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
         /<meta[^>]+http-equiv=["']content-security-policy(?:-report-only)?["'][^>]*>/gi,
         ""
       );
+      // Strip any <base> tag the page ships itself — if it's relative (e.g.
+      // <base href="/">, common in Angular/webpack builds), it would resolve
+      // against OUR origin (the document is served from /api/browser-proxy),
+      // not the target site's, breaking every relative script/style/API
+      // request on that specific site. Ours (below) always wins.
+      html = html.replace(/<base[^>]*>/gi, "");
       // Inject <base> so relative resources resolve against the original origin
-      const origin = new URL(upstream.url || targetUrl).origin + "/";
+      const resolvedUrl = new URL(upstream.url || targetUrl);
+      const origin = resolvedUrl.origin + "/";
       const baseTag = `<base href="${origin}">`;
+      // The document itself is served from /api/browser-proxy?url=..., so
+      // window.location.pathname is ALWAYS that proxy path, never the real
+      // page's path/query/hash. Every client-side router (React Router, the
+      // frameworks Uniswap/Aave/OpenSea/etc. all ship) reads
+      // window.location.pathname to decide what to render, matches nothing,
+      // and renders a blank/404 screen — this is what actually produces a
+      // blank page for ANY site, not just malformed ones. history.replaceState
+      // can rewrite the path/query/hash (same-origin change, allowed) before
+      // the target's own bundle runs, so the router sees the real route.
+      const realPath = resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash;
+      const pathFixScript = `<script>(function(){try{history.replaceState(history.state,'',${JSON.stringify(realPath)});}catch(e){}})();</script>`;
       // Keep in-frame navigation flowing through the proxy: without this, the
       // first click navigates the iframe straight to the real site, whose
       // X-Frame-Options blocks rendering and the frame appears to hang forever.
@@ -1104,13 +1122,9 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
           window.parent.postMessage({ type: 'fidcaster:wallet:ready' }, window.location.origin);
         }
       })();</script>`;
-      if (!html.includes("<base")) {
-        html = html.replace(/(<head[^>]*>)/i, `$1${baseTag}${navScript}${providerScript}`);
-        if (!html.includes(baseTag)) html = baseTag + navScript + providerScript + html;
-      } else {
-        html = html.replace(/(<head[^>]*>)/i, `$1${navScript}${providerScript}`);
-        if (!html.includes(navScript)) html = navScript + providerScript + html;
-      }
+      const injected = baseTag + pathFixScript + navScript + providerScript;
+      html = html.replace(/(<head[^>]*>)/i, `$1${injected}`);
+      if (!html.includes(pathFixScript)) html = injected + html;
       res.status(upstream.status);
       res.set({ ...stripped, "cache-control": "no-store" });
       res.send(html);
@@ -1122,7 +1136,17 @@ app.get("/api/browser-proxy", browserProxyLimiter, async (req, res) => {
       res.send(buf);
     }
   } catch (e) {
-    res.status(502).json({ error: "Proxy error", detail: String(e) });
+    // A bare JSON error body rendered inside the iframe is visually
+    // indistinguishable from a blank page — render something a user
+    // actually sees instead of silently leaving them staring at nothing.
+    const message = String(e instanceof Error ? e.message : e).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
+    res.status(502).set({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).send(
+      `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+      `<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;` +
+      `font-family:-apple-system,system-ui,sans-serif;background:#0b0b10;color:#e5e5ea;text-align:center;padding:24px;box-sizing:border-box;">` +
+      `<div><p style="font-size:15px;font-weight:600;margin:0 0 8px;">Couldn't load this page</p>` +
+      `<p style="font-size:13px;color:#9a9aa5;margin:0;">${message}</p></div></body></html>`
+    );
   }
 });
 
