@@ -1,4 +1,4 @@
-// Purge panel — bulk delete casts/replies, unlike likes, un-recast recasts.
+// Purge panel - bulk delete casts/replies, unlike likes, un-recast recasts.
 import { useState, useRef, useCallback } from "react";
 import {
   Trash2, MessageSquareOff, HeartOff, Repeat2, AtSign, Loader2,

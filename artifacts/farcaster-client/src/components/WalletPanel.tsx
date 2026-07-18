@@ -373,7 +373,7 @@ function loadHiddenTokens(): Set<string> {
 
 // ─── instant-load cache (stale-while-revalidate) ──────────────────────────────
 // Balances/tokens/activity are shown from the last-known snapshot the moment an
-// address becomes active — no spinner, no "0" flash — while a fresh fetch runs
+// address becomes active - no spinner, no "0" flash - while a fresh fetch runs
 // in the background and silently replaces it. bigints round-trip through a
 // "<digits>n" string tag since JSON has no native bigint support.
 
@@ -531,7 +531,7 @@ export function WalletPanel() {
       safe(ethPublicClient.getBalance({ address })),
       safe(readErc20(ethPublicClient, USDC_ETH_ADDRESS)),
     ]);
-    if (activeAddressRef.current !== address) return; // a newer wallet is active now — discard this stale response
+    if (activeAddressRef.current !== address) return; // a newer wallet is active now - discard this stale response
     if (opBal      !== null) setOpEth(opBal);
     if (opUsdcBal  !== null) setOpUsdc(opUsdcBal);
     if (baseBal    !== null) setBaseEth(baseBal);
@@ -559,7 +559,7 @@ export function WalletPanel() {
       fetchErc20Balances("Base", address),
       fetchCuratedErc20(address),
     ]).then(([opToks, baseToks, curated]) => {
-      if (activeAddressRef.current !== address) return; // stale — a different wallet is active now
+      if (activeAddressRef.current !== address) return; // stale - a different wallet is active now
       const discovered = [...opToks, ...baseToks];
       const seen = new Set(discovered.map(t => `${t.network}-${t.contractAddress.toLowerCase()}`));
       const extras = curated.filter(t => !seen.has(`${t.network}-${t.contractAddress.toLowerCase()}`));
@@ -578,7 +578,7 @@ export function WalletPanel() {
         fetchActivityForNetwork("Optimism", address),
         fetchActivityForNetwork("Base", address),
       ]);
-      if (activeAddressRef.current !== address) return; // stale — a different wallet is active now
+      if (activeAddressRef.current !== address) return; // stale - a different wallet is active now
       const merged = [...opTxs, ...baseTxs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 30);
       setActivity(merged);
       saveCache(actCacheKey(address), merged);
@@ -589,7 +589,7 @@ export function WalletPanel() {
 
   // Re-fetch when active wallet changes. Hydrate instantly from the last
   // cached snapshot for this address (if any) so the UI never regresses to a
-  // blank/loading state on a switch back to a wallet we've already loaded —
+  // blank/loading state on a switch back to a wallet we've already loaded -
   // fetchAll() then runs in the background and silently replaces stale data.
   useEffect(() => {
     activeAddressRef.current = address;
@@ -616,7 +616,7 @@ export function WalletPanel() {
     setActivity(loadCache<ActivityItem[]>(actCacheKey(address)) ?? []);
     fetchAll();
     // Prefetch activity in the background too (not gated on the Activity tab
-    // being open) so it's already warm — instant instead of a spinner — the
+    // being open) so it's already warm - instant instead of a spinner - the
     // moment the user taps over to it.
     if (address) fetchActivity();
   }, [address, fetchAll, fetchActivity]);
@@ -666,7 +666,7 @@ export function WalletPanel() {
   // OR once done and it actually has a balance. Zero-balance rows never appear.
   const tokens = allTokens.filter(t => t.loading || t.balance > 0);
 
-  // Single, unified token list — native (ETH/USDC per chain) and discovered
+  // Single, unified token list - native (ETH/USDC per chain) and discovered
   // ERC-20s merged and sorted by USD value, biggest balance first. Still-
   // loading native rows (skeleton) float to the top rather than the bottom
   // so the list doesn't visibly reshuffle a moment later once they price in.
@@ -690,7 +690,7 @@ export function WalletPanel() {
   const usdEquivalent = (() => {
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt)) return "$0.00";
-    if (selectedToken.usdValue == null || selectedToken.balance === 0) return "—";
+    if (selectedToken.usdValue == null || selectedToken.balance === 0) return "-";
     const perToken = selectedToken.usdValue / selectedToken.balance;
     return `$${(amt * perToken).toFixed(2)}`;
   })();
@@ -699,7 +699,7 @@ export function WalletPanel() {
     if (selectedToken.loading || maxLoading) return;
     const isUsdc = sendToken.endsWith("-usdc");
     if (isUsdc) {
-      // ERC-20 transfers don't spend the token itself for gas — the full raw
+      // ERC-20 transfers don't spend the token itself for gas - the full raw
       // balance is always sendable (gas comes out of the separate ETH balance).
       const raw = sendToken === "base-usdc" ? baseUsdc : sendToken === "op-usdc" ? opUsdc : sendToken === "arb-usdc" ? arbUsdc : ethUsdc;
       if (raw !== null) setAmount(formatUnits(raw, 6));
@@ -708,7 +708,7 @@ export function WalletPanel() {
 
     // Native-token max: a flat "leave 0.0001 ETH for gas" buffer badly
     // under-reserves on Ethereum L1 (where a plain transfer alone can cost
-    // several times that at normal gas prices) — reserve the REAL estimated
+    // several times that at normal gas prices) - reserve the REAL estimated
     // cost of this specific send instead.
     const bal = sendToken === "op-eth" ? opEth : sendToken === "base-eth" ? baseEth : sendToken === "arb-eth" ? arbEth : ethEth;
     if (bal === null) return;
@@ -728,7 +728,7 @@ export function WalletPanel() {
       const maxWei = bal > reserve ? bal - reserve : 0n;
       setAmount(maxWei > 0n ? formatEther(maxWei) : "0");
     } catch {
-      // Estimation itself failed (RPC hiccup) — fall back to a conservative
+      // Estimation itself failed (RPC hiccup) - fall back to a conservative
       // flat reserve rather than blocking the Max button entirely.
       const max = Math.max(0, selectedToken.balance - 0.0005);
       setAmount(max > 0 ? max.toFixed(8) : "0");
@@ -1180,7 +1180,7 @@ export function WalletPanel() {
                       </p>
                     </div>
                     <p className="text-[15px] font-bold text-foreground">
-                      {tk.usdValue != null ? `$${tk.usdValue.toFixed(2)}` : "—"}
+                      {tk.usdValue != null ? `$${tk.usdValue.toFixed(2)}` : "-"}
                     </p>
                   </button>
                 ))}
@@ -1259,7 +1259,7 @@ export function WalletPanel() {
                     : { backgroundColor: SEND_ACCENT, color: "#fff", boxShadow: `0 8px 24px ${SEND_ACCENT}66` }}
                 >
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : !sendDisabled ? <Send className="w-4 h-4" /> : null}
-                  {isWatchOnly ? "Watch-only — can't send" : sending ? "Sending…" : !amount ? "Enter an Amount" : `Send ${selectedToken.symbol}`}
+                  {isWatchOnly ? "Watch-only - can't send" : sending ? "Sending…" : !amount ? "Enter an Amount" : `Send ${selectedToken.symbol}`}
                 </button>
               </div>
             )}
@@ -1309,7 +1309,7 @@ export function WalletPanel() {
                 ? <CheckCircle2 size={12} className="text-white" />
                 : <Copy size={12} className="text-white/80" />}
               <span className="text-[11px] text-white/80 font-mono">
-                {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—"}
+                {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "-"}
               </span>
             </button>
           </div>
@@ -1344,7 +1344,7 @@ export function WalletPanel() {
         {[
           { label: "Receive", icon: ArrowDownLeft, onClick: () => setAction(action === "receive" ? "none" : "receive"), disabled: false, color: "#10b981" },
           { label: "Send",    icon: Send,          onClick: () => openSend(), disabled: isWatchOnly, color: "#ff3b5c" },
-          { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet — import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
+          { label: "Swap",    icon: Repeat,        onClick: () => isWatchOnly ? toast.info("Watch-only wallet - import keys to swap") : setShowSwap(true), disabled: false, color: "#6366f1" },
           { label: "Browser",  icon: Zap,           onClick: () => setShowBrowser(true), disabled: false, color: "#f59e0b" },
         ].map(({ label, icon: Icon, onClick, disabled, color }) => (
           <button
@@ -1433,7 +1433,7 @@ export function WalletPanel() {
             </div>
           )}
 
-          {/* Hidden tokens — user-managed, collapsible */}
+          {/* Hidden tokens - user-managed, collapsible */}
           {(() => {
             const hiddenRows = [
               ...tokens.filter(tk => hiddenTokens.has(tk.key)),
@@ -1556,7 +1556,7 @@ export function WalletPanel() {
                         ) : item.contractName ? (
                           // No native ETH moved (a token approval, a
                           // token-for-token swap, or a plain contract call)
-                          // -- previously always showed a bare "—" here even
+                          // -- previously always showed a bare "-" here even
                           // though the contract/token name was already
                           // fetched (used only in the subtitle for
                           // sent/interacted rows), which read as broken.

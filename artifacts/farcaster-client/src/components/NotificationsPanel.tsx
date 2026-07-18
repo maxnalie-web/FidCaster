@@ -98,7 +98,7 @@ function Avatar({
   size?: number;
   onClick?: () => void;
 }) {
-  // Tailwind's JIT scanner needs literal class strings in source — a
+  // Tailwind's JIT scanner needs literal class strings in source - a
   // template-built class like `w-${size}` only works by coincidence if that
   // exact string happens to appear literally elsewhere in the codebase.
   // A static lookup keeps this correct regardless of what else exists.

@@ -12,7 +12,7 @@ import { toast } from "sonner";
  * Hooks into the wallet context's own reliable progress signals
  * (autoSignerLoading / signerApproved / signerError) instead of the login
  * screen's local step state, so it shows up for every path that can trigger
- * this same registration (initial login, "Retry", adding an account) — not
+ * this same registration (initial login, "Retry", adding an account) - not
  * just the first connect screen.
  */
 export function SignerSetupPopup() {
@@ -20,7 +20,7 @@ export function SignerSetupPopup() {
   const [dismissed, setDismissed] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
-  // Mnemonic (seed phrase) accounts sign locally — there's no external wallet
+  // Mnemonic (seed phrase) accounts sign locally - there's no external wallet
   // app to wait on, just the Optimism transaction confirming. The generic
   // "Waiting for your wallet…" copy was misleading there (and made a slow-
   // but-normal confirmation look stuck), so it's worded per auth method.

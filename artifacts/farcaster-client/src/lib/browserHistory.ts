@@ -1,6 +1,6 @@
 // Persistence for the in-app DeFi browser (DeFiBrowserSheet). The sheet is
-// fully unmounted whenever it's closed (its React state — url, network,
-// connection — dies with it), so without this, every re-open started from a
+// fully unmounted whenever it's closed (its React state - url, network,
+// connection - dies with it), so without this, every re-open started from a
 // blank "New Tab" page. This module keeps the last page you were on (so
 // reopening the browser resumes where you left off) and a simple visit
 // history, both in localStorage.

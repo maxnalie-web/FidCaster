@@ -1,5 +1,5 @@
 /**
- * Multi-account Cloudinary pool — each free Cloudinary account gives ~25
+ * Multi-account Cloudinary pool - each free Cloudinary account gives ~25
  * combined storage+bandwidth credits (roughly 25GB); spreading uploads
  * across N accounts multiplies that capacity roughly N-fold. Configure via
  * CLOUDINARY_ACCOUNTS (a JSON array), or fall back to the single
@@ -7,14 +7,14 @@
  * existing single-account deployments keep working unchanged.
  *
  * Example CLOUDINARY_ACCOUNTS value (set as ONE env var, valid JSON, no
- * line breaks needed — most process managers handle long values fine):
+ * line breaks needed - most process managers handle long values fine):
  *   [{"cloudName":"abc123","apiKey":"111","apiSecret":"secret1"},
  *    {"cloudName":"xyz789","apiKey":"222","apiSecret":"secret2"}]
  */
 import { getAdminSecrets } from "./admin-store";
 
 export interface CloudinaryAccount {
-  /** Index into the configured list — stable identity for usage tracking,
+  /** Index into the configured list - stable identity for usage tracking,
    * independent of cloudName in case two accounts ever shared one. */
   id: number;
   cloudName: string;
@@ -37,7 +37,7 @@ function parseAccountsFromJsonString(raw: string | null | undefined, source: str
   }
 }
 
-/** Read lazily — see cloudinary-upload.ts for why (ESM import evaluation
+/** Read lazily - see cloudinary-upload.ts for why (ESM import evaluation
  * order runs before server/index.ts's own .env-loading code).
  *
  * Priority: admin-panel-configured accounts (hot-reloadable, no redeploy) >

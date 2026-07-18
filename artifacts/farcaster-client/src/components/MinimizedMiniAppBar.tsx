@@ -8,7 +8,7 @@ import {
   getWebMiniAppState, subscribeWebMiniAppState, restoreWebMiniApp, type WebMiniAppState,
 } from "@/lib/miniapp-web-state";
 
-/** Web/PWA counterpart — same floating pill, restores the hidden iframe modal. */
+/** Web/PWA counterpart - same floating pill, restores the hidden iframe modal. */
 function WebRestorePill() {
   const [state, setState] = useState<WebMiniAppState | null>(getWebMiniAppState);
   useEffect(() => subscribeWebMiniAppState(setState), []);
@@ -32,7 +32,7 @@ function WebRestorePill() {
   );
 }
 
-/** Native counterpart — same floating pill, calls InAppBrowser.show() to resume. */
+/** Native counterpart - same floating pill, calls InAppBrowser.show() to resume. */
 function NativeRestorePill() {
   const [app, setApp] = useState<MinimizedMiniApp | null>(getMinimizedMiniApp);
   useEffect(() => subscribeMinimizedMiniApp(setApp), []);
@@ -60,7 +60,7 @@ function NativeRestorePill() {
 }
 
 /**
- * Floating pill shown app-wide while a mini app is minimized — the mini
+ * Floating pill shown app-wide while a mini app is minimized - the mini
  * app's own webview/iframe is still alive in the background (hidden, not
  * closed), so tapping this just brings it back to the foreground instead of
  * reloading it from scratch. Exactly one of the native/web pills renders at

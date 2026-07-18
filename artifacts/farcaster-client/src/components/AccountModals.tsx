@@ -56,7 +56,7 @@ export function AddAccountModal({ onClose, onAdd }: { onClose: () => void; onAdd
   }
 
   // Connecting an external wallet is two steps: first get the wallet itself
-  // (injected/MetaMask if present, else a WalletConnect QR — this is the
+  // (injected/MetaMask if present, else a WalletConnect QR - this is the
   // only option that works at all on native/PWA, where there's never a
   // window.ethereum to detect), then hand it to loginWithWallet(). The
   // second step only fires once `extWallet` actually becomes available.

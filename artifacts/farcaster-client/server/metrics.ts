@@ -1,7 +1,7 @@
 /**
  * Lightweight in-memory metrics.
  * Exposed at GET /internal/metrics (server-side only, not proxied).
- * All counters are simple integers — no external dependency.
+ * All counters are simple integers - no external dependency.
  */
 
 const startedAt = Date.now();

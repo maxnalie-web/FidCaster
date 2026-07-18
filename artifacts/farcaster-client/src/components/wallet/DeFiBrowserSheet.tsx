@@ -19,7 +19,7 @@ const NETWORK_CONFIG = {
   polygon:  { label: "Polygon",  short: "Poly", color: "#8247e5", chainId: 137 },
 } as const;
 
-// Block explorer to resolve a raw address or ENS name against, per network —
+// Block explorer to resolve a raw address or ENS name against, per network -
 // searching a wallet address used to fall through to a server-proxied Google
 // search, which Google reliably blocks/challenges for a cookie-less
 // datacenter fetch, leaving the frame blank. Addresses/ENS names have a
@@ -53,7 +53,7 @@ function isNetwork(v: string): v is Network {
 
 // ── window.ethereum bridge: request/response over postMessage ──────────────
 // The provider script injected server-side (server/index.ts) relays every
-// account/chain/signing call the framed dApp makes into this component —
+// account/chain/signing call the framed dApp makes into this component -
 // this is the ONLY place that ever touches the real wallet client. Requests
 // that just read state (chainId, accounts) resolve immediately; anything
 // that connects, signs, or sends requires an explicit tap on the approval
@@ -78,7 +78,7 @@ interface PendingRequest {
 
 function extractSignMessage(params: unknown[]): { address: string | null; message: string } {
   // personal_sign / eth_sign params can arrive as [data, address] OR
-  // [address, data] depending on the dApp — detect which slot is the address.
+  // [address, data] depending on the dApp - detect which slot is the address.
   const [p0, p1] = [params[0], params[1]];
   const isAddr0 = typeof p0 === "string" && isAddress(p0);
   const addrRaw = isAddr0 ? (p0 as string) : (typeof p1 === "string" ? p1 : null);
@@ -117,7 +117,7 @@ function isEnsName(raw: string): boolean {
 }
 
 // Returns a URL to load in the iframe, or `{ external }` when the input is a
-// free-text search — that case used to be proxied through a server-side
+// free-text search - that case used to be proxied through a server-side
 // fetch of google.com/search, which Google blocks/challenges without a real
 // browser session (no cookies, datacenter IP), leaving the frame permanently
 // blank. Opening it in a real tab instead uses the user's own browser/IP.
@@ -149,7 +149,7 @@ const QUICK_LINKS = [
 
 export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   // The sheet fully unmounts on close, so without resuming from the last
-  // saved session it always reopened to a blank "New Tab" page — even mid-
+  // saved session it always reopened to a blank "New Tab" page - even mid-
   // session, since the caller never passes a non-empty initialUrl today.
   const [resumed] = useState(() => (initialUrl ? null : loadLastSession()));
   const startUrl = initialUrl || resumed?.url || "";
@@ -176,7 +176,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Safety valve: if the proxy or target site never fires onLoad, don't leave
-  // the spinner up forever — reveal whatever the iframe managed to render.
+  // the spinner up forever - reveal whatever the iframe managed to render.
   useEffect(() => {
     if (!isLoading) return;
     const t = setTimeout(() => setIsLoading(false), 12_000);
@@ -211,7 +211,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
   const walletLabel = activeWallet?.label ?? "Wallet";
 
   // Keep the provider bridge (inside the iframe) in sync with connection
-  // state — refs so the message-handling effect below always reads the
+  // state - refs so the message-handling effect below always reads the
   // latest values without needing to re-subscribe on every change.
   const stateRef = useRef({ address, isConnected, network });
   useEffect(() => { stateRef.current = { address, isConnected, network }; }, [address, isConnected, network]);
@@ -255,13 +255,13 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
 
       if (GATED_METHODS.has(req.method)) {
         // eth_requestAccounts when already connected doesn't need to
-        // re-prompt — just return the account, matching how real wallets
+        // re-prompt - just return the account, matching how real wallets
         // behave once a site has already been granted access.
         if (req.method === "eth_requestAccounts" && connected && addr) {
           return respond(req.id, [addr]);
         }
         if (req.method !== "eth_requestAccounts" && !connected) {
-          return respond(req.id, undefined, { code: 4100, message: "Unauthorized — connect the wallet first." });
+          return respond(req.id, undefined, { code: 4100, message: "Unauthorized - connect the wallet first." });
         }
         setPendingQueue(q => [...q, { id: req.id, method: req.method, params: req.params }]);
         return;
@@ -314,7 +314,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
         }
       } else if (method === "wallet_addEthereumChain") {
         // We only ever operate on the chains we already support (Optimism,
-        // Base, Arbitrum, Ethereum) — treat this as a no-op success if it
+        // Base, Arbitrum, Ethereum) - treat this as a no-op success if it
         // matches one of them, reject otherwise rather than pretending to
         // add an arbitrary network.
         const target = (params[0] as { chainId?: string } | undefined)?.chainId?.toLowerCase();
@@ -632,7 +632,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
       <div className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur-lg safe-area-bottom">
         <div className="flex items-center gap-2 px-3 h-[56px]">
 
-          {/* Wallet avatar — tap to switch account */}
+          {/* Wallet avatar - tap to switch account */}
           <button
             onClick={() => { setShowAccPicker(true); setShowWalletMenu(false); }}
             className="relative shrink-0 active:scale-95 transition-transform"
@@ -670,7 +670,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
             </div>
           </div>
 
-          {/* Network badge — tap to switch */}
+          {/* Network badge - tap to switch */}
           <button
             onClick={() => { setShowNetPicker(true); setShowWalletMenu(false); }}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-opacity hover:opacity-80"
@@ -758,7 +758,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
               )}
             </AnimatePresence>
 
-            {/* Switch-network popup — small, anchored right next to the ⋯
+            {/* Switch-network popup - small, anchored right next to the ⋯
                 button (both the network badge and the ⋯ menu's "Switch
                 network" item open this), not a full-screen sheet. */}
             <AnimatePresence>
@@ -853,7 +853,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
                           key={acc.index}
                           onClick={() => {
                             // Switching accounts while connected should behave like a
-                            // real wallet's account switch — the site stays connected
+                            // real wallet's account switch - the site stays connected
                             // and just sees accountsChanged with the new address (via
                             // the effect below), not a forced disconnect that silently
                             // left the site pointed at the old account.
@@ -979,7 +979,7 @@ export function DeFiBrowserSheet({ initialUrl, onClose }: Props) {
               {currentRequest.method === "eth_sendTransaction" && (
                 <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
                   <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                  This transaction is not simulated first — only approve if you trust this site.
+                  This transaction is not simulated first - only approve if you trust this site.
                 </div>
               )}
               {pendingQueue.length > 1 && (
@@ -1048,7 +1048,7 @@ function RequestSummary({ request, address, network }: { request: PendingRequest
       <div className="rounded-xl border border-border/50 bg-muted/30 divide-y divide-border/40 text-sm">
         <div className="flex items-center justify-between px-4 py-2.5">
           <span className="text-muted-foreground">To</span>
-          <span className="font-mono text-xs text-foreground">{tx.to ? truncAddr(tx.to) : "—"}</span>
+          <span className="font-mono text-xs text-foreground">{tx.to ? truncAddr(tx.to) : "-"}</span>
         </div>
         <div className="flex items-center justify-between px-4 py-2.5">
           <span className="text-muted-foreground">Value</span>

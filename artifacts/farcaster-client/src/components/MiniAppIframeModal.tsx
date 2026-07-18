@@ -10,13 +10,13 @@ import {
 } from "@/lib/miniapp-web-state";
 
 /**
- * Web/PWA mini-app host, mounted once at the App root (see App.tsx) — a real
+ * Web/PWA mini-app host, mounted once at the App root (see App.tsx) - a real
  * Farcaster context + wallet get exposed to the embedded app (see
  * miniapp-iframe-host.ts) instead of a plain `window.open()` new tab with
  * nothing injected. Minimize hides this overlay with CSS while leaving the
  * iframe mounted (state lives in miniapp-web-state.ts, outside this
  * component's own tree), so navigating the rest of FidCaster doesn't lose
- * the mini app's session — mirrors the native side's hide()/show().
+ * the mini app's session - mirrors the native side's hide()/show().
  */
 export function MiniAppIframeModal() {
   const [state, setState] = useState<WebMiniAppState | null>(getWebMiniAppState);

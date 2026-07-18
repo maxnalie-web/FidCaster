@@ -73,7 +73,7 @@ async function fileToUploadPayload(file: File): Promise<{ base64: string; mime: 
 }
 
 /** Server proxies to Cloudinary (our own signed account) as the primary
- * backend, with Imgur/catbox as fallbacks — see server/index.ts. The API
+ * backend, with Imgur/catbox as fallbacks - see server/index.ts. The API
  * secret can only ever be used server-side, so this is the only upload
  * path; there's no separate client-direct fast path anymore. */
 async function uploadViaServer(base64: string, mime: string, fid: bigint | null): Promise<string> {
@@ -113,7 +113,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
   const { fid, localSigner, signerUuid, signerApproved, neynarKey, profile, autoSignerLoading, authMethod } = useWallet();
   const followedChannels = fid ? getFollowedChannels(Number(fid)) : [];
 
-  // Drafts only apply to a plain new cast — replies/quotes are short-lived and
+  // Drafts only apply to a plain new cast - replies/quotes are short-lived and
   // tied to whatever cast is open right now, not worth persisting.
   const isDraftable = !replyTo && !quoteCast;
   const localDraft = isDraftable && fid ? getLocalDraft(Number(fid)) : null;
@@ -144,7 +144,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
     el.style.overflowY = el.scrollHeight > 240 ? "auto" : "hidden";
   }, [text]);
 
-  // Pull the server copy of the draft on mount — this is what actually
+  // Pull the server copy of the draft on mount - this is what actually
   // survives logout/reinstall (local storage alone would not), so a draft
   // started before those may still show up here.
   useEffect(() => {
@@ -163,7 +163,7 @@ export function CastComposer({ replyTo, quoteCast, onCanceled, onPublished, plac
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDraftable, fid]);
 
-  // Debounced autosave — keeps the draft current as the user types/attaches
+  // Debounced autosave - keeps the draft current as the user types/attaches
   // media, without hammering the server on every keystroke.
   useEffect(() => {
     if (!isDraftable || !fid) return;

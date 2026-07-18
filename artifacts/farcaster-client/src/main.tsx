@@ -6,7 +6,7 @@ import { isNativeRuntime } from "./lib/miniapp-native";
 import App from "./App";
 import "./index.css";
 
-// Must run before any other module fetches — redirects this app's own
+// Must run before any other module fetches - redirects this app's own
 // "/api/..." calls to the real backend when the WebView is showing the
 // locally-bundled app rather than the live site (see native-api-bridge.ts).
 installNativeFetchBridge();

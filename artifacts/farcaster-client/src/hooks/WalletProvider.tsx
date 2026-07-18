@@ -115,7 +115,7 @@ function clearPwdFromSession() {
 // Persisted "locked" flag · survives page refresh (and browser restart, since
 // it must outlive the IndexedDB-stored device key it's gating). Locking only
 // wiped in-memory secrets and React state before this, which the mount-restore
-// effect never checked — so refreshing right after an auto-lock silently
+// effect never checked - so refreshing right after an auto-lock silently
 // restored the mnemonic via the no-password device key and dropped the user
 // straight back into the app instead of showing the lock screen.
 const SESSION_LOCKED_KEY = "fc_session_locked";
@@ -170,8 +170,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
    * Session restore for wallet/farcaster/locked-mnemonic auth shows the
    * profile straight from the light-session cache (instant paint, no
    * fetch). If that cache was itself written from a network-failure
-   * placeholder — fetchProfile() never throws, it just falls back to a
-   * bare { displayName: "FID {n}", pfpUrl: "" } — it would otherwise stay
+   * placeholder - fetchProfile() never throws, it just falls back to a
+   * bare { displayName: "FID {n}", pfpUrl: "" } - it would otherwise stay
    * a placeholder forever, since nothing else ever re-fetches it. This
    * runs once per normal restore (not a network/visibility-triggered
    * retry loop): get the real profile in the background, and if it's
@@ -259,7 +259,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       const NEEDS_FUNDS_MSG =
-        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nWe'll retry automatically once it arrives — no need to tap anything.`;
+        `Your signer key is not registered on Farcaster yet.\n\nYou need a tiny amount of ETH on Optimism (about $0.01) to pay the one-time gas fee.\n\nSend ETH on Optimism to this address:\n${address}\n\nWe'll retry automatically once it arrives - no need to tap anything.`;
 
       try {
         // Safety net: if the wallet hangs indefinitely on the signature/tx
@@ -273,7 +273,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setTimeout(() => reject(new Error("WALLET_TIMEOUT")), 60_000)
           ),
         ]);
-        // Progress update, not an error — kept out of signerError so the
+        // Progress update, not an error - kept out of signerError so the
         // popup doesn't render its "Setup didn't finish" / Retry-button state
         // for a transaction that's confirming completely normally.
         setState((s) => ({
@@ -827,10 +827,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   // Auto-lock (inactivity timer + backgrounding/tab-hidden re-lock) was
   // previously applied on the plain web version only (already skipped on
-  // native/PWA). It kept firing during normal use — a few minutes away from
+  // native/PWA). It kept firing during normal use - a few minutes away from
   // the tab, or just being idle reading a long feed, was enough to force a
   // password re-entry mid-session ("Posting locked · tap to re-enter
-  // password") — with no real attacker model it was actually protecting
+  // password") - with no real attacker model it was actually protecting
   // against here (this app has no shared-workstation / kiosk use case), so
   // it's removed entirely rather than just tuned. The encrypted vault and
   // password are still required for the very first login and still protect
@@ -842,7 +842,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     // (or entering the bfcache) · zeroing in-memory secrets there is a real
     // security win. In the native Capacitor shell, though, the SAME event fires
     // just from backgrounding the app (switching apps, opening a mini app,
-    // pressing home) — cases where the JS context typically stays alive and
+    // pressing home) - cases where the JS context typically stays alive and
     // the user expects to come right back to where they were. Zeroing here
     // unconditionally used to leave fidRef/localSignerRef/walletClientRef out
     // of sync with the (still "logged in") React state for the rest of that

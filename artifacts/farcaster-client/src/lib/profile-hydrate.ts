@@ -13,7 +13,7 @@
  *  - useHydratedUser(fid, enabled): per-row hook, coalesces every request made
  *    within 50ms into one bulk call (same pattern as useProStatus).
  *
- * NOTE: profiles served from the shared SQLite cache carry no viewer_context —
+ * NOTE: profiles served from the shared SQLite cache carry no viewer_context -
  * callers must preserve the viewer_context they computed from the hub link sets.
  */
 import { useState, useEffect } from "react";

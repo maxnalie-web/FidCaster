@@ -340,7 +340,7 @@ export function loadLightSession(): LightSession | null {
 }
 
 /** Patches just the profile fields of the current light session (if it's
- * still for the same fid), leaving everything else as-is — used to self-heal
+ * still for the same fid), leaving everything else as-is - used to self-heal
  * a session that was cached with a network-failure placeholder once the
  * real profile is fetched successfully. */
 export function patchLightSessionProfile(

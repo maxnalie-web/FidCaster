@@ -25,7 +25,7 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(activeWalletId);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
   const clipClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Exporting a private key requires the wallet PIN — see lib/walletPin.ts.
+  // Exporting a private key requires the wallet PIN - see lib/walletPin.ts.
   const [pinGateFor, setPinGateFor] = useState<{ wallet: Wallet; accountIndex: number } | null>(null);
 
   function kindIcon(kind: Wallet["kind"]) {
@@ -55,7 +55,7 @@ export function WalletSwitcherSheet({ onClose, onManage, onSettings }: Props) {
           try {
             const cur = await navigator.clipboard.readText();
             if (cur === hex) await navigator.clipboard.writeText("");
-          } catch { /* clipboard read denied / changed — nothing to do */ }
+          } catch { /* clipboard read denied / changed - nothing to do */ }
           clipClearRef.current = null;
         }, 60_000);
       }

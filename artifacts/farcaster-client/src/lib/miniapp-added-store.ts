@@ -1,10 +1,10 @@
 /**
  * Persists which mini apps the user has "added" via the SDK's addMiniApp
- * action (sdk.actions.addMiniApp() — many mini apps call this after their
+ * action (sdk.actions.addMiniApp() - many mini apps call this after their
  * own onboarding, or from a settings screen, and then check
  * context.client.added on future opens to render "Add" vs "Added"). Keyed by
  * origin, not full URL, since a mini app's identity is its domain regardless
- * of path/query — same rule Farcaster's own manifest-based mini app
+ * of path/query - same rule Farcaster's own manifest-based mini app
  * discovery uses. Local-only (no server sync): this is a per-device
  * bookmark list, not an account-level Farcaster concept we can write to.
  */

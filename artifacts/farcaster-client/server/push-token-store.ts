@@ -112,7 +112,7 @@ export function getAllRegisteredFids(): number[] {
   return db()?.distinctFids() ?? [];
 }
 
-// Called after FCM reports a token as UNREGISTERED/NOT_FOUND — the device
+// Called after FCM reports a token as UNREGISTERED/NOT_FOUND - the device
 // uninstalled the app or the token rotated without us hearing about it.
 export function pruneInvalidTokens(tokens: string[]): void {
   if (tokens.length) db()?.removeTokens(tokens);

@@ -49,9 +49,9 @@ interface Token { symbol: string; name: string; address: string; decimals: numbe
 const TOKENS: Token[] = [
   // Optimism
   { symbol:"ETH",    name:"Ethereum",       address:NATIVE,                                          decimals:18, chainId:10,    logo:"https://assets.coingecko.com/coins/images/279/small/ethereum.png" },
-  // Native USDC — MUST match USDC_OP_ADDRESS in lib/contracts.ts, which is what
+  // Native USDC - MUST match USDC_OP_ADDRESS in lib/contracts.ts, which is what
   // the main wallet balance reads. These previously pointed at two different
-  // contracts (this one used to be USDC.e, the legacy bridged token) — a user
+  // contracts (this one used to be USDC.e, the legacy bridged token) - a user
   // with native USDC showed a balance in the wallet but couldn't swap it here,
   // and any USDC.e they held was invisible everywhere (also filtered out of
   // ERC-20 discovery below by ERC20_SKIP_SYMBOLS).
@@ -571,7 +571,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           args: [address, approveSpender],
         }) as bigint;
         needsApproval = allowance < sellAmount;
-        // Some tokens (USDT being the famous case — and it's swappable here
+        // Some tokens (USDT being the famous case - and it's swappable here
         // on both Optimism and Ethereum) reject changing a non-zero
         // allowance straight to a different non-zero value; it must go
         // through zero first. Detecting this reliably per-token isn't
@@ -586,7 +586,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       let gasEstimate: bigint | undefined;
       let simStatus: "passed" | "after-approval" = "passed";
       if (needsApproval) {
-        // Swap can't be simulated until the approval lands — simulate
+        // Swap can't be simulated until the approval lands - simulate
         // whichever tx actually gets broadcast first: the zero-reset if one
         // is needed, otherwise the approval itself.
         simStatus = "after-approval";
@@ -613,7 +613,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       }
 
       // Gas price for converting the unit estimate above into an ETH/USD
-      // figure in the confirm modal — "246113 units" means nothing to most
+      // figure in the confirm modal - "246113 units" means nothing to most
       // users, an ETH amount with a $ approximation does.
       let gasPriceWei: bigint | undefined;
       try {
@@ -638,7 +638,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     } catch (e) {
       const msg = (e as Error).message ?? "Failed to prepare transaction";
       toast.error(msg.includes("revert") || msg.includes("execution")
-        ? "Simulation failed — this swap would revert on-chain. Try refreshing quotes."
+        ? "Simulation failed - this swap would revert on-chain. Try refreshing quotes."
         : msg.slice(0, 140));
     } finally {
       setPreparing(false);
@@ -670,7 +670,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       try { const sc = await getActiveWalletClient(); if (sc) wc = sc.walletClient; } catch { /* fall back */ }
       if (!wc?.account) throw new Error("No wallet connected");
 
-      // Always sign & broadcast on the chain the quote was built for — never
+      // Always sign & broadcast on the chain the quote was built for - never
       // reuse a client bound to another chain's RPC.
       const chainWc = createChainWalletClient(wc.account, fromChainId);
       const pub = getPublicClientForChain(fromChainId);
@@ -744,7 +744,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
   async function onMaxFrom() {
     if (!fromBalance || fromBalance <= 0n || maxLoading) return;
     if (fromToken.address !== NATIVE) {
-      // ERC-20 sells don't touch the token itself for gas — the exact full
+      // ERC-20 sells don't touch the token itself for gas - the exact full
       // raw balance is always sellable. Uses formatUnits directly (not a
       // parseFloat/toFixed(6) round-trip) so high-decimal tokens don't lose
       // precision and leave dust behind.
@@ -756,7 +756,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
     try {
       const pub = getPublicClientForChain(fromChainId);
       // A slow/unresponsive RPC here previously left the MAX button spinning
-      // indefinitely — race the estimate against a 4s timeout so a bad RPC
+      // indefinitely - race the estimate against a 4s timeout so a bad RPC
       // falls back to the flat reserve below instead of hanging.
       const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000));
       const [gasPrice, baseGas] = await Promise.race([
@@ -768,7 +768,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
       ]);
       // A swap/bridge transaction costs meaningfully more than a plain
       // transfer (router logic, DEX calls) and the exact router isn't known
-      // until a quote comes back — use a generous floor rather than the
+      // until a quote comes back - use a generous floor rather than the
       // flat ETH-amount buffer this used to be (which ignored gas price
       // entirely and badly under-reserved on Ethereum L1).
       const swapGasUnits = baseGas > 150_000n ? baseGas : 150_000n;
@@ -926,7 +926,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
             <div className="flex-1 text-2xl font-black tabular-nums text-muted-foreground min-h-[2rem] flex items-center">
               {selectedQ?.loading
                 ? <Loader2 size={18} className="animate-spin text-muted-foreground" />
-                : selectedQ?.outFmt ? selectedQ.outFmt : "—"}
+                : selectedQ?.outFmt ? selectedQ.outFmt : "-"}
             </div>
             <button onClick={() => { setPickerFor("to"); setPickerChain(isBridge ? toChainId : fromChainId); setSearch(""); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-background border border-border hover:border-primary/40 transition-colors shrink-0 shadow-sm">
@@ -943,7 +943,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           )}
         </div>
 
-        {/* Best route — auto-selected, comparison is view-only */}
+        {/* Best route - auto-selected, comparison is view-only */}
         {amount && parseFloat(amount) > 0 && (
           <div className="space-y-1">
             {(() => {
@@ -1028,7 +1028,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
           </a>
         )}
 
-        {/* Review button — opens the confirmation popup, nothing is signed yet */}
+        {/* Review button - opens the confirmation popup, nothing is signed yet */}
         <button onClick={prepare}
           disabled={!selectedQ?.outFmt || !amount || swapping || preparing || !!selectedQ?.loading || insufficientBalance}
           className="w-full py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-40 transition-all flex items-center justify-center gap-2"
@@ -1058,7 +1058,7 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
         </p>
       </div>
 
-      {/* Confirm transaction popup — centered, shows simulation result before signing */}
+      {/* Confirm transaction popup - centered, shows simulation result before signing */}
       {pendingTx && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => { if (!swapping) { setPendingTx(null); setStepIndex(0); } }}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -1136,13 +1136,13 @@ export function SwapSheet({ address, walletColor, onClose }: Props) {
                     {pendingTx.simStatus === "passed" ? (
                       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400">
                         <Check size={13} className="shrink-0 mt-0.5" />
-                        Simulation passed — this transaction should succeed on-chain.
+                        Simulation passed - this transaction should succeed on-chain.
                       </div>
                     ) : (
                       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
                         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
                         {multiStep
-                          ? `Step ${stepIndex + 1} of ${steps.length}: each transaction is signed separately — this one is "${stepLabel}".`
+                          ? `Step ${stepIndex + 1} of ${steps.length}: each transaction is signed separately - this one is "${stepLabel}".`
                           : "Confirm below to sign and send this transaction."}
                       </div>
                     )}

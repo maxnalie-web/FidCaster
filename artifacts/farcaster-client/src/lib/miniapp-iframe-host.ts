@@ -9,18 +9,18 @@ import type { FarcasterProfile } from "./farcaster-api";
  * Web/PWA counterpart to miniapp-host.ts's native bridge. On a plain browser
  * tab or an installed/standalone PWA there is no native WebView to inject a
  * document-start script into, so mini apps were previously opened with a bare
- * `window.open()` — no Farcaster context, no wallet, indistinguishable from
+ * `window.open()` - no Farcaster context, no wallet, indistinguishable from
  * just visiting the site directly.
  *
  * The official Farcaster Mini App SDK also supports an iframe transport
  * (postMessage-based, same protocol as the native one) via
- * `@farcaster/miniapp-host`'s `exposeToIframe` — this loads the mini app at
+ * `@farcaster/miniapp-host`'s `exposeToIframe` - this loads the mini app at
  * its OWN origin in a real cross-origin iframe (nothing proxied through our
  * server, nothing spoofing our own origin) and talks to it over standard
  * `postMessage`, which is the normal, safe way browsers allow two different
  * origins to communicate. This is unrelated to (and much safer than) the
  * old /api/miniapp-embed server proxy removed earlier for being an SSRF/XSS
- * risk — that fetched arbitrary third-party HTML server-side and re-served
+ * risk - that fetched arbitrary third-party HTML server-side and re-served
  * it AS our own origin; this never does that, the mini app stays on its own
  * origin the whole time.
  *

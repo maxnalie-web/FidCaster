@@ -197,8 +197,8 @@ export function AuthPage() {
     if (!validateMnemonic(phrase, wordlist)) return;
     if (isInstalledApp()) {
       // The encrypted vault's derived key is cached (non-extractable) for
-      // silent auto-unlock on every future launch — see decryptStoredAuto()
-      // in session-crypto.ts — so on native/PWA this password is truly
+      // silent auto-unlock on every future launch - see decryptStoredAuto()
+      // in session-crypto.ts - so on native/PWA this password is truly
       // write-once-never-read-again. Skip asking the user to invent and
       // remember one that they'll never actually need to type back in;
       // generate a random one instead. Still asked for on the plain web

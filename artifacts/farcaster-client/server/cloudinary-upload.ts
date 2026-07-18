@@ -1,6 +1,6 @@
 /**
  * Signed upload to Cloudinary via its REST API directly (no SDK dependency
- * needed — this is the only Cloudinary call this server makes), spread
+ * needed - this is the only Cloudinary call this server makes), spread
  * across a pool of accounts for scale (see cloudinary-accounts.ts) with
  * automatic failover if the chosen account errors out.
  *
@@ -64,7 +64,7 @@ async function uploadToAccount(
 
 /** Uploads to the best-ranked account in the pool, automatically failing
  * over to the next-best account (and marking the failed one on a cooldown)
- * if the first attempt errors — a single account having an outage or
+ * if the first attempt errors - a single account having an outage or
  * hitting its monthly cap shouldn't fail uploads for everyone. */
 export async function uploadToCloudinary(
   base64: string,
@@ -84,7 +84,7 @@ export async function uploadToCloudinary(
       lastErr = e as Error;
       // Only put an account into cooldown for server-side or auth failures
       // (401 Unauthorized, 403 Forbidden, 429 Rate Limited, 5xx).
-      // A 400 Bad Request means the file itself is invalid — the account is
+      // A 400 Bad Request means the file itself is invalid - the account is
       // fine and cooling it down would unnecessarily block future uploads.
       const statusMatch = lastErr.message.match(/\((\d+)\)/);
       const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;

@@ -102,7 +102,7 @@ export function PinGate({ open, title, onSuccess, onCancel }: Props) {
     mode === "confirm" ? "Confirm your PIN" :
     "Enter your PIN";
   const subtext =
-    mode === "create" ? "This PIN protects your recovery phrase and private keys — you'll need it every time you reveal or export one." :
+    mode === "create" ? "This PIN protects your recovery phrase and private keys - you'll need it every time you reveal or export one." :
     mode === "confirm" ? "Enter it again to confirm." :
     (title ?? "Required to continue.");
 

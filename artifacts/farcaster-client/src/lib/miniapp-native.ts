@@ -11,7 +11,7 @@ export function isNativeRuntime(): boolean {
   try { return Capacitor.isNativePlatform(); } catch { return false; }
 }
 
-/** True for the installed Capacitor app or an installed/standalone PWA —
+/** True for the installed Capacitor app or an installed/standalone PWA -
  * anything that isn't a plain browser tab landing on the marketing site. */
 export function isInstalledApp(): boolean {
   if (isNativeRuntime()) return true;
@@ -92,7 +92,7 @@ export async function openNativeMiniApp(
     url: app.url,
     title: app.name,
     // COMPACT = close button only (+ our own minimize button below) · no
-    // share action, no overflow ("...") menu, no URL bar — reads as a native
+    // share action, no overflow ("...") menu, no URL bar - reads as a native
     // modal, not a browser tab.
     toolbarType: ToolBarType.COMPACT,
     visibleTitle: true,
@@ -100,7 +100,7 @@ export async function openNativeMiniApp(
     // false = show the webview immediately instead of blocking until the
     // remote mini-app site finishes loading. Previously `true`, which made
     // the whole "tap Open" gesture feel like it did nothing for however long
-    // the third-party site took to load — the top complaint about mini apps.
+    // the third-party site took to load - the top complaint about mini apps.
     // preShowScriptInjectionTime: "documentStart" (below) injects the
     // anti-detection shim before the page's own JS regardless of this flag;
     // it isn't tied to isPresentAfterPageLoad the way the older preShowScript
@@ -109,7 +109,7 @@ export async function openNativeMiniApp(
     isInspectable: false,
     preShowScript: DOCUMENT_START_SCRIPT,
     preShowScriptInjectionTime: "documentStart",
-    // Minimize affordance next to the close button — hides the webview
+    // Minimize affordance next to the close button - hides the webview
     // (keeping its JS/state alive) instead of destroying it; the user can
     // resume via the floating pill (MinimizedMiniAppBar.tsx) shown while a
     // mini app is minimized.

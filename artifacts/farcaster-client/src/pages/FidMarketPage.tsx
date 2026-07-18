@@ -1027,7 +1027,7 @@ export default function FidMarketPage() {
             <div className="space-y-2">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <BookmarkCheck className="w-3 h-3" /> Watching
-                <span className="text-muted-foreground/50 normal-case tracking-normal font-normal text-[10px]">— tap a listing to add</span>
+                <span className="text-muted-foreground/50 normal-case tracking-normal font-normal text-[10px]">- tap a listing to add</span>
               </p>
               {watchlist.watchedFids().length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3">

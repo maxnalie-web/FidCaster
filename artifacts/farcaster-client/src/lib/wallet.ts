@@ -241,7 +241,7 @@ export function createChainWalletClient(account: Account, chainId: number): Wall
 
 const chainPublicClients = new Map<number, PublicClient>();
 
-/** Get (and cache) a publicClient for any supported chain — used for tx simulation. */
+/** Get (and cache) a publicClient for any supported chain - used for tx simulation. */
 export function getPublicClientForChain(chainId: number): PublicClient {
   const cached = chainPublicClients.get(chainId);
   if (cached) return cached;

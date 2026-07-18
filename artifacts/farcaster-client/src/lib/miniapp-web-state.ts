@@ -1,6 +1,6 @@
 /**
  * Shared state for the web/PWA mini-app iframe modal (MiniAppIframeModal.tsx)
- * — mounted once at the App root rather than inside MiniAppsPanel, so
+ * - mounted once at the App root rather than inside MiniAppsPanel, so
  * minimizing a mini app and navigating elsewhere in FidCaster doesn't unmount
  * its iframe (which would lose its session/state entirely). Mirrors the
  * native side's hide()/show() persistence, just via React state instead of a

@@ -41,7 +41,7 @@ export function TelegramLogo({ size = 12, className }: { size?: number; classNam
   );
 }
 
-/** Farcaster's real arch mark (official Simple Icons path — the previous
+/** Farcaster's real arch mark (official Simple Icons path - the previous
  *  version here was a wrong/different glyph entirely, not the recognizable
  *  Farcaster symbol), in brand purple. */
 export function FarcasterLogo({ size = 12, className }: { size?: number; className?: string }) {

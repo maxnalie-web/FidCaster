@@ -34,7 +34,7 @@ const CHAIN_COLOR: Record<Chain, string> = {
   ethereum: "#627eea",
 };
 
-// Always route through the server proxy — keeps the OpenSea API key off the
+// Always route through the server proxy - keeps the OpenSea API key off the
 // client bundle and lets the server handle CORS + rate limiting.
 async function fetchNfts(chain: Chain, address: string, cursor?: string): Promise<OpenSeaResp> {
   const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
@@ -44,7 +44,7 @@ async function fetchNfts(chain: Chain, address: string, cursor?: string): Promis
 }
 
 // Collection-level enrichment (verification + floor price) via the generic
-// OpenSea proxy (/api/opensea/*, same backend, no client-side key) — our
+// OpenSea proxy (/api/opensea/*, same backend, no client-side key) - our
 // `Chain` values already match OpenSea's own chain slugs 1:1, no mapping
 // needed. Distinct from fetchNfts above, which lists an account's owned
 // NFTs; this resolves one collection's metadata, called once per unique
@@ -123,7 +123,7 @@ export function NftGallery({ address }: Props) {
     if (cursor) loadChain(chain, cursor);
   }, [chainData, loadChain]);
 
-  // "Load more" for the currently-filtered chain(s) — in the "all" view this
+  // "Load more" for the currently-filtered chain(s) - in the "all" view this
   // pages every chain that still has more, so the grid keeps growing evenly.
   const chainsWithMore = (filter === "all" ? CHAINS : [filter]).filter(
     c => chainData[c].next && !chainData[c].loading && !chainData[c].loadingMore
@@ -139,7 +139,7 @@ export function NftGallery({ address }: Props) {
   );
 
   // Resolve each unique held collection's real OpenSea data in the
-  // background (verification + floor price) — cached per contract, so this
+  // background (verification + floor price) - cached per contract, so this
   // never re-fetches the same collection twice across renders.
   useEffect(() => {
     if (allItems.length === 0) return;
@@ -164,7 +164,7 @@ export function NftGallery({ address }: Props) {
   const infoFor = (n: NftItem & { chain: Chain }) => collectionInfo.get(`${n.chain}:${n.contract.toLowerCase()}`);
   // Real OpenSea verification (when available) overrides the local
   // heuristic in both directions: a collection OpenSea confirms verified is
-  // never hidden even without an image, and — the more common case — a
+  // never hidden even without an image, and - the more common case - a
   // collection OpenSea has no record of at all (most airdropped spam) is
   // hidden even if it has a plausible-looking image/name.
   const isJunk = (n: NftItem & { chain: Chain }): boolean => {
@@ -287,7 +287,7 @@ export function NftGallery({ address }: Props) {
         })}
       </div>
 
-      {/* Unverified/spam collections — display only, never blocks an item
+      {/* Unverified/spam collections - display only, never blocks an item
           from being seen, just collapsed by default so a wallet full of
           airdropped junk doesn't bury the real holdings. */}
       {hiddenItems.length > 0 && (
@@ -299,7 +299,7 @@ export function NftGallery({ address }: Props) {
         </button>
       )}
 
-      {/* Load more — pages whichever chain(s) still have a next cursor */}
+      {/* Load more - pages whichever chain(s) still have a next cursor */}
       {chainsWithMore.length > 0 && (
         <button
           onClick={() => chainsWithMore.forEach(c => loadMore(c))}

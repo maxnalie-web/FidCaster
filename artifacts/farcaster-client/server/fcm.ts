@@ -1,5 +1,5 @@
 /**
- * Firebase Cloud Messaging sender — HTTP v1 API, authenticated with a
+ * Firebase Cloud Messaging sender - HTTP v1 API, authenticated with a
  * service-account JWT (self-signed with Node's crypto, no googleapis/
  * google-auth-library dependency needed). FCM sending itself is free
  * regardless of Firebase billing plan; this calls FCM directly from our
@@ -88,7 +88,7 @@ export type PushPayload = {
   data?: Record<string, string>;
 };
 
-// FCM's v1 API has no multicast endpoint — one HTTP call per token. Sent
+// FCM's v1 API has no multicast endpoint - one HTTP call per token. Sent
 // with limited concurrency so a user with several devices doesn't serialize.
 export async function sendPushToTokens(tokens: string[], payload: PushPayload): Promise<{ sent: number; invalidTokens: string[] }> {
   const sa = getServiceAccount();

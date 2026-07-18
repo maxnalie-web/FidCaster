@@ -81,7 +81,7 @@ interface Props {
 
 // Many public RPC providers in this app's own fallback pool (llamarpc,
 // publicnode, drpc, 1rpc, ankr, ...) cap eth_getLogs to a block range far
-// smaller than the ~500k-block window this scan needs — a single request
+// smaller than the ~500k-block window this scan needs - a single request
 // for the whole range gets rejected outright by most of them. Chunking into
 // windows this size keeps each individual call within what virtually every
 // provider accepts, at the cost of more requests (run with limited
@@ -89,7 +89,7 @@ interface Props {
 const LOG_CHUNK_BLOCKS = 20_000n;
 const LOG_CHUNK_CONCURRENCY = 6;
 
-// getLogs' return type is generic over the `event` config passed to it —
+// getLogs' return type is generic over the `event` config passed to it -
 // deriving it generically (e.g. via a bare ReturnType<typeof getLogs>) loses
 // that and falls back to an untyped Log with no `.args`. Since every call
 // site here always passes APPROVAL_EVENT, just declare the shape directly.
@@ -120,7 +120,7 @@ async function getLogsChunked(
     );
     for (const r of batchResults) {
       // A single bad chunk (still-too-large-for-that-node, transient error)
-      // shouldn't blank out the whole scan — skip it and keep the rest.
+      // shouldn't blank out the whole scan - skip it and keep the rest.
       if (r.status === "fulfilled") results.push(...r.value);
     }
   }

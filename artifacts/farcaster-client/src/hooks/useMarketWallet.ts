@@ -85,7 +85,7 @@ export function useMarketWallet() {
   // first use and deletes the localStorage copies once that's done (see its
   // source: a one-time migration keyed on "wc_storage_version"), so a
   // localStorage-based "does a session exist" check here always came back
-  // empty after the very first connect — this unconditionally attempts
+  // empty after the very first connect - this unconditionally attempts
   // restoration instead; EthereumProvider.init() itself checks its real
   // (IndexedDB) storage and is a cheap no-op when there's nothing to restore.
   useEffect(() => {

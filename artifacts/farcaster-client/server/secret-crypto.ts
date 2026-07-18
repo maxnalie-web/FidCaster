@@ -1,16 +1,16 @@
 /**
  * At-rest encryption for admin-store.ts's `secrets` table (Neynar key, Imgur
  * client ID, Cloudinary account credentials). Without this, anyone who got
- * read access to admin-store.sqlite on disk — a misconfigured backup, a
- * leaked snapshot, a compromised deploy artifact — could read every API key
+ * read access to admin-store.sqlite on disk - a misconfigured backup, a
+ * leaked snapshot, a compromised deploy artifact - could read every API key
  * in plaintext even without ever touching the admin panel itself.
  *
  * Key derivation: scrypt over ADMIN_SESSION_SECRET (falling back to
- * ADMIN_PASSWORD, matching admin-auth.ts's own fallback) — no new required
+ * ADMIN_PASSWORD, matching admin-auth.ts's own fallback) - no new required
  * env var, and the same secret that already has to stay private for session
  * signing to be meaningful. A fixed, hardcoded salt is fine here: the salt's
  * job is domain separation (so this KDF output can't be reused as some other
- * derived key), not adding entropy — all the real entropy comes from the
+ * derived key), not adding entropy - all the real entropy comes from the
  * deployment's own ADMIN_SESSION_SECRET/ADMIN_PASSWORD.
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
@@ -27,7 +27,7 @@ function getKey(): Buffer | null {
 }
 
 /** Encrypts to `iv:authTag:ciphertext` (all hex). Returns the plaintext
- * unchanged (with no encryption) if no admin secret is configured yet —
+ * unchanged (with no encryption) if no admin secret is configured yet -
  * that only happens when the admin panel itself is unusable anyway (see
  * isAdminConfigured()), so there's nothing meaningful to protect yet. */
 export function encryptSecret(plaintext: string): string {

@@ -2,11 +2,11 @@
  * Persistent SQLite profile cache.
  *
  * Perf guarantees:
- *  1. WAL journal mode — concurrent reads never block writers; writers never block readers.
- *  2. Write batching — requests queue writes for up to 100 ms, then flush in ONE transaction.
- *  3. Bounded queue — Map<FID, …> deduplicates by FID (later write wins per key);
+ *  1. WAL journal mode - concurrent reads never block writers; writers never block readers.
+ *  2. Write batching - requests queue writes for up to 100 ms, then flush in ONE transaction.
+ *  3. Bounded queue - Map<FID, …> deduplicates by FID (later write wins per key);
  *     if queue reaches MAX_QUEUE_SIZE, an immediate flush is triggered to cap memory use.
- *  4. Single-flush guard — `isFlushing` prevents overlapping transactions even if an
+ *  4. Single-flush guard - `isFlushing` prevents overlapping transactions even if an
  *     early-flush and a timer-flush race (better-sqlite3 is sync, so this is belt-and-suspenders).
  */
 
@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { metrics } from "./metrics.js";
 
-// This file runs as ESM (tsx) — bare `require` doesn't exist there, which
+// This file runs as ESM (tsx) - bare `require` doesn't exist there, which
 // silently disabled the whole SQLite cache ("require is not defined").
 const requireCjs = createRequire(import.meta.url);
 
@@ -136,7 +136,7 @@ function initDb(): Db | null {
 let _initTried = false;
 
 function db(): Db | null {
-  // Init exactly once — a failed init must not re-run (and re-log) on every call.
+  // Init exactly once - a failed init must not re-run (and re-log) on every call.
   if (!_initTried) { _initTried = true; _db = initDb(); }
   return _db;
 }

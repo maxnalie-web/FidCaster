@@ -37,7 +37,7 @@ function clearLocal(fid: number): void {
 }
 
 /** Fire-and-forget push so the draft follows the account across devices,
- * logouts, and reinstalls — not just this browser's localStorage. */
+ * logouts, and reinstalls - not just this browser's localStorage. */
 export function saveDraft(fid: number, draft: Omit<CastDraft, "updatedAt">): void {
   const full: CastDraft = { ...draft, updatedAt: Date.now() };
   saveLocal(fid, full);
