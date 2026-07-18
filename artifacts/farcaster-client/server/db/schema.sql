@@ -53,3 +53,15 @@ CREATE TABLE IF NOT EXISTS referrals (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_ref_referred  ON referrals (referred_fid);
 CREATE        INDEX IF NOT EXISTS idx_ref_referrer   ON referrals (referrer_fid);
+
+-- Grow target cooldown: track which FIDs each user has targeted in Grow campaigns.
+-- Used to enforce 14-day cooldown per target to prevent slow-cycle farming.
+CREATE TABLE IF NOT EXISTS grow_targets (
+  id         BIGSERIAL PRIMARY KEY,
+  fid        BIGINT NOT NULL,
+  target_fid BIGINT NOT NULL,
+  used_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gt_fid_target ON grow_targets (fid, target_fid);
+CREATE INDEX IF NOT EXISTS idx_gt_fid_used   ON grow_targets (fid, used_at DESC);
