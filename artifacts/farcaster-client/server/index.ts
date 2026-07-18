@@ -11,6 +11,7 @@ import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type Far
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { registerRpcProxy } from "./rpc-proxy.js";
+import { registerPushRoutes } from "./push-routes.js";
 import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
@@ -164,8 +165,16 @@ const uploadJsonParser = express.json({ limit: "70mb" }); // images ≤10MB (~13
 // enough room, but nowhere near the upload route's 70MB.
 const mediumJsonParser = express.json({ limit: "3mb" });
 const MEDIUM_BODY_PATHS = new Set(["/api/admin/config", "/api/admin/secrets", "/api/user-prefs"]);
+// Neynar webhook signatures (see push-routes.ts) are computed over the exact
+// raw bytes of the request body — capture them via `verify` before JSON
+// parsing discards the original buffer.
+const webhookJsonParser = express.json({
+  limit: "256kb",
+  verify: (req, _res, buf) => { (req as express.Request & { rawBody?: Buffer }).rawBody = buf; },
+});
 app.use((req, res, next) => {
   if (req.path === "/api/farcaster/upload-image") return uploadJsonParser(req, res, next);
+  if (req.path === "/api/push/webhook") return webhookJsonParser(req, res, next);
   if (MEDIUM_BODY_PATHS.has(req.path)) return mediumJsonParser(req, res, next);
   return smallJsonParser(req, res, next);
 });
@@ -810,6 +819,7 @@ app.post("/api/translate", translateLimiter, async (req, res) => {
 registerFidMarketRoutes(app);
 registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
+registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.
