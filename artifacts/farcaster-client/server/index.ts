@@ -1338,17 +1338,12 @@ app.put("/api/admin/secrets", requireAdminSession, adminWriteLimiter, (req, res)
 });
 
 // ── Farcaster Mini App plumbing ───────────────────────────────────────────────
-// 1. Redirect /.well-known/farcaster.json to Farcaster-hosted manifest
-app.get("/.well-known/farcaster.json", (_req, res) => {
-  res.redirect(307, "https://api.farcaster.xyz/miniapps/hosted-manifest/019f7813-698c-7a3a-89e0-7b6e00a78e4b");
-});
-
-// 2. Image aliases — hosted manifest references these short paths
+// Image aliases — farcaster.json references these short paths
 app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-512.png"));
 app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/icon-512.png"));
 app.get("/image.png",  (_req, res) => res.redirect(307, "/opengraph.jpg"));
 
-// 3. Webhook alias — hosted manifest uses /api/webhook, server listens on /api/miniapp/webhook
+// Webhook alias — farcaster.json uses /api/webhook, server listens on /api/miniapp/webhook
 app.post("/api/webhook", express.json(), (_req: express.Request, res: express.Response) => {
   res.json({ ok: true });
 });
