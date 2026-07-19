@@ -2,22 +2,21 @@
   "frame": {
     "name": "FidCaster",
     "version": "1",
-    "iconUrl": "https://fidcaster.xyz/icons/icon-1024.png",
+    "iconUrl": "https://fidcaster.xyz/icons/icon-512.png",
     "homeUrl": "https://fidcaster.xyz/mini",
-    "imageUrl": "https://fidcaster.xyz/mini-hero.jpg",
-    "splashImageUrl": "https://fidcaster.xyz/icons/icon-1024.png",
+    "imageUrl": "https://fidcaster.xyz/opengraph.jpg",
+    "splashImageUrl": "https://fidcaster.xyz/icons/icon-512.png",
     "splashBackgroundColor": "#1D0070",
     "webhookUrl": "https://fidcaster.xyz/api/miniapp/webhook",
     "subtitle": "Earn points. Get the airdrop.",
     "description": "Track your FidCaster points, climb the leaderboard, refer friends, and register your wallet for the token airdrop on Base.",
     "primaryCategory": "social",
     "screenshotUrls": [
-      "https://fidcaster.xyz/mini-screenshot.jpg"
+      "https://fidcaster.xyz/opengraph.jpg"
     ],
-    "heroImageUrl": "https://fidcaster.xyz/mini-hero.jpg",
+    "heroImageUrl": "https://fidcaster.xyz/opengraph.jpg",
     "ogTitle": "FidCaster Points",
-    "ogDescription": "Earn points and claim your airdrop on FidCaster.",
-    "ogImageUrl": "https://fidcaster.xyz/mini-hero.jpg"
+    "ogDescription": "Earn points and claim your airdrop on FidCaster."
   },
   "accountAssociation": {
     "header": "eyJmaWQiOjE2MzMzLCJ0eXBlIjoiY3VzdG9keSIsImtleSI6IjB4NTI3ZmE3MGM5RTJFMEViMWM5MDg2YkRBM2UyMTYwOEYyNTAyQWQwNCJ9",
