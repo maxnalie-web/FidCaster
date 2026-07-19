@@ -1337,11 +1337,6 @@ app.put("/api/admin/secrets", requireAdminSession, adminWriteLimiter, (req, res)
   res.json({ ok: true });
 });
 
-// ── Farcaster Hosted Manifest redirect ────────────────────────────────────────
-app.get("/.well-known/farcaster.json", (_req, res) => {
-  res.redirect(307, "https://api.farcaster.xyz/miniapps/hosted-manifest/019f77f9-e7d9-1c03-3040-bad14ab0bbda");
-});
-
 // ── Production static file serving ────────────────────────────────────────────
 // In production the Express server is the only process - it serves the React
 // SPA and all API routes. Vite's dev server handles this in development.
