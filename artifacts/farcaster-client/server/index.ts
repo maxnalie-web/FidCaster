@@ -19,6 +19,7 @@ import { registerPointsRoutes } from "./points-routes.js";
 import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
 import { initLedger } from "./db/ledger.js";
+import { initActionsLedgerStore } from "./actions-ledger-store.js";
 import { startVerificationJob } from "./verification-job.js";
 import { startSybilDetector } from "./sybil-detector.js";
 import { startWatchers } from "./watcher.js";
@@ -927,6 +928,9 @@ app.post("/api/miniapp/webhook", express.json(), async (_req: express.Request, r
   }
   res.json({ ok: true }); // always 200
 });
+=======
+registerActionsRoutes(app); // Points/airdrop action ledger (user_actions) — no-ops if DATABASE_URL unset
+>>>>>>> cb6ace6 (Add a unified points/airdrop action ledger (user_actions))
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.
@@ -1584,6 +1588,7 @@ const server = app.listen(PORT, host, () => {
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
   initLedger().catch((e) => console.error("[ledger] init failed:", e));
+  initActionsLedgerStore(); // warm up pg pool + ensure points/airdrop ledger tables exist
   startVerificationJob();   // background: verify hub action proofs against Neynar
   startSybilDetector();     // background: hourly fraud exclusion rules
   startWatchers();          // background: data-gap monitors + /api/watchers/health

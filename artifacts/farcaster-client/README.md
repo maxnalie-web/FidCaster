@@ -398,6 +398,7 @@ cp artifacts/farcaster-client/.env.example artifacts/farcaster-client/.env
 | `APP_FID` | Optional | App FID for signer attribution |
 | `APP_MNEMONIC` | Optional | App mnemonic for server-side signing |
 | `ALLOWED_ORIGINS` | Optional | Extra CORS origins `https://yourdomain.com,...` |
+| `DATABASE_URL` | Optional | Postgres connection string, shared by the push-token store and the points/airdrop action ledger (`server/actions-ledger-store.ts`). Unset = both silently disabled, no other feature is affected |
 
 ### Development
 

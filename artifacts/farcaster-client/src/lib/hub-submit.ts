@@ -275,8 +275,8 @@ async function submitBytesRelay(bytesBase64: string): Promise<void> {
   }
 }
 
-/** Last-resort full relay · used only when browser-side signing itself fails. */
-async function serverRelay(body: object): Promise<void> {
+/** Last-resort full relay · used only when browser-side signing itself fails. Returns the message hash. */
+async function serverRelay(body: object): Promise<string | null> {
   const res = await fetch("/api/farcaster/action", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
@@ -297,6 +297,30 @@ async function serverRelay(body: object): Promise<void> {
   if (!ct.includes("application/json")) {
     throw new Error(`signal · hub relay returned unexpected response (server may be restarting)`);
   }
+  const data = await res.json().catch(() => null) as { hash?: string } | null;
+  return data?.hash ?? null;
+}
+
+// ─── Points/airdrop action ledger reporting ────────────────────────────────────
+// Fire-and-forget: reports a just-succeeded action to /api/actions/log using its
+// real message hash as proof (see server/actions-routes.ts). Never throws —
+// a logging failure must never surface as a failure of the actual cast/like/
+// follow the user just performed. Silently skips action types the points
+// system doesn't track (delete-cast, update-user-data).
+const LOGGABLE_TYPES = new Set(["cast", "like", "unlike", "recast", "unrecast", "follow", "unfollow"]);
+
+function reportActionForPoints(fid: number, action: FarcasterAction, hash: string | null): void {
+  if (!hash || !LOGGABLE_TYPES.has(action.type)) return;
+  const payload: Record<string, unknown> =
+    action.type === "follow" || action.type === "unfollow" ? { targetFid: action.targetFid } :
+    action.type === "cast" ? { textLength: action.text.length, hasEmbeds: !!action.embeds?.length } :
+    "castHash" in action ? { castHash: action.castHash, castAuthorFid: action.castAuthorFid } : {};
+  fetch("/api/actions/log", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ fid, actionType: action.type, payload, proof: hash }),
+    signal:  AbortSignal.timeout(8_000),
+  }).catch(() => { /* best-effort — never blocks or surfaces to the user */ });
 }
 
 /**
@@ -315,26 +339,20 @@ async function submit(
 ): Promise<void> {
   // ── 1. Sign locally (private key never leaves the browser) ──────────────────
   let signedBytes: string | null = null;
-  let msgHash:     string | null = null;
+  let messageHash: string | null = null;
   try {
     const { bytes, hash } = await buildAndSignLocal(new Uint8Array(privateKey), fid, action);
     signedBytes = bytes;
-    msgHash     = hash;
+    messageHash = hash;
 
     // 1a. Cloudflare Worker (if configured) · the api_key lives as a Worker secret,
     //     never in the browser. CORS handled, edge IPs, free. No-op if unset.
-    if (await tryWorkerHubSubmit(bytes)) {
-      reportToLedger(fid, action, hash);
-      return;
-    }
+    if (await tryWorkerHubSubmit(bytes)) { reportActionForPoints(fid, action, messageHash); return; }
 
     // 1b. PRIMARY: submit straight to Neynar from THIS browser using the dedicated
     //     capped key (per-IP scaling). No-op -> falls through to the server relay.
     const direct = await tryNeynarBrowserSubmit(bytes);
-    if (direct === "ok") {
-      reportToLedger(fid, action, hash);
-      return;
-    }
+    if (direct === "ok") { reportActionForPoints(fid, action, messageHash); return; }
     if (direct === "skip") throw new Error("PERMANENT_SKIP · target FID is invalid or deleted");
     // direct === "fail" -> fall through to the server relay below.
   } catch (err) {
@@ -347,13 +365,13 @@ async function submit(
   //     Signed bytes only · the private key stays in the browser.
   if (signedBytes) {
     await submitBytesRelay(signedBytes);
-    if (msgHash) reportToLedger(fid, action, msgHash);
+    reportActionForPoints(fid, action, messageHash);
     return;
   }
 
   // ── 3. Absolute last resort: full relay with re-signing (signing-failure path) ─
-  // No msgHash here (local signing failed), so we cannot report to the ledger.
-  await serverRelay(relayBody);
+  const relayedHash = await serverRelay(relayBody);
+  reportActionForPoints(fid, action, relayedHash);
 }
 
 // ─── Action ledger reporting ──────────────────────────────────────────────────

@@ -8,7 +8,7 @@ import {
 } from "viem";
 import { optimism } from "viem/chains";
 import { singleFlight } from "./neynar-limit.js";
-import { logUserAction, type ActionType } from "./db/ledger.js";
+import { logUserAction, type ActionType } from "./actions-ledger-store.js";
 
 const VALID_ETH_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const VALID_HEX_STRING = /^0x[0-9a-fA-F]+$/;
@@ -412,10 +412,13 @@ function rebuildActivity() {
 }
 
 /**
- * Log on-chain market events as verified ledger rows.
- * The server observed these from the chain directly, so verified=true immediately -
- * no background job needed for these. The buyer's wallet -> FID resolution is
- * a follow-up (buyer address is kept in payload for a later batch pass).
+ * Server-observed on-chain events are the strongest possible proof (Tier 1
+ * of the points system) so these are logged already `verified`. The seller
+ * of a listing/cancel IS that FID's owner, so `fid` is the correct party to
+ * credit. A `sold` event's buyer is a wallet address — resolving buyer
+ * wallet → buyer's own FID is a follow-up; the buyer address is kept in
+ * payload so that resolution can run as a later batch pass without
+ * re-scanning the chain.
  */
 function syncMarketEventsToLedger(events: CachedActivity[]): void {
   for (const e of events) {
