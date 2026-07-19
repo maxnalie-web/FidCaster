@@ -5,7 +5,7 @@
  *  - sdk.actions.ready() is called immediately so the splash dismisses.
  *  - sdk.context resolves the viewer's FID automatically (no login needed).
  *  - The page shows their points, rank, leaderboard, referral link, and
- *    the ETH address registration form for the Clanker airdrop.
+ *    the ETH address registration form for the token distribution.
  *
  * Falls back gracefully to the FidCaster web session (useWallet) when opened
  * in a plain browser tab.
@@ -401,16 +401,16 @@ export function MiniAppPage() {
           </>
         )}
 
-        {/* ── Airdrop tab ────────────────────────────────────────────────── */}
+        {/* ── Wallet tab ────────────────────────────────────────────────── */}
         {tab === "airdrop" && (
           <>
             <div className="rounded-xl border border-border p-4 space-y-1">
               <div className="flex items-center gap-2 mb-2">
                 <Gift className="w-4 h-4 text-amber-500" />
-                <p className="text-sm font-semibold">Clanker Token Airdrop</p>
+                <p className="text-sm font-semibold">Token Airdrop</p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Register your Ethereum wallet on Base to receive the FidCaster Clanker token airdrop.
+                Register your Ethereum wallet on Base to receive the FidCaster token airdrop.
                 Allocation is proportional to your total points.
               </p>
               <div className="mt-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-lg px-3 py-2.5">
@@ -482,7 +482,7 @@ export function MiniAppPage() {
                 ["1", "Earn points by using FidCaster"],
                 ["2", "Register your Base wallet above"],
                 ["3", "Snapshot taken at airdrop date"],
-                ["4", "Tokens sent pro-rata via Clanker on Base"],
+                ["4", "Tokens sent pro-rata on Base"],
               ].map(([n, t]) => (
                 <div key={n} className="flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{n}</span>

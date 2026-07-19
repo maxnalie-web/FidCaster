@@ -1,5 +1,5 @@
 /**
- * Admin Dashboard — points/airdrop system monitor.
+ * Admin Dashboard — points system monitor.
  *
  * Password-gated (X-Admin-Password header). Password is stored in
  * sessionStorage so it persists within the tab but clears on close.
@@ -365,7 +365,7 @@ export function AdminDashboardPage() {
               onClick={() => downloadSnapshot("csv")}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:opacity-90 transition"
             >
-              <Download className="w-4 h-4" /> Download CSV (Clanker)
+              <Download className="w-4 h-4" /> Download CSV (Airdrop)
             </button>
             <button
               onClick={() => downloadSnapshot("json")}
