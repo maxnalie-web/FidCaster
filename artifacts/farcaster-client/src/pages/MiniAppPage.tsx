@@ -481,8 +481,7 @@ function OnboardingFlow({ fid, ctx, onComplete }: {
 
       {/* Description */}
       <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.75 }}>
-        <strong style={{ color: C.text1 }}>FidCaster</strong> is a Farcaster-native platform that rewards your on-chain social activity with points toward the{" "}
-        <strong style={{ color: C.accentHi }}>$FCAST airdrop</strong>. All earning activities happen at{" "}
+        <strong style={{ color: C.text1 }}>FidCaster</strong> is a Farcaster client that tracks your activity and rewards every verified action with points. Points count toward the airdrop. All earning activities take place at{" "}
         <strong style={{ color: C.amber }}>fidcaster.xyz</strong>.
       </p>
 
@@ -490,7 +489,7 @@ function OnboardingFlow({ fid, ctx, onComplete }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
           { Icon: Zap,      color: C.accentHi, text: "Earn points for every verified Farcaster action you take" },
-          { Icon: Trophy,   color: C.amber,    text: "Climb the leaderboard and secure a larger airdrop share" },
+          { Icon: Trophy,   color: C.amber,    text: "Climb the leaderboard and secure a larger share of the airdrop" },
           { Icon: Shield,   color: C.green,    text: "Your FID is your account. No sign-up, fully on-chain" },
         ].map(({ Icon, color, text }) => (
           <div key={text} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", background: C.surface, borderRadius: 12, border: `1px solid ${C.border}` }}>
@@ -1030,7 +1029,7 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", borderRadius: 16 }}>
         <Gift size={20} color={C.amber} style={{ flexShrink: 0 }} />
         <div>
-          <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>$FCAST Airdrop</p>
+          <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>Airdrop</p>
           <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Snapshot not announced yet. Keep earning.</p>
         </div>
         <span style={{ marginLeft: "auto", width: 8, height: 8, borderRadius: "50%", background: C.amber, flexShrink: 0, animation: "pulse 2s ease-in-out infinite" }} />
