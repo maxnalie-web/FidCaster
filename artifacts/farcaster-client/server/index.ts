@@ -33,6 +33,7 @@ import {
   isAdminConfigured, checkAdminPassword, issueSessionToken,
   requireAdminSession, hasValidAdminSession, setSessionCookie, clearSessionCookie,
 } from "./admin-auth.js";
+import { createNftPassRouter } from "./nft-pass-routes.js";
 import { getPublicConfig, setPublicConfig, getAdminSecrets, setAdminSecrets } from "./admin-store.js";
 import { setAdminNeynarKey } from "./neynar-limit.js";
 
@@ -859,6 +860,7 @@ registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan
 registerActionsRoutes(app); // Points/airdrop action ledger — no-ops if DATABASE_URL unset
 registerPointsRoutes(app);  // Leaderboard, snapshot, referral, watcher health
 registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wallet)
+app.use("/api/nft-pass", createNftPassRouter()); // FidCaster Pass NFT mint + check
 
 // Mini App webhook — Farcaster sends events here when users add/remove the mini app.
 // No-op for now (acknowledged with 200); extend to handle notifications later.
