@@ -11,14 +11,16 @@
     "subtitle": "Earn points. Get the airdrop.",
     "description": "Track your FidCaster points, climb the leaderboard, refer friends, and register your wallet for the token airdrop on Base.",
     "primaryCategory": "social",
+    "screenshotUrls": [
+      "https://fidcaster.xyz/opengraph.jpg"
+    ],
     "heroImageUrl": "https://fidcaster.xyz/opengraph.jpg",
     "ogTitle": "FidCaster Points",
-    "ogDescription": "Earn points and claim your airdrop on FidCaster.",
-    "ogImageUrl": "https://fidcaster.xyz/opengraph.jpg"
+    "ogDescription": "Earn points and claim your airdrop on FidCaster."
   },
   "accountAssociation": {
-    "header": "eyJmaWQiOjE2MzMzLCJ0eXBlIjoiYXV0aCIsImtleSI6IjB4MDA2RjA3QzU4M0E2ZDE5MTBmMTZENTQ5MjNDNDg2NUM1Q0VGMmIxYiJ9",
+    "header": "eyJmaWQiOjE2MzMzLCJ0eXBlIjoiY3VzdG9keSIsImtleSI6IjB4NTI3ZmE3MGM5RTJFMEViMWM5MDg2YkRBM2UyMTYwOEYyNTAyQWQwNCJ9",
     "payload": "eyJkb21haW4iOiJmaWRjYXN0ZXIueHl6In0",
-    "signature": "placeholder-replace-with-real-signature-from-warpcast-developer-tools"
+    "signature": "c9x9zyX8rIh8/oWJJhgweM9JzmtTSnCZ24m/RKwOBi9CVLHxRQXXInL4T44BfVPP8LYEJywagy0tilT5ypMpiBs="
   }
 }
