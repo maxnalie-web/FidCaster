@@ -98,10 +98,19 @@ function useSDK() {
   useEffect(() => {
     let dead = false;
     (async () => {
-      const pFid = parseInt(new URLSearchParams(window.location.search).get("fid") ?? "0", 10);
+      const params = new URLSearchParams(window.location.search);
+      const pFid = parseInt(params.get("fid") ?? "0", 10);
+      const pEth = params.get("eth") ?? undefined;          // ?eth=0x… simulates a verified wallet
       if (pFid > 0) {
         setFid(pFid);
-        setCtx({ user: { fid: pFid, username: `fid${pFid}`, displayName: `FID ${pFid}` } });
+        setCtx({
+          user: {
+            fid: pFid,
+            username: `fid${pFid}`,
+            displayName: `FID ${pFid}`,
+            ...(pEth ? { verifiedAddresses: { eth_addresses: [pEth] } } : {}),
+          },
+        });
         setInFC(true); setReady(true); setAdded(true); return;
       }
       sdk.actions.ready().catch(() => {});
@@ -698,16 +707,32 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
 
         <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Exclusion rules</p>
         {[
-          { Icon: X,        color: C.rose,  label: "Sybil / bot detection",    desc: "Permanently excluded. Irreversible." },
-          { Icon: Shield,   color: C.amber, label: "Hub verification failure",  desc: "Action excluded from score." },
-          { Icon: RefreshCw,color: C.text2, label: "Duplicate submissions",     desc: "Only counted once." },
-          { Icon: Sprout,   color: C.text2, label: "Grow Campaign under 5",     desc: "No points for insufficient campaign." },
+          {
+            Icon: X, color: C.rose,
+            label: "Sybil / bot detection",
+            desc: "حساب‌هایی که رفتار غیرطبیعی دارند (ارسال انبوه، تعامل هماهنگ چند حساب، فارم‌کردن امتیاز) به‌صورت دائمی از ایردراپ حذف می‌شوند. این تصمیم قابل بازگشت نیست. سیستم شناسایی ما به‌صورت مداوم روی داده‌های Farcaster Hub اجرا می‌شود.",
+          },
+          {
+            Icon: Shield, color: C.amber,
+            label: "Hub verification failure",
+            desc: "هر اکشن باید روی Farcaster Hub تأیید شود. اگر cast، recast یا like شما در Hub ثبت نشده باشد یا پس از ثبت حذف شده باشد، امتیاز آن اکشن محاسبه نمی‌شود. اتصال ضعیف اینترنت یا حساب‌های بدون Hub relay هم ممکن است این خطا را ایجاد کنند.",
+          },
+          {
+            Icon: RefreshCw, color: C.text2,
+            label: "Duplicate submissions",
+            desc: "اگر یک اکشن بیش از یک بار به سیستم ارسال شود، فقط یک بار شمارش می‌شود. مثلاً unlike و re-like کردن همان cast دوباره امتیاز نمی‌دهد.",
+          },
+          {
+            Icon: Sprout, color: C.text2,
+            label: "Grow Campaign: حداقل ۵ فالوور",
+            desc: "یک کمپین Grow فقط در صورتی امتیاز می‌گیرد که حداقل ۵ فالوور جدید و تأییدشده ایجاد کند. کمپین‌هایی که به این آستانه نرسند هیچ امتیازی ندارند.",
+          },
         ].map(r => (
-          <div key={r.label} style={{ display: "flex", gap: 12, padding: "11px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 6 }}>
-            <r.Icon size={16} color={r.color} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div key={r.label} style={{ display: "flex", gap: 12, padding: "13px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 8 }}>
+            <r.Icon size={16} color={r.color} style={{ flexShrink: 0, marginTop: 2 }} />
             <div>
-              <p style={{ color: r.color, fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{r.label}</p>
-              <p style={{ color: C.text3, fontSize: 12 }}>{r.desc}</p>
+              <p style={{ color: r.color, fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{r.label}</p>
+              <p style={{ color: C.text3, fontSize: 12, lineHeight: 1.65 }}>{r.desc}</p>
             </div>
           </div>
         ))}
@@ -1108,9 +1133,14 @@ const ONBOARDED_KEY = "fc_v1_onboarded";
 
 export function MiniAppPage() {
   const { fid, ctx, ready, inFC, added, addApp } = useSDK();
-  const [onboarded, setOnboarded] = useState(
-    () => localStorage.getItem(ONBOARDED_KEY) === "1",
-  );
+  const [onboarded, setOnboarded] = useState(() => {
+    // ?reset=1  →  clears onboarding flag so you can re-run the flow
+    if (new URLSearchParams(window.location.search).get("reset") === "1") {
+      localStorage.removeItem(ONBOARDED_KEY);
+      return false;
+    }
+    return localStorage.getItem(ONBOARDED_KEY) === "1";
+  });
 
   let phase: "loading" | "browser" | "onboarding" | "app";
   if (!ready)             phase = "loading";
