@@ -13,6 +13,8 @@ import { registerProxyRoutes } from "./neynar-proxy.js";
 import { registerRpcProxy } from "./rpc-proxy.js";
 import { registerPushRoutes } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
+import { registerActionsRoutes } from "./actions-routes.js";
+import { initActionsLedgerStore } from "./actions-ledger-store.js";
 import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
@@ -821,6 +823,7 @@ registerFidMarketRoutes(app);
 registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
 registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
+registerActionsRoutes(app); // Points/airdrop action ledger (user_actions) — no-ops if DATABASE_URL unset
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.
@@ -1388,6 +1391,7 @@ const server = app.listen(PORT, host, () => {
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
+  initActionsLedgerStore(); // warm up pg pool + ensure points/airdrop ledger tables exist
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
   // Hydrate the admin-configured Neynar key (if any was saved via the admin
   // panel in a previous run) into the in-memory rate limiter on boot.
