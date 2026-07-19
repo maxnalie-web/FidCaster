@@ -1338,6 +1338,37 @@ app.put("/api/admin/secrets", requireAdminSession, adminWriteLimiter, (req, res)
 });
 
 // ── Farcaster Mini App plumbing ───────────────────────────────────────────────
+// Serve the manifest inline so it is never intercepted by the SPA fallback,
+// regardless of whether dist/public/.well-known/ exists in the build output.
+const FARCASTER_MANIFEST = {
+  accountAssociation: {
+    header: "eyJmaWQiOjE2MzMzLCJ0eXBlIjoiY3VzdG9keSIsImtleSI6IjB4NTI3ZmE3MGM5RTJFMEViMWM5MDg2YkRBM2UyMTYwOEYyNTAyQWQwNCJ9",
+    payload: "eyJkb21haW4iOiJmaWRjYXN0ZXIueHl6In0",
+    signature: "c9x9zyX8rIh8/oWJJhgweM9JzmtTSnCZ24m/RKwOBi9CVLHxRQXXInL4T44BfVPP8LYEJywagy0tilT5ypMpiBs=",
+  },
+  frame: {
+    version: "1",
+    name: "FidCaster",
+    iconUrl: "https://fidcaster.xyz/icons/icon-512.png",
+    homeUrl: "https://fidcaster.xyz/mini",
+    splashImageUrl: "https://fidcaster.xyz/icons/icon-512.png",
+    splashBackgroundColor: "#1D0070",
+    webhookUrl: "https://fidcaster.xyz/api/miniapp/webhook",
+    subtitle: "Earn points. Get the airdrop.",
+    description: "Track your FidCaster points, climb the leaderboard, refer friends, and register your wallet for the token airdrop on Base.",
+    primaryCategory: "social",
+    heroImageUrl: "https://fidcaster.xyz/opengraph.jpg",
+    ogTitle: "FidCaster Points",
+    ogDescription: "Earn points and claim your airdrop on FidCaster.",
+    ogImageUrl: "https://fidcaster.xyz/opengraph.jpg",
+  },
+};
+app.get("/.well-known/farcaster.json", (_req: express.Request, res: express.Response) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+  res.json(FARCASTER_MANIFEST);
+});
+
 // Image aliases — farcaster.json references these short paths
 app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-512.png"));
 app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/icon-512.png"));
