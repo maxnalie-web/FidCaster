@@ -86,6 +86,10 @@ interface FidPts {
   fid: number; total_points: number;
   breakdown: { action_type: string; total_actions: number; points_earned: number }[];
 }
+interface HistoryRow { id: number; action_type: string; pts: number; created_at: string; }
+interface ReferralRow { fid: number; activated: boolean; activated_at: string | null; created_at: string; }
+interface ReferralListData { referredBy: number | null; referrals: ReferralRow[]; }
+interface EligibilityData { eligible: boolean; score: number; threshold: number; reason?: string; }
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
 function useSDK() {
@@ -136,6 +140,17 @@ function useSDK() {
   return { fid, ctx, ready, inFC, added, addApp };
 }
 
+// ── Utility ───────────────────────────────────────────────────────────────────
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 // ── APIs ──────────────────────────────────────────────────────────────────────
 async function apiPoints(fid: number): Promise<FidPts | null> {
   try { const r = await fetch(`/api/points/my?fid=${fid}`); return r.ok ? r.json() : null; }
@@ -147,6 +162,26 @@ async function apiBoard(): Promise<LBRow[]> {
     const d = await r.json();
     return d.leaderboard ?? [];
   } catch { return []; }
+}
+async function apiHistory(fid: number): Promise<HistoryRow[]> {
+  try {
+    const r = await fetch(`/api/points/history?fid=${fid}&limit=50`);
+    const d = await r.json();
+    return Array.isArray(d.history) ? d.history : [];
+  } catch { return []; }
+}
+async function apiReferralList(fid: number): Promise<ReferralListData> {
+  try {
+    const r = await fetch(`/api/referral/list?fid=${fid}`);
+    const d = await r.json();
+    return { referredBy: d.referredBy ?? null, referrals: Array.isArray(d.referrals) ? d.referrals : [] };
+  } catch { return { referredBy: null, referrals: [] }; }
+}
+async function apiEligibility(fid: number): Promise<EligibilityData> {
+  try {
+    const r = await fetch(`/api/mini/eligibility?fid=${fid}`);
+    return r.ok ? r.json() : { eligible: true, score: -1, threshold: 30 };
+  } catch { return { eligible: true, score: -1, threshold: 30 }; }
 }
 
 // ── Animated counter ──────────────────────────────────────────────────────────
@@ -294,7 +329,8 @@ function BrowserScreen() {
 function NFTPassCard({
   fid, ethAddress, onMinted,
 }: { fid: number; ethAddress?: string; onMinted?: () => void }) {
-  const [s,          setS]          = useState<"checking"|"idle"|"input"|"minting"|"done"|"error">("checking");
+  const [s,          setS]          = useState<"checking"|"idle"|"connecting"|"input"|"minting"|"done"|"error">("checking");
+  const [activeAddr, setActiveAddr] = useState(ethAddress ?? "");
   const [manualAddr, setManualAddr] = useState("");
   const [txHash,     setTxHash]     = useState("");
   const [err,        setErr]        = useState("");
@@ -302,6 +338,7 @@ function NFTPassCard({
   useEffect(() => {
     const addr = ethAddress;
     if (!addr) { setS("idle"); return; }
+    setActiveAddr(addr);
     fetch(`/api/nft-pass/check/${addr}`)
       .then(r => r.json())
       .then(d => {
@@ -312,6 +349,7 @@ function NFTPassCard({
   }, [ethAddress]);
 
   const short = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`;
+  const hasWallet = !!(typeof window !== "undefined" && (window as any).ethereum);
 
   async function doMint(address: string) {
     setS("minting");
@@ -331,9 +369,32 @@ function NFTPassCard({
     } catch (e) { setErr(String(e)); setS("error"); }
   }
 
-  function handleMint() {
-    if (ethAddress) doMint(ethAddress);
-    else setS("input");
+  async function connectWallet() {
+    setS("connecting");
+    try {
+      const eth = (window as any).ethereum;
+      // Switch to Base (chainId 0x2105 = 8453)
+      try {
+        await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x2105" }] });
+      } catch { /* chain not found or user cancelled — proceed anyway */ }
+      const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
+      const addr = accounts[0];
+      if (!addr) { setS("idle"); return; }
+      setActiveAddr(addr);
+      // Check if already minted with this address
+      const check = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => ({}));
+      if (check.hasMinted) { setS("done"); onMinted?.(); return; }
+      doMint(addr);
+    } catch (e) {
+      setErr(String(e));
+      setS("error");
+    }
+  }
+
+  function handleMintClick() {
+    if (ethAddress) { doMint(ethAddress); return; }
+    if (hasWallet)  { connectWallet(); return; }
+    setS("input");
   }
 
   if (s === "checking") {
@@ -357,6 +418,9 @@ function NFTPassCard({
             <p style={{ color: C.green, fontSize: 13, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>
               <Check size={13} /> Minted · Full access active
             </p>
+            {activeAddr && (
+              <p style={{ color: C.text3, fontSize: 11, fontFamily: "monospace", marginTop: 3 }}>{short(activeAddr)}</p>
+            )}
           </div>
           {txHash && (
             <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
@@ -376,14 +440,25 @@ function NFTPassCard({
         <div style={{ flex: 1 }}>
           <p style={{ color: C.text1, fontWeight: 700, fontSize: 15 }}>FidCaster Pass</p>
           <p style={{ color: C.text2, fontSize: 12, marginTop: 2 }}>
-            {ethAddress
-              ? <>Free NFT on Base · <span style={{ fontFamily: "monospace", color: C.accentHi }}>{short(ethAddress)}</span></>
-              : "Free NFT on Base"
+            {activeAddr
+              ? <>Base NFT · <span style={{ fontFamily: "monospace", color: C.accentHi }}>{short(activeAddr)}</span></>
+              : hasWallet ? "Connect wallet to mint free" : "Free NFT on Base"
             }
           </p>
         </div>
-        {s === "idle" && (
-          <button onClick={handleMint} style={{
+
+        {s === "idle" && !ethAddress && hasWallet && (
+          <button onClick={connectWallet} style={{
+            background: `linear-gradient(135deg, ${C.accent}, #A855F7)`,
+            color: "#fff", borderRadius: 10, padding: "8px 14px",
+            fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0,
+            boxShadow: "0 4px 16px rgba(124,58,237,0.3)", display: "flex", alignItems: "center", gap: 5,
+          }}>
+            <Wallet size={12} /> Connect
+          </button>
+        )}
+        {s === "idle" && (ethAddress || !hasWallet) && (
+          <button onClick={handleMintClick} style={{
             background: `linear-gradient(135deg, ${C.accent}, #A855F7)`,
             color: "#fff", borderRadius: 10, padding: "8px 16px",
             fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0,
@@ -392,9 +467,10 @@ function NFTPassCard({
             Mint free
           </button>
         )}
-        {s === "minting" && (
+        {(s === "minting" || s === "connecting") && (
           <span style={{ color: C.accentHi, fontSize: 13, display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-            <Loader2 size={14} className="animate-spin" /> Minting...
+            <Loader2 size={14} className="animate-spin" />
+            {s === "connecting" ? "Connecting..." : "Minting..."}
           </span>
         )}
       </div>
@@ -404,7 +480,7 @@ function NFTPassCard({
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: "hidden" }}>
             <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ color: C.text3, fontSize: 12 }}>No verified wallet found. Enter your Base address:</p>
+              <p style={{ color: C.text3, fontSize: 12 }}>Enter your Base wallet address to receive the NFT:</p>
               <input type="text" placeholder="0x..." value={manualAddr} onChange={e => setManualAddr(e.target.value)}
                 style={{ width: "100%", padding: "10px 12px", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.borderMed}`, borderRadius: 10, color: C.text1, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
               <div style={{ display: "flex", gap: 8 }}>
@@ -446,12 +522,22 @@ const OB_STEPS = [
 function OnboardingFlow({ fid, ctx, onComplete }: {
   fid: number; ctx: MiniCtx | null; onComplete: () => void;
 }) {
-  const [step,   setStep]   = useState(0);
-  const [minted, setMinted] = useState(false);
+  const [step,        setStep]       = useState(0);
+  const [minted,      setMinted]     = useState(false);
+  const [eligData,    setEligData]   = useState<EligibilityData | null>(null);
+  const [eligLoading, setEligLoading] = useState(false);
 
   const username = ctx?.user?.username ?? `fid${fid}`;
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
   const ethAddr  = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
+
+  // Fetch eligibility when user reaches step 1 (Mint Pass)
+  useEffect(() => {
+    if (step === 1 && !eligData && !eligLoading) {
+      setEligLoading(true);
+      apiEligibility(fid).then(d => { setEligData(d); setEligLoading(false); });
+    }
+  }, [step, fid, eligData, eligLoading]);
 
   function next() { if (step < 2) setStep(s => s + 1); }
   function back() { if (step > 0) setStep(s => s - 1); }
@@ -500,28 +586,72 @@ function OnboardingFlow({ fid, ctx, onComplete }: {
       </div>
     </motion.div>,
 
-    // ── Step 1: Mint Pass (HARD GATE) ──────────────────────────────────────
+    // ── Step 1: Mint Pass (HARD GATE + Neynar score gate) ──────────────────
     <motion.div key="s1" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.7 }}>
-        The <strong style={{ color: C.text1 }}>FidCaster Pass</strong> is a free NFT on Base that unlocks full access to the app. You must mint it to continue.
-      </p>
-
-      <NFTPassCard fid={fid} ethAddress={ethAddr} onMinted={() => setMinted(true)} />
-
-      {minted && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.22)", borderRadius: 14 }}>
-          <Check size={16} color={C.green} />
-          <p style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Pass minted! Tap Continue to proceed.</p>
-        </motion.div>
-      )}
-
-      {!minted && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.20)", borderRadius: 14 }}>
-          <Shield size={15} color={C.amber} />
-          <p style={{ color: C.amber, fontSize: 13 }}>You must mint the pass to unlock the app.</p>
+      {/* Eligibility loading */}
+      {(eligLoading || !eligData) ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "20px 0" }}>
+          <Loader2 size={18} className="animate-spin" style={{ color: C.accentHi }} />
+          <p style={{ color: C.text2, fontSize: 14 }}>Checking eligibility...</p>
         </div>
+      ) : !eligData.eligible ? (
+        /* Ineligible: score too low */
+        <motion.div {...fadeUp} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ padding: "20px 18px", background: "rgba(244,63,94,0.07)", border: "1px solid rgba(244,63,94,0.22)", borderRadius: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Shield size={20} color={C.rose} />
+              <p style={{ color: C.rose, fontWeight: 700, fontSize: 16 }}>Score Too Low</p>
+            </div>
+            <p style={{ color: C.text2, fontSize: 13, lineHeight: 1.7 }}>
+              Your Neynar quality score is{" "}
+              <strong style={{ color: C.rose }}>{eligData.score >= 0 ? eligData.score.toFixed(0) : "unknown"}</strong>.
+              You need at least{" "}
+              <strong style={{ color: C.text1 }}>{eligData.threshold}</strong> to use FidCaster.
+            </p>
+            <p style={{ color: C.text3, fontSize: 12, lineHeight: 1.6 }}>
+              Neynar score reflects your Farcaster account quality — regular activity, genuine followers, and real engagement raise it. Come back once your score improves.
+            </p>
+          </div>
+          <a
+            href="https://neynar.com/score"
+            target="_blank" rel="noopener noreferrer"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "12px 18px", border: `1px solid ${C.border}`, borderRadius: 12, color: C.text2, fontSize: 13, textDecoration: "none" }}
+          >
+            Learn about Neynar score <ExternalLink size={13} />
+          </a>
+        </motion.div>
+      ) : (
+        /* Eligible: show mint */
+        <>
+          <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.7 }}>
+            The <strong style={{ color: C.text1 }}>FidCaster Pass</strong> is a free NFT on Base that unlocks full access to the app. You must mint it to continue.
+          </p>
+
+          {eligData.score >= 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: 10 }}>
+              <Check size={13} color={C.green} />
+              <p style={{ color: C.green, fontSize: 12 }}>
+                Neynar score: <strong>{eligData.score.toFixed(0)}</strong> — eligible ✓
+              </p>
+            </div>
+          )}
+
+          <NFTPassCard fid={fid} ethAddress={ethAddr} onMinted={() => setMinted(true)} />
+
+          {minted ? (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.22)", borderRadius: 14 }}>
+              <Check size={16} color={C.green} />
+              <p style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Pass minted! Tap Continue to proceed.</p>
+            </motion.div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.20)", borderRadius: 14 }}>
+              <Shield size={15} color={C.amber} />
+              <p style={{ color: C.amber, fontSize: 13 }}>You must mint the pass to unlock the app.</p>
+            </div>
+          )}
+        </>
       )}
     </motion.div>,
 
@@ -593,7 +723,7 @@ function OnboardingFlow({ fid, ctx, onComplete }: {
   ];
 
   // Determine if "Continue" is enabled
-  const canContinue = step === 0 || (step === 1 && minted);
+  const canContinue = step === 0 || (step === 1 && minted && eligData?.eligible !== false);
 
   return (
     <div style={{ minHeight: "100svh", background: C.bg, display: "flex", flexDirection: "column" }}>
@@ -746,9 +876,22 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
 function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
   fid: number; ethAddr?: string; loading: boolean; pts: FidPts | null; rank: number | null;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied,      setCopied]   = useState(false);
+  const [history,     setHistory]  = useState<HistoryRow[]>([]);
+  const [refData,     setRefData]  = useState<ReferralListData>({ referredBy: null, referrals: [] });
+  const [sideLoading, setSideLoad] = useState(true);
+
   const total  = pts?.total_points ?? 0;
   const refUrl = `https://fidcaster.xyz/?ref=${fid.toString(36).toUpperCase()}`;
+
+  useEffect(() => {
+    setSideLoad(true);
+    Promise.all([apiHistory(fid), apiReferralList(fid)]).then(([h, r]) => {
+      setHistory(h);
+      setRefData(r);
+      setSideLoad(false);
+    });
+  }, [fid]);
 
   async function copy() {
     await navigator.clipboard.writeText(refUrl).catch(() => {});
@@ -766,7 +909,6 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
         backdropFilter: "blur(12px)",
       }}>
         <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -55%)", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,0.25) 0%, transparent 70%)", pointerEvents: "none" }} />
-
         <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
           <Zap size={11} color={C.text3} /> Total Points
         </p>
@@ -796,7 +938,7 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
       {/* NFT Pass */}
       <NFTPassCard fid={fid} ethAddress={ethAddr} />
 
-      {/* Breakdown */}
+      {/* Breakdown by category */}
       {!loading && pts?.breakdown && pts.breakdown.filter(b => b.points_earned > 0).length > 0 && (
         <Card>
           <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 16px 6px", display: "flex", alignItems: "center", gap: 5 }}>
@@ -813,9 +955,12 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
                       <meta.Icon size={14} color={C.text3} />
                       {meta.label}
                     </span>
-                    <span style={{ color: C.accentHi, fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-                      {b.points_earned.toLocaleString()}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: C.text3, fontSize: 11 }}>{b.total_actions}×</span>
+                      <span style={{ color: C.accentHi, fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                        {b.points_earned.toLocaleString()} pts
+                      </span>
+                    </div>
                   </div>
                   <div style={{ height: 4, background: C.border, borderRadius: 2 }}>
                     <motion.div
@@ -833,20 +978,79 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
         </Card>
       )}
 
-      {/* Referral */}
+      {/* Activity History */}
+      <Card>
+        <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 16px 6px", display: "flex", alignItems: "center", gap: 5 }}>
+          <Zap size={11} color={C.text3} /> Recent Activity
+        </p>
+        {sideLoading ? (
+          <div style={{ padding: "20px", display: "flex", justifyContent: "center" }}>
+            <Loader2 size={16} className="animate-spin" style={{ color: C.text3 }} />
+          </div>
+        ) : history.length === 0 ? (
+          <div style={{ padding: "16px", textAlign: "center" }}>
+            <p style={{ color: C.text3, fontSize: 13 }}>No activity yet. Start earning on fidcaster.xyz</p>
+          </div>
+        ) : (
+          <div style={{ maxHeight: 280, overflowY: "auto" }}>
+            {history.map((row, i) => {
+              const meta = ACTION_MAP[row.action_type] ?? { label: row.action_type, Icon: Zap };
+              return (
+                <div key={row.id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(124,58,237,0.10)", border: `1px solid rgba(124,58,237,0.18)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <meta.Icon size={13} color={C.accentHi} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ color: C.text1, fontSize: 13 }}>{meta.label}</p>
+                      <p style={{ color: C.text3, fontSize: 11, marginTop: 1 }}>{timeAgo(row.created_at)}</p>
+                    </div>
+                    <span style={{ color: C.green, fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                      +{row.pts}
+                    </span>
+                  </div>
+                  {i < history.length - 1 && <div style={{ height: 1, background: C.border, margin: "0 16px" }} />}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Referrals */}
       <Card style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <div>
             <p style={{ color: C.text1, fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
-              <Share2 size={14} color={C.accentHi} /> Invite Friends
+              <Share2 size={14} color={C.accentHi} /> Referrals
             </p>
-            <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Earn <strong style={{ color: C.amber }}>+200 pts</strong> per successful referral</p>
+            <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>
+              Earn <strong style={{ color: C.amber }}>+200 pts</strong> per activated referral
+            </p>
           </div>
+          {!sideLoading && refData.referrals.length > 0 && (
+            <div style={{ textAlign: "right" }}>
+              <p style={{ color: C.accentHi, fontSize: 16, fontWeight: 800 }}>{refData.referrals.filter(r => r.activated).length}</p>
+              <p style={{ color: C.text3, fontSize: 11 }}>activated</p>
+            </div>
+          )}
         </div>
+
+        {/* Referred by */}
+        {!sideLoading && refData.referredBy && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: 10, marginBottom: 10 }}>
+            <Users size={13} color={C.green} />
+            <p style={{ color: C.green, fontSize: 12 }}>
+              Referred by <strong>FID {refData.referredBy}</strong>
+            </p>
+          </div>
+        )}
+
+        {/* Invite link */}
         <button onClick={copy} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "10px 14px", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.borderMed}`,
-          borderRadius: 12, cursor: "pointer", gap: 8,
+          borderRadius: 12, cursor: "pointer", gap: 8, marginBottom: refData.referrals.length > 0 ? 10 : 0,
         }}>
           <span style={{ color: C.text2, fontSize: 12, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, textAlign: "left" }}>
             {refUrl.replace("https://", "")}
@@ -855,6 +1059,38 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
             {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
           </span>
         </button>
+
+        {/* Referral list */}
+        {!sideLoading && refData.referrals.length > 0 && (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, maxHeight: 200, overflowY: "auto" }}>
+            <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+              Your referrals ({refData.referrals.length})
+            </p>
+            {refData.referrals.map((r, i) => (
+              <div key={r.fid}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0" }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#fff", flexShrink: 0 }}>
+                    {r.fid.toString().slice(-2)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: C.text1, fontSize: 13 }}>FID {r.fid}</p>
+                    <p style={{ color: C.text3, fontSize: 11, marginTop: 1 }}>{timeAgo(r.created_at)}</p>
+                  </div>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6,
+                    background: r.activated ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.10)",
+                    border: `1px solid ${r.activated ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.22)"}`,
+                    color: r.activated ? C.green : C.amber,
+                    flexShrink: 0,
+                  }}>
+                    {r.activated ? "✓ Active" : "Pending"}
+                  </span>
+                </div>
+                {i < refData.referrals.length - 1 && <div style={{ height: 1, background: C.border }} />}
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </motion.div>
   );

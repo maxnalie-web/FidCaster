@@ -11,8 +11,8 @@
 
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
-import { getLeaderboard, getFidPoints, getFullSnapshot } from "./db/points.js";
-import { fidToCode, claimReferral } from "./db/referrals.js";
+import { getLeaderboard, getFidPoints, getFullSnapshot, getPointsHistory } from "./db/points.js";
+import { fidToCode, claimReferral, getReferralList } from "./db/referrals.js";
 import { getHealthReport } from "./watcher.js";
 import { isLedgerConfigured } from "./db/ledger.js";
 
@@ -95,6 +95,35 @@ export function registerPointsRoutes(app: Express): void {
     if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
     const code = fidToCode(fid);
     res.json({ fid, code, url: `https://fidcaster.xyz/?ref=${code}` });
+  });
+
+  // ── Points history ──────────────────────────────────────────────────────────
+  app.get("/api/points/history", readLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
+    const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
+    if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
+    const limit = Math.min(Number(req.query.limit ?? 50), 100);
+    try {
+      const rows = await getPointsHistory(fid, limit);
+      res.json({ fid, history: rows });
+    } catch (e) {
+      console.error("[points] history error:", e);
+      res.status(500).json({ error: "Failed to fetch history" });
+    }
+  });
+
+  // ── Referral list ────────────────────────────────────────────────────────────
+  app.get("/api/referral/list", readLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
+    const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
+    if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
+    try {
+      const data = await getReferralList(fid);
+      res.json({ fid, ...data });
+    } catch (e) {
+      console.error("[referral] list error:", e);
+      res.status(500).json({ error: "Failed to fetch referral list" });
+    }
   });
 
   // ── Referral: claim ─────────────────────────────────────────────────────────

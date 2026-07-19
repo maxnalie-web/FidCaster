@@ -139,6 +139,45 @@ export async function getFullSnapshot(): Promise<LeaderboardRow[]> {
   return rows.map(r => ({ fid: Number(r.fid), total_points: Number(r.total_points), rank: Number(r.rank) }));
 }
 
+// ── Point types that actually earn something ──────────────────────────────────
+const EARNING_TYPES = Object.entries(POINTS)
+  .filter(([, v]) => v.pts > 0)
+  .map(([k]) => k);
+
+export interface HistoryRow {
+  id: number;
+  action_type: string;
+  pts: number;
+  created_at: string; // ISO string
+}
+
+/**
+ * Returns recent earning actions for a FID, newest-first.
+ * Each row reflects the per-action point value (not daily-capped).
+ * The breakdown remains the source-of-truth for totals.
+ */
+export async function getPointsHistory(fid: number, limit = 50): Promise<HistoryRow[]> {
+  const pool = getPool();
+  if (!pool) return [];
+  const { rows } = await pool.query(
+    `SELECT id, action_type, created_at
+     FROM user_actions
+     WHERE fid = $1
+       AND verified = true
+       AND excluded = false
+       AND action_type = ANY($3::text[])
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [fid, Math.min(limit, 100), EARNING_TYPES],
+  );
+  return rows.map(r => ({
+    id:          Number(r.id),
+    action_type: r.action_type,
+    pts:         POINTS[r.action_type]?.pts ?? 0,
+    created_at:  r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
 /** Overall ledger stats for watchers/health */
 export async function getLedgerStats(): Promise<{
   total: number; verified: number; pending: number; excluded: number;

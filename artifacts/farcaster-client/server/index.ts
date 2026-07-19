@@ -15,6 +15,7 @@ import { registerPushRoutes } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
 import { registerActionsRoutes } from "./actions-routes.js";
 import { registerPointsRoutes } from "./points-routes.js";
+import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
 import { initLedger } from "./db/ledger.js";
 import { startVerificationJob } from "./verification-job.js";
@@ -859,6 +860,7 @@ registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no COR
 registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
 registerActionsRoutes(app); // Points/airdrop action ledger — no-ops if DATABASE_URL unset
 registerPointsRoutes(app);  // Leaderboard, snapshot, referral, watcher health
+registerMiniRoutes(app);    // Mini app eligibility (Neynar score gate)
 registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wallet)
 app.use("/api/nft-pass", createNftPassRouter()); // FidCaster Pass NFT mint + check
 

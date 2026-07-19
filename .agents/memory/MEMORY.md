@@ -19,3 +19,4 @@
 - [NFT Pass contract](nft-pass-contract.md) — FidCasterPass ERC-721 on Base 0x58d18dd2173cb417440c72d10f46d3fde69bb68f; Basescan verify needs BASESCAN_API_KEY secret (V2 API)
 - [NFT image background](nft-pass-image.md) — bg is dark green R≈72 G≈109 B≈74; flood-fill from 4 corners (tolerance 40) removes it cleanly; saved as public/nft-pass-v2.png
 - [Mini app preview mode](mini-app-preview.md) — ?fid=XXX URL param in /mini bypasses Warpcast check; shows full Points/Board/Airdrop UI for testing in browser
+- [tsx cache invalidation](tsx-cache-invalidation.md) — stale tsx cache causes new routes 404 while old routes work; fix: rm /tmp/tsx-1000 + touch files + restart

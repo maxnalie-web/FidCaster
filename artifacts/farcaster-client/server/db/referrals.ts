@@ -155,6 +155,53 @@ export async function activatePendingReferrals(): Promise<number> {
   return activated;
 }
 
+export interface ReferralRow {
+  fid: number;
+  activated: boolean;
+  activated_at: string | null;
+  created_at: string;
+}
+
+export interface ReferralListData {
+  referredBy: number | null;
+  referrals: ReferralRow[];
+}
+
+export async function getReferralList(referrerFid: number): Promise<ReferralListData> {
+  const pool = getPool();
+  if (!pool) return { referredBy: null, referrals: [] };
+
+  const [byResult, listResult] = await Promise.all([
+    pool.query(
+      "SELECT referrer_fid FROM referrals WHERE referred_fid = $1 LIMIT 1",
+      [referrerFid],
+    ),
+    pool.query(
+      `SELECT referred_fid, activated, activated_at, created_at
+       FROM referrals
+       WHERE referrer_fid = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [referrerFid],
+    ),
+  ]);
+
+  const toIso = (v: unknown): string | null => {
+    if (!v) return null;
+    return v instanceof Date ? v.toISOString() : String(v);
+  };
+
+  return {
+    referredBy: byResult.rows[0] ? Number(byResult.rows[0].referrer_fid) : null,
+    referrals: listResult.rows.map(r => ({
+      fid:          Number(r.referred_fid),
+      activated:    Boolean(r.activated),
+      activated_at: toIso(r.activated_at),
+      created_at:   toIso(r.created_at) ?? new Date().toISOString(),
+    })),
+  };
+}
+
 export async function getReferralCount(fid: number): Promise<{ total: number; activated: number }> {
   const pool = getPool();
   if (!pool) return { total: 0, activated: 0 };
