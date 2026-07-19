@@ -1349,20 +1349,37 @@ const FARCASTER_MANIFEST = {
   frame: {
     version: "1",
     name: "FidCaster",
-    iconUrl: "https://fidcaster.xyz/icons/icon-512.png",
+    iconUrl: "https://fidcaster.xyz/icons/icon-512-dark.png",
     homeUrl: "https://fidcaster.xyz/mini",
-    splashImageUrl: "https://fidcaster.xyz/icons/icon-512.png",
+    splashImageUrl: "https://fidcaster.xyz/icons/icon-512-dark.png",
     splashBackgroundColor: "#1D0070",
     webhookUrl: "https://fidcaster.xyz/api/miniapp/webhook",
     subtitle: "Earn points. Get the airdrop.",
     description: "Track your FidCaster points, climb the leaderboard, refer friends, and register your wallet for the token airdrop on Base.",
     primaryCategory: "social",
-    heroImageUrl: "https://fidcaster.xyz/opengraph.jpg",
+    heroImageUrl: "https://fidcaster.xyz/og-mini.png",
     ogTitle: "FidCaster Points",
     ogDescription: "Earn points and claim your airdrop on FidCaster.",
-    ogImageUrl: "https://fidcaster.xyz/opengraph.jpg",
+    ogImageUrl: "https://fidcaster.xyz/og-mini.png",
   },
 };
+
+// fc:miniapp embed metadata for the /mini home URL
+// imageUrl must be 3:2 (1200×800), min 600×400 — see Farcaster Mini App spec
+const MINI_EMBED = JSON.stringify({
+  version: "1",
+  imageUrl: "https://fidcaster.xyz/og-mini.png",
+  button: {
+    title: "🏆 Open FidCaster",
+    action: {
+      type: "launch_miniapp",
+      url: "https://fidcaster.xyz/mini",
+      name: "FidCaster",
+      splashImageUrl: "https://fidcaster.xyz/icons/icon-512-dark.png",
+      splashBackgroundColor: "#1D0070",
+    },
+  },
+});
 app.get("/.well-known/farcaster.json", (_req: express.Request, res: express.Response) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
@@ -1407,6 +1424,27 @@ if (process.env.NODE_ENV === "production") {
         }
       },
     }));
+
+    // /mini: inject fc:miniapp + fc:frame embed meta tags so Farcaster crawlers
+    // see them, while the SPA still boots normally for real users.
+    app.get("/mini", (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const indexPath = resolve(distPath, "index.html");
+      if (!existsSync(indexPath)) { next(); return; }
+      try {
+        const html = readFileSync(indexPath, "utf-8");
+        const metaTags = [
+          `<meta name="fc:miniapp" content='${MINI_EMBED}' />`,
+          `<meta name="fc:frame" content='${MINI_EMBED}' />`,
+          `<meta property="og:image" content="https://fidcaster.xyz/og-mini.png" />`,
+          `<meta property="og:title" content="FidCaster Points" />`,
+          `<meta property="og:description" content="Earn points. Get the airdrop." />`,
+        ].join("\n    ");
+        const modified = html.replace("</head>", `  ${metaTags}\n  </head>`);
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.send(modified);
+      } catch { next(); }
+    });
 
     // SPA fallback - any non-/api/* path serves index.html
     app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
