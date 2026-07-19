@@ -80,3 +80,17 @@ ALTER TABLE referrals ADD COLUMN IF NOT EXISTS activated_at  TIMESTAMPTZ;
 
 -- Index for fast eligibility sweeps (sybil-detector R5, eligibility.ts sweepIneligibleActions)
 CREATE INDEX IF NOT EXISTS idx_users_eligible ON users (eligible) WHERE eligible = false;
+
+-- ── Airdrop wallet registration ───────────────────────────────────────────────
+-- Maps FID → ETH address for the Clanker token airdrop on Base.
+-- One address per FID (PRIMARY KEY). One FID per address (UNIQUE on lower(address)).
+-- Rows are never deleted; updates track updated_at.
+CREATE TABLE IF NOT EXISTS wallet_addresses (
+  fid           BIGINT      PRIMARY KEY,
+  address       TEXT        NOT NULL,
+  registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Prevent one wallet address from claiming multiple FID allocations.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_wa_address ON wallet_addresses (LOWER(address));

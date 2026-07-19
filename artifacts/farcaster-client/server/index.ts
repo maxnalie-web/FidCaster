@@ -15,6 +15,7 @@ import { registerPushRoutes } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
 import { registerActionsRoutes } from "./actions-routes.js";
 import { registerPointsRoutes } from "./points-routes.js";
+import { registerWalletRoutes } from "./wallet-routes.js";
 import { initLedger } from "./db/ledger.js";
 import { startVerificationJob } from "./verification-job.js";
 import { startSybilDetector } from "./sybil-detector.js";
@@ -829,6 +830,13 @@ registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no COR
 registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
 registerActionsRoutes(app); // Points/airdrop action ledger — no-ops if DATABASE_URL unset
 registerPointsRoutes(app);  // Leaderboard, snapshot, referral, watcher health
+registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wallet)
+
+// Mini App webhook — Farcaster sends events here when users add/remove the mini app.
+// No-op for now (acknowledged with 200); extend to handle notifications later.
+app.post("/api/miniapp/webhook", express.json(), (_req: express.Request, res: express.Response) => {
+  res.json({ ok: true });
+});
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
 // field · see server/spam-labels.ts for why this needs its own dataset.

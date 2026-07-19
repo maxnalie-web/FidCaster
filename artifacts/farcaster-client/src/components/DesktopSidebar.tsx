@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Home, Bell, Search, Wallet, User, TrendingUp, Tag, Hash, Sun, Moon,
-  MoreHorizontal, UserCircle, PenSquare, Layers, Settings, ShieldCheck,
+  MoreHorizontal, UserCircle, PenSquare, Layers, Settings, ShieldCheck, Trophy,
 } from "lucide-react";
 import { useWallet } from "@/hooks/useWallet";
 import { useTheme } from "@/App";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 export type DesktopSidebarActive =
   | "feed" | "notifications" | "search" | "miniapps" | "wallet" | "profile"
-  | "grow" | "market" | "channels" | "settings";
+  | "grow" | "market" | "channels" | "settings" | "points" | "admin";
 
 /**
  * Persistent left nav for md+ viewports, shared by every top-level page.
@@ -111,6 +111,11 @@ export function DesktopSidebar({ active, onCast }: { active: DesktopSidebarActiv
           <button onClick={() => navigate("/channels")} className={cn("sidebar-item", active === "channels" && "active")}>
             <Hash className="w-[22px] h-[22px] shrink-0 text-foreground/75" strokeWidth={2} />
             <span className="text-[0.9375rem] text-foreground/85">Channels</span>
+          </button>
+
+          <button onClick={() => navigate("/mini")} className={cn("sidebar-item", active === "points" && "active")}>
+            <Trophy className={cn("w-[22px] h-[22px] shrink-0", active === "points" ? "text-foreground" : "text-foreground/75")} strokeWidth={active === "points" ? 2.5 : 2} />
+            <span className={cn("text-[0.9375rem]", active === "points" ? "text-foreground" : "text-foreground/85")}>Points</span>
           </button>
 
           {fidNum === 16333 && (

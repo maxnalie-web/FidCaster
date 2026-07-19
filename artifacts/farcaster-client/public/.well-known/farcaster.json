@@ -1,0 +1,24 @@
+{
+  "frame": {
+    "name": "FidCaster",
+    "version": "1",
+    "iconUrl": "https://fidcaster.xyz/icons/icon-512.png",
+    "homeUrl": "https://fidcaster.xyz/mini",
+    "imageUrl": "https://fidcaster.xyz/opengraph.jpg",
+    "splashImageUrl": "https://fidcaster.xyz/icons/icon-512.png",
+    "splashBackgroundColor": "#1D0070",
+    "webhookUrl": "https://fidcaster.xyz/api/miniapp/webhook",
+    "subtitle": "Your points. Your airdrop.",
+    "description": "Track your FidCaster points, climb the leaderboard, refer friends, and register your wallet for the Clanker token airdrop on Base.",
+    "primaryCategory": "social",
+    "heroImageUrl": "https://fidcaster.xyz/opengraph.jpg",
+    "ogTitle": "FidCaster Points",
+    "ogDescription": "Track your points and claim your airdrop on FidCaster.",
+    "ogImageUrl": "https://fidcaster.xyz/opengraph.jpg"
+  },
+  "accountAssociation": {
+    "header": "eyJmaWQiOjE2MzMzLCJ0eXBlIjoiYXV0aCIsImtleSI6IjB4MDA2RjA3QzU4M0E2ZDE5MTBmMTZENTQ5MjNDNDg2NUM1Q0VGMmIxYiJ9",
+    "payload": "eyJkb21haW4iOiJmaWRjYXN0ZXIueHl6In0",
+    "signature": "placeholder-replace-with-real-signature-from-warpcast-developer-tools"
+  }
+}
