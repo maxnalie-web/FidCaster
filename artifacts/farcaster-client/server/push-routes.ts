@@ -14,6 +14,7 @@ import {
   addPushToken, removePushToken, getPushTokensForFid, getAllRegisteredFids, pruneInvalidTokens,
 } from "./push-token-store.js";
 import { sendPushToTokens, isFcmConfigured } from "./fcm.js";
+import { processCastForAllowance } from "./promotion-watcher.js";
 
 const registerLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 const webhookLimiter  = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
@@ -25,13 +26,43 @@ const isValidFid = (v: unknown): v is number =>
 // ── Keep the Neynar webhook's fid filters in sync with our token store ───────
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Return all FIDs that have ever opened the app (from the ledger users table). */
+async function getAllAppFids(): Promise<number[]> {
+  try {
+    const { getPool } = await import("./db/pool.js");
+    const pool = getPool();
+    if (!pool) return [];
+    const { rows } = await pool.query(`SELECT fid FROM users`);
+    return rows.map((r: { fid: string | number }) => Number(r.fid));
+  } catch {
+    return [];
+  }
+}
+
 async function syncNeynarWebhookTargets(): Promise<void> {
   const apiKey     = process.env.NEYNAR_API_KEY;
   const webhookId  = process.env.NEYNAR_WEBHOOK_ID;
   const webhookUrl = process.env.PUSH_WEBHOOK_URL;
   if (!apiKey || !webhookId || !webhookUrl) return;
 
-  const fids = await getAllRegisteredFids();
+  // Push-notification targets (push token holders)
+  const pushFids = await getAllRegisteredFids();
+
+  // All FIDs that have ever used the app — used as author_fids so that gift casts
+  // FROM any registered user are delivered even when the mentioned recipient has
+  // no push token (and therefore wouldn't appear in mentioned_fids).
+  const allAppFids = await getAllAppFids();
+
+  // Always include APP_FID in mentioned_fids so promotion casts (which must
+  // mention the app account) are delivered regardless of who the sender is.
+  const appFid = Number(process.env.APP_FID);
+  const mentionFids = appFid > 0
+    ? Array.from(new Set([appFid, ...pushFids]))
+    : pushFids;
+
+  // Deduplicate and union allAppFids + pushFids for author_fids
+  const authorFids = Array.from(new Set([...allAppFids, ...pushFids]));
+
   try {
     const r = await fetch("https://api.neynar.com/v2/farcaster/webhook/", {
       method: "PUT",
@@ -41,8 +72,13 @@ async function syncNeynarWebhookTargets(): Promise<void> {
         name: "fidcaster-push",
         url: webhookUrl,
         subscription: {
-          "reaction.created": { target_fids: fids },
-          "cast.created":     { mentioned_fids: fids },
+          "reaction.created": { target_fids: pushFids },
+          // mentioned_fids: captures promotions (sender mentions APP_FID) + push-mention notifications
+          // author_fids:    captures gift casts FROM any registered user to any recipient
+          "cast.created": {
+            mentioned_fids: mentionFids,
+            ...(authorFids.length > 0 ? { author_fids: authorFids } : {}),
+          },
         },
       }),
       signal: AbortSignal.timeout(10_000),
@@ -51,7 +87,10 @@ async function syncNeynarWebhookTargets(): Promise<void> {
       const t = await r.text().catch(() => "");
       console.warn(`[push] Neynar webhook sync failed: ${r.status} ${t.slice(0, 200)}`);
     } else {
-      console.log(`[push] Neynar webhook synced — ${fids.length} fid(s) registered`);
+      console.log(
+        `[push] Neynar webhook synced — ${pushFids.length} push fid(s), ` +
+        `${mentionFids.length} mention fid(s), ${authorFids.length} author fid(s)`,
+      );
     }
   } catch (e) {
     console.warn("[push] Neynar webhook sync error:", (e as Error).message);
@@ -112,6 +151,7 @@ async function handleCastCreated(
   const actorName = actor.display_name || actor.username || `fid ${actor.fid}`;
   const isReply   = !!data.parent_author?.fid;
 
+  // Push notifications for replies and mentions
   if (isReply && data.parent_author?.fid && data.parent_author.fid !== actor.fid) {
     await pushToFid(data.parent_author.fid, {
       title: "New reply",
@@ -129,6 +169,14 @@ async function handleCastCreated(
       data:  { type: "mention", castHash: data.hash, actorFid: String(actor.fid) },
     });
   }
+
+  // Check cast for promotion / gift patterns (allowance system)
+  await processCastForAllowance({
+    hash:               data.hash,
+    text:               data.text,
+    author:             actor,
+    mentioned_profiles: data.mentioned_profiles,
+  });
 }
 
 export function registerPushRoutes(app: Express): void {

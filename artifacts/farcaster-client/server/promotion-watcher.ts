@@ -1,0 +1,152 @@
+/**
+ * Promotion & Gift detection — processes Farcaster cast.created webhook events.
+ *
+ * All DB writes are delegated to transactional helpers in db/allowance.ts so
+ * that allowance debit + ledger insert are always atomic. Webhook retries are
+ * handled by idempotency checks inside each transaction (the proof column acts
+ * as the once-only gate; allowance is never debited when the proof already exists).
+ *
+ * Promotion: cast contains "FidCaster" AND mentions APP_FID.
+ *   → debit 50 allowance, award 50 pts (or reject if allowance exhausted).
+ *
+ * Gift: cast starts with "{N} FidCaster points @user" (N ≤ 500).
+ *   → debit N allowance, credit/queue N pts for recipient atomically.
+ */
+
+import { getAllowance, processPromotionAtomic, processGiftAtomic } from "./db/allowance.js";
+import { getPool } from "./db/pool.js";
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const MAX_GIFT_PTS = 500;
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface NeynarUser {
+  fid: number;
+  username?: string;
+}
+
+export interface NeynarCastForPromotion {
+  hash: string;
+  text?: string;
+  author?: NeynarUser;
+  mentioned_profiles?: NeynarUser[];
+}
+
+// ── Regex patterns ────────────────────────────────────────────────────────────
+
+const PROMO_REGEX = /fidcaster/i;
+const GIFT_REGEX  = /^(\d+)\s+fidcaster\s+points/i;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getAppFid(): number | null {
+  const n = Number(process.env.APP_FID);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function isFidRegistered(fid: number): Promise<boolean> {
+  const pool = getPool();
+  if (!pool) return false;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_actions WHERE fid = $1 LIMIT 1`,
+    [fid],
+  );
+  return rows.length > 0;
+}
+
+// ── Promotion detection ────────────────────────────────────────────────────────
+
+export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise<boolean> {
+  const appFid = getAppFid();
+  if (!appFid) return false;
+
+  const text      = cast.text ?? "";
+  const authorFid = cast.author?.fid;
+  if (!authorFid) return false;
+
+  if (!PROMO_REGEX.test(text)) return false;
+  const mentionsApp = (cast.mentioned_profiles ?? []).some(p => p.fid === appFid);
+  if (!mentionsApp) return false;
+
+  try {
+    // Ensure today's allowance row exists (requires HTTP to Neynar; must run outside transaction)
+    await getAllowance(authorFid);
+
+    const result = await processPromotionAtomic({ authorFid, castHash: cast.hash, appFid });
+
+    if (!result.ok) {
+      console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: ${result.reason}`);
+      return result.reason === "already_processed"; // true = was already handled, not an error
+    }
+
+    console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: +50 pts, allowance debited`);
+    return true;
+  } catch (e) {
+    console.warn(`[promotion] DB error for cast ${cast.hash}:`, (e as Error).message);
+    return false;
+  }
+}
+
+// ── Gift detection ─────────────────────────────────────────────────────────────
+
+export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<boolean> {
+  const text      = (cast.text ?? "").trim();
+  const authorFid = cast.author?.fid;
+  if (!authorFid) return false;
+
+  const match = GIFT_REGEX.exec(text);
+  if (!match) return false;
+
+  const amount = parseInt(match[1], 10);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_GIFT_PTS) return false;
+
+  const recipients = (cast.mentioned_profiles ?? []).filter(p => p.fid !== authorFid);
+  if (recipients.length === 0) return false;
+  const recipientFid = recipients[0].fid;
+
+  try {
+    // Ensure today's allowance row exists before entering the transaction
+    await getAllowance(authorFid);
+
+    const recipientIsRegistered = await isFidRegistered(recipientFid);
+
+    const result = await processGiftAtomic({
+      authorFid,
+      recipientFid,
+      amount,
+      castHash: cast.hash,
+      recipientIsRegistered,
+    });
+
+    if (!result.ok) {
+      console.log(
+        `[gift] fid ${authorFid} → fid ${recipientFid} (${amount} pts): ${result.reason}`,
+      );
+      return result.reason === "already_processed";
+    }
+
+    console.log(
+      `[gift] fid ${authorFid} → fid ${recipientFid}: ${amount} pts ` +
+      (recipientIsRegistered ? "credited directly" : "queued (unregistered)"),
+    );
+    return true;
+  } catch (e) {
+    console.warn(`[gift] DB error for cast ${cast.hash}:`, (e as Error).message);
+    return false;
+  }
+}
+
+// ── Unified entry point ────────────────────────────────────────────────────────
+
+export async function processCastForAllowance(cast: NeynarCastForPromotion): Promise<void> {
+  try {
+    const wasPromotion = await handlePromotionCast(cast);
+    if (!wasPromotion) {
+      await handleGiftCast(cast);
+    }
+  } catch (e) {
+    console.warn("[promotion-watcher] unexpected error:", (e as Error).message);
+  }
+}

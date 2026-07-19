@@ -94,3 +94,35 @@ CREATE TABLE IF NOT EXISTS wallet_addresses (
 
 -- Prevent one wallet address from claiming multiple FID allocations.
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_wa_address ON wallet_addresses (LOWER(address));
+
+-- ── Daily allowance ───────────────────────────────────────────────────────────
+-- Tracks each user's daily budget for promotion/gifting. One row per (fid, UTC date).
+-- base_amount = min(followers*2, 500) + 100, computed on first access each day.
+-- used = cumulative allowance spent today (promotions + gifts sent).
+CREATE TABLE IF NOT EXISTS daily_allowance (
+  fid          BIGINT  NOT NULL,
+  date         DATE    NOT NULL DEFAULT CURRENT_DATE,
+  base_amount  INTEGER NOT NULL DEFAULT 100,
+  used         INTEGER NOT NULL DEFAULT 0,
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (fid, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_da_fid_date ON daily_allowance (fid, date DESC);
+
+-- ── Pending points ────────────────────────────────────────────────────────────
+-- Holds gifted points for recipients not yet registered in FidCaster.
+-- Points are credited to the ledger and marked claimed on first mini-app open.
+CREATE TABLE IF NOT EXISTS pending_points (
+  id            BIGSERIAL   PRIMARY KEY,
+  recipient_fid BIGINT      NOT NULL,
+  amount        INTEGER     NOT NULL,
+  from_fid      BIGINT      NOT NULL,
+  cast_hash     TEXT        NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  claimed       BOOLEAN     NOT NULL DEFAULT false,
+  claimed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX  IF NOT EXISTS idx_pp_recipient ON pending_points (recipient_fid) WHERE claimed = false;
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_pp_cast_hash ON pending_points (cast_hash);

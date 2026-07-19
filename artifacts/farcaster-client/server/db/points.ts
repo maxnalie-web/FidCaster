@@ -28,26 +28,42 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   referral:                { pts: 200, dailyCap: 2000 },
   quest:                   { pts: 100, dailyCap: 500  },
   app_open:                { pts: 0,   dailyCap: 0    },
+  // ── Allowance-gated actions ────────────────────────────────────────────────
+  promotion:               { pts: 50,  dailyCap: 500  },
+  gift:                    { pts: 0,   dailyCap: 0    }, // sender: 0 pts (allowance debited)
+  // gift_received uses payload.amount (variable); dailyCap 500 enforced in SQL
+  gift_received:           { pts: 0,   dailyCap: 0    }, // handled via GIFT_CASE below
 };
 
-// Build the CASE expression once (avoids repeating in every query)
+// Build the CASE expression once (avoids repeating in every query).
+// Excludes gift_received — handled via GIFT_CASE (payload-based variable amount).
 const CASE_EXPR = Object.entries(POINTS)
-  .filter(([, v]) => v.pts > 0 && v.dailyCap > 0)
+  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received")
   .map(([type, { pts, dailyCap }]) =>
     `WHEN '${type}' THEN LEAST(cnt * ${pts}, ${dailyCap})`)
   .join("\n      ");
+
+// gift_received: each row has payload->>'amount' with the actual pts value.
+// We sum those amounts per (fid, day) and cap at 500.
+const GIFT_CASE = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
 
 // ── Core SQL ──────────────────────────────────────────────────────────────────
 
 const LEADERBOARD_SQL = `
 WITH counted AS (
-  SELECT fid, action_type, (created_at AT TIME ZONE 'UTC')::date AS d, COUNT(*) AS cnt
+  SELECT fid, action_type,
+         (created_at AT TIME ZONE 'UTC')::date AS d,
+         COUNT(*) AS cnt,
+         SUM(CASE WHEN action_type = 'gift_received'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS gift_sum
   FROM user_actions
   WHERE verified = true AND excluded = false
   GROUP BY fid, action_type, d
 ),
 scored AS (
   SELECT fid, CASE action_type
+    ${GIFT_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -70,13 +86,19 @@ LIMIT $1 OFFSET $2
 
 const SINGLE_FID_SQL = `
 WITH counted AS (
-  SELECT action_type, (created_at AT TIME ZONE 'UTC')::date AS d, COUNT(*) AS cnt
+  SELECT action_type,
+         (created_at AT TIME ZONE 'UTC')::date AS d,
+         COUNT(*) AS cnt,
+         SUM(CASE WHEN action_type = 'gift_received'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS gift_sum
   FROM user_actions
   WHERE fid = $1 AND verified = true AND excluded = false
   GROUP BY action_type, d
 ),
 scored AS (
-  SELECT action_type, d, cnt, CASE action_type
+  SELECT action_type, d, cnt, gift_sum, CASE action_type
+    ${GIFT_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -140,9 +162,11 @@ export async function getFullSnapshot(): Promise<LeaderboardRow[]> {
 }
 
 // ── Point types that actually earn something ──────────────────────────────────
-const EARNING_TYPES = Object.entries(POINTS)
-  .filter(([, v]) => v.pts > 0)
-  .map(([k]) => k);
+// Include gift_received even though its POINTS entry is 0 (SQL handles the variable amount).
+const EARNING_TYPES = [
+  ...Object.entries(POINTS).filter(([, v]) => v.pts > 0).map(([k]) => k),
+  "gift_received",
+];
 
 export interface HistoryRow {
   id: number;

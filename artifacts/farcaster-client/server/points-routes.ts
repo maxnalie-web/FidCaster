@@ -15,6 +15,7 @@ import { getLeaderboard, getFidPoints, getFullSnapshot, getPointsHistory } from 
 import { fidToCode, claimReferral, getReferralList } from "./db/referrals.js";
 import { getHealthReport } from "./watcher.js";
 import { isLedgerConfigured } from "./db/ledger.js";
+import { getAllowance, claimAndLogPending } from "./db/allowance.js";
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -60,11 +61,31 @@ export function registerPointsRoutes(app: Express): void {
     const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
     if (!fid) { res.status(400).json({ error: "?fid= must be a valid FID" }); return; }
     try {
+      // Flush pending gifted points atomically:
+      // claimAndLogPending runs inside a single DB transaction — it marks
+      // rows claimed AND writes ledger records together. If the ledger write
+      // fails the claim is rolled back so no points are silently lost.
+      const claimed = await claimAndLogPending(fid);
+
       const result = await getFidPoints(fid);
-      res.json(result);
+      res.json({ ...result, pendingClaimed: claimed });
     } catch (e) {
       console.error("[points] my error:", e);
       res.status(500).json({ error: "Failed to fetch points" });
+    }
+  });
+
+  // ── Daily allowance ─────────────────────────────────────────────────────────
+  app.get("/api/allowance", readLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
+    const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
+    if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
+    try {
+      const data = await getAllowance(fid);
+      res.json({ fid, ...data });
+    } catch (e) {
+      console.error("[allowance] error:", e);
+      res.status(500).json({ error: "Failed to fetch allowance" });
     }
   });
 

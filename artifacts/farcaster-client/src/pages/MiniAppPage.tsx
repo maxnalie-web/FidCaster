@@ -49,16 +49,18 @@ const fadeUp = {
 };
 
 // ── Scoring data ──────────────────────────────────────────────────────────────
-const SCORING = [
-  { Icon: Edit3,      action: "Cast",          pts: 10,  cap: 50   },
-  { Icon: RefreshCw,  action: "Recast",        pts: 3,   cap: 30   },
-  { Icon: Heart,      action: "Like",          pts: 1,   cap: 50   },
-  { Icon: Users,      action: "Follow",        pts: 2,   cap: 50   },
-  { Icon: ShoppingBag,action: "Buy FID",       pts: 100, cap: 300  },
-  { Icon: Tag,        action: "List FID",      pts: 50,  cap: 250  },
-  { Icon: Share2,     action: "Refer User",    pts: 200, cap: 2000 },
-  { Icon: Sword,      action: "Quest",         pts: 100, cap: 500  },
-  { Icon: Sprout,     action: "Grow Campaign", pts: 30,  cap: 150  },
+const SCORING: { Icon: React.ElementType; action: string; pts: number | string; cap: number }[] = [
+  { Icon: Edit3,      action: "Cast",          pts: 10,       cap: 50   },
+  { Icon: RefreshCw,  action: "Recast",        pts: 3,        cap: 30   },
+  { Icon: Heart,      action: "Like",          pts: 1,        cap: 50   },
+  { Icon: Users,      action: "Follow",        pts: 2,        cap: 50   },
+  { Icon: ShoppingBag,action: "Buy FID",       pts: 100,      cap: 300  },
+  { Icon: Tag,        action: "List FID",      pts: 50,       cap: 250  },
+  { Icon: Share2,     action: "Refer User",    pts: 200,      cap: 2000 },
+  { Icon: Sword,      action: "Quest",         pts: 100,      cap: 500  },
+  { Icon: Sprout,     action: "Grow Campaign", pts: 30,       cap: 150  },
+  { Icon: Zap,        action: "Promote",       pts: 50,       cap: 500  },
+  { Icon: Gift,       action: "Gift received", pts: "varies", cap: 500  },
 ];
 
 const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
@@ -71,6 +73,9 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
   referral:              { label: "Referral",      Icon: Share2      },
   quest:                 { label: "Quest",         Icon: Sword       },
   grow_campaign_complete:{ label: "Grow Campaign", Icon: Sprout      },
+  promotion:             { label: "Promotion",     Icon: Zap         },
+  gift_received:         { label: "Gift received", Icon: Gift        },
+  gift:                  { label: "Gift sent",     Icon: Gift        },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -83,13 +88,14 @@ interface MiniCtx {
 }
 interface LBRow  { fid: number; total_points: number; rank: number; }
 interface FidPts {
-  fid: number; total_points: number;
+  fid: number; total_points: number; pendingClaimed?: number;
   breakdown: { action_type: string; total_actions: number; points_earned: number }[];
 }
 interface HistoryRow { id: number; action_type: string; pts: number; created_at: string; }
 interface ReferralRow { fid: number; activated: boolean; activated_at: string | null; created_at: string; }
 interface ReferralListData { referredBy: number | null; referrals: ReferralRow[]; }
 interface EligibilityData { eligible: boolean; score: number; threshold: number; reason?: string; }
+interface AllowanceData { total: number; used: number; remaining: number; resetsAt: string; }
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
 function useSDK() {
@@ -182,6 +188,12 @@ async function apiEligibility(fid: number): Promise<EligibilityData> {
     const r = await fetch(`/api/mini/eligibility?fid=${fid}`);
     return r.ok ? r.json() : { eligible: true, score: -1, threshold: 30 };
   } catch { return { eligible: true, score: -1, threshold: 30 }; }
+}
+async function apiAllowance(fid: number): Promise<AllowanceData | null> {
+  try {
+    const r = await fetch(`/api/allowance?fid=${fid}`);
+    return r.ok ? r.json() : null;
+  } catch { return null; }
 }
 
 // ── Animated counter ──────────────────────────────────────────────────────────
@@ -871,6 +883,132 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ALLOWANCE BAR
+// ─────────────────────────────────────────────────────────────────────────────
+function AllowanceBar({ fid }: { fid: number }) {
+  const [data,    setData]    = useState<AllowanceData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiAllowance(fid).then(d => { setData(d); setLoading(false); });
+  }, [fid]);
+
+  // Countdown to midnight UTC reset
+  const [countdown, setCountdown] = useState("");
+  useEffect(() => {
+    const tick = () => {
+      const now     = new Date();
+      const tonight = new Date();
+      tonight.setUTCDate(tonight.getUTCDate() + 1);
+      tonight.setUTCHours(0, 0, 0, 0);
+      const ms = tonight.getTime() - now.getTime();
+      const h  = Math.floor(ms / 3_600_000);
+      const m  = Math.floor((ms % 3_600_000) / 60_000);
+      const s  = Math.floor((ms % 60_000) / 1_000);
+      setCountdown(`${h}h ${m}m ${s}s`);
+    };
+    tick();
+    const id = setInterval(tick, 1_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (loading) {
+    return (
+      <Card style={{ padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Loader2 size={15} className="animate-spin" style={{ color: C.text3 }} />
+          <p style={{ color: C.text3, fontSize: 13 }}>Loading allowance...</p>
+        </div>
+      </Card>
+    );
+  }
+
+  if (!data) return null;
+
+  const pct = data.total > 0 ? Math.max(0, (data.remaining / data.total) * 100) : 0;
+  const appFid = (window as any).__APP_FID__ ?? "";
+
+  return (
+    <Card glow>
+      {/* Header */}
+      <div style={{ padding: "14px 16px 10px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <p style={{ color: C.text1, fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+            <Zap size={14} color={C.accentHi} /> Daily Allowance
+          </p>
+          <span style={{ color: C.text3, fontSize: 12 }}>Resets in {countdown}</span>
+        </div>
+        {/* Numbers */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
+          <span style={{ color: C.accentHi, fontWeight: 900, fontSize: 22, fontVariantNumeric: "tabular-nums" }}>
+            {data.remaining.toLocaleString()}
+          </span>
+          <span style={{ color: C.text3, fontSize: 13 }}>/ {data.total.toLocaleString()} remaining today</span>
+        </div>
+        {/* Progress bar */}
+        <div style={{ height: 6, background: C.border, borderRadius: 3 }}>
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+            style={{
+              height: "100%", borderRadius: 3,
+              background: pct > 30
+                ? `linear-gradient(90deg, ${C.accent}, #A855F7)`
+                : pct > 10
+                ? `linear-gradient(90deg, ${C.amber}, #F97316)`
+                : `linear-gradient(90deg, ${C.rose}, #FB7185)`,
+            }}
+          />
+        </div>
+        <p style={{ color: C.text3, fontSize: 11, marginTop: 5 }}>
+          {data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used yet today"}
+        </p>
+      </div>
+
+      {/* Action cards */}
+      <div style={{ borderTop: `1px solid ${C.border}`, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+        {/* Promote */}
+        <a
+          href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "flex", flexDirection: "column", gap: 5, padding: "12px 14px",
+            textDecoration: "none", borderRight: `1px solid ${C.border}`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Zap size={14} color={C.accentHi} />
+            <span style={{ color: C.text1, fontSize: 13, fontWeight: 700 }}>Promote</span>
+          </div>
+          <p style={{ color: C.text3, fontSize: 11, lineHeight: 1.5 }}>
+            Cast mentioning FidCaster — earn <strong style={{ color: C.accentHi }}>+50 pts</strong>
+          </p>
+          <span style={{ color: C.amber, fontSize: 11, marginTop: 2 }}>−50 allowance</span>
+        </a>
+
+        {/* Gift */}
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 5, padding: "12px 14px", cursor: "default" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Gift size={14} color={C.green} />
+            <span style={{ color: C.text1, fontSize: 13, fontWeight: 700 }}>Gift points</span>
+          </div>
+          <p style={{ color: C.text3, fontSize: 11, lineHeight: 1.5 }}>
+            Cast: <span style={{ color: C.accentHi, fontFamily: "monospace", fontSize: 10 }}>
+              {"{N} FidCaster points @user"}
+            </span>
+          </p>
+          <span style={{ color: C.amber, fontSize: 11, marginTop: 2 }}>−N allowance</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SCORE TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
@@ -880,6 +1018,7 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
   const [history,     setHistory]  = useState<HistoryRow[]>([]);
   const [refData,     setRefData]  = useState<ReferralListData>({ referredBy: null, referrals: [] });
   const [sideLoading, setSideLoad] = useState(true);
+  const [claimedPts,  setClaimedPts] = useState(0);
 
   const total  = pts?.total_points ?? 0;
   const refUrl = `https://fidcaster.xyz/?ref=${fid.toString(36).toUpperCase()}`;
@@ -893,6 +1032,14 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
     });
   }, [fid]);
 
+  // Show toast when pending gifts are claimed (pts.pendingClaimed set by /api/points/my)
+  useEffect(() => {
+    if (pts?.pendingClaimed && pts.pendingClaimed > 0) {
+      setClaimedPts(pts.pendingClaimed);
+      setTimeout(() => setClaimedPts(0), 6000);
+    }
+  }, [pts?.pendingClaimed]);
+
   async function copy() {
     await navigator.clipboard.writeText(refUrl).catch(() => {});
     setCopied(true); setTimeout(() => setCopied(false), 2000);
@@ -900,6 +1047,26 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
 
   return (
     <motion.div key="score-tab" {...fadeUp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Pending-gift claimed toast */}
+      <AnimatePresence>
+        {claimedPts > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "12px 16px",
+              background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.28)",
+              borderRadius: 14,
+            }}
+          >
+            <Gift size={16} color={C.green} />
+            <p style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>
+              🎁 You claimed <strong>{claimedPts.toLocaleString()} gifted points!</strong>
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Hero */}
       <div style={{
         padding: "28px 20px 22px", textAlign: "center",
@@ -934,6 +1101,9 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
           </span>
         </div>
       </div>
+
+      {/* Daily Allowance */}
+      <AllowanceBar fid={fid} />
 
       {/* NFT Pass */}
       <NFTPassCard fid={fid} ethAddress={ethAddr} />

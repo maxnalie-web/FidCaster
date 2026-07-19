@@ -49,7 +49,10 @@ export type ActionType =
   | "follow" | "unfollow"
   | "market_list" | "market_buy" | "market_cancel"
   | "grow_campaign_start" | "grow_campaign_complete"
-  | "referral" | "quest" | "app_open";
+  | "referral" | "quest" | "app_open"
+  | "promotion"      // user cast promoting FidCaster — earns fixed pts
+  | "gift"           // user sent a gift cast — 0 pts (allowance already debited)
+  | "gift_received"; // recipient of a gift — pts come from payload.amount
 
 export interface LogActionParams {
   fid: number;
@@ -100,4 +103,32 @@ export async function logUserAction(params: LogActionParams): Promise<void> {
   } catch (e) {
     console.warn("[ledger] write failed:", (e as Error).message);
   }
+}
+
+/**
+ * Insert one ledger row and return whether it was actually new.
+ * Returns true  → row was inserted (first time this proof was seen).
+ * Returns false → row already existed (duplicate — idempotent no-op).
+ *
+ * Unlike logUserAction this throws on DB error instead of swallowing it,
+ * so callers can abort side-effects (e.g. allowance debit) on failure.
+ */
+export async function logUserActionIfNew(params: LogActionParams): Promise<boolean> {
+  const pool = getPool();
+  if (!pool) throw new Error("DB not configured");
+  await upsertUser(pool, params.fid);
+  const { rowCount } = await pool.query(
+    `INSERT INTO user_actions
+       (fid, action_type, payload, proof, verified, verified_at)
+     VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 THEN now() ELSE NULL END)
+     ON CONFLICT (action_type, proof) WHERE proof IS NOT NULL DO NOTHING`,
+    [
+      params.fid,
+      params.actionType,
+      JSON.stringify(params.payload ?? {}),
+      params.proof ?? null,
+      params.verified ?? false,
+    ],
+  );
+  return (rowCount ?? 0) > 0;
 }
