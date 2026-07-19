@@ -1,16 +1,5 @@
 uploads = []
-
-[[generated]]
-id = "nGhRx-eDzD8Exfo_Vzypt"
-uri = "file://attached_assets/generated_images/ultra_premium_pharmaceutical_logo_91a5.png"
-type = "image"
-title = "generated_image"
-
-[[outputs]]
-id = "UOvoQW0YEOrI_7Y23d1fj"
-uri = "file://attached_assets/generated_images/bezoar_logo_transparent.png"
-type = "image"
-title = "Bezoar Logo - B + Botanical Leaves + Liquid Splash (Transparent PNG)"
+generated = []
 
 [[outputs]]
 id = "KaHbTwPgy10MYWD5CyoJA"
