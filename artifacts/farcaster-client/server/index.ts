@@ -1398,7 +1398,7 @@ const MINI_EMBED = JSON.stringify({
   version: "1",
   imageUrl: "https://fidcaster.xyz/og-mini.png",
   button: {
-    title: "🏆 Open FidCaster",
+    title: "Open FidCaster",
     action: {
       type: "launch_miniapp",
       url: "https://fidcaster.xyz/mini",
