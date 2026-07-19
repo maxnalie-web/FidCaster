@@ -47,27 +47,27 @@ const fadeUp = {
 
 // ── Scoring reference ─────────────────────────────────────────────────────────
 const SCORING = [
-  { emoji: "⚡", action: "Cast",          pts: 10,  cap: 50   },
-  { emoji: "🔁", action: "Recast",        pts: 3,   cap: 30   },
-  { emoji: "❤️", action: "Like",          pts: 1,   cap: 50   },
-  { emoji: "👤", action: "Follow",        pts: 2,   cap: 50   },
-  { emoji: "💎", action: "Buy FID",       pts: 100, cap: 300  },
-  { emoji: "📋", action: "List FID",      pts: 50,  cap: 250  },
-  { emoji: "👥", action: "Refer User",    pts: 200, cap: 2000 },
-  { emoji: "🎯", action: "Quest",         pts: 100, cap: 500  },
-  { emoji: "📈", action: "Grow Campaign", pts: 30,  cap: 150  },
+  { emoji: "✍️",  action: "Cast",          pts: 10,  cap: 50   },
+  { emoji: "🔄",  action: "Recast",        pts: 3,   cap: 30   },
+  { emoji: "💜",  action: "Like",          pts: 1,   cap: 50   },
+  { emoji: "🤝",  action: "Follow",        pts: 2,   cap: 50   },
+  { emoji: "💎",  action: "Buy FID",       pts: 100, cap: 300  },
+  { emoji: "🏷️", action: "List FID",      pts: 50,  cap: 250  },
+  { emoji: "🫂",  action: "Refer User",    pts: 200, cap: 2000 },
+  { emoji: "⚔️",  action: "Quest",         pts: 100, cap: 500  },
+  { emoji: "🌱",  action: "Grow Campaign", pts: 30,  cap: 150  },
 ];
 
 const ACTION_LABELS: Record<string, { label: string; emoji: string }> = {
-  cast:                 { label: "Cast",          emoji: "⚡" },
-  recast:               { label: "Recast",        emoji: "🔁" },
-  like:                 { label: "Like",           emoji: "❤️" },
-  follow:               { label: "Follow",         emoji: "👤" },
-  market_buy:           { label: "Buy FID",        emoji: "💎" },
-  market_list:          { label: "List FID",       emoji: "📋" },
-  referral:             { label: "Referral",       emoji: "👥" },
+  cast:                 { label: "Cast",          emoji: "✍️"  },
+  recast:               { label: "Recast",        emoji: "🔄"  },
+  like:                 { label: "Like",          emoji: "💜"  },
+  follow:               { label: "Follow",        emoji: "🤝"  },
+  market_buy:           { label: "Buy FID",       emoji: "💎"  },
+  market_list:          { label: "List FID",      emoji: "🏷️" },
+  referral:             { label: "Referral",      emoji: "🫂"  },
   quest:                { label: "Quest",          emoji: "🎯" },
-  grow_campaign_complete:{ label: "Grow Campaign", emoji: "📈" },
+  grow_campaign_complete:{ label: "Grow Campaign", emoji: "🌱" },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -225,9 +225,9 @@ function BrowserScreen() {
 // ONBOARDING
 // ─────────────────────────────────────────────────────────────────────────────
 const STEPS = [
-  { emoji: "🪪", title: "Your Identity",      hint: "Step 1 of 4" },
-  { emoji: "⚡", title: "How Points Work",     hint: "Step 2 of 4" },
-  { emoji: "🛡️", title: "The Rules",           hint: "Step 3 of 4" },
+  { emoji: "🌐", title: "Your Identity",      hint: "Step 1 of 4" },
+  { emoji: "💎", title: "How Points Work",     hint: "Step 2 of 4" },
+  { emoji: "⚖️", title: "The Rules",           hint: "Step 3 of 4" },
   { emoji: "🚀", title: "Activate",            hint: "Step 4 of 4" },
 ];
 
@@ -274,8 +274,8 @@ function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {[
           ["🔑", "Your FID is your account — no sign-up needed"],
-          ["📡", "Actions are verified on Farcaster Hub in real-time"],
-          ["🎁", "Airdrop is proportional to your points at snapshot"],
+          ["🔗", "Actions verified live against Farcaster Hub"],
+          ["🪙", "Airdrop is proportional to your points at snapshot"],
         ].map(([e, t]) => (
           <div key={t} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", background: C.surface, borderRadius: 12, border: `1px solid ${C.border}` }}>
             <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{e}</span>
@@ -319,10 +319,10 @@ function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
-          { e: "🚫", label: "Sybil / bot detection", desc: "Accounts detected as bots are permanently excluded from the airdrop. This cannot be reversed.", color: C.rose },
+          { e: "☠️", label: "Sybil / bot detection", desc: "Accounts detected as bots are permanently excluded from the airdrop. This cannot be reversed.", color: C.rose },
           { e: "⚠️", label: "Hub verification failure", desc: "Actions that can't be confirmed on Farcaster Hub are excluded from your score.", color: C.amber },
-          { e: "♻️", label: "Duplicate actions", desc: "The same action submitted more than once is only counted a single time.", color: C.text2 },
-          { e: "📊", label: "Grow Campaign threshold", desc: "A Grow Campaign must generate ≥ 5 confirmed new follows to count for points.", color: C.text2 },
+          { e: "🔄", label: "Duplicate actions", desc: "The same action submitted more than once is only counted a single time.", color: C.text2 },
+          { e: "🌱", label: "Grow Campaign threshold", desc: "A Grow Campaign must generate ≥ 5 confirmed new follows to count for points.", color: C.text2 },
         ].map(r => (
           <div key={r.label} style={{ padding: "13px 15px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
@@ -485,10 +485,10 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
 
         <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Exclusion rules</p>
         {[
-          { e: "🚫", l: "Sybil / bot detection",    c: C.rose,  d: "Permanently excluded. Irreversible." },
+          { e: "☠️", l: "Sybil / bot detection",    c: C.rose,  d: "Permanently excluded. Irreversible." },
           { e: "⚠️", l: "Hub verification failure",  c: C.amber, d: "Action excluded from score." },
-          { e: "♻️", l: "Duplicate submissions",     c: C.text2, d: "Only counted once." },
-          { e: "📊", l: "Grow Campaign < 5 follows", c: C.text2, d: "No points for insufficient campaign." },
+          { e: "🔄", l: "Duplicate submissions",     c: C.text2, d: "Only counted once." },
+          { e: "🌱", l: "Grow Campaign < 5 follows", c: C.text2, d: "No points for insufficient campaign." },
         ].map(r => (
           <div key={r.l} style={{ display: "flex", gap: 12, padding: "11px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 6 }}>
             <span style={{ fontSize: 18, flexShrink: 0 }}>{r.e}</span>
@@ -507,27 +507,41 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
 // NFT PASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 function NFTPassCard({ fid, ethAddress }: { fid: number; ethAddress?: string }) {
-  const [s,      setS]      = useState<"idle"|"input"|"minting"|"done"|"error">("idle");
-  const [addr,   setAddr]   = useState(ethAddress ?? "");
-  const [txHash, setTxHash] = useState("");
-  const [err,    setErr]    = useState("");
-  const [minted, setMinted] = useState(false);
+  const [s,          setS]          = useState<"idle"|"input"|"minting"|"done"|"error">("idle");
+  const [manualAddr, setManualAddr] = useState("");
+  const [txHash,     setTxHash]     = useState("");
+  const [err,        setErr]        = useState("");
+  const [minted,     setMinted]     = useState(false);
 
+  // Check if already minted
   useEffect(() => {
     if (!ethAddress) return;
-    fetch(`/api/nft-pass/check/${ethAddress}`).then(r => r.json()).then(d => { if (d.hasMinted) setMinted(true); }).catch(() => {});
+    fetch(`/api/nft-pass/check/${ethAddress}`)
+      .then(r => r.json())
+      .then(d => { if (d.hasMinted) setMinted(true); })
+      .catch(() => {});
   }, [ethAddress]);
 
-  async function mint() {
-    const a = addr.trim(); if (!a) return;
+  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+  async function doMint(address: string) {
     setS("minting");
     try {
-      const r = await fetch("/api/nft-pass/mint", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fid, address: a }) });
+      const r = await fetch("/api/nft-pass/mint", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fid, address }),
+      });
       const d = await r.json();
       if (d.alreadyMinted) { setMinted(true); setS("done"); return; }
-      if (!r.ok) throw new Error(d.error ?? "failed");
+      if (!r.ok) throw new Error(d.error ?? "Mint failed");
       setTxHash(d.txHash ?? ""); setMinted(true); setS("done");
     } catch (e) { setErr(String(e)); setS("error"); }
+  }
+
+  // Has verified wallet → auto-mint, no address input needed
+  function handleMint() {
+    if (ethAddress) doMint(ethAddress);
+    else setS("input");
   }
 
   if (minted || s === "done") {
@@ -537,9 +551,13 @@ function NFTPassCard({ fid, ethAddress }: { fid: number; ethAddress?: string }) 
           <img src="/nft-pass-v2.png" alt="" style={{ width: 44, height: 44, borderRadius: 11, objectFit: "contain", background: "rgba(124,58,237,0.12)" }} />
           <div style={{ flex: 1 }}>
             <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>💎 FidCaster Pass</p>
-            <p style={{ color: C.green, fontSize: 12, marginTop: 2 }}>✅ Minted · App access active</p>
+            <p style={{ color: C.green, fontSize: 12, marginTop: 2 }}>Minted · Full access active</p>
           </div>
-          {txHash && <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer" style={{ color: C.text3 }}><ExternalLink size={13} /></a>}
+          {txHash && (
+            <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer" style={{ color: C.text3 }}>
+              <ExternalLink size={13} />
+            </a>
+          )}
         </div>
       </Card>
     );
@@ -551,33 +569,53 @@ function NFTPassCard({ fid, ethAddress }: { fid: number; ethAddress?: string }) 
         <img src="/nft-pass-v2.png" alt="" style={{ width: 44, height: 44, borderRadius: 11, objectFit: "contain", background: "rgba(124,58,237,0.12)" }} />
         <div style={{ flex: 1 }}>
           <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>💎 FidCaster Pass</p>
-          <p style={{ color: C.text2, fontSize: 12, marginTop: 2 }}>Free NFT on Base · Full app access</p>
+          <p style={{ color: C.text2, fontSize: 12, marginTop: 2 }}>
+            {ethAddress
+              ? <>Mint to <span style={{ fontFamily: "monospace", color: C.accentHi }}>{short(ethAddress)}</span> · Free on Base</>
+              : "Free NFT on Base · Full app access"
+            }
+          </p>
         </div>
         {s === "idle" && (
-          <button onClick={() => setS("input")}
+          <button onClick={handleMint}
             style={{ background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, color: "#fff", borderRadius: 10, padding: "7px 14px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0 }}>
             Mint free
           </button>
         )}
+        {s === "minting" && (
+          <span style={{ color: C.accentHi, fontSize: 12, display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+            <Loader2 size={13} className="animate-spin" /> Minting…
+          </span>
+        )}
       </div>
+
       <AnimatePresence>
+        {/* Only shown when user has no verified wallet */}
         {s === "input" && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: "hidden" }}>
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: "hidden" }}>
             <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-              <input type="text" placeholder="0x… your Base wallet" value={addr} onChange={e => setAddr(e.target.value)}
+              <p style={{ color: C.text3, fontSize: 12 }}>No verified wallet found — enter your Base address manually:</p>
+              <input type="text" placeholder="0x…" value={manualAddr} onChange={e => setManualAddr(e.target.value)}
                 style={{ width: "100%", padding: "10px 12px", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.borderMed}`, borderRadius: 10, color: C.text1, fontSize: 12, fontFamily: "monospace", outline: "none" }} />
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={mint} disabled={s === "minting" || !addr.trim()}
-                  style={{ flex: 1, padding: "10px", borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: addr.trim() ? 1 : 0.4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  {s === "minting" ? <><Loader2 size={14} className="animate-spin" /> Minting…</> : "🚀 Mint"}
+                <button onClick={() => doMint(manualAddr)} disabled={!manualAddr.trim()}
+                  style={{ flex: 1, padding: "10px", borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: manualAddr.trim() ? 1 : 0.4 }}>
+                  Mint
                 </button>
                 <button onClick={() => setS("idle")}
                   style={{ padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text2, fontSize: 13, cursor: "pointer" }}>
                   Cancel
                 </button>
               </div>
-              {s === "error" && <p style={{ color: C.rose, fontSize: 12 }}>{err}</p>}
             </div>
+          </motion.div>
+        )}
+        {s === "error" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}` }}>
+            <p style={{ color: C.rose, fontSize: 12 }}>{err}</p>
+            <button onClick={() => setS("idle")} style={{ background: "none", border: "none", color: C.text3, fontSize: 12, cursor: "pointer", marginTop: 4 }}>Try again →</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -642,7 +680,7 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
       {/* Breakdown */}
       {!loading && pts?.breakdown && pts.breakdown.filter(b => b.points_earned > 0).length > 0 && (
         <Card>
-          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 16px 6px" }}>📊 Earnings Breakdown</p>
+          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 16px 6px" }}>💰 Earnings Breakdown</p>
           {pts.breakdown.filter(b => b.points_earned > 0).sort((a, b) => b.points_earned - a.points_earned).map((b, i, arr) => {
             const meta = ACTION_LABELS[b.action_type] ?? { label: b.action_type, emoji: "•" };
             const pct  = total > 0 ? (b.points_earned / total) * 100 : 0;
@@ -677,7 +715,7 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
       <Card style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <div>
-            <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>👥 Invite Friends</p>
+            <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>🫂 Invite Friends</p>
             <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Earn <strong style={{ color: C.accentHi }}>+200 pts</strong> per successful referral</p>
           </div>
         </div>
@@ -714,7 +752,7 @@ function BoardTab({ fid, board, loading }: { fid: number; board: LBRow[]; loadin
     </motion.div>
   );
 
-  const TOP_ICONS = ["👑", "🥈", "🥉"];
+  const TOP_ICONS = ["👑", "💎", "🔥"];
 
   return (
     <motion.div key="board-tab" {...fadeUp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -812,7 +850,7 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
           {[
             { label: "Points",  value: loading ? "—" : total.toLocaleString(), e: "⚡" },
             { label: "Rank",    value: loading ? "—" : rank ? `#${rank}` : "—", e: "🏆" },
-            { label: "Actions", value: loading ? "—" : actions.toString(), e: "📊" },
+            { label: "Actions", value: loading ? "—" : actions.toString(), e: "🎯" },
           ].map((s, i) => (
             <div key={s.label} style={{ textAlign: "center", padding: "12px 6px", borderRight: i < 2 ? `1px solid ${C.border}` : "none" }}>
               <p style={{ fontSize: 16, marginBottom: 4 }}>{s.e}</p>
@@ -829,7 +867,7 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
       {/* Wallets */}
       {ethAddrs.length > 0 && (
         <Card>
-          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", padding: "12px 16px 4px" }}>🔑 Verified Wallets</p>
+          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", padding: "12px 16px 4px" }}>🔐 Verified Wallets</p>
           {ethAddrs.map((addr, i) => (
             <div key={addr}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px" }}>
@@ -859,7 +897,7 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
 
       {/* Airdrop */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.18)", borderRadius: 16 }}>
-        <span style={{ fontSize: 22, flexShrink: 0 }}>🎁</span>
+        <span style={{ fontSize: 22, flexShrink: 0 }}>🪙</span>
         <div>
           <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>Airdrop</p>
           <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Snapshot not announced yet. Keep earning points.</p>
