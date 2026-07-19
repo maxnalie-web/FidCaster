@@ -1,8 +1,8 @@
 {
-  "contractAddress": "0x31efdf96dc526260fc9b0df4ed266fbf3fb4ab62",
-  "deployTx": "0xec922a0f662108d9dd431e8a02cb376896eb42a0ef5a40e94eac2f559b663683",
-  "chain": "optimism",
-  "chainId": 10,
+  "contractAddress": "0x58d18dd2173cb417440c72d10f46d3fde69bb68f",
+  "deployTx": "0x968283d0f78dea452310360c6fad495cd8b0f200dd44b31c383d30b974405765",
+  "chain": "base",
+  "chainId": 8453,
   "baseURI": "https://fidcaster.xyz/api/nft-pass/metadata/",
-  "deployedAt": "2026-07-19T04:25:59.609Z"
+  "deployedAt": "2026-07-19T04:30:37.236Z"
 }

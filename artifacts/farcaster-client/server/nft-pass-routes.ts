@@ -7,7 +7,7 @@
  */
 import { Router } from "express";
 import { createWalletClient, createPublicClient, http, isAddress } from "viem";
-import { optimism } from "viem/chains";
+import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -66,7 +66,7 @@ export function createNftPassRouter(): Router {
     if (!cfg || !abi) return res.json({ hasMinted: false, balance: 0, deployed: false });
 
     try {
-      const client = createPublicClient({ chain: optimism, transport: http() });
+      const client = createPublicClient({ chain: base, transport: http("https://mainnet.base.org") });
       const balance = await client.readContract({
         address: cfg.contractAddress as `0x${string}`,
         abi,
@@ -95,8 +95,8 @@ export function createNftPassRouter(): Router {
 
     try {
       const minterAccount = privateKeyToAccount(privateKey);
-      const walletClient = createWalletClient({ account: minterAccount, chain: optimism, transport: http() });
-      const publicClient = createPublicClient({ chain: optimism, transport: http() });
+      const walletClient = createWalletClient({ account: minterAccount, chain: base, transport: http("https://mainnet.base.org") });
+      const publicClient = createPublicClient({ chain: base, transport: http("https://mainnet.base.org") });
 
       // Check balance first — one pass per address
       const balance = await publicClient.readContract({
@@ -128,7 +128,7 @@ export function createNftPassRouter(): Router {
       });
 
       console.log(`[nft-pass] minted to ${address} (fid ${fid}) tx=${hash}`);
-      res.json({ success: true, txHash: hash, explorerUrl: `https://optimistic.etherscan.io/tx/${hash}` });
+      res.json({ success: true, txHash: hash, explorerUrl: `https://basescan.org/tx/${hash}` });
     } catch (e) {
       console.error("[nft-pass] mint error:", e);
       res.status(500).json({ error: "mint failed", detail: String(e) });

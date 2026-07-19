@@ -16,3 +16,6 @@
 - [WalletPanel early-return overlay bug](wallet-overlay-bug.md) — early return at wallets.length===0 blocks overlay; fix: add && overlay==="none" to the guard condition
 - [bezoar repo identity](bezoar-repo.md) — bezoar (maxnalie-web/bezoar) is a Persian pharmacy/medical React Native app, NOT a Farcaster native client
 - [VITE_APP_MNEMONIC setup](vite-app-mnemonic.md) — APP_MNEMONIC already exposed as VITE_APP_MNEMONIC via vite.config.ts define block; no extra config needed
+- [NFT Pass contract](nft-pass-contract.md) — FidCasterPass ERC-721 on Base 0x58d18dd2173cb417440c72d10f46d3fde69bb68f; Basescan verify needs BASESCAN_API_KEY secret (V2 API)
+- [NFT image background](nft-pass-image.md) — bg is dark green R≈72 G≈109 B≈74; flood-fill from 4 corners (tolerance 40) removes it cleanly; saved as public/nft-pass-v2.png
+- [Mini app preview mode](mini-app-preview.md) — ?fid=XXX URL param in /mini bypasses Warpcast check; shows full Points/Board/Airdrop UI for testing in browser

@@ -44,6 +44,14 @@ function useMiniAppFid() {
   useEffect(() => {
     let cancelled = false;
     async function init() {
+      // Dev preview: ?fid=XXX in URL bypasses Warpcast requirement
+      const urlFid = parseInt(new URLSearchParams(window.location.search).get("fid") ?? "0", 10);
+      if (urlFid > 0) {
+        setSdkFid(urlFid);
+        setSdkCtx({ user: { fid: urlFid, username: `preview_${urlFid}`, displayName: "Preview User" } });
+        setInFC(true); setSdkReady(true);
+        return;
+      }
       sdk.actions.ready().catch(() => {});
       try {
         const ctx = await Promise.race([
