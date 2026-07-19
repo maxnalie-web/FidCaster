@@ -126,6 +126,34 @@ app.use(helmet({
     : false,
 }));
 
+// Farcaster Mini Apps run inside an iframe inside Warpcast/other FC clients.
+// Helmet sets X-Frame-Options: SAMEORIGIN + CSP frame-ancestors 'self' globally,
+// which blocks any cross-origin iframe — including Warpcast. Override those
+// headers specifically for the /mini route so the app can actually launch.
+app.use((req, res, next) => {
+  if (req.path === "/mini" || req.path.startsWith("/mini?")) {
+    res.removeHeader("X-Frame-Options");
+    res.setHeader(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
+        "img-src 'self' data: https: blob:",
+        "media-src 'self' https: blob:",
+        "worker-src 'self' blob:",
+        "connect-src 'self' https: wss:",
+        "frame-src 'self' https:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors *",   // allow all Farcaster clients to embed /mini
+      ].join(";"),
+    );
+  }
+  next();
+});
+
 // The app never uses camera/mic/geolocation/USB/payment APIs - deny them by
 // default so an XSS or a compromised third-party script embedded anywhere
 // couldn't invoke a permission prompt for capabilities we never asked for.
