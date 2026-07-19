@@ -19,6 +19,7 @@
  */
 
 import { getPool } from "./pool.js";
+import { neynarThrottle, penalize429 } from "../neynar-limit.js";
 
 const NEYNAR_BASE        = "https://api.neynar.com/v2/farcaster";
 const MIN_AGE_DAYS       = 14;
@@ -27,7 +28,29 @@ const MIN_CASTS          = 3;
 const CHECK_INTERVAL_H   = 24;   // re-check ineligible FIDs every 24h
 const ELIGIBLE_TTL_DAYS  = 7;    // re-confirm eligible FIDs every 7 days
 
-function neynarKey(): string { return process.env.NEYNAR_API_KEY ?? ""; }
+/** Fetch from Neynar via the shared key pool — 429-aware with automatic key rotation. */
+async function neynarFetch(url: string): Promise<Response> {
+  let key: string;
+  try { key = await neynarThrottle(); }
+  catch { key = process.env.NEYNAR_API_KEY ?? ""; }
+
+  const res = await fetch(url, {
+    headers: { api_key: key },
+    signal:  AbortSignal.timeout(8_000),
+  });
+
+  if (res.status === 429) {
+    penalize429(key);
+    let retryKey: string;
+    try { retryKey = await neynarThrottle(); } catch { retryKey = key; }
+    return fetch(url, {
+      headers: { api_key: retryKey },
+      signal:  AbortSignal.timeout(8_000),
+    });
+  }
+
+  return res;
+}
 
 // ── Neynar lookup ──────────────────────────────────────────────────────────────
 
@@ -40,13 +63,8 @@ interface NeynarUser {
 }
 
 async function fetchNeynarUser(fid: number): Promise<NeynarUser | null> {
-  const key = neynarKey();
-  if (!key) return null;
   try {
-    const res = await fetch(
-      `${NEYNAR_BASE}/user/bulk?fids=${fid}`,
-      { headers: { api_key: key }, signal: AbortSignal.timeout(8_000) },
-    );
+    const res = await neynarFetch(`${NEYNAR_BASE}/user/bulk?fids=${fid}`);
     if (!res.ok) return null;
     const data = await res.json() as { users?: NeynarUser[] };
     return data?.users?.[0] ?? null;
@@ -55,13 +73,8 @@ async function fetchNeynarUser(fid: number): Promise<NeynarUser | null> {
 
 /** Returns user's cast count (up to 3 is enough — we only need ≥ MIN_CASTS) */
 async function fetchCastCount(fid: number): Promise<number> {
-  const key = neynarKey();
-  if (!key) return MIN_CASTS; // no key → assume OK
   try {
-    const res = await fetch(
-      `${NEYNAR_BASE}/casts?fid=${fid}&limit=3`,
-      { headers: { api_key: key }, signal: AbortSignal.timeout(8_000) },
-    );
+    const res = await neynarFetch(`${NEYNAR_BASE}/casts?fid=${fid}&limit=3`);
     if (!res.ok) return 0;
     const data = await res.json() as { casts?: unknown[] };
     return data?.casts?.length ?? 0;
@@ -84,8 +97,7 @@ async function fetchCastCount(fid: number): Promise<number> {
  *  If NEYNAR_API_KEY is not set we skip the check and return eligible.
  */
 async function computeEligibility(fid: number): Promise<boolean> {
-  const key = neynarKey();
-  if (!key) return true; // no key in dev → skip gate
+  if (!process.env.NEYNAR_API_KEY) return true; // no keys in dev → skip gate
 
   const [user, castCount] = await Promise.all([
     fetchNeynarUser(fid),

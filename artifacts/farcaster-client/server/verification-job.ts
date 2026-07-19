@@ -37,16 +37,47 @@
 
 import { getPool } from "./db/pool.js";
 import { activatePendingReferrals } from "./db/referrals.js";
+import { neynarThrottle, penalize429 } from "./neynar-limit.js";
 
-const VERIFY_INTERVAL_MS   = 5 * 60_000;  // every 5 min
-const BATCH_SIZE           = 30;
-const CAST_MAX_AGE_DAYS    = 7;           // exclude cast after 7 days unverified
-const HUB_TRUST_WINDOW_H   = 24;          // like/recast → auto-verify after 24h
-const GROW_TRUST_WINDOW_H  = 2;           // grow_complete → verified or excluded within 2h
+const VERIFY_INTERVAL_MS    = 5 * 60_000;  // every 5 min
+const BATCH_SIZE            = 30;
+const CAST_MAX_AGE_DAYS     = 7;           // exclude cast after 7 days unverified
+const HUB_TRUST_WINDOW_H    = 24;          // like/recast → auto-verify after 24h
+const GROW_TRUST_WINDOW_H   = 2;           // grow_complete → verified or excluded within 2h
 const MIN_GROW_REAL_FOLLOWS = 5;           // minimum real new follows for grow points
 
 const NEYNAR_BASE = "https://api.neynar.com/v2/farcaster";
-function neynarKey() { return process.env.NEYNAR_API_KEY ?? ""; }
+
+/**
+ * Fetch from Neynar using the shared key pool (round-robin + token bucket + 429 penalise).
+ * Falls back to raw NEYNAR_API_KEY if the pool is empty (dev mode).
+ */
+async function neynarFetch(url: string, timeoutMs = 8_000): Promise<Response> {
+  let key: string;
+  try {
+    key = await neynarThrottle();
+  } catch {
+    key = process.env.NEYNAR_API_KEY ?? "";
+  }
+
+  const res = await fetch(url, {
+    headers: { api_key: key },
+    signal:  AbortSignal.timeout(timeoutMs),
+  });
+
+  if (res.status === 429) {
+    penalize429(key);
+    // Retry once immediately with the next available key
+    let retryKey: string;
+    try { retryKey = await neynarThrottle(); } catch { retryKey = key; }
+    return fetch(url, {
+      headers: { api_key: retryKey },
+      signal:  AbortSignal.timeout(timeoutMs),
+    });
+  }
+
+  return res;
+}
 
 // ── State (exported for watcher health) ──────────────────────────────────────
 export let verificationStats = {
@@ -61,15 +92,12 @@ let _timer: ReturnType<typeof setInterval> | null = null;
 // ── Neynar helpers ────────────────────────────────────────────────────────────
 
 async function verifyCastHash(hash: string, claimedFid: number): Promise<"ok" | "mismatch" | "notfound"> {
-  const key = neynarKey();
-  if (!key) return "ok";
   try {
-    const res = await fetch(
+    const res = await neynarFetch(
       `${NEYNAR_BASE}/cast?identifier=${encodeURIComponent(hash)}&type=hash`,
-      { headers: { api_key: key }, signal: AbortSignal.timeout(8_000) },
     );
     if (res.status === 404) return "notfound";
-    if (!res.ok) return "ok";
+    if (!res.ok) return "ok"; // transient error → retry next run
     const data = await res.json() as { cast?: { author?: { fid?: number } } };
     const actualFid = data?.cast?.author?.fid;
     if (!actualFid) return "notfound";
@@ -80,36 +108,28 @@ async function verifyCastHash(hash: string, claimedFid: number): Promise<"ok" | 
 /** Check if userFid follows targetFid using Neynar bulk user endpoint.
  *  Returns true = confirmed following, false = confirmed NOT following, null = unknown. */
 async function verifyFollow(userFid: number, targetFid: number): Promise<boolean | null> {
-  const key = neynarKey();
-  if (!key) return null;
   try {
-    const res = await fetch(
+    const res = await neynarFetch(
       `${NEYNAR_BASE}/user/bulk?fids=${targetFid}&viewer_fid=${userFid}`,
-      { headers: { api_key: key }, signal: AbortSignal.timeout(8_000) },
     );
     if (!res.ok) return null;
     const data = await res.json() as { users?: Array<{ viewer_context?: { following?: boolean } }> };
-    const user = data?.users?.[0];
-    if (!user) return null;
-    return user.viewer_context?.following === true;
+    return data?.users?.[0]?.viewer_context?.following === true;
   } catch { return null; }
 }
 
 /** For a grow campaign: count how many of targetFids are actually followed by userFid.
  *  Uses batched Neynar bulk requests (max 100 fids each). */
 async function countRealFollows(userFid: number, targetFids: number[]): Promise<number> {
-  const key = neynarKey();
-  if (!key) return targetFids.length; // no key → assume all real (dev)
-
   const BATCH = 100;
   let realCount = 0;
 
   for (let i = 0; i < targetFids.length && i < 500; i += BATCH) {
     const chunk = targetFids.slice(i, i + BATCH);
     try {
-      const res = await fetch(
+      const res = await neynarFetch(
         `${NEYNAR_BASE}/user/bulk?fids=${chunk.join(",")}&viewer_fid=${userFid}`,
-        { headers: { api_key: key }, signal: AbortSignal.timeout(10_000) },
+        10_000,
       );
       if (!res.ok) break;
       const data = await res.json() as { users?: Array<{ viewer_context?: { following?: boolean } }> };
