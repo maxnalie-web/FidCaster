@@ -1,8 +1,8 @@
 /**
- * FidCaster Mini App — v4
+ * FidCaster Mini App — v5
  *
- * Premium dark design with branded visual language.
- * Mandatory onboarding with fixed activation flow.
+ * Glass-card design, animated BgOrbs, Lucide icons, 3-step gated onboarding.
+ * Step 2 is hard-gated: user cannot proceed until NFT Pass is minted.
  */
 import {
   useEffect, useState, useCallback, useRef,
@@ -11,21 +11,24 @@ import { motion, AnimatePresence } from "framer-motion";
 import { sdk } from "@farcaster/miniapp-sdk";
 import {
   ArrowRight, ArrowLeft, Copy, Check, ExternalLink,
-  Loader2, HelpCircle, X, ChevronRight, BarChart2,
+  Loader2, HelpCircle, X, ChevronRight,
+  Zap, Trophy, Users, ShoppingBag, Tag, Share2,
+  Sword, Sprout, Heart, RefreshCw, Edit3,
+  Wallet, Shield, Globe, Star, Gift,
 } from "lucide-react";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  bg:        "#05010F",
-  surface:   "rgba(255,255,255,0.04)",
-  surfaceHi: "rgba(255,255,255,0.08)",
-  border:    "rgba(255,255,255,0.08)",
-  borderMed: "rgba(255,255,255,0.15)",
+  bg:        "#060a14",
+  surface:   "rgba(255,255,255,0.03)",
+  surfaceHi: "rgba(255,255,255,0.07)",
+  border:    "rgba(255,255,255,0.07)",
+  borderMed: "rgba(255,255,255,0.13)",
   accent:    "#7C3AED",
   accentHi:  "#A78BFA",
   text1:     "rgba(255,255,255,0.95)",
   text2:     "rgba(255,255,255,0.55)",
-  text3:     "rgba(255,255,255,0.25)",
+  text3:     "rgba(255,255,255,0.28)",
   green:     "#10B981",
   amber:     "#F59E0B",
   rose:      "#F43F5E",
@@ -45,29 +48,29 @@ const fadeUp = {
   transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] },
 };
 
-// ── Scoring reference ─────────────────────────────────────────────────────────
+// ── Scoring data ──────────────────────────────────────────────────────────────
 const SCORING = [
-  { emoji: "✍️",  action: "Cast",          pts: 10,  cap: 50   },
-  { emoji: "🔄",  action: "Recast",        pts: 3,   cap: 30   },
-  { emoji: "💜",  action: "Like",          pts: 1,   cap: 50   },
-  { emoji: "🤝",  action: "Follow",        pts: 2,   cap: 50   },
-  { emoji: "💎",  action: "Buy FID",       pts: 100, cap: 300  },
-  { emoji: "🏷️", action: "List FID",      pts: 50,  cap: 250  },
-  { emoji: "🫂",  action: "Refer User",    pts: 200, cap: 2000 },
-  { emoji: "⚔️",  action: "Quest",         pts: 100, cap: 500  },
-  { emoji: "🌱",  action: "Grow Campaign", pts: 30,  cap: 150  },
+  { Icon: Edit3,      action: "Cast",          pts: 10,  cap: 50   },
+  { Icon: RefreshCw,  action: "Recast",        pts: 3,   cap: 30   },
+  { Icon: Heart,      action: "Like",          pts: 1,   cap: 50   },
+  { Icon: Users,      action: "Follow",        pts: 2,   cap: 50   },
+  { Icon: ShoppingBag,action: "Buy FID",       pts: 100, cap: 300  },
+  { Icon: Tag,        action: "List FID",      pts: 50,  cap: 250  },
+  { Icon: Share2,     action: "Refer User",    pts: 200, cap: 2000 },
+  { Icon: Sword,      action: "Quest",         pts: 100, cap: 500  },
+  { Icon: Sprout,     action: "Grow Campaign", pts: 30,  cap: 150  },
 ];
 
-const ACTION_LABELS: Record<string, { label: string; emoji: string }> = {
-  cast:                 { label: "Cast",          emoji: "✍️"  },
-  recast:               { label: "Recast",        emoji: "🔄"  },
-  like:                 { label: "Like",          emoji: "💜"  },
-  follow:               { label: "Follow",        emoji: "🤝"  },
-  market_buy:           { label: "Buy FID",       emoji: "💎"  },
-  market_list:          { label: "List FID",      emoji: "🏷️" },
-  referral:             { label: "Referral",      emoji: "🫂"  },
-  quest:                { label: "Quest",          emoji: "🎯" },
-  grow_campaign_complete:{ label: "Grow Campaign", emoji: "🌱" },
+const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
+  cast:                  { label: "Cast",          Icon: Edit3       },
+  recast:                { label: "Recast",        Icon: RefreshCw   },
+  like:                  { label: "Like",          Icon: Heart       },
+  follow:                { label: "Follow",        Icon: Users       },
+  market_buy:            { label: "Buy FID",       Icon: ShoppingBag },
+  market_list:           { label: "List FID",      Icon: Tag         },
+  referral:              { label: "Referral",      Icon: Share2      },
+  quest:                 { label: "Quest",         Icon: Sword       },
+  grow_campaign_complete:{ label: "Grow Campaign", Icon: Sprout      },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -78,8 +81,8 @@ interface MiniCtx {
   };
   client?: { added?: boolean };
 }
-interface LBRow   { fid: number; total_points: number; rank: number; }
-interface FidPts  {
+interface LBRow  { fid: number; total_points: number; rank: number; }
+interface FidPts {
   fid: number; total_points: number;
   breakdown: { action_type: string; total_actions: number; points_earned: number }[];
 }
@@ -130,8 +133,11 @@ async function apiPoints(fid: number): Promise<FidPts | null> {
   catch { return null; }
 }
 async function apiBoard(): Promise<LBRow[]> {
-  try { const r = await fetch("/api/points/leaderboard?limit=50"); const d = await r.json(); return d.leaderboard ?? []; }
-  catch { return []; }
+  try {
+    const r = await fetch("/api/points/leaderboard?limit=50");
+    const d = await r.json();
+    return d.leaderboard ?? [];
+  } catch { return []; }
 }
 
 // ── Animated counter ──────────────────────────────────────────────────────────
@@ -151,39 +157,78 @@ function Counter({ to, className }: { to: number; className?: string }) {
   return <span className={className}>{n.toLocaleString()}</span>;
 }
 
-// ── Gradient card wrapper ─────────────────────────────────────────────────────
+// ── Animated background orbs ──────────────────────────────────────────────────
+function BgOrbs() {
+  return (
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
+      <motion.div
+        animate={{ x: [0, 40, -20, 0], y: [0, -30, 20, 0] }}
+        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        style={{
+          position: "absolute", top: "-10%", left: "-5%",
+          width: 340, height: 340, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(124,58,237,0.22) 0%, transparent 70%)",
+          filter: "blur(40px)",
+        }}
+      />
+      <motion.div
+        animate={{ x: [0, -30, 15, 0], y: [0, 25, -15, 0] }}
+        transition={{ duration: 22, repeat: Infinity, ease: "easeInOut", delay: 4 }}
+        style={{
+          position: "absolute", bottom: "10%", right: "-8%",
+          width: 280, height: 280, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(245,158,11,0.14) 0%, transparent 70%)",
+          filter: "blur(50px)",
+        }}
+      />
+      <motion.div
+        animate={{ x: [0, 20, -10, 0], y: [0, -20, 30, 0] }}
+        transition={{ duration: 26, repeat: Infinity, ease: "easeInOut", delay: 8 }}
+        style={{
+          position: "absolute", top: "40%", left: "30%",
+          width: 200, height: 200, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(168,85,247,0.12) 0%, transparent 70%)",
+          filter: "blur(60px)",
+        }}
+      />
+    </div>
+  );
+}
+
+// ── Icon badge ────────────────────────────────────────────────────────────────
+function IBadge({ Icon, size = 52, bg = "rgba(124,58,237,0.15)", color = "#A78BFA" }: {
+  Icon: React.ElementType; size?: number; bg?: string; color?: string;
+}) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: size * 0.28,
+      background: bg, display: "flex", alignItems: "center",
+      justifyContent: "center", border: `1px solid rgba(255,255,255,0.08)`,
+      flexShrink: 0,
+    }}>
+      <Icon size={size * 0.44} color={color} />
+    </div>
+  );
+}
+
+// ── Glass card ────────────────────────────────────────────────────────────────
 function Card({ children, style = {}, glow = false }: {
   children: React.ReactNode; style?: React.CSSProperties; glow?: boolean;
 }) {
   return (
     <div style={{
       background: C.surface,
-      border: `1px solid ${C.border}`,
+      border: `1px solid ${glow ? "rgba(124,58,237,0.3)" : C.border}`,
       borderRadius: 18,
       overflow: "hidden",
       position: "relative",
+      backdropFilter: "blur(12px)",
       boxShadow: glow
-        ? "0 0 0 1px rgba(124,58,237,0.3), 0 8px 32px rgba(124,58,237,0.12)"
+        ? "0 0 0 1px rgba(124,58,237,0.15), 0 8px 32px rgba(124,58,237,0.10)"
         : "none",
       ...style,
     }}>
       {children}
-    </div>
-  );
-}
-
-// ── Emoji badge ───────────────────────────────────────────────────────────────
-function EmojiBadge({ emoji, size = 52, bg = "rgba(124,58,237,0.15)" }: {
-  emoji: string; size?: number; bg?: string;
-}) {
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: size * 0.28,
-      background: bg, display: "flex", alignItems: "center",
-      justifyContent: "center", fontSize: size * 0.44,
-      border: `1px solid rgba(255,255,255,0.08)`,
-    }}>
-      {emoji}
     </div>
   );
 }
@@ -194,23 +239,36 @@ function EmojiBadge({ emoji, size = 52, bg = "rgba(124,58,237,0.15)" }: {
 function LoadingScreen() {
   return (
     <div style={{ minHeight: "100svh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 14 }}>
-      <div style={{ fontSize: 36 }}>🔮</div>
-      <Loader2 size={18} className="animate-spin" style={{ color: C.accentHi }} />
+      <BgOrbs />
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 16,
+          background: "linear-gradient(135deg, rgba(124,58,237,0.4), rgba(168,85,247,0.2))",
+          border: "1px solid rgba(124,58,237,0.4)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <Zap size={26} color="#A78BFA" />
+        </div>
+        <Loader2 size={18} className="animate-spin" style={{ color: C.accentHi }} />
+      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BROWSER
+// BROWSER GATE
 // ─────────────────────────────────────────────────────────────────────────────
 function BrowserScreen() {
   return (
     <div style={{ minHeight: "100svh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <motion.div {...fadeUp} style={{ maxWidth: 360, width: "100%", textAlign: "center" }}>
-        <div style={{ fontSize: 56, marginBottom: 20 }}>🌐</div>
+      <BgOrbs />
+      <motion.div {...fadeUp} style={{ position: "relative", zIndex: 1, maxWidth: 360, width: "100%", textAlign: "center" }}>
+        <IBadge Icon={Globe} size={64} bg="rgba(124,58,237,0.15)" />
+        <div style={{ height: 20 }} />
         <p style={{ color: C.text1, fontWeight: 800, fontSize: 20, marginBottom: 10 }}>Open in Warpcast</p>
         <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.7, marginBottom: 28 }}>
-          This mini app runs inside Warpcast. Search for <strong style={{ color: C.accentHi }}>FidCaster</strong> to access it.
+          This mini app runs inside Warpcast. Search for{" "}
+          <strong style={{ color: C.accentHi }}>FidCaster</strong> or tap the link below.
         </p>
         <a href="https://warpcast.com/~/mini-apps" target="_blank" rel="noopener noreferrer"
           style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: C.accent, color: "#fff", borderRadius: 14, padding: "14px 20px", fontSize: 15, fontWeight: 700, textDecoration: "none" }}>
@@ -222,40 +280,183 @@ function BrowserScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ONBOARDING
+// NFT PASS CARD (used inside onboarding step 2)
 // ─────────────────────────────────────────────────────────────────────────────
-const STEPS = [
-  { emoji: "🌐", title: "Your Identity",      hint: "Step 1 of 4" },
-  { emoji: "💎", title: "How Points Work",     hint: "Step 2 of 4" },
-  { emoji: "⚖️", title: "The Rules",           hint: "Step 3 of 4" },
-  { emoji: "🚀", title: "Activate",            hint: "Step 4 of 4" },
-];
+function NFTPassCard({
+  fid, ethAddress, onMinted,
+}: { fid: number; ethAddress?: string; onMinted?: () => void }) {
+  const [s,          setS]          = useState<"checking"|"idle"|"input"|"minting"|"done"|"error">("checking");
+  const [manualAddr, setManualAddr] = useState("");
+  const [txHash,     setTxHash]     = useState("");
+  const [err,        setErr]        = useState("");
 
-function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
-  fid: number; ctx: MiniCtx | null;
-  addApp: () => Promise<void>; onComplete: () => void;
-}) {
-  const [step,   setStep]   = useState(0);
-  const [adding, setAdding] = useState(false);
-  const username = ctx?.user?.username ?? `fid${fid}`;
-  const pfpUrl   = ctx?.user?.pfpUrl ?? null;
+  useEffect(() => {
+    const addr = ethAddress;
+    if (!addr) { setS("idle"); return; }
+    fetch(`/api/nft-pass/check/${addr}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.hasMinted) { setS("done"); onMinted?.(); }
+        else setS("idle");
+      })
+      .catch(() => setS("idle"));
+  }, [ethAddress]);
 
-  async function activate() {
-    setAdding(true);
-    // fire-and-forget — Warpcast's addMiniApp may await user interaction
-    addApp().catch(() => {});
-    // always proceed after 900ms regardless
-    await new Promise(r => setTimeout(r, 900));
-    onComplete();
+  const short = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`;
+
+  async function doMint(address: string) {
+    setS("minting");
+    try {
+      const r = await fetch("/api/nft-pass/mint", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fid, address }),
+      });
+      const d = await r.json();
+      if (d.alreadyMinted || r.ok) {
+        setTxHash(d.txHash ?? "");
+        setS("done");
+        onMinted?.();
+      } else {
+        throw new Error(d.error ?? "Mint failed");
+      }
+    } catch (e) { setErr(String(e)); setS("error"); }
   }
 
-  function next() { if (step < 3) setStep(s => s + 1); }
+  function handleMint() {
+    if (ethAddress) doMint(ethAddress);
+    else setS("input");
+  }
+
+  if (s === "checking") {
+    return (
+      <Card style={{ padding: "18px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Loader2 size={18} className="animate-spin" style={{ color: C.accentHi }} />
+          <p style={{ color: C.text2, fontSize: 14 }}>Checking wallet...</p>
+        </div>
+      </Card>
+    );
+  }
+
+  if (s === "done") {
+    return (
+      <Card glow style={{ padding: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <img src="/nft-pass-v2.png" alt="" style={{ width: 48, height: 48, borderRadius: 12, objectFit: "contain", background: "rgba(124,58,237,0.12)" }} />
+          <div style={{ flex: 1 }}>
+            <p style={{ color: C.text1, fontWeight: 700, fontSize: 15 }}>FidCaster Pass</p>
+            <p style={{ color: C.green, fontSize: 13, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>
+              <Check size={13} /> Minted · Full access active
+            </p>
+          </div>
+          {txHash && (
+            <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+              style={{ color: C.text3, display: "flex" }}>
+              <ExternalLink size={13} />
+            </a>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card glow>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px" }}>
+        <img src="/nft-pass-v2.png" alt="" style={{ width: 48, height: 48, borderRadius: 12, objectFit: "contain", background: "rgba(124,58,237,0.12)" }} />
+        <div style={{ flex: 1 }}>
+          <p style={{ color: C.text1, fontWeight: 700, fontSize: 15 }}>FidCaster Pass</p>
+          <p style={{ color: C.text2, fontSize: 12, marginTop: 2 }}>
+            {ethAddress
+              ? <>Free NFT on Base · <span style={{ fontFamily: "monospace", color: C.accentHi }}>{short(ethAddress)}</span></>
+              : "Free NFT on Base"
+            }
+          </p>
+        </div>
+        {s === "idle" && (
+          <button onClick={handleMint} style={{
+            background: `linear-gradient(135deg, ${C.accent}, #A855F7)`,
+            color: "#fff", borderRadius: 10, padding: "8px 16px",
+            fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0,
+            boxShadow: "0 4px 16px rgba(124,58,237,0.3)",
+          }}>
+            Mint free
+          </button>
+        )}
+        {s === "minting" && (
+          <span style={{ color: C.accentHi, fontSize: 13, display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+            <Loader2 size={14} className="animate-spin" /> Minting...
+          </span>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {s === "input" && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: "hidden" }}>
+            <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <p style={{ color: C.text3, fontSize: 12 }}>No verified wallet found. Enter your Base address:</p>
+              <input type="text" placeholder="0x..." value={manualAddr} onChange={e => setManualAddr(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.borderMed}`, borderRadius: 10, color: C.text1, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => doMint(manualAddr)} disabled={!manualAddr.trim()}
+                  style={{ flex: 1, padding: "10px", borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: manualAddr.trim() ? 1 : 0.45 }}>
+                  Mint
+                </button>
+                <button onClick={() => setS("idle")}
+                  style={{ padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text2, fontSize: 13, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+        {s === "error" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}` }}>
+            <p style={{ color: C.rose, fontSize: 12 }}>{err}</p>
+            <button onClick={() => setS("idle")} style={{ background: "none", border: "none", color: C.text3, fontSize: 12, cursor: "pointer", marginTop: 4 }}>
+              Try again
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ONBOARDING (3 steps, step 2 hard-gated on NFT mint)
+// ─────────────────────────────────────────────────────────────────────────────
+const OB_STEPS = [
+  { Icon: Star,   title: "Welcome to FidCaster",  hint: "Step 1 of 3" },
+  { Icon: Shield, title: "Mint Your Pass",         hint: "Step 2 of 3" },
+  { Icon: Globe,  title: "Join fidcaster.xyz",     hint: "Step 3 of 3" },
+];
+
+function OnboardingFlow({ fid, ctx, onComplete }: {
+  fid: number; ctx: MiniCtx | null; onComplete: () => void;
+}) {
+  const [step,   setStep]   = useState(0);
+  const [minted, setMinted] = useState(false);
+
+  const username = ctx?.user?.username ?? `fid${fid}`;
+  const pfpUrl   = ctx?.user?.pfpUrl ?? null;
+  const ethAddr  = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
+
+  function next() { if (step < 2) setStep(s => s + 1); }
   function back() { if (step > 0) setStep(s => s - 1); }
 
   const stepContent = [
-    // ── Step 0: Identity
-    <motion.div key="s0" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: C.surfaceHi, borderRadius: 16, border: `1px solid ${C.borderMed}` }}>
+    // ── Step 0: Welcome ────────────────────────────────────────────────────
+    <motion.div key="s0" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Identity card */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 14,
+        padding: "16px 18px",
+        background: C.surfaceHi,
+        borderRadius: 16, border: `1px solid ${C.borderMed}`,
+      }}>
         {pfpUrl
           ? <img src={pfpUrl} alt="" style={{ width: 48, height: 48, borderRadius: "50%", flexShrink: 0 }} />
           : <div style={{ width: 48, height: 48, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 900, color: "#fff" }}>
@@ -264,137 +465,142 @@ function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
         }
         <div style={{ flex: 1 }}>
           <p style={{ color: C.text1, fontWeight: 700, fontSize: 16 }}>@{username}</p>
-          <p style={{ color: C.text3, fontSize: 13, marginTop: 2 }}>Farcaster ID · {fid}</p>
+          <p style={{ color: C.text3, fontSize: 13, marginTop: 2 }}>Farcaster ID {fid}</p>
         </div>
-        <span style={{ fontSize: 22 }}>✅</span>
+        <Check size={18} color={C.green} />
       </div>
+
+      {/* Description */}
       <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.75 }}>
-        FidCaster connects your Farcaster identity to a competitive points program. Every verified action you take earns points toward the <strong style={{ color: C.accentHi }}>$FCAST airdrop</strong>.
+        <strong style={{ color: C.text1 }}>FidCaster</strong> is a Farcaster-native platform that rewards your on-chain social activity with points toward the{" "}
+        <strong style={{ color: C.accentHi }}>$FCAST airdrop</strong>. All earning activities happen at{" "}
+        <strong style={{ color: C.amber }}>fidcaster.xyz</strong>.
       </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+      {/* Pillars */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
-          ["🔑", "Your FID is your account — no sign-up needed"],
-          ["🔗", "Actions verified live against Farcaster Hub"],
-          ["🪙", "Airdrop is proportional to your points at snapshot"],
-        ].map(([e, t]) => (
-          <div key={t} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", background: C.surface, borderRadius: 12, border: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{e}</span>
-            <p style={{ color: C.text2, fontSize: 13, lineHeight: 1.5 }}>{t}</p>
+          { Icon: Zap,      color: C.accentHi, text: "Earn points for every verified Farcaster action you take" },
+          { Icon: Trophy,   color: C.amber,    text: "Climb the leaderboard and secure a larger airdrop share" },
+          { Icon: Shield,   color: C.green,    text: "Your FID is your account. No sign-up, fully on-chain" },
+        ].map(({ Icon, color, text }) => (
+          <div key={text} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", background: C.surface, borderRadius: 12, border: `1px solid ${C.border}` }}>
+            <Icon size={16} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ color: C.text2, fontSize: 13, lineHeight: 1.5 }}>{text}</p>
           </div>
         ))}
       </div>
     </motion.div>,
 
-    // ── Step 1: Scoring table
-    <motion.div key="s1" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.65 }}>
-        Each action you take in FidCaster earns points. Caps reset every day at midnight UTC.
+    // ── Step 1: Mint Pass (HARD GATE) ──────────────────────────────────────
+    <motion.div key="s1" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.7 }}>
+        The <strong style={{ color: C.text1 }}>FidCaster Pass</strong> is a free NFT on Base that unlocks full access to the app. You must mint it to continue.
       </p>
-      <Card>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", padding: "10px 16px 6px", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ color: C.text3, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em" }}>Action</span>
-          <span style={{ color: C.text3, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", textAlign: "right", minWidth: 52 }}>Pts</span>
-          <span style={{ color: C.text3, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", textAlign: "right", minWidth: 64 }}>Daily max</span>
+
+      <NFTPassCard fid={fid} ethAddress={ethAddr} onMinted={() => setMinted(true)} />
+
+      {minted && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.22)", borderRadius: 14 }}>
+          <Check size={16} color={C.green} />
+          <p style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Pass minted! Tap Continue to proceed.</p>
+        </motion.div>
+      )}
+
+      {!minted && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.20)", borderRadius: 14 }}>
+          <Shield size={15} color={C.amber} />
+          <p style={{ color: C.amber, fontSize: 13 }}>You must mint the pass to unlock the app.</p>
         </div>
-        {SCORING.map((row, i) => (
-          <div key={row.action} style={{
-            display: "grid", gridTemplateColumns: "1fr auto auto",
-            padding: "9px 16px", alignItems: "center",
-            borderBottom: i < SCORING.length - 1 ? `1px solid ${C.border}` : "none",
-          }}>
-            <span style={{ color: C.text1, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 15 }}>{row.emoji}</span> {row.action}
-            </span>
-            <span style={{ color: C.accentHi, fontSize: 13, fontWeight: 800, textAlign: "right", minWidth: 52, fontVariantNumeric: "tabular-nums" }}>+{row.pts}</span>
-            <span style={{ color: C.text3, fontSize: 12, textAlign: "right", minWidth: 64, fontVariantNumeric: "tabular-nums" }}>{row.cap.toLocaleString()}</span>
+      )}
+    </motion.div>,
+
+    // ── Step 2: Join fidcaster.xyz ─────────────────────────────────────────
+    <motion.div key="s2" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.7 }}>
+        All earning activities happen on{" "}
+        <strong style={{ color: C.amber }}>fidcaster.xyz</strong>. Create your account there to start earning points.
+      </p>
+
+      {/* 6-step guide */}
+      <Card style={{ padding: "4px 0" }}>
+        {[
+          { n: 1, Icon: Globe,      text: "Go to fidcaster.xyz"                         },
+          { n: 2, Icon: Users,      text: "Sign in with your Farcaster account"          },
+          { n: 3, Icon: Edit3,      text: "Cast, recast, and like to earn Cast points"   },
+          { n: 4, Icon: ShoppingBag,text: "Buy or list FIDs on the marketplace"          },
+          { n: 5, Icon: Share2,     text: "Refer friends for 200 pts each"               },
+          { n: 6, Icon: Zap,        text: "Check this mini app daily to track your score"},
+        ].map(({ n, Icon, text }, i, arr) => (
+          <div key={n}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: "50%",
+                background: "rgba(124,58,237,0.15)",
+                border: "1px solid rgba(124,58,237,0.25)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0,
+              }}>
+                <span style={{ color: C.accentHi, fontSize: 12, fontWeight: 800 }}>{n}</span>
+              </div>
+              <Icon size={15} color={C.text3} style={{ flexShrink: 0 }} />
+              <p style={{ color: C.text2, fontSize: 13, lineHeight: 1.4 }}>{text}</p>
+            </div>
+            {i < arr.length - 1 && <div style={{ height: 1, background: C.border, margin: "0 16px" }} />}
           </div>
         ))}
       </Card>
-    </motion.div>,
 
-    // ── Step 2: Rules
-    <motion.div key="s2" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.7 }}>
-        Points are only awarded for <strong style={{ color: C.text1 }}>verified, legitimate</strong> actions. The following will affect your eligibility:
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {[
-          { e: "☠️", label: "Sybil / bot detection", desc: "Accounts detected as bots are permanently excluded from the airdrop. This cannot be reversed.", color: C.rose },
-          { e: "⚠️", label: "Hub verification failure", desc: "Actions that can't be confirmed on Farcaster Hub are excluded from your score.", color: C.amber },
-          { e: "🔄", label: "Duplicate actions", desc: "The same action submitted more than once is only counted a single time.", color: C.text2 },
-          { e: "🌱", label: "Grow Campaign threshold", desc: "A Grow Campaign must generate ≥ 5 confirmed new follows to count for points.", color: C.text2 },
-        ].map(r => (
-          <div key={r.label} style={{ padding: "13px 15px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-              <span style={{ fontSize: 16 }}>{r.e}</span>
-              <p style={{ color: r.color, fontSize: 13, fontWeight: 700 }}>{r.label}</p>
-            </div>
-            <p style={{ color: C.text3, fontSize: 12, lineHeight: 1.6, paddingLeft: 24 }}>{r.desc}</p>
-          </div>
-        ))}
-      </div>
-      <p style={{ color: C.text3, fontSize: 12, lineHeight: 1.6, padding: "2px 0" }}>
-        💡 Unlikes, unfollows, unrecast, app opens and cancelled orders do not affect your score in either direction.
-      </p>
-    </motion.div>,
-
-    // ── Step 3: Activate
-    <motion.div key="s3" {...slideIn} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ padding: "20px 18px", background: `linear-gradient(135deg, rgba(124,58,237,0.18) 0%, rgba(168,85,247,0.10) 100%)`, borderRadius: 18, border: `1px solid rgba(124,58,237,0.3)`, textAlign: "center" }}>
-        <div style={{ fontSize: 42, marginBottom: 10 }}>🏆</div>
-        <p style={{ color: C.text1, fontWeight: 800, fontSize: 18, marginBottom: 6 }}>Start Earning Points</p>
-        <p style={{ color: C.text2, fontSize: 13, lineHeight: 1.6 }}>
-          Add FidCaster to Warpcast to activate your account and begin tracking your actions toward the $FCAST airdrop.
-        </p>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: C.surfaceHi, borderRadius: 14, border: `1px solid ${C.borderMed}` }}>
-        <img src="/icons/icon-512-dark.png" alt="" style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0 }} />
-        <div>
-          <p style={{ color: C.text1, fontWeight: 700, fontSize: 15 }}>FidCaster</p>
-          <p style={{ color: C.text3, fontSize: 12, marginTop: 2 }}>Social · FID Market · Points · Airdrop</p>
-        </div>
-      </div>
-      <button
-        onClick={activate}
-        disabled={adding}
+      {/* Primary CTA */}
+      <a
+        href="https://fidcaster.xyz"
+        target="_blank"
+        rel="noopener noreferrer"
         style={{
-          width: "100%", padding: "15px", borderRadius: 14, border: "none",
-          background: adding ? `rgba(124,58,237,0.45)` : `linear-gradient(135deg, ${C.accent} 0%, #A855F7 100%)`,
-          color: "#fff", fontWeight: 800, fontSize: 16, cursor: adding ? "default" : "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-          boxShadow: adding ? "none" : "0 4px 24px rgba(124,58,237,0.35)",
-          transition: "all 0.2s",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          padding: "15px 20px", borderRadius: 14,
+          background: `linear-gradient(135deg, ${C.accent} 0%, #A855F7 100%)`,
+          color: "#fff", fontWeight: 800, fontSize: 15, textDecoration: "none",
+          boxShadow: "0 4px 24px rgba(124,58,237,0.30)",
         }}
       >
-        {adding
-          ? <><Loader2 size={18} className="animate-spin" /> Activating…</>
-          : <>🚀 Add FidCaster</>
-        }
-      </button>
+        Open fidcaster.xyz <ExternalLink size={15} />
+      </a>
+
+      {/* Secondary: already registered */}
       <button
         onClick={onComplete}
-        style={{ background: "none", border: "none", color: C.text3, fontSize: 13, cursor: "pointer", textAlign: "center", padding: "2px 0" }}
+        style={{
+          width: "100%", background: "none", border: `1px solid ${C.border}`,
+          borderRadius: 14, padding: "13px 20px",
+          color: C.text2, fontSize: 14, fontWeight: 600, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}
       >
-        Already added — enter app →
+        I have registered <ArrowRight size={15} />
       </button>
     </motion.div>,
   ];
 
+  // Determine if "Continue" is enabled
+  const canContinue = step === 0 || (step === 1 && minted);
+
   return (
     <div style={{ minHeight: "100svh", background: C.bg, display: "flex", flexDirection: "column" }}>
-      {/* Top gradient */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 220, background: "radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.2) 0%, transparent 75%)", pointerEvents: "none", zIndex: 0 }} />
+      <BgOrbs />
 
       {/* Header */}
       <div style={{ position: "relative", zIndex: 1, padding: "20px 20px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ color: C.text1, fontWeight: 800, fontSize: 17 }}>FidCaster</span>
-        <span style={{ color: C.text3, fontSize: 12 }}>{STEPS[step].hint}</span>
+        <span style={{ color: C.text3, fontSize: 12 }}>{OB_STEPS[step].hint}</span>
       </div>
 
-      {/* Progress */}
+      {/* Progress bar */}
       <div style={{ position: "relative", zIndex: 1, margin: "14px 20px 0", height: 3, background: C.border, borderRadius: 3 }}>
         <motion.div
-          animate={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
+          animate={{ width: `${((step + 1) / OB_STEPS.length) * 100}%` }}
           transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
           style={{ height: "100%", borderRadius: 3, background: `linear-gradient(90deg, ${C.accent}, #A855F7)` }}
         />
@@ -402,8 +608,8 @@ function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
 
       {/* Step icon + title */}
       <div style={{ position: "relative", zIndex: 1, padding: "22px 20px 12px", display: "flex", alignItems: "center", gap: 14 }}>
-        <EmojiBadge emoji={STEPS[step].emoji} size={48} />
-        <p style={{ color: C.text1, fontWeight: 800, fontSize: 22, lineHeight: 1.2 }}>{STEPS[step].title}</p>
+        <IBadge Icon={OB_STEPS[step].Icon} size={48} />
+        <p style={{ color: C.text1, fontWeight: 800, fontSize: 22, lineHeight: 1.2 }}>{OB_STEPS[step].title}</p>
       </div>
 
       {/* Content */}
@@ -413,8 +619,8 @@ function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
         </AnimatePresence>
       </div>
 
-      {/* Footer nav */}
-      {step < 3 && (
+      {/* Footer nav — hidden on step 2 (handled inside step content) */}
+      {step < 2 && (
         <div style={{ position: "relative", zIndex: 1, padding: "12px 20px 32px", display: "flex", gap: 10 }}>
           {step > 0 && (
             <button onClick={back} style={{ padding: "13px 16px", borderRadius: 12, background: C.surface, border: `1px solid ${C.border}`, color: C.text2, cursor: "pointer", display: "flex", alignItems: "center" }}>
@@ -423,12 +629,18 @@ function OnboardingFlow({ fid, ctx, addApp, onComplete }: {
           )}
           <button
             onClick={next}
+            disabled={!canContinue}
             style={{
               flex: 1, padding: "14px 20px", borderRadius: 14, border: "none",
-              background: C.surfaceHi, color: C.text1, cursor: "pointer",
+              background: canContinue
+                ? `linear-gradient(135deg, ${C.accent} 0%, #A855F7 100%)`
+                : C.surfaceHi,
+              color: canContinue ? "#fff" : C.text3,
+              cursor: canContinue ? "pointer" : "not-allowed",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               fontSize: 15, fontWeight: 700,
-              boxShadow: `inset 0 1px 0 ${C.borderMed}`,
+              boxShadow: canContinue ? "0 4px 20px rgba(124,58,237,0.28)" : "none",
+              transition: "all 0.2s",
             }}
           >
             Continue <ArrowRight size={16} />
@@ -453,11 +665,11 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         onClick={e => e.stopPropagation()}
-        style={{ width: "100%", maxHeight: "88svh", overflowY: "auto", background: "#0E0722", borderRadius: "22px 22px 0 0", padding: "20px 20px 40px", border: `1px solid ${C.borderMed}` }}
+        style={{ width: "100%", maxHeight: "88svh", overflowY: "auto", background: "#0a0f1e", borderRadius: "22px 22px 0 0", padding: "20px 20px 40px", border: `1px solid ${C.borderMed}` }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>⚡</span>
+            <Zap size={20} color={C.accentHi} />
             <p style={{ color: C.text1, fontWeight: 800, fontSize: 18 }}>Scoring Rules</p>
           </div>
           <button onClick={onClose} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.text2 }}>
@@ -475,7 +687,8 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
           {SCORING.map((row, i) => (
             <div key={row.action} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", padding: "10px 16px", borderBottom: i < SCORING.length - 1 ? `1px solid ${C.border}` : "none" }}>
               <span style={{ color: C.text1, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 15 }}>{row.emoji}</span> {row.action}
+                <row.Icon size={14} color={C.text3} />
+                {row.action}
               </span>
               <span style={{ color: C.accentHi, fontSize: 13, fontWeight: 800, textAlign: "right", minWidth: 52 }}>+{row.pts}</span>
               <span style={{ color: C.text3, fontSize: 12, textAlign: "right", minWidth: 64 }}>{row.cap.toLocaleString()}</span>
@@ -485,141 +698,21 @@ function RulesSheet({ onClose }: { onClose: () => void }) {
 
         <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Exclusion rules</p>
         {[
-          { e: "☠️", l: "Sybil / bot detection",    c: C.rose,  d: "Permanently excluded. Irreversible." },
-          { e: "⚠️", l: "Hub verification failure",  c: C.amber, d: "Action excluded from score." },
-          { e: "🔄", l: "Duplicate submissions",     c: C.text2, d: "Only counted once." },
-          { e: "🌱", l: "Grow Campaign < 5 follows", c: C.text2, d: "No points for insufficient campaign." },
+          { Icon: X,        color: C.rose,  label: "Sybil / bot detection",    desc: "Permanently excluded. Irreversible." },
+          { Icon: Shield,   color: C.amber, label: "Hub verification failure",  desc: "Action excluded from score." },
+          { Icon: RefreshCw,color: C.text2, label: "Duplicate submissions",     desc: "Only counted once." },
+          { Icon: Sprout,   color: C.text2, label: "Grow Campaign under 5",     desc: "No points for insufficient campaign." },
         ].map(r => (
-          <div key={r.l} style={{ display: "flex", gap: 12, padding: "11px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 6 }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{r.e}</span>
+          <div key={r.label} style={{ display: "flex", gap: 12, padding: "11px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 6 }}>
+            <r.Icon size={16} color={r.color} style={{ flexShrink: 0, marginTop: 1 }} />
             <div>
-              <p style={{ color: r.c, fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{r.l}</p>
-              <p style={{ color: C.text3, fontSize: 12 }}>{r.d}</p>
+              <p style={{ color: r.color, fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{r.label}</p>
+              <p style={{ color: C.text3, fontSize: 12 }}>{r.desc}</p>
             </div>
           </div>
         ))}
       </motion.div>
     </motion.div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NFT PASS CARD
-// ─────────────────────────────────────────────────────────────────────────────
-function NFTPassCard({ fid, ethAddress }: { fid: number; ethAddress?: string }) {
-  const [s,          setS]          = useState<"idle"|"input"|"minting"|"done"|"error">("idle");
-  const [manualAddr, setManualAddr] = useState("");
-  const [txHash,     setTxHash]     = useState("");
-  const [err,        setErr]        = useState("");
-  const [minted,     setMinted]     = useState(false);
-
-  // Check if already minted
-  useEffect(() => {
-    if (!ethAddress) return;
-    fetch(`/api/nft-pass/check/${ethAddress}`)
-      .then(r => r.json())
-      .then(d => { if (d.hasMinted) setMinted(true); })
-      .catch(() => {});
-  }, [ethAddress]);
-
-  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-
-  async function doMint(address: string) {
-    setS("minting");
-    try {
-      const r = await fetch("/api/nft-pass/mint", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fid, address }),
-      });
-      const d = await r.json();
-      if (d.alreadyMinted) { setMinted(true); setS("done"); return; }
-      if (!r.ok) throw new Error(d.error ?? "Mint failed");
-      setTxHash(d.txHash ?? ""); setMinted(true); setS("done");
-    } catch (e) { setErr(String(e)); setS("error"); }
-  }
-
-  // Has verified wallet → auto-mint, no address input needed
-  function handleMint() {
-    if (ethAddress) doMint(ethAddress);
-    else setS("input");
-  }
-
-  if (minted || s === "done") {
-    return (
-      <Card style={{ padding: "14px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img src="/nft-pass-v2.png" alt="" style={{ width: 44, height: 44, borderRadius: 11, objectFit: "contain", background: "rgba(124,58,237,0.12)" }} />
-          <div style={{ flex: 1 }}>
-            <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>💎 FidCaster Pass</p>
-            <p style={{ color: C.green, fontSize: 12, marginTop: 2 }}>Minted · Full access active</p>
-          </div>
-          {txHash && (
-            <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer" style={{ color: C.text3 }}>
-              <ExternalLink size={13} />
-            </a>
-          )}
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card glow>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
-        <img src="/nft-pass-v2.png" alt="" style={{ width: 44, height: 44, borderRadius: 11, objectFit: "contain", background: "rgba(124,58,237,0.12)" }} />
-        <div style={{ flex: 1 }}>
-          <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>💎 FidCaster Pass</p>
-          <p style={{ color: C.text2, fontSize: 12, marginTop: 2 }}>
-            {ethAddress
-              ? <>Mint to <span style={{ fontFamily: "monospace", color: C.accentHi }}>{short(ethAddress)}</span> · Free on Base</>
-              : "Free NFT on Base · Full app access"
-            }
-          </p>
-        </div>
-        {s === "idle" && (
-          <button onClick={handleMint}
-            style={{ background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, color: "#fff", borderRadius: 10, padding: "7px 14px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0 }}>
-            Mint free
-          </button>
-        )}
-        {s === "minting" && (
-          <span style={{ color: C.accentHi, fontSize: 12, display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-            <Loader2 size={13} className="animate-spin" /> Minting…
-          </span>
-        )}
-      </div>
-
-      <AnimatePresence>
-        {/* Only shown when user has no verified wallet */}
-        {s === "input" && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: "hidden" }}>
-            <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-              <p style={{ color: C.text3, fontSize: 12 }}>No verified wallet found — enter your Base address manually:</p>
-              <input type="text" placeholder="0x…" value={manualAddr} onChange={e => setManualAddr(e.target.value)}
-                style={{ width: "100%", padding: "10px 12px", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.borderMed}`, borderRadius: 10, color: C.text1, fontSize: 12, fontFamily: "monospace", outline: "none" }} />
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => doMint(manualAddr)} disabled={!manualAddr.trim()}
-                  style={{ flex: 1, padding: "10px", borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, color: "#fff", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: manualAddr.trim() ? 1 : 0.4 }}>
-                  Mint
-                </button>
-                <button onClick={() => setS("idle")}
-                  style={{ padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, color: C.text2, fontSize: 13, cursor: "pointer" }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-        {s === "error" && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}` }}>
-            <p style={{ color: C.rose, fontSize: 12 }}>{err}</p>
-            <button onClick={() => setS("idle")} style={{ background: "none", border: "none", color: C.text3, fontSize: 12, cursor: "pointer", marginTop: 4 }}>Try again →</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Card>
   );
 }
 
@@ -643,14 +736,16 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
       {/* Hero */}
       <div style={{
         padding: "28px 20px 22px", textAlign: "center",
-        background: `linear-gradient(180deg, rgba(124,58,237,0.18) 0%, rgba(124,58,237,0.04) 100%)`,
-        border: `1px solid rgba(124,58,237,0.25)`, borderRadius: 20,
+        background: `linear-gradient(180deg, rgba(124,58,237,0.16) 0%, rgba(124,58,237,0.03) 100%)`,
+        border: `1px solid rgba(124,58,237,0.20)`, borderRadius: 20,
         position: "relative", overflow: "hidden",
+        backdropFilter: "blur(12px)",
       }}>
-        {/* Glow orb */}
-        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -55%)", width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,0.3) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -55%)", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,0.25) 0%, transparent 70%)", pointerEvents: "none" }} />
 
-        <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>⚡ Total Points</p>
+        <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+          <Zap size={11} color={C.text3} /> Total Points
+        </p>
         {loading
           ? <div style={{ height: 64, display: "flex", alignItems: "center", justifyContent: "center" }}><Loader2 size={20} className="animate-spin" style={{ color: C.accentHi }} /></div>
           : <div style={{
@@ -664,8 +759,8 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
         }
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
           {rank && (
-            <span style={{ background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.3)", color: C.amber, borderRadius: 10, padding: "5px 12px", fontSize: 13, fontWeight: 800 }}>
-              🏆 Rank #{rank}
+            <span style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.30)", color: C.amber, borderRadius: 10, padding: "5px 12px", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 5 }}>
+              <Trophy size={12} color={C.amber} /> Rank #{rank}
             </span>
           )}
           <span style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text2, borderRadius: 10, padding: "5px 12px", fontSize: 12 }}>
@@ -680,16 +775,19 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
       {/* Breakdown */}
       {!loading && pts?.breakdown && pts.breakdown.filter(b => b.points_earned > 0).length > 0 && (
         <Card>
-          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 16px 6px" }}>💰 Earnings Breakdown</p>
+          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 16px 6px", display: "flex", alignItems: "center", gap: 5 }}>
+            <Gift size={11} color={C.text3} /> Earnings Breakdown
+          </p>
           {pts.breakdown.filter(b => b.points_earned > 0).sort((a, b) => b.points_earned - a.points_earned).map((b, i, arr) => {
-            const meta = ACTION_LABELS[b.action_type] ?? { label: b.action_type, emoji: "•" };
+            const meta = ACTION_MAP[b.action_type] ?? { label: b.action_type, Icon: Zap };
             const pct  = total > 0 ? (b.points_earned / total) * 100 : 0;
             return (
               <div key={b.action_type}>
                 <div style={{ padding: "10px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
                     <span style={{ color: C.text1, fontSize: 13, display: "flex", alignItems: "center", gap: 7 }}>
-                      <span style={{ fontSize: 14 }}>{meta.emoji}</span> {meta.label}
+                      <meta.Icon size={14} color={C.text3} />
+                      {meta.label}
                     </span>
                     <span style={{ color: C.accentHi, fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
                       {b.points_earned.toLocaleString()}
@@ -715,8 +813,10 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
       <Card style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <div>
-            <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>🫂 Invite Friends</p>
-            <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Earn <strong style={{ color: C.accentHi }}>+200 pts</strong> per successful referral</p>
+            <p style={{ color: C.text1, fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+              <Share2 size={14} color={C.accentHi} /> Invite Friends
+            </p>
+            <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Earn <strong style={{ color: C.amber }}>+200 pts</strong> per successful referral</p>
           </div>
         </div>
         <button onClick={copy} style={{
@@ -728,7 +828,7 @@ function ScoreTab({ fid, ethAddr, loading, pts, rank }: {
             {refUrl.replace("https://", "")}
           </span>
           <span style={{ color: copied ? C.green : C.accentHi, fontSize: 12, fontWeight: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
-            {copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy</>}
+            {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
           </span>
         </button>
       </Card>
@@ -747,29 +847,32 @@ function BoardTab({ fid, board, loading }: { fid: number; board: LBRow[]; loadin
   );
   if (!board.length) return (
     <motion.div key="be" {...fadeUp} style={{ padding: "48px 20px", textAlign: "center" }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>🏆</div>
-      <p style={{ color: C.text3, fontSize: 14 }}>No data yet — start earning points.</p>
+      <Trophy size={40} color={C.text3} style={{ marginBottom: 12 }} />
+      <p style={{ color: C.text3, fontSize: 14 }}>No data yet. Start earning points on fidcaster.xyz</p>
     </motion.div>
   );
 
-  const TOP_ICONS = ["👑", "💎", "🔥"];
+  const TOP_COLORS = [C.amber, C.accentHi, C.text2];
+  const TOP_LABELS = ["1st", "2nd", "3rd"];
 
   return (
     <motion.div key="board-tab" {...fadeUp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Top 3 */}
       <Card>
-        <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", padding: "12px 16px 4px" }}>🏆 Top Earners</p>
+        <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", padding: "12px 16px 4px", display: "flex", alignItems: "center", gap: 5 }}>
+          <Trophy size={11} color={C.text3} /> Top Earners
+        </p>
         {board.slice(0, 3).map((row, i) => {
           const isMe = row.fid === fid;
           return (
             <div key={row.fid}>
               <div style={{
                 display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
-                background: isMe ? "rgba(124,58,237,0.12)" : "transparent",
+                background: isMe ? "rgba(124,58,237,0.10)" : "transparent",
               }}>
-                <span style={{ fontSize: 22, flexShrink: 0, width: 28, textAlign: "center" }}>{TOP_ICONS[i]}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: TOP_COLORS[i], width: 28, textAlign: "center", flexShrink: 0 }}>{TOP_LABELS[i]}</span>
                 <span style={{ flex: 1, color: isMe ? C.accentHi : C.text1, fontWeight: isMe ? 700 : 500, fontSize: 14 }}>
-                  FID {row.fid}{isMe ? " · you" : ""}
+                  FID {row.fid}{isMe ? " (you)" : ""}
                 </span>
                 <span style={{ color: isMe ? C.accentHi : C.text2, fontWeight: 800, fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
                   {row.total_points.toLocaleString()}
@@ -790,13 +893,13 @@ function BoardTab({ fid, board, loading }: { fid: number; board: LBRow[]; loadin
               <div key={row.fid}>
                 <motion.div
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.018 }}
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: isMe ? "rgba(124,58,237,0.10)" : "transparent" }}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: isMe ? "rgba(124,58,237,0.08)" : "transparent" }}
                 >
                   <span style={{ width: 28, color: C.text3, fontSize: 12, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                     {row.rank}
                   </span>
                   <span style={{ flex: 1, color: isMe ? C.accentHi : C.text1, fontWeight: isMe ? 700 : 400, fontSize: 13 }}>
-                    FID {row.fid}{isMe ? " · you" : ""}
+                    FID {row.fid}{isMe ? " (you)" : ""}
                   </span>
                   <span style={{ color: isMe ? C.accentHi : C.text2, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
                     {row.total_points.toLocaleString()}
@@ -831,12 +934,13 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
       {/* Identity */}
       <div style={{
         padding: "20px 18px", borderRadius: 20,
-        background: `linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(168,85,247,0.08) 100%)`,
-        border: `1px solid rgba(124,58,237,0.28)`,
+        background: `linear-gradient(135deg, rgba(124,58,237,0.13) 0%, rgba(168,85,247,0.06) 100%)`,
+        border: `1px solid rgba(124,58,237,0.22)`,
+        backdropFilter: "blur(12px)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
           {pfpUrl
-            ? <img src={pfpUrl} alt="" style={{ width: 60, height: 60, borderRadius: "50%", border: `2px solid rgba(124,58,237,0.5)` }} />
+            ? <img src={pfpUrl} alt="" style={{ width: 60, height: 60, borderRadius: "50%", border: `2px solid rgba(124,58,237,0.45)` }} />
             : <div style={{ width: 60, height: 60, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, #A855F7)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: "#fff", flexShrink: 0 }}>
                 {username.slice(0,2).toUpperCase()}
               </div>
@@ -848,12 +952,12 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1 }}>
           {[
-            { label: "Points",  value: loading ? "—" : total.toLocaleString(), e: "⚡" },
-            { label: "Rank",    value: loading ? "—" : rank ? `#${rank}` : "—", e: "🏆" },
-            { label: "Actions", value: loading ? "—" : actions.toString(), e: "🎯" },
+            { label: "Points",  value: loading ? "..." : total.toLocaleString(),    Icon: Zap    },
+            { label: "Rank",    value: loading ? "..." : rank ? `#${rank}` : "N/A", Icon: Trophy },
+            { label: "Actions", value: loading ? "..." : actions.toString(),         Icon: Star   },
           ].map((s, i) => (
             <div key={s.label} style={{ textAlign: "center", padding: "12px 6px", borderRight: i < 2 ? `1px solid ${C.border}` : "none" }}>
-              <p style={{ fontSize: 16, marginBottom: 4 }}>{s.e}</p>
+              <s.Icon size={14} color={C.text3} style={{ marginBottom: 4 }} />
               <p style={{ color: C.text1, fontWeight: 800, fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{s.value}</p>
               <p style={{ color: C.text3, fontSize: 11, marginTop: 2 }}>{s.label}</p>
             </div>
@@ -867,13 +971,15 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
       {/* Wallets */}
       {ethAddrs.length > 0 && (
         <Card>
-          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", padding: "12px 16px 4px" }}>🔐 Verified Wallets</p>
+          <p style={{ color: C.text3, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", padding: "12px 16px 4px", display: "flex", alignItems: "center", gap: 5 }}>
+            <Wallet size={11} color={C.text3} /> Verified Wallets
+          </p>
           {ethAddrs.map((addr, i) => (
             <div key={addr}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.green, flexShrink: 0 }} />
                 <span style={{ color: C.text1, fontSize: 12, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{addr}</span>
-                <a href={`https://basescan.org/address/${addr}`} target="_blank" rel="noopener noreferrer" style={{ color: C.text3 }}>
+                <a href={`https://basescan.org/address/${addr}`} target="_blank" rel="noopener noreferrer" style={{ color: C.text3, display: "flex" }}>
                   <ExternalLink size={13} />
                 </a>
               </div>
@@ -889,18 +995,18 @@ function ProfileTab({ fid, ctx, pts, rank, loading, onRules }: {
         padding: "15px 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, cursor: "pointer",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 18 }}>⚡</span>
-          <p style={{ color: C.text1, fontSize: 14, fontWeight: 700 }}>Scoring Rules & Point System</p>
+          <Zap size={16} color={C.accentHi} />
+          <p style={{ color: C.text1, fontSize: 14, fontWeight: 700 }}>Scoring Rules</p>
         </div>
         <ChevronRight size={16} style={{ color: C.text3 }} />
       </button>
 
-      {/* Airdrop */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.18)", borderRadius: 16 }}>
-        <span style={{ fontSize: 22, flexShrink: 0 }}>🪙</span>
+      {/* Airdrop status */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", borderRadius: 16 }}>
+        <Gift size={20} color={C.amber} style={{ flexShrink: 0 }} />
         <div>
-          <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>Airdrop</p>
-          <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Snapshot not announced yet. Keep earning points.</p>
+          <p style={{ color: C.text1, fontWeight: 700, fontSize: 14 }}>$FCAST Airdrop</p>
+          <p style={{ color: C.text2, fontSize: 12, marginTop: 3 }}>Snapshot not announced yet. Keep earning.</p>
         </div>
         <span style={{ marginLeft: "auto", width: 8, height: 8, borderRadius: "50%", background: C.amber, flexShrink: 0, animation: "pulse 2s ease-in-out infinite" }} />
       </div>
@@ -916,11 +1022,11 @@ type AppTab = "score" | "board" | "profile";
 function MainApp({ fid, ctx, added, addApp }: {
   fid: number; ctx: MiniCtx | null; added: boolean; addApp: () => void;
 }) {
-  const [tab,    setTab]    = useState<AppTab>("score");
-  const [pts,    setPts]    = useState<FidPts | null>(null);
-  const [board,  setBoard]  = useState<LBRow[]>([]);
-  const [load,   setLoad]   = useState(true);
-  const [rules,  setRules]  = useState(false);
+  const [tab,   setTab]   = useState<AppTab>("score");
+  const [pts,   setPts]   = useState<FidPts | null>(null);
+  const [board, setBoard] = useState<LBRow[]>([]);
+  const [load,  setLoad]  = useState(true);
+  const [rules, setRules] = useState(false);
 
   const username = ctx?.user?.username ?? `fid${fid}`;
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
@@ -934,16 +1040,15 @@ function MainApp({ fid, ctx, added, addApp }: {
       .finally(() => setLoad(false));
   }, [fid]);
 
-  const TABS: { id: AppTab; label: string; icon: string }[] = [
-    { id: "score",   label: "Score",    icon: "⚡" },
-    { id: "board",   label: "Rankings", icon: "🏆" },
-    { id: "profile", label: "Profile",  icon: "👤" },
+  const TABS: { id: AppTab; label: string; Icon: React.ElementType }[] = [
+    { id: "score",   label: "Score",    Icon: Zap    },
+    { id: "board",   label: "Rankings", Icon: Trophy },
+    { id: "profile", label: "Profile",  Icon: Users  },
   ];
 
   return (
     <div style={{ minHeight: "100svh", background: C.bg, display: "flex", flexDirection: "column" }}>
-      {/* Top gradient */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 160, background: "radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.15) 0%, transparent 80%)", pointerEvents: "none", zIndex: 0 }} />
+      <BgOrbs />
 
       {/* Header */}
       <div style={{ position: "sticky", top: 0, zIndex: 10, background: `${C.bg}E8`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}`, padding: "10px 16px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -955,8 +1060,8 @@ function MainApp({ fid, ctx, added, addApp }: {
         }
         <p style={{ flex: 1, color: C.text1, fontWeight: 700, fontSize: 14 }}>@{username}</p>
         {!added && (
-          <button onClick={addApp} style={{ background: `rgba(124,58,237,0.2)`, border: `1px solid rgba(124,58,237,0.4)`, color: C.accentHi, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-            ＋ Add
+          <button onClick={addApp} style={{ background: `rgba(124,58,237,0.18)`, border: `1px solid rgba(124,58,237,0.35)`, color: C.accentHi, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Add app
           </button>
         )}
         <button onClick={() => setRules(true)} style={{ background: "none", border: "none", color: C.text3, cursor: "pointer", padding: 4, display: "flex" }}>
@@ -975,7 +1080,7 @@ function MainApp({ fid, ctx, added, addApp }: {
             borderBottom: tab === t.id ? `2.5px solid ${C.accentHi}` : "2.5px solid transparent",
             marginBottom: -1, transition: "color 0.15s, border-color 0.15s",
           }}>
-            <span style={{ fontSize: 14 }}>{t.icon}</span> {t.label}
+            <t.Icon size={14} /> {t.label}
           </button>
         ))}
       </div>
@@ -999,20 +1104,22 @@ function MainApp({ fid, ctx, added, addApp }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // ROOT
 // ─────────────────────────────────────────────────────────────────────────────
+const ONBOARDED_KEY = "fc_v1_onboarded";
+
 export function MiniAppPage() {
   const { fid, ctx, ready, inFC, added, addApp } = useSDK();
   const [onboarded, setOnboarded] = useState(
-    () => localStorage.getItem("fc_v1_onboarded") === "1",
+    () => localStorage.getItem(ONBOARDED_KEY) === "1",
   );
 
   let phase: "loading" | "browser" | "onboarding" | "app";
-  if (!ready)            phase = "loading";
+  if (!ready)             phase = "loading";
   else if (!fid || !inFC) phase = "browser";
-  else if (!onboarded)   phase = "onboarding";
-  else                   phase = "app";
+  else if (!onboarded)    phase = "onboarding";
+  else                    phase = "app";
 
   function complete() {
-    localStorage.setItem("fc_v1_onboarded", "1");
+    localStorage.setItem(ONBOARDED_KEY, "1");
     setOnboarded(true);
   }
 
@@ -1022,7 +1129,7 @@ export function MiniAppPage() {
         {phase === "loading"    && <LoadingScreen key="L" />}
         {phase === "browser"    && <BrowserScreen key="B" />}
         {phase === "onboarding" && fid && (
-          <OnboardingFlow key="O" fid={fid} ctx={ctx} addApp={addApp} onComplete={complete} />
+          <OnboardingFlow key="O" fid={fid} ctx={ctx} onComplete={complete} />
         )}
         {phase === "app" && fid && (
           <MainApp key="A" fid={fid} ctx={ctx} added={added} addApp={addApp} />
