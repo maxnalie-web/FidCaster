@@ -20,3 +20,5 @@
 - [NFT image background](nft-pass-image.md) — bg is dark green R≈72 G≈109 B≈74; flood-fill from 4 corners (tolerance 40) removes it cleanly; saved as public/nft-pass-v2.png
 - [Mini app preview mode](mini-app-preview.md) — ?fid=XXX URL param in /mini bypasses Warpcast check; shows full Points/Board/Airdrop UI for testing in browser
 - [tsx cache invalidation](tsx-cache-invalidation.md) — stale tsx cache causes new routes 404 while old routes work; fix: rm /tmp/tsx-1000 + touch files + restart
+- [Farcaster manifest key](farcaster-manifest.md) — must use "miniapp" key (not "frame"); iconUrl/imageUrl/buttonTitle required; fc:frame meta tag needed in index.html for embed preview
+- [Mini app notifications](mini-app-notifications.md) — notification_tokens table stores fid/token/url; webhook at /api/miniapp/webhook handles JWS+direct; token also captured client-side via frameAdded event + context.client.notificationDetails

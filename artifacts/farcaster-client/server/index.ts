@@ -37,6 +37,11 @@ import {
 import { createNftPassRouter } from "./nft-pass-routes.js";
 import { getPublicConfig, setPublicConfig, getAdminSecrets, setAdminSecrets } from "./admin-store.js";
 import { setAdminNeynarKey } from "./neynar-limit.js";
+import {
+  upsertNotificationToken,
+  disableNotificationToken,
+  deleteNotificationToken,
+} from "./db/notifications.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -865,9 +870,60 @@ registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wa
 app.use("/api/nft-pass", createNftPassRouter()); // FidCaster Pass NFT mint + check
 
 // Mini App webhook — Farcaster sends events here when users add/remove the mini app.
-// No-op for now (acknowledged with 200); extend to handle notifications later.
-app.post("/api/miniapp/webhook", express.json(), (_req: express.Request, res: express.Response) => {
-  res.json({ ok: true });
+// Handles both JWS format (from Farcaster servers) and direct format (from our client).
+function decodeBase64Url(str: string): string {
+  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (4 - (padded.length % 4)) % 4;
+  return Buffer.from(padded + "=".repeat(pad), "base64").toString("utf-8");
+}
+
+async function handleMiniAppWebhookBody(body: Record<string, unknown>): Promise<void> {
+  let fid: number | null = null;
+  let event: string | null = null;
+  let notifDetails: { token?: string; url?: string } | null = null;
+
+  // ── JWS format (from Farcaster notification servers) ──────────────────
+  if (body.header && body.payload && typeof body.header === "string") {
+    try {
+      const header  = JSON.parse(decodeBase64Url(body.header as string));
+      const payload = JSON.parse(decodeBase64Url(body.payload as string));
+      fid           = Number(header.fid) || null;
+      event         = String(payload.event ?? "");
+      notifDetails  = payload.notificationDetails ?? null;
+    } catch { /* malformed JWS — fall through */ }
+  }
+  // ── Direct format (from our client or farcaster direct) ───────────────
+  else if (body.event) {
+    event        = String(body.event);
+    fid          = body.fid ? Number(body.fid) : null;
+    notifDetails = (body.notificationDetails as { token?: string; url?: string }) ?? null;
+  }
+
+  if (!event) return;
+
+  const normalised = event.toLowerCase().replace(/^frame_/, "miniapp_");
+  if (
+    (normalised === "miniapp_added" || normalised === "notifications_enabled") &&
+    fid && notifDetails?.token && notifDetails?.url
+  ) {
+    await upsertNotificationToken(fid, notifDetails.token, notifDetails.url);
+    console.log(`[miniapp-webhook] token saved fid=${fid} event=${event}`);
+  } else if (normalised === "miniapp_removed" && fid) {
+    await deleteNotificationToken(fid);
+    console.log(`[miniapp-webhook] token deleted fid=${fid}`);
+  } else if (normalised === "notifications_disabled" && fid) {
+    await disableNotificationToken(fid);
+    console.log(`[miniapp-webhook] token disabled fid=${fid}`);
+  }
+}
+
+app.post("/api/miniapp/webhook", express.json(), async (_req: express.Request, res: express.Response) => {
+  try {
+    await handleMiniAppWebhookBody(_req.body as Record<string, unknown>);
+  } catch (e) {
+    console.warn("[miniapp-webhook] error:", (e as Error).message);
+  }
+  res.json({ ok: true }); // always 200
 });
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
@@ -1378,12 +1434,15 @@ const FARCASTER_MANIFEST = {
     payload: "eyJkb21haW4iOiJmaWRjYXN0ZXIueHl6In0",
     signature: "c9x9zyX8rIh8/oWJJhgweM9JzmtTSnCZ24m/RKwOBi9CVLHxRQXXInL4T44BfVPP8LYEJywagy0tilT5ypMpiBs=",
   },
-  frame: {
+  // ⚠️  Must use "miniapp" key (not "frame") — Farcaster Mini App spec v1
+  miniapp: {
     version: "1",
     name: "FidCaster",
-    iconUrl: "https://fidcaster.xyz/icons/icon-512-dark.png",
+    iconUrl: "https://fidcaster.xyz/icons/icon-512.png",
     homeUrl: "https://fidcaster.xyz/mini",
-    splashImageUrl: "https://fidcaster.xyz/icons/icon-512-dark.png",
+    imageUrl: "https://fidcaster.xyz/og-mini.png",
+    buttonTitle: "Open FidCaster",
+    splashImageUrl: "https://fidcaster.xyz/icons/icon-512.png",
     splashBackgroundColor: "#1D0070",
     webhookUrl: "https://fidcaster.xyz/api/miniapp/webhook",
     subtitle: "Earn points. Get the airdrop.",
@@ -1423,8 +1482,9 @@ app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-512.png"));
 app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/icon-512.png"));
 app.get("/image.png",  (_req, res) => res.redirect(307, "/opengraph.jpg"));
 
-// Webhook alias — farcaster.json uses /api/webhook, server listens on /api/miniapp/webhook
-app.post("/api/webhook", express.json(), (_req: express.Request, res: express.Response) => {
+// Webhook alias — /api/webhook also accepted (used by some Farcaster clients)
+app.post("/api/webhook", express.json(), async (req: express.Request, res: express.Response) => {
+  await handleMiniAppWebhookBody(req.body as Record<string, unknown>);
   res.json({ ok: true });
 });
 

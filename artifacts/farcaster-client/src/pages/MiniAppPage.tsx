@@ -136,7 +136,6 @@ function useSDK() {
           .catch(() => {});
         return;
       }
-      sdk.actions.ready().catch(() => {});
       try {
         const res = await Promise.race([
           sdk.context as Promise<MiniCtx>,
@@ -144,15 +143,83 @@ function useSDK() {
         ]);
         if (!dead && res?.user?.fid) {
           setCtx(res); setFid(res.user.fid); setInFC(true);
-          setAdded(!!(res as any).client?.added);
+          const isAdded = !!(res as any).client?.added;
+          setAdded(isAdded);
+          // If token already present from context, save it
+          const notif = (res as any).client?.notificationDetails;
+          if (notif?.token && notif?.url) {
+            fetch("/api/mini/notification-token", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fid: res.user.fid, token: notif.token, url: notif.url }),
+            }).catch(() => {});
+          }
         }
-      } catch {} finally { if (!dead) setReady(true); }
+      } catch {} finally {
+        if (!dead) {
+          setReady(true);
+          // Signal ready AFTER React state is set and component re-renders
+          setTimeout(() => sdk.actions.ready().catch(() => {}), 150);
+        }
+      }
     })();
-    return () => { dead = true; };
+    // Listen for frame-added event to capture notification token
+    const onFrameAdded = ({ notificationDetails }: { notificationDetails?: { token?: string; url?: string } }) => {
+      if (notificationDetails?.token && notificationDetails?.url) {
+        // fid captured via closure — might not be set yet, so also post with fid=0 as fallback
+        // The server will discard fid=0; the correct fid will come via the JWS webhook
+        setFid(prev => {
+          if (prev) {
+            fetch("/api/mini/notification-token", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fid: prev, token: notificationDetails.token, url: notificationDetails.url }),
+            }).catch(() => {});
+          }
+          return prev;
+        });
+        setAdded(true);
+      }
+    };
+    sdk.on("frameAdded", onFrameAdded as never);
+    return () => {
+      dead = true;
+      sdk.off("frameAdded", onFrameAdded as never);
+    };
   }, []);
 
   const addApp = useCallback(async () => {
-    try { await (sdk.actions as any).addMiniApp(); setAdded(true); } catch {}
+    try {
+      const result = await sdk.actions.addFrame();
+      setAdded(true);
+      // Capture notification token from addFrame result (retry if not immediately available)
+      const tryCapture = async () => {
+        let notif = (result as any)?.notificationDetails;
+        if (!notif?.token) {
+          await new Promise(r => setTimeout(r, 600));
+          const ctx2 = await sdk.context.catch(() => null) as MiniCtx | null;
+          notif = (ctx2 as any)?.client?.notificationDetails;
+        }
+        if (!notif?.token) {
+          await new Promise(r => setTimeout(r, 1500));
+          const ctx3 = await sdk.context.catch(() => null) as MiniCtx | null;
+          notif = (ctx3 as any)?.client?.notificationDetails;
+        }
+        if (notif?.token && notif?.url) {
+          setFid(prev => {
+            if (prev) {
+              fetch("/api/mini/notification-token", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fid: prev, token: notif.token, url: notif.url }),
+              }).catch(() => {});
+            }
+            return prev;
+          });
+        }
+      };
+      tryCapture().catch(() => {});
+    } catch {}
   }, []);
 
   return { fid, ctx, ready, inFC, added, addApp };
@@ -459,7 +526,9 @@ function AnimatedHexBadge({ size = 90 }: { size?: number }) {
           display:"flex", alignItems:"center", justifyContent:"center",
           boxShadow: `0 0 30px rgba(139,92,246,0.6)`,
         }}>
-          <Zap size={size * 0.4} color="#fff" />
+          <img src="/icons/icon-512.png" alt="FidCaster"
+            style={{ width: size * 0.55, height: size * 0.55, objectFit:"cover",
+              borderRadius: size * 0.12, display:"block" }} />
         </div>
       </motion.div>
     </div>
@@ -1858,7 +1927,8 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
                   clipPath:"polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%)",
                   display:"flex", alignItems:"center", justifyContent:"center",
                 }}>
-                <Zap size={22} color="#fff" />
+                <img src="/icons/icon-512.png" alt="FidCaster"
+                  style={{ width:26, height:26, objectFit:"cover", borderRadius:6, display:"block" }} />
               </motion.div>
               <span style={{ color:isActive?C.accentHi:C.text3, fontSize:10, fontWeight:700 }}>Earn</span>
             </motion.button>
@@ -1945,13 +2015,10 @@ function MainApp({ fid, ctx, added, addApp }: {
         backdropFilter:"blur(14px)", borderBottom:`1px solid ${C.border}`,
         padding:"10px 16px", display:"flex", alignItems:"center", gap:10,
       }}>
-        {/* Logo text */}
+        {/* Logo */}
         <div style={{ display:"flex", alignItems:"center", gap:8, flex:1 }}>
-          <div style={{ width:28, height:28, borderRadius:8,
-            background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-            display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <Zap size={14} color="#fff" />
-          </div>
+          <img src="/icons/icon-512.png" alt="FidCaster"
+            style={{ width:28, height:28, borderRadius:8, objectFit:"cover", display:"block" }} />
           <span style={{ color:C.text1, fontWeight:800, fontSize:15, letterSpacing:"-0.01em" }}>FidCaster</span>
         </div>
         {!added && (

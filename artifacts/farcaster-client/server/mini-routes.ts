@@ -6,11 +6,13 @@
  * GET /api/mini/leaderboard?limit=N   – leaderboard enriched with Neynar user profiles
  */
 
+import express from "express";
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getPool, isDbConfigured } from "./db/pool.js";
 import { POINTS } from "./db/points.js";
+import { upsertNotificationToken } from "./db/notifications.js";
 
 const SCORE_THRESHOLD = 30;
 
@@ -364,6 +366,22 @@ export function registerMiniRoutes(app: Express): void {
     } catch (e) {
       console.error("[mini/leaderboard] error:", e);
       res.status(500).json({ error: "Failed to fetch leaderboard" });
+    }
+  });
+
+  // ── POST /api/mini/notification-token ───────────────────────────────────────
+  // Client posts after sdk.on("frameAdded") or sdk.actions.addFrame() resolves.
+  app.post("/api/mini/notification-token", express.json(), async (req: Request, res: Response) => {
+    const { fid, token, url } = req.body ?? {};
+    if (!fid || !token || !url) {
+      return res.status(400).json({ error: "fid, token, url required" });
+    }
+    try {
+      await upsertNotificationToken(Number(fid), String(token), String(url));
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[mini/notification-token] error:", e);
+      res.status(500).json({ error: "Failed to save token" });
     }
   });
 }

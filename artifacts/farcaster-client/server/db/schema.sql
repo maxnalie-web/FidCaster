@@ -126,3 +126,20 @@ CREATE TABLE IF NOT EXISTS pending_points (
 
 CREATE INDEX  IF NOT EXISTS idx_pp_recipient ON pending_points (recipient_fid) WHERE claimed = false;
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_pp_cast_hash ON pending_points (cast_hash);
+
+-- ── Farcaster Mini App notification tokens ────────────────────────────────────
+-- Received via webhookUrl when a user adds the mini app or enables notifications.
+-- One row per FID (upsert). Token is a UUID issued by Farcaster; url is the
+-- Farcaster notification API endpoint to POST to.
+CREATE TABLE IF NOT EXISTS notification_tokens (
+  id         BIGSERIAL   PRIMARY KEY,
+  fid        BIGINT      NOT NULL,
+  token      TEXT        NOT NULL,
+  url        TEXT        NOT NULL,
+  enabled    BOOLEAN     NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_nt_fid     ON notification_tokens (fid);
+CREATE        INDEX IF NOT EXISTS idx_nt_enabled  ON notification_tokens (enabled) WHERE enabled = true;
