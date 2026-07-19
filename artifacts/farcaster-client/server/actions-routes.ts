@@ -24,6 +24,7 @@ import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { logUserAction, isLedgerConfigured, type ActionType } from "./db/ledger.js";
 import { isFidEligible } from "./db/eligibility.js";
+import { getPool } from "./db/pool.js";
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -101,11 +102,11 @@ export function registerActionsRoutes(app: Express): void {
       // logUserAction doesn't support a direct excluded=true param, so we
       // do a follow-up update keyed on the unique (action_type, proof) pair.
       if (!eligible) {
-        const pool = (await import("./db/pool.js")).getPool();
+        const pool = getPool();
         if (pool) {
           const cleanProof = proof.startsWith("0x") ? proof.slice(2) : proof;
           await pool.query(
-            `UPDATE user_actions SET excluded = true
+            `UPDATE user_actions SET excluded = true, excluded_reason = 'ineligible_fid'
              WHERE proof = $1 AND action_type = $2 AND excluded = false`,
             [cleanProof, actionType],
           );

@@ -323,7 +323,7 @@ async function submit(
     // 1a. Cloudflare Worker (if configured) · the api_key lives as a Worker secret,
     //     never in the browser. CORS handled, edge IPs, free. No-op if unset.
     if (await tryWorkerHubSubmit(bytes)) {
-      reportToLedger(fid, action.type, hash);
+      reportToLedger(fid, action, hash);
       return;
     }
 
@@ -331,7 +331,7 @@ async function submit(
     //     capped key (per-IP scaling). No-op -> falls through to the server relay.
     const direct = await tryNeynarBrowserSubmit(bytes);
     if (direct === "ok") {
-      reportToLedger(fid, action.type, hash);
+      reportToLedger(fid, action, hash);
       return;
     }
     if (direct === "skip") throw new Error("PERMANENT_SKIP · target FID is invalid or deleted");
@@ -346,7 +346,7 @@ async function submit(
   //     Signed bytes only · the private key stays in the browser.
   if (signedBytes) {
     await submitBytesRelay(signedBytes);
-    if (msgHash) reportToLedger(fid, action.type, msgHash);
+    if (msgHash) reportToLedger(fid, action, msgHash);
     return;
   }
 
@@ -364,12 +364,27 @@ async function submit(
 type LedgerActionType = "cast" | "like" | "unlike" | "recast" | "unrecast" | "follow" | "unfollow";
 const LEDGER_ACTION_TYPES = new Set<string>(["cast","like","unlike","recast","unrecast","follow","unfollow"]);
 
-function reportToLedger(fid: number, actionType: string, proof: string): void {
-  if (!LEDGER_ACTION_TYPES.has(actionType)) return;
+function actionPayload(action: FarcasterAction): Record<string, unknown> {
+  switch (action.type) {
+    case "follow":
+    case "unfollow":
+      return { targetFid: action.targetFid };
+    case "like":
+    case "unlike":
+    case "recast":
+    case "unrecast":
+      return { castHash: action.castHash, castAuthorFid: action.castAuthorFid };
+    default:
+      return {};
+  }
+}
+
+function reportToLedger(fid: number, action: FarcasterAction, proof: string): void {
+  if (!LEDGER_ACTION_TYPES.has(action.type)) return;
   fetch("/api/actions/log", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ fid, actionType, proof }),
+    body:    JSON.stringify({ fid, actionType: action.type, proof, payload: actionPayload(action) }),
     signal:  AbortSignal.timeout(8_000),
   }).catch(() => { /* best-effort, never blocks UI */ });
 }

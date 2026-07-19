@@ -65,3 +65,18 @@ CREATE TABLE IF NOT EXISTS grow_targets (
 
 CREATE INDEX IF NOT EXISTS idx_gt_fid_target ON grow_targets (fid, target_fid);
 CREATE INDEX IF NOT EXISTS idx_gt_fid_used   ON grow_targets (fid, used_at DESC);
+
+-- ── Column additions (idempotent — safe to run on existing databases) ─────────
+-- excluded_reason: human-readable label for why a row was excluded (watcher, sybil, etc.)
+ALTER TABLE user_actions ADD COLUMN IF NOT EXISTS excluded_reason TEXT;
+
+-- eligible / eligible_checked_at: Neynar quality-gate cache on the users row.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS eligible             BOOLEAN     NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS eligible_checked_at  TIMESTAMPTZ;
+
+-- activated / activated_at: referral deferred-activation state.
+ALTER TABLE referrals ADD COLUMN IF NOT EXISTS activated     BOOLEAN     NOT NULL DEFAULT false;
+ALTER TABLE referrals ADD COLUMN IF NOT EXISTS activated_at  TIMESTAMPTZ;
+
+-- Index for fast eligibility sweeps (sybil-detector R5, eligibility.ts sweepIneligibleActions)
+CREATE INDEX IF NOT EXISTS idx_users_eligible ON users (eligible) WHERE eligible = false;

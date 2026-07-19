@@ -179,37 +179,23 @@ async function runVerificationBatch(): Promise<void> {
   for (const row of followRows) {
     const userFid    = Number(row.fid);
     const targetFid  = Number((row.payload as Record<string, string>).targetFid);
-    const isUnfollow = false; // action_type is 'follow' here; unfollow is the opposite state
-
     if (!targetFid || targetFid <= 0) {
       // No targetFid → fall through to trust window below
       continue;
     }
 
     const isFollowing = await verifyFollow(userFid, targetFid);
-
     if (isFollowing === null) continue; // API error → retry next run
 
-    // For 'follow': should be following=true. For 'unfollow': following=false.
-    const aq = (row.payload as Record<string, string>).action_type ?? "";
-    const isFollowAction = !aq.includes("un") && String((row.payload as Record<string, string>).actionType ?? "follow") === "follow";
-    const expected = isFollowAction ? true : false;
-    void isUnfollow; // unused — use payload instead
-
-    // Look at the actual action_type from the row (need to re-query or pass it)
-    // Simpler: just verify that the relationship exists or not.
-    // For follows that can't be confirmed: exclude after 24h
     const ageH = (Date.now() - new Date(row.created_at).getTime()) / 3_600_000;
-    void expected;
-    void isFollowAction;
 
     if (isFollowing === true) {
-      // User IS following the target — valid follow action
+      // User IS following the target → valid follow action, verified
       await pool.query("UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1", [row.id]);
       verificationStats.verifiedCount++;
     } else if (ageH > HUB_TRUST_WINDOW_H) {
-      // Not following after trust window → exclude
-      await pool.query("UPDATE user_actions SET excluded = true WHERE id = $1", [row.id]);
+      // Not following after trust window → exclude (user unfollowed or action was fake)
+      await pool.query("UPDATE user_actions SET excluded = true, excluded_reason = 'follow_not_confirmed' WHERE id = $1", [row.id]);
       verificationStats.excludedCount++;
     }
     // Still within trust window and not following yet → retry next run

@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "url";
+import type { Pool } from "pg";
 import { getPool, isDbConfigured } from "./pool.js";
 
 export function isLedgerConfigured(): boolean {

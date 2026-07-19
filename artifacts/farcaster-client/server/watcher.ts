@@ -186,8 +186,8 @@ async function runGrowWatcher(): Promise<void> {
     // Count completions in last 24h (verify pipeline is working)
     const { rows: recentRows } = await pool.query(`
       SELECT COUNT(*) AS recent_completes,
-             AVG((payload->>'realFollowCount')::int) FILTER
-               (WHERE payload->>'realFollowCount' IS NOT NULL) AS avg_real_follows
+             AVG((payload->>'realFollows')::int) FILTER
+               (WHERE payload->>'realFollows' IS NOT NULL) AS avg_real_follows
       FROM user_actions
       WHERE action_type = 'grow_campaign_complete'
         AND excluded = false
