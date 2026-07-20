@@ -86,6 +86,7 @@ const ALLOWED_ORIGINS = [
   /^https:\/\/[\w.-]+\.worf\.replit\.dev$/,
   /^https:\/\/(www\.)?fidcaster\.xyz$/,
   /^https:\/\/(www\.)?fidcaster\.com$/,
+  /^https:\/\/docs\.fidcaster\.xyz$/,
   ...extraOrigins,
 ];
 
