@@ -15,7 +15,8 @@ import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 import { getTrustedFid } from "./auth.js";
 import { logUserActionIfNew } from "./db/ledger.js";
 
-const SCORE_THRESHOLD = 30;
+// Neynar's neynar_user_score is a 0-1 float (not a 0-100 scale).
+const SCORE_THRESHOLD = 0.3;
 
 // Only actions that actually earn points count toward the daily streak.
 // Zero-value types (unlike, unrecast, unfollow, app_open, grow_campaign_start,

@@ -918,7 +918,7 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
         <Check size={18} color={C.green} style={{ marginLeft:"auto" }} />
       </div>
       <p style={{ color:C.text2, fontSize:14, lineHeight:1.75 }}>
-        <strong style={{ color:C.text1 }}>FidCaster</strong> is a Farcaster client that rewards every verified action with points — counting toward the airdrop.
+        <strong style={{ color:C.text1 }}>FidCaster</strong> is a Farcaster client that rewards every verified action with points, counting toward the airdrop.
       </p>
       {[
         { Icon:Zap,    color:C.accentHi, text:"Earn points for every verified Farcaster action" },
@@ -946,8 +946,8 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
             <p style={{ color:C.rose, fontWeight:700, fontSize:16 }}>Score Too Low</p>
           </div>
           <p style={{ color:C.text2, fontSize:13, lineHeight:1.7 }}>
-            Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? eligData.score.toFixed(0) : "unknown"}</strong>.
-            You need at least <strong style={{ color:C.text1 }}>{eligData.threshold}</strong> to use FidCaster.
+            Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? Math.round(eligData.score * 100) : "unknown"}</strong>.
+            You need at least <strong style={{ color:C.text1 }}>{Math.round(eligData.threshold * 100)}</strong> to use FidCaster.
           </p>
           <button onClick={() => setEligData(null)} style={{ marginTop:12, background:"rgba(244,63,94,0.14)",
             border:"1px solid rgba(244,63,94,0.3)", color:C.rose, fontSize:12.5, fontWeight:700,
@@ -964,7 +964,7 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
             <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px",
               background:"rgba(16,185,129,0.07)", border:"1px solid rgba(16,185,129,0.18)", borderRadius:10 }}>
               <Check size={13} color={C.green} />
-              <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{eligData.score.toFixed(0)}</strong> — eligible ✓</p>
+              <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{Math.round(eligData.score * 100)}</strong>, eligible ✓</p>
             </div>
           )}
           <NFTPassCard fid={fid} ethAddress={ethAddr} qaToken={qaToken} onMinted={() => setMinted(true)} />
@@ -1293,7 +1293,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6 }}>Global Rank</p>
           <div style={{ fontSize:26, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
             textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
-            {rank ? `#${rank}` : "—"}
+            {rank ? `#${rank}` : "N/A"}
           </div>
         </GlassStatCard>
       </div>
@@ -1747,7 +1747,7 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
       {remaining <= 0 && <p style={{ color:C.rose, fontSize:11.5, marginBottom:6 }}>You're out of allowance for today.</p>}
       <p style={{ color:C.text3, fontSize:11, marginBottom:16, lineHeight:1.6 }}>
         This opens Warpcast with a pre-filled cast. Posting it debits your allowance and credits the
-        recipient once FidCaster detects it — you'll get a notification either way.
+        recipient once FidCaster detects it, and you'll get a notification either way.
       </p>
       <button onClick={send} disabled={!valid}
         style={{ width:"100%", padding:"13px", borderRadius:14, border:"none", cursor: valid ? "pointer" : "not-allowed",
@@ -1761,7 +1761,7 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
 
 function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
   const sections = [
-    { t:"What it is", d:"A daily budget of points you can spend — not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
+    { t:"What it is", d:"A daily budget of points you can spend, not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
     { t:"How much you get", d:"100 base points, plus 2 points per follower, capped at +500. So 0 followers = 100/day, 250+ followers = the max, 600/day." },
     { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn +50 points and 50 is deducted from today's allowance." },
     { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
@@ -2269,7 +2269,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
           <div>
             <p style={{ color:C.text1, fontWeight:700, fontSize:14 }}>Airdrop Eligibility</p>
             <p style={{ color:C.text2, fontSize:12, marginTop:3, lineHeight:1.5 }}>
-              Snapshot not announced yet. You're accumulating points — keep going!
+              Snapshot not announced yet. You're accumulating points, keep going!
             </p>
           </div>
           <div style={{ marginLeft:"auto", width:8, height:8, borderRadius:"50%", background:C.amber, flexShrink:0 }} />
@@ -2351,7 +2351,7 @@ function NotifBell({ fid }: { fid: number }) {
                 <span style={{ color:C.text3, fontSize:12 }}>Loading…</span>
               </div>
             ) : history.length === 0 ? (
-              <p style={{ color:C.text3, fontSize:12, padding:"10px 8px" }}>No activity yet — go earn some points!</p>
+              <p style={{ color:C.text3, fontSize:12, padding:"10px 8px" }}>No activity yet, go earn some points!</p>
             ) : history.slice(0, 8).map(h => {
               const meta = ACTION_MAP[h.action_type] ?? { label: h.action_type, Icon: Zap };
               return (
