@@ -371,7 +371,7 @@ function BgOrbs() {
 // caller puts inside that relies on this element being its positioning
 // context — e.g. an absolutely-positioned canvas — keeps working exactly as
 // if this were still a plain div.
-function LiquidGlassSurface({ radius, sheen = true }: { radius: number; sheen?: boolean }) {
+function LiquidGlassSurface({ radius, sheen = false }: { radius: number; sheen?: boolean }) {
   return (
     <>
       {sheen && (
@@ -791,9 +791,8 @@ function BrowserScreen() {
 // NFT PASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethAddress?: string; qaToken?: string | null; onMinted?: () => void }) {
-  const [s, setS]             = useState<"checking"|"idle"|"connecting"|"input"|"minting"|"done"|"error">("checking");
+  const [s, setS]             = useState<"checking"|"idle"|"connecting"|"minting"|"done"|"error">("checking");
   const [activeAddr, setAddr]  = useState(ethAddress ?? "");
-  const [manualAddr, setManual] = useState("");
   const [txHash, setTx]        = useState("");
   const [err, setErr]          = useState("");
 
@@ -806,7 +805,20 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
   }, [ethAddress]);
 
   const short = (a: string) => `${a.slice(0,6)}…${a.slice(-4)}`;
-  const hasWallet = !!(typeof window !== "undefined" && (window as any).ethereum);
+
+  // The mint itself is gasless — the server signs and submits it, the user
+  // never signs anything. All we need is a destination address, which the
+  // Farcaster host's wallet provider gives us directly (no manual input,
+  // no window.ethereum — that's not how a mini app's connected wallet, e.g.
+  // the in-client Farcaster wallet, is exposed to the page).
+  async function detectAddress(): Promise<string | null> {
+    try {
+      const provider = await sdk.wallet.getEthereumProvider();
+      if (!provider) return null;
+      const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
+      return accounts?.[0] ?? null;
+    } catch { return null; }
+  }
 
   async function doMint(address: string) {
     setAddr(address);
@@ -823,19 +835,19 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
     } catch (e) { setErr(String(e)); setS("error"); }
   }
 
-  async function connectWallet() {
+  async function handleMintClick() {
+    if (activeAddr) { doMint(activeAddr); return; }
     setS("connecting");
-    try {
-      const eth = (window as any).ethereum;
-      try { await eth.request({ method:"wallet_switchEthereumChain", params:[{ chainId:"0x2105" }] }); } catch {}
-      const accounts: string[] = await eth.request({ method:"eth_requestAccounts" });
-      const addr = accounts[0];
-      if (!addr) { setS("idle"); return; }
-      setAddr(addr);
-      const check = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => ({}));
-      if (check.hasMinted) { setS("done"); onMinted?.(); return; }
-      doMint(addr);
-    } catch (e) { setErr(String(e)); setS("error"); }
+    const addr = await detectAddress();
+    if (!addr) {
+      setErr("Couldn't detect a wallet. Make sure your Farcaster client has a wallet connected.");
+      setS("error");
+      return;
+    }
+    setAddr(addr);
+    const check = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => ({}));
+    if (check.hasMinted) { setS("done"); onMinted?.(); return; }
+    doMint(addr);
   }
 
   if (s === "checking") return (
@@ -876,18 +888,11 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
           <p style={{ color:C.text1, fontWeight:700, fontSize:14 }}>FidCaster Pass</p>
           <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
             {activeAddr ? <>Base NFT · <span style={{ fontFamily:"monospace", color:C.accentHi }}>{short(activeAddr)}</span></>
-              : hasWallet ? "Connect wallet to mint free" : "Free NFT on Base"}
+              : "Free NFT on Base"}
           </p>
         </div>
-        {s === "idle" && !ethAddress && hasWallet && (
-          <button onClick={connectWallet} style={{ background:`linear-gradient(135deg,${C.accent},#A855F7)`, color:"#fff",
-            borderRadius:10, padding:"8px 14px", fontSize:12, fontWeight:700, border:"none", cursor:"pointer",
-            boxShadow:`0 4px 16px rgba(139,92,246,0.35)`, display:"flex", alignItems:"center", gap:5 }}>
-            <Wallet size={12} /> Connect
-          </button>
-        )}
-        {s === "idle" && (ethAddress || !hasWallet) && (
-          <button onClick={() => ethAddress ? doMint(ethAddress) : setS("input")}
+        {s === "idle" && (
+          <button onClick={handleMintClick}
             style={{ background:`linear-gradient(135deg,${C.accent},#A855F7)`, color:"#fff",
               borderRadius:10, padding:"8px 16px", fontSize:13, fontWeight:700, border:"none", cursor:"pointer",
               boxShadow:`0 4px 16px rgba(139,92,246,0.35)` }}>
@@ -902,28 +907,6 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
         )}
       </div>
       <AnimatePresence>
-        {s === "input" && (
-          <motion.div initial={{ height:0, opacity:0 }} animate={{ height:"auto", opacity:1 }}
-            exit={{ height:0, opacity:0 }} transition={{ duration:0.2 }} style={{ overflow:"hidden" }}>
-            <div style={{ borderTop:`1px solid ${C.border}`, padding:"12px 16px", display:"flex", flexDirection:"column", gap:8 }}>
-              <input type="text" placeholder="0x…" value={manualAddr} onChange={e => setManual(e.target.value)}
-                style={{ width:"100%", padding:"10px 12px", background:"rgba(0,0,0,0.4)", border:`1px solid ${C.borderMed}`,
-                  borderRadius:10, color:C.text1, fontSize:13, fontFamily:"monospace", outline:"none", boxSizing:"border-box" }} />
-              <div style={{ display:"flex", gap:8 }}>
-                <button onClick={() => doMint(manualAddr)} disabled={!manualAddr.trim()}
-                  style={{ flex:1, padding:"10px", borderRadius:10, background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                    color:"#fff", border:"none", fontSize:13, fontWeight:700, cursor:"pointer", opacity:manualAddr.trim()?1:0.45 }}>
-                  Mint
-                </button>
-                <button onClick={() => setS("idle")}
-                  style={{ padding:"10px 14px", background:C.card, border:`1px solid ${C.border}`,
-                    borderRadius:10, color:C.text2, fontSize:13, cursor:"pointer" }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
         {s === "error" && (
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
             style={{ padding:"10px 16px", borderTop:`1px solid ${C.border}` }}>
@@ -1396,8 +1379,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
       </div>
 
       {/* ── Streak card (with campfire scene) ── */}
-      {streak > 0 && (
-        <Card style={{ position:"relative", overflow:"hidden",
+      <Card style={{ position:"relative", overflow:"hidden",
           background:"linear-gradient(115deg,#1C0F14 0%,#170B23 42%,#140A26 100%)",
           border:"1px solid rgba(251,146,60,0.22)" }}>
           {/* Campfire canvas — decorative background layer, left column */}
@@ -1407,9 +1389,11 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           <div style={{ position:"relative", zIndex:1, padding:"16px 18px 18px 110px", minHeight:158,
             display:"flex", flexDirection:"column", justifyContent:"center" }}>
             {/* Title vertically centered against the fire, not pinned to the top */}
-            <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
+            <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>
+              {streak > 0 ? "You're on fire! 🔥" : "Start your streak 🔥"}
+            </p>
             <p style={{ color:C.text2, fontSize:12, lineHeight:1.5, marginBottom:12 }}>
-              Keep your streak alive and earn bigger bonuses.
+              {streak > 0 ? "Keep your streak alive and earn bigger bonuses." : "Earn points today to light the fire and start stacking bonuses."}
             </p>
             {/* Day chain — each circle is a fixed-size flex item with connector
                 lines as their OWN flex:1 siblings (not nested inside a node
@@ -1433,7 +1417,6 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             </div>
           </div>
         </Card>
-      )}
 
       {/* ── Top Players podium ── */}
       {board.length >= 3 && (
@@ -2719,9 +2702,18 @@ export function MiniAppPage() {
     if (params.get("reset") === "1") { localStorage.removeItem(key); setOnboarded(false); setOnboardChecked(true); return; }
     // ?fid= preview mode — auto-skip onboarding so testers see the main app
     if (params.get("fid") && params.get("fid") !== "0") { setOnboarded(true); setOnboardChecked(true); return; }
-    setOnboarded(localStorage.getItem(key) === "1");
-    setOnboardChecked(true);
-  }, [ready, fid]);
+    if (localStorage.getItem(key) === "1") { setOnboarded(true); setOnboardChecked(true); return; }
+    // Not locally flagged (fresh install, cleared cache, new device) — if
+    // this fid already minted the pass server-side, treat onboarding as
+    // already done instead of forcing the wizard again.
+    const addr = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
+    if (!addr) { setOnboardChecked(true); return; }
+    fetch(`/api/nft-pass/check/${addr}`)
+      .then(r => r.json())
+      .then(d => { if (d.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); } })
+      .catch(() => {})
+      .finally(() => setOnboardChecked(true));
+  }, [ready, fid, ctx]);
 
   function completeOnboarding() {
     if (fid) localStorage.setItem(`${ONBOARDED_KEY}_${fid}`, "1");
