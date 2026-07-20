@@ -137,21 +137,52 @@ app.use(helmet({
 }));
 
 // Farcaster Mini Apps run inside an iframe inside Warpcast/other FC clients.
-// Helmet sets X-Frame-Options: SAMEORIGIN + CSP frame-ancestors 'self' globally,
-// which blocks any cross-origin iframe — including Warpcast. Override those
-// headers specifically for the /mini route so the app can actually launch.
+// The hosted Farcaster manifest for this app has homeUrl = https://fidcaster.xyz
+// (the root), NOT /mini. So we must handle BOTH "/" and "/mini" as valid mini
+// app entry points.
 //
 // Must run BEFORE the global cors() middleware below, because that middleware
 // blocks every request whose Origin is not in ALLOWED_ORIGINS — including
-// warpcast.com and other Farcaster clients. For /mini we open CORS fully.
-app.use("/mini", cors({
+// warpcast.com and other Farcaster clients. For mini-app routes we open CORS.
+const miniAppCors = cors({
   origin: true,          // reflect any Origin — Farcaster clients are arbitrary
   methods: ["GET", "OPTIONS"],
   credentials: false,
-}));
+});
+app.use("/mini", miniAppCors);
+app.use("/", miniAppCors);   // hosted manifest uses root as homeUrl
+
+// When the root "/" is loaded inside a cross-origin iframe (i.e. Warpcast is
+// embedding it as a mini app), redirect immediately to /mini which contains
+// the actual mini app UI and calls sdk.actions.ready().
+app.use((req, res, next) => {
+  const isMiniAppIframe =
+    req.path === "/" &&
+    req.headers["sec-fetch-dest"] === "iframe" &&
+    req.headers["sec-fetch-site"] === "cross-site";
+  if (isMiniAppIframe) {
+    return res.redirect(302, "/mini");
+  }
+  next();
+});
+
+const MINI_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
+  "img-src 'self' data: https: blob:",
+  "media-src 'self' https: blob:",
+  "worker-src 'self' blob:",
+  "connect-src 'self' https: wss:",
+  "frame-src 'self' https:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors *",   // allow all Farcaster clients to embed
+].join(";");
 
 app.use((req, res, next) => {
-  if (req.path === "/mini") {
+  if (req.path === "/mini" || req.path === "/") {
     res.removeHeader("X-Frame-Options");
     // Helmet sets Cross-Origin-Resource-Policy: same-origin which prevents
     // cross-origin iframes from loading the page at all (separate from CORS).
@@ -159,23 +190,7 @@ app.use((req, res, next) => {
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     // Allow Warpcast to open the page across origins (COOP same-origin blocks it).
     res.removeHeader("Cross-Origin-Opener-Policy");
-    res.setHeader(
-      "Content-Security-Policy",
-      [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
-        "img-src 'self' data: https: blob:",
-        "media-src 'self' https: blob:",
-        "worker-src 'self' blob:",
-        "connect-src 'self' https: wss:",
-        "frame-src 'self' https:",
-        "object-src 'none'",
-        "base-uri 'self'",
-        "frame-ancestors *",   // allow all Farcaster clients to embed /mini
-      ].join(";"),
-    );
+    res.setHeader("Content-Security-Policy", MINI_CSP);
   }
   next();
 });
