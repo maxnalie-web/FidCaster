@@ -28,6 +28,8 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   referral:                { pts: 200, dailyCap: 2000 },
   quest:                   { pts: 100, dailyCap: 500  },
   app_open:                { pts: 0,   dailyCap: 0    },
+  // Awarded once per 7-day streak milestone reached (see mini-routes.ts).
+  streak_bonus:            { pts: 500, dailyCap: 500  },
   // ── Allowance-gated actions ────────────────────────────────────────────────
   promotion:               { pts: 50,  dailyCap: 500  },
   gift:                    { pts: 0,   dailyCap: 0    }, // sender: 0 pts (allowance debited)

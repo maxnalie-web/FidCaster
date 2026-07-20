@@ -88,7 +88,9 @@ interface Achievement { id: string; label: string; icon: string; unlocked: boole
 interface StatsData {
   streak: number; level: number; xp: number; xpToNext: number;
   totalPoints: number; todayPoints: number;
-  missions: MissionItem[]; achievements: Achievement[]; seasonEnd: string;
+  missions: MissionItem[]; achievements: Achievement[];
+  nextStreakBonusPts: number; streakBonusAwarded: boolean;
+  seasonEnd: string;
 }
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
@@ -295,6 +297,25 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── Progress ring (used for the daily allowance) ────────────────────────────────
+function ProgressRing({ pct, size = 56, stroke = 6, color }: {
+  pct: number; size?: number; stroke?: number; color: string;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform:"rotate(-90deg)", flexShrink:0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.border} strokeWidth={stroke} />
+      <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeLinecap="round" strokeDasharray={c}
+        initial={{ strokeDashoffset: c }}
+        animate={{ strokeDashoffset: c - (c * Math.max(0, Math.min(pct, 100))) / 100 }}
+        transition={{ duration: 0.8 }}
+        style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
+    </svg>
+  );
+}
+
 // ── Pill chip ─────────────────────────────────────────────────────────────────
 function Chip({ children, color = C.accentHi, bg = "rgba(139,92,246,0.15)", border = "rgba(139,92,246,0.3)" }: {
   children: React.ReactNode; color?: string; bg?: string; border?: string;
@@ -423,44 +444,49 @@ function FireRing({ radius = 68, size = 200, active = true }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ANIMATED HEX BADGE (floating hero badge on points card)
+// HERO LOGO ORB — floating F logo with a halo ring, crystals, and a soft glow.
+// Pure CSS/framer-motion (no canvas) so it's cheap to mount on the hero card.
 // ─────────────────────────────────────────────────────────────────────────────
-function AnimatedHexBadge({ size = 90 }: { size?: number }) {
+function Crystal({ size, style }: { size: number; style: React.CSSProperties }) {
+  return (
+    <motion.div
+      animate={{ y: [0, -5, 0], rotate: [0, 4, 0] }}
+      transition={{ duration: 4 + Math.random() * 2, repeat: Infinity, ease: "easeInOut" }}
+      style={{
+        position: "absolute", width: size, height: size * 1.15, ...style,
+        background: "linear-gradient(160deg,#E9D5FF 0%,#A855F7 45%,#5B21B6 100%)",
+        clipPath: "polygon(50% 0%, 88% 20%, 68% 100%, 32% 100%, 12% 20%)",
+        filter: "drop-shadow(0 0 6px rgba(168,85,247,0.85))",
+      }}
+    />
+  );
+}
+
+function HeroLogoOrb({ size = 110 }: { size?: number }) {
+  const logoSize = size * 0.66;
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      {/* Orbit ring 1 */}
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-        style={{ position:"absolute", inset:-10, borderRadius:"50%",
-          border:"1.5px dashed rgba(139,92,246,0.35)" }} />
-      {/* Orbit ring 2 */}
-      <motion.div animate={{ rotate: -360 }} transition={{ duration: 14, repeat: Infinity, ease: "linear" }}
-        style={{ position:"absolute", inset:-22, borderRadius:"50%",
-          border:"1px dashed rgba(139,92,246,0.20)" }} />
-      {/* Sparkle particles */}
-      {[0,1,2,3].map(i => (
-        <motion.div key={i}
-          animate={{ opacity:[0,1,0], scale:[0,1.2,0], x:[0,(Math.cos(i*90*Math.PI/180)*28)], y:[0,(Math.sin(i*90*Math.PI/180)*28)] }}
-          transition={{ duration:2, repeat:Infinity, delay:i*0.5, ease:"easeOut" }}
-          style={{ position:"absolute", top:"50%", left:"50%", width:4, height:4, borderRadius:"50%",
-            background:C.accentHi, transform:"translate(-50%,-50%)" }} />
-      ))}
-      {/* Pulsing glow */}
-      <motion.div animate={{ scale:[1,1.4,1], opacity:[0.6,0.2,0.6] }}
-        transition={{ duration:2.5, repeat:Infinity, ease:"easeInOut" }}
-        style={{ position:"absolute", inset:-8, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(139,92,246,0.4) 0%, transparent 70%)" }} />
-      {/* Floating hex */}
-      <motion.div animate={{ y:[-4,4,-4] }} transition={{ duration:3, repeat:Infinity, ease:"easeInOut" }}
-        style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <div style={{
-          width: size, height: size,
-          background: "linear-gradient(135deg, rgba(139,92,246,0.9) 0%, rgba(124,58,237,0.7) 50%, rgba(168,85,247,0.9) 100%)",
-          clipPath: "polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          boxShadow: `0 0 30px rgba(139,92,246,0.6)`,
-        }}>
-          <Zap size={size * 0.4} color="#fff" />
-        </div>
+      {/* soft ambient glow */}
+      <motion.div animate={{ scale: [1, 1.15, 1], opacity: [0.55, 0.85, 0.55] }}
+        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+        style={{ position: "absolute", inset: -size * 0.25, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(139,92,246,0.45) 0%, transparent 70%)" }} />
+      {/* tilted halo ring, slow rotation */}
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 26, repeat: Infinity, ease: "linear" }}
+        style={{ position: "absolute", inset: -size * 0.16, borderRadius: "50%",
+          border: "1.5px solid rgba(233,213,255,0.55)", transform: "rotateX(72deg)",
+          boxShadow: "0 0 14px rgba(168,85,247,0.6)" }} />
+      <motion.div animate={{ rotate: -360 }} transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+        style={{ position: "absolute", inset: -size * 0.3, borderRadius: "50%",
+          border: "1px dashed rgba(168,85,247,0.28)", transform: "rotateX(72deg)" }} />
+      {/* scattered crystal shards */}
+      <Crystal size={size * 0.16} style={{ top: -size * 0.12, right: -size * 0.14 }} />
+      <Crystal size={size * 0.11} style={{ bottom: -size * 0.08, left: -size * 0.16 }} />
+      {/* floating logo */}
+      <motion.div animate={{ y: [-5, 5, -5] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <img src="/mini-logo.png" alt="" style={{ width: logoSize, height: logoSize, objectFit: "contain",
+          filter: "drop-shadow(0 0 16px rgba(168,85,247,0.8)) drop-shadow(0 6px 12px rgba(0,0,0,0.4))" }} />
       </motion.div>
     </div>
   );
@@ -879,15 +905,16 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
   promotion:             { label:"Promotion",     Icon:Zap         },
   gift_received:         { label:"Gift received", Icon:Gift        },
   gift:                  { label:"Gift sent",     Icon:Gift        },
+  streak_bonus:          { label:"Streak bonus",  Icon:Star        },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowance, allowanceLoading }: {
+function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading }: {
   fid: number; ctx: MiniCtx | null;
   pts: FidPts | null; stats: StatsData | null;
-  rank: number | null; statsLoading: boolean; ptsLoading: boolean;
+  rank: number | null; board: LBRow[]; statsLoading: boolean; ptsLoading: boolean;
   allowance: AllowanceData | null; allowanceLoading: boolean;
 }) {
   const username    = ctx?.user?.username ?? `fid${fid}`;
@@ -913,6 +940,15 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
 
   // XP percent
   const xpPct = xpToNext > 0 ? Math.min((xp / xpToNext) * 100, 100) : 100;
+
+  // Streak day-chain: up to 3 recent check-ins, today (highlighted), then 2 upcoming
+  const nextBonusPts = stats?.nextStreakBonusPts ?? 500;
+  const doneCount = Math.max(0, Math.min(streak - 1, 3));
+  const chainDays: { kind: "done" | "now" | "future" }[] = [
+    ...Array.from({ length: 3 }, (_, i) => ({ kind: (i >= 3 - doneCount ? "done" : "future") as "done" | "future" })),
+    { kind: "now" as const },
+    { kind: "future" as const }, { kind: "future" as const },
+  ];
 
   return (
     <motion.div key="home-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
@@ -998,9 +1034,9 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
             </div>
           </div>
 
-          {/* Animated 3D gem badge — right side, big */}
+          {/* Floating logo orb — right side, big */}
           <div style={{ position:"relative", width:110, height:110, flexShrink:0 }}>
-            <AnimatedHexBadge size={110} />
+            <HeroLogoOrb size={110} />
           </div>
         </div>
       </Card>
@@ -1046,32 +1082,89 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
               </div>
             </div>
 
-            <div style={{ flex:1 }}>
-              <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
-              <p style={{ color:C.text2, fontSize:12, lineHeight:1.5, marginBottom:12 }}>
-                {streak} day streak — keep it going!
-              </p>
-              {/* Day dots */}
-              <div style={{ display:"flex", gap:5, marginBottom:10 }}>
-                {Array.from({ length: 7 }, (_, i) => {
-                  const active = i < Math.min(streak, 7);
-                  return (
-                    <div key={i} style={{
-                      width:22, height:22, borderRadius:"50%",
-                      background: active ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : C.card,
-                      border: `1px solid ${active ? "rgba(255,100,0,0.5)" : C.border}`,
-                      boxShadow: active ? "0 0 8px rgba(255,100,0,0.4)" : "none",
-                    }} />
-                  );
-                })}
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
+                <div>
+                  <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
+                  <p style={{ color:C.text2, fontSize:12, lineHeight:1.5 }}>
+                    Keep your streak alive and earn bigger bonuses.
+                  </p>
+                </div>
+                <div style={{ textAlign:"right", flexShrink:0 }}>
+                  <p style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</p>
+                  <p style={{ color:"#FFD700", fontWeight:900, fontSize:16, marginTop:2 }}>+{nextBonusPts}</p>
+                </div>
               </div>
-              {/* Next bonus */}
-              <Chip color="#FF8C00" bg="rgba(255,100,0,0.12)" border="rgba(255,100,0,0.3)">
-                🎯 {streak < 7 ? `${7-streak} day${7-streak!==1?"s":""} to 7-day bonus` : "7-day bonus active!"}
-              </Chip>
+              {/* Day chain: recent check-ins → today (highlighted) → upcoming */}
+              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:12, marginBottom:10 }}>
+                {chainDays.map((d, i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", flex: d.kind === "now" ? "0 0 auto" : 1 }}>
+                    {i > 0 && (
+                      <div style={{ flex:1, height:2, minWidth:4,
+                        background: d.kind === "future" && chainDays[i-1].kind === "future"
+                          ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#7C3AED,#FF8C00)" }} />
+                    )}
+                    {d.kind === "now" ? (
+                      <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0,
+                        background:"radial-gradient(circle at 50% 60%,#2A1420,#190D22 70%)",
+                        border:"2px solid #FB923C", color:"#fff", fontSize:12, fontWeight:800,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        boxShadow:"0 0 14px rgba(251,146,60,0.75)" }}>
+                        {streak}
+                      </div>
+                    ) : (
+                      <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        background: d.kind === "done" ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : "rgba(255,255,255,0.06)",
+                        border: `1px solid ${d.kind === "done" ? "rgba(255,100,0,0.5)" : C.border}` }}>
+                        {d.kind === "done" && <Check size={10} color="#fff" />}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {stats?.streakBonusAwarded && (
+                <Chip color="#FFD700" bg="rgba(255,215,0,0.12)" border="rgba(255,215,0,0.35)">
+                  🎉 +{nextBonusPts} streak bonus credited!
+                </Chip>
+              )}
             </div>
           </div>
         </Card>
+      )}
+
+      {/* ── Top Players podium ── */}
+      {board.length >= 3 && (
+        <div>
+          <SectionLabel>Top Players</SectionLabel>
+          <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
+            {[board[1], board[0], board[2]].map((r, i) => {
+              const isFirst = i === 1;
+              const medal = isFirst ? "🥇" : i === 0 ? "🥈" : "🥉";
+              const ringColor = isFirst ? C.amber : i === 0 ? "#94A3B8" : "#F87171";
+              return (
+                <div key={r.fid} style={{ flex:1, textAlign:"center",
+                  background: isFirst ? "rgba(245,158,11,0.08)" : C.card,
+                  border:`1px solid ${isFirst ? "rgba(245,158,11,0.3)" : C.border}`,
+                  borderRadius:16, padding: isFirst ? "18px 8px 12px" : "14px 8px 10px",
+                  position:"relative", marginBottom: isFirst ? 0 : 8 }}>
+                  <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)", fontSize:18 }}>{medal}</div>
+                  {r.pfpUrl
+                    ? <img src={r.pfpUrl} alt="" style={{ width: isFirst?52:42, height: isFirst?52:42, borderRadius:"50%",
+                        border:`2px solid ${ringColor}`, margin:"6px auto 8px", display:"block" }} />
+                    : <div style={{ width: isFirst?52:42, height: isFirst?52:42, borderRadius:"50%", margin:"6px auto 8px",
+                        background:`linear-gradient(135deg,${C.accent},#A855F7)`, border:`2px solid ${ringColor}`,
+                        display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:"#fff" }}>
+                        {r.username.slice(0,2).toUpperCase()}
+                      </div>
+                  }
+                  <p style={{ color:C.text1, fontSize:12.5, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.username}</p>
+                  <p style={{ color: isFirst ? C.amber : C.text3, fontSize:11, fontWeight:600, marginTop:2 }}>{r.total_points.toLocaleString()} pts</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* ── Daily Missions ── */}
@@ -1132,28 +1225,30 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
                   : pct > 10
                   ? `linear-gradient(90deg,${C.amber},#F97316)`
                   : `linear-gradient(90deg,${C.rose},#FB7185)`;
+                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
                 return (
-                  <Card style={{ padding:"14px 16px" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <Zap size={13} color={C.accentHi} />
-                        <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</span>
-                      </div>
-                      <span style={{ color:C.text3, fontSize:11, fontFamily:"monospace" }}>
-                        {allowance.remaining.toLocaleString()} / {allowance.total.toLocaleString()} left
-                      </span>
+                  <Card glow style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14 }}>
+                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
+                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
+                      border:"1.5px solid rgba(168,85,247,0.6)",
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <Zap size={20} color={C.accentHi} />
                     </div>
-                    <div style={{ height:7, background:C.border, borderRadius:4 }}>
-                      <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }}
-                        transition={{ duration:0.8 }}
-                        style={{ height:"100%", borderRadius:4, background:barColor,
-                          boxShadow: pct > 30 ? "0 0 8px rgba(139,92,246,0.5)" : "none" }} />
-                    </div>
-                    {allowance.used > 0 && (
-                      <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>
-                        {allowance.used.toLocaleString()} pts used today
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
+                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
+                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
                       </p>
-                    )}
+                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
+                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Available to earn today"}
+                      </p>
+                    </div>
+                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
+                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
+                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
+                      </div>
+                    </div>
                   </Card>
                 );
               })()
@@ -1815,6 +1910,126 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HEADER DROPDOWNS — bell (real recent activity) + menu (real navigation)
+// ─────────────────────────────────────────────────────────────────────────────
+function useOutsideClose<T extends HTMLElement>(open: boolean, close: () => void) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) close(); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, close]);
+  return ref;
+}
+
+const dropdownWrap: React.CSSProperties = {
+  position:"absolute", right:0, top:42, zIndex:60,
+  background:"linear-gradient(170deg,rgba(34,21,64,0.97),rgba(15,8,30,0.98))",
+  border:"1px solid rgba(168,85,247,0.35)", borderRadius:16,
+  boxShadow:"0 18px 44px rgba(0,0,0,0.6)", padding:8,
+};
+const headerIconBtn = (open: boolean): React.CSSProperties => ({
+  background: open ? "rgba(139,92,246,0.18)" : "none",
+  border:`1px solid ${open ? "rgba(139,92,246,0.4)" : "transparent"}`,
+  borderRadius:"50%", width:34, height:34, color:C.text3, cursor:"pointer",
+  padding:0, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+});
+
+function NotifBell({ fid }: { fid: number }) {
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose<HTMLDivElement>(open, close);
+
+  function toggle() {
+    setOpen(o => {
+      const next = !o;
+      if (next && history === null) apiHistory(fid).then(setHistory);
+      return next;
+    });
+  }
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <button onClick={toggle} style={headerIconBtn(open)}><Bell size={17} /></button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity:0, y:-8, scale:0.96 }} animate={{ opacity:1, y:0, scale:1 }}
+            exit={{ opacity:0, y:-8, scale:0.96 }} transition={{ duration:0.16 }}
+            style={{ ...dropdownWrap, width:280, maxHeight:340, overflowY:"auto" }}>
+            <p style={{ color:C.text1, fontWeight:800, fontSize:13, padding:"6px 8px 10px" }}>Recent Activity</p>
+            {history === null ? (
+              <div style={{ padding:"14px 8px", display:"flex", alignItems:"center", gap:8 }}>
+                <Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} />
+                <span style={{ color:C.text3, fontSize:12 }}>Loading…</span>
+              </div>
+            ) : history.length === 0 ? (
+              <p style={{ color:C.text3, fontSize:12, padding:"10px 8px" }}>No activity yet — go earn some points!</p>
+            ) : history.slice(0, 8).map(h => {
+              const meta = ACTION_MAP[h.action_type] ?? { label: h.action_type, Icon: Zap };
+              return (
+                <div key={h.id} style={{ display:"flex", alignItems:"center", gap:10, padding:8, borderRadius:10 }}>
+                  <div style={{ width:30, height:30, borderRadius:10, background:"rgba(139,92,246,0.14)",
+                    border:"1px solid rgba(139,92,246,0.28)", display:"flex", alignItems:"center",
+                    justifyContent:"center", flexShrink:0 }}>
+                    <meta.Icon size={13} color={C.accentHi} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ color:C.text1, fontSize:12.5 }}>{meta.label} <span style={{ color:C.green, fontWeight:700 }}>+{h.pts}</span></p>
+                    <p style={{ color:C.text3, fontSize:10.5 }}>{timeAgo(h.created_at)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function MenuButton({ onNav }: { onNav: (t: AppTab) => void }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose<HTMLDivElement>(open, close);
+
+  const items: { label: string; Icon: React.ElementType; onClick?: () => void; href?: string }[] = [
+    { label:"Quests & Actions", Icon:Zap, onClick: () => { onNav("earn"); setOpen(false); } },
+    { label:"FID Market", Icon:ShoppingBag, href:"https://fidcaster.xyz/market" },
+    { label:"Docs", Icon:LayoutList, href:"https://fidcaster.xyz/docs" },
+  ];
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <button onClick={() => setOpen(o => !o)} style={headerIconBtn(open)}><LayoutList size={16} /></button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity:0, y:-8, scale:0.96 }} animate={{ opacity:1, y:0, scale:1 }}
+            exit={{ opacity:0, y:-8, scale:0.96 }} transition={{ duration:0.16 }}
+            style={{ ...dropdownWrap, width:210 }}>
+            {items.map(it => it.href ? (
+              <a key={it.label} href={it.href} target="_blank" rel="noopener noreferrer"
+                style={{ display:"flex", alignItems:"center", gap:10, padding:10, borderRadius:10,
+                  textDecoration:"none", color:C.text1, fontSize:13, fontWeight:600 }}>
+                <it.Icon size={15} color={C.accentHi} /> {it.label}
+              </a>
+            ) : (
+              <button key={it.label} onClick={it.onClick}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:10, borderRadius:10,
+                  background:"none", border:"none", width:"100%", textAlign:"left", cursor:"pointer",
+                  color:C.text1, fontSize:13, fontWeight:600 }}>
+                <it.Icon size={15} color={C.accentHi} /> {it.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BOTTOM NAV
 // ─────────────────────────────────────────────────────────────────────────────
 type AppTab = "home" | "leaderboard" | "earn" | "rewards" | "profile";
@@ -1853,12 +2068,13 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
                   : `0 4px 16px rgba(139,92,246,0.4)` }}
                 transition={{ duration:0.3 }}
                 style={{
-                  width:52, height:52,
-                  background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                  clipPath:"polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%)",
+                  width:52, height:52, borderRadius:"50%",
+                  background:"radial-gradient(circle at 50% 35%,#241442,#12081F 75%)",
+                  border:"1.5px solid rgba(168,85,247,0.6)",
                   display:"flex", alignItems:"center", justifyContent:"center",
                 }}>
-                <Zap size={22} color="#fff" />
+                <img src="/mini-logo.png" alt="" style={{ width:26, height:26, objectFit:"contain",
+                  filter:"drop-shadow(0 0 8px rgba(168,85,247,0.9))" }} />
               </motion.div>
               <span style={{ color:isActive?C.accentHi:C.text3, fontSize:10, fontWeight:700 }}>Earn</span>
             </motion.button>
@@ -1943,27 +2159,29 @@ function MainApp({ fid, ctx, added, addApp }: {
       <div style={{
         position:"sticky", top:0, zIndex:40, background:`rgba(11,9,16,0.92)`,
         backdropFilter:"blur(14px)", borderBottom:`1px solid ${C.border}`,
-        padding:"10px 16px", display:"flex", alignItems:"center", gap:10,
+        padding:"10px 16px", display:"flex", alignItems:"center", gap:8,
       }}>
-        {/* Logo text */}
-        <div style={{ display:"flex", alignItems:"center", gap:8, flex:1 }}>
-          <div style={{ width:28, height:28, borderRadius:8,
-            background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-            display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <Zap size={14} color="#fff" />
-          </div>
-          <span style={{ color:C.text1, fontWeight:800, fontSize:15, letterSpacing:"-0.01em" }}>FidCaster</span>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
+          <img src="/mini-logo.png" alt="" style={{ width:26, height:26, objectFit:"contain",
+            filter:"drop-shadow(0 0 6px rgba(168,85,247,0.7))" }} />
+          <span style={{ color:C.text1, fontWeight:800, fontSize:15, letterSpacing:"-0.01em",
+            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>FidCaster</span>
         </div>
+        <span style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(23,15,44,0.85)",
+          border:"1px solid rgba(139,92,246,0.25)", borderRadius:999, padding:"5px 10px",
+          color:C.text2, fontSize:11, fontWeight:700, flexShrink:0 }}>
+          <span style={{ width:12, height:12, borderRadius:"50%", background:"#0052FF", display:"inline-block" }} />
+          Base
+        </span>
         {!added && (
           <button onClick={addApp} style={{ background:`rgba(139,92,246,0.15)`,
             border:`1px solid rgba(139,92,246,0.3)`, color:C.accentHi, borderRadius:8,
-            padding:"5px 11px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+            padding:"5px 11px", fontSize:12, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
             Add
           </button>
         )}
-        <button style={{ background:"none", border:"none", color:C.text3, cursor:"pointer", padding:4, display:"flex" }}>
-          <Bell size={18} />
-        </button>
+        <NotifBell fid={fid} />
+        <MenuButton onNav={setTab} />
       </div>
 
       {/* Pending-gift claimed toast */}
@@ -1986,7 +2204,7 @@ function MainApp({ fid, ctx, added, addApp }: {
       <div style={{ flex:1, padding:"14px 16px 90px", overflowY:"auto", position:"relative", zIndex:1 }}>
         <AnimatePresence mode="wait">
           {tab === "home" && (
-            <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank}
+            <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
               statsLoading={statsLoad} ptsLoading={ptsLoad}
               allowance={allowance} allowanceLoading={allowLoad} />
           )}

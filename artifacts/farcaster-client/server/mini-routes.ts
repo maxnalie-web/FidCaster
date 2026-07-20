@@ -195,6 +195,8 @@ export function registerMiniRoutes(app: Express): void {
         streak: 0, level: 0, xp: 0, xpToNext: 500,
         totalPoints: 0, todayPoints: 0, missions: MISSIONS.map(m => ({ ...m, count: 0 })),
         achievements: ACHIEVEMENTS.map(a => ({ id: a.id, label: a.label, icon: a.icon, unlocked: false })),
+        nextStreakBonusPts: POINTS.streak_bonus.pts,
+        streakBonusAwarded: false,
         seasonEnd: "2025-12-31",
       });
       return;
@@ -212,7 +214,22 @@ export function registerMiniRoutes(app: Express): void {
          ORDER BY d DESC LIMIT 365`,
         [fid],
       );
-      const streak = computeStreak(dateRows.map(r => r.d));
+      const activeDates = dateRows.map(r => r.d);
+      const streak = computeStreak(activeDates);
+
+      // Award a one-time 500pt bonus each time the streak crosses a 7-day
+      // milestone, on the day it's actually reached (idempotent on proof).
+      let streakBonusAwarded = false;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      if (streak > 0 && streak % 7 === 0 && activeDates[0] === todayStr) {
+        const { rowCount } = await pool.query(
+          `INSERT INTO user_actions (fid, action_type, payload, proof, verified, excluded, verified_at)
+           VALUES ($1, 'streak_bonus', $2, $3, true, false, now())
+           ON CONFLICT (action_type, proof) WHERE proof IS NOT NULL DO NOTHING`,
+          [fid, JSON.stringify({ streak }), `streak_bonus:${fid}:${todayStr}`],
+        );
+        streakBonusAwarded = (rowCount ?? 0) > 0;
+      }
 
       // Build the CASE expr for total/today points
       const caseExpr = Object.entries(POINTS)
@@ -297,6 +314,8 @@ export function registerMiniRoutes(app: Express): void {
       res.json({
         streak, level, xp, xpToNext, totalPoints, todayPoints,
         missions, achievements,
+        nextStreakBonusPts: POINTS.streak_bonus.pts,
+        streakBonusAwarded,
         seasonEnd: "2025-12-31",
       });
     } catch (e) {

@@ -167,6 +167,10 @@ export default defineConfig({
     proxy: {
       "/api/farcaster": { target: "http://localhost:3001", changeOrigin: true },
       "/api/fid-market": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/mini":      { target: "http://localhost:3001", changeOrigin: true },
+      "/api/points":    { target: "http://localhost:3001", changeOrigin: true },
+      "/api/allowance": { target: "http://localhost:3001", changeOrigin: true },
+      "/api/referral":  { target: "http://localhost:3001", changeOrigin: true },
       "/api/fc":        { target: "http://localhost:3001", changeOrigin: true },
       "/api/hub":       { target: "http://localhost:3001", changeOrigin: true },
       "/api/mini-apps": { target: "http://localhost:3001", changeOrigin: true },
