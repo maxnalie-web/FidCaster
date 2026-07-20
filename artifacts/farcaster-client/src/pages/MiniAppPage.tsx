@@ -774,9 +774,9 @@ function BrowserScreen() {
           display:"flex", alignItems:"center", justifyContent:"center" }}>
           <Globe size={28} color={C.accentHi} />
         </div>
-        <p style={{ color:C.text1, fontWeight:800, fontSize:20, marginBottom:10 }}>Open in Warpcast</p>
+        <p style={{ color:C.text1, fontWeight:800, fontSize:20, marginBottom:10 }}>Open in Farcaster</p>
         <p style={{ color:C.text2, fontSize:14, lineHeight:1.7, marginBottom:28 }}>
-          This mini app runs inside Warpcast. Search for{" "}
+          This mini app runs inside Farcaster. Search for{" "}
           <strong style={{ color:C.accentHi }}>FidCaster</strong> or tap the link below.
         </p>
         <a href="https://warpcast.com/~/mini-apps" target="_blank" rel="noopener noreferrer"
@@ -784,7 +784,7 @@ function BrowserScreen() {
             background:`linear-gradient(135deg,${C.accent},#A855F7)`, color:"#fff",
             borderRadius:14, padding:"14px 20px", fontSize:15, fontWeight:700, textDecoration:"none",
             boxShadow:`0 8px 24px rgba(139,92,246,0.4)` }}>
-          Open Warpcast <ExternalLink size={15} />
+          Open Farcaster <ExternalLink size={15} />
         </a>
       </motion.div>
     </div>
@@ -1828,14 +1828,14 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
           background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
       {remaining <= 0 && <p style={{ color:C.rose, fontSize:11.5, marginBottom:6 }}>You're out of allowance for today.</p>}
       <p style={{ color:C.text3, fontSize:11, marginBottom:16, lineHeight:1.6 }}>
-        This opens Warpcast with a pre-filled cast. Posting it debits your allowance and credits the
+        This opens Farcaster with a pre-filled cast. Posting it debits your allowance and credits the
         recipient once FidCaster detects it, and you'll get a notification either way.
       </p>
       <button onClick={send} disabled={!valid}
         style={{ width:"100%", padding:"13px", borderRadius:14, border:"none", cursor: valid ? "pointer" : "not-allowed",
           background: valid ? `linear-gradient(90deg,${C.accent},#A855F7)` : C.card, color: valid ? "#fff" : C.text3,
           fontWeight:800, fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-        <Send size={15} /> Open Warpcast to Send
+        <Send size={15} /> Open Farcaster to Send
       </button>
     </AllowanceModalShell>
   );
@@ -1993,7 +1993,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
         <div>
           <SectionLabel>Quests & Actions</SectionLabel>
           <p style={{ color:C.text3, fontSize:11.5, lineHeight:1.6, marginBottom:12, marginTop:-4 }}>
-            These earn points when done through FidCaster, not from posting on Warpcast directly.
+            These earn points when done through FidCaster, not from posting on Farcaster directly.
             Farcaster activity earns through your Allowance instead (Promote / Gift).
           </p>
           {/* Filter tabs */}

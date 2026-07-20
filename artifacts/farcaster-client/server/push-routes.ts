@@ -151,7 +151,7 @@ async function pushToFid(
 // Push notifications only - deliberately does NOT award points. Points
 // only count when the action happens through FidCaster's own UI (see
 // actions-routes.ts) so users have a clear reason to use FidCaster over
-// posting directly in Warpcast. Farcaster/Warpcast activity earns via the
+// posting directly on Farcaster. Farcaster activity earns via the
 // allowance system (Promote/Gift) instead - see processCastForAllowance.
 async function handleReactionCreated(
   data: { reaction_type?: string; user?: NeynarUser; cast?: NeynarCast },
@@ -202,8 +202,8 @@ async function handleCastCreated(
     author:             actor,
     mentioned_profiles: data.mentioned_profiles,
   });
-  // No generic cast points here on purpose - a plain cast posted directly in
-  // Warpcast doesn't earn action points, only through FidCaster's own UI.
+  // No generic cast points here on purpose - a plain cast posted directly on
+  // Farcaster doesn't earn action points, only through FidCaster's own UI.
 }
 
 export function registerPushRoutes(app: Express): void {

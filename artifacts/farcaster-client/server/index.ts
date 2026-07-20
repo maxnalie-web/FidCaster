@@ -500,12 +500,12 @@ app.post("/api/farcaster/signer-request", signerReqLimiter, async (req, res) => 
     });
     if (!r.ok) {
       const t = await r.text().catch(() => "");
-      res.status(r.status).json({ error: `Warpcast rejected the request: ${t.slice(0, 200)}` });
+      res.status(r.status).json({ error: `Farcaster rejected the request: ${t.slice(0, 200)}` });
       return;
     }
     const data = await r.json() as { result?: { signedKeyRequest?: { token?: string; deeplinkUrl?: string; state?: string } } };
     const skr = data.result?.signedKeyRequest;
-    if (!skr?.token || !skr.deeplinkUrl) { res.status(502).json({ error: "Warpcast returned no deeplink" }); return; }
+    if (!skr?.token || !skr.deeplinkUrl) { res.status(502).json({ error: "Farcaster returned no deeplink" }); return; }
     res.json({ token: skr.token, deeplinkUrl: skr.deeplinkUrl, state: skr.state ?? "pending", deadline });
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Failed to create signer request" });
