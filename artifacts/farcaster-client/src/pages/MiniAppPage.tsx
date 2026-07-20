@@ -652,14 +652,38 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
 function LoadingScreen() {
   return (
     <div style={{ minHeight:"100svh", background:C.bg, display:"flex", alignItems:"center",
-      justifyContent:"center", flexDirection:"column", gap:16 }}>
+      justifyContent:"center", flexDirection:"column", gap:22 }}>
       <BgOrbs />
-      <div style={{ position:"relative", zIndex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <motion.div animate={{ rotate:360 }} transition={{ duration:2, repeat:Infinity, ease:"linear" }}
-          style={{ width:48, height:48, borderRadius:"50%",
-            border:"2px solid transparent",
-            background:`linear-gradient(${C.bg},${C.bg}) padding-box, linear-gradient(135deg,${C.accent},${C.accentHi}) border-box` }} />
-        <p style={{ color:C.text3, fontSize:13 }}>Loading FidCaster…</p>
+      <div style={{ position:"relative", zIndex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:24 }}>
+        <div style={{ position:"relative", width:150, height:150, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          {/* expanding radar-ping rings */}
+          {[0, 1, 2].map(i => (
+            <motion.div key={i}
+              initial={{ scale:0.55, opacity:0.7 }}
+              animate={{ scale:1.7, opacity:0 }}
+              transition={{ duration:2.6, repeat:Infinity, delay:i * 0.85, ease:"easeOut" }}
+              style={{ position:"absolute", inset:0, borderRadius:"50%",
+                border:"1.5px solid rgba(168,85,247,0.6)" }} />
+          ))}
+          {/* breathing glow */}
+          <motion.div animate={{ opacity:[0.5, 0.9, 0.5], scale:[1, 1.12, 1] }}
+            transition={{ duration:2.3, repeat:Infinity, ease:"easeInOut" }}
+            style={{ position:"absolute", inset:-8, borderRadius:"50%",
+              background:"radial-gradient(circle, rgba(139,92,246,0.45), transparent 70%)" }} />
+          {/* floating logo */}
+          <motion.img src="/mini-logo.png" alt=""
+            animate={{ y:[-6, 6, -6] }} transition={{ duration:2.6, repeat:Infinity, ease:"easeInOut" }}
+            style={{ width:78, height:78, objectFit:"contain", position:"relative", zIndex:1,
+              filter:"drop-shadow(0 0 20px rgba(168,85,247,0.9)) drop-shadow(0 0 50px rgba(124,58,237,0.5))" }} />
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:11 }}>
+          <p style={{ color:C.text1, fontSize:15, fontWeight:700, letterSpacing:"0.02em" }}>FidCaster</p>
+          <div style={{ width:120, height:3, borderRadius:999, background:"rgba(255,255,255,0.08)", overflow:"hidden" }}>
+            <motion.div animate={{ x:["-120%", "220%"] }} transition={{ duration:1.4, repeat:Infinity, ease:"easeInOut" }}
+              style={{ width:"40%", height:"100%", borderRadius:999,
+                background:`linear-gradient(90deg, transparent, ${C.accentHi}, transparent)` }} />
+          </div>
+        </div>
       </div>
     </div>
   );
