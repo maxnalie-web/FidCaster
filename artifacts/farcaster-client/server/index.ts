@@ -1383,13 +1383,14 @@ const FARCASTER_MANIFEST = {
   frame: {
     version: "1",
     name: "FidCaster",
-    // Spec requires exactly 1024x1024 PNG with no alpha — the old
-    // icon-512-dark.png was 512x512, which Farcaster's manifest validator
-    // silently rejects (shows as a broken/missing icon, not an error).
-    iconUrl: "https://fidcaster.xyz/icons/icon-1024.png",
+    // NOTE: Farcaster's spec technically says iconUrl "must be 1024x1024px
+    // PNG, no alpha" — this is a transparent PNG per explicit user request,
+    // which deviates from that. If the manifest validator rejects it (same
+    // broken-icon symptom as the wrong-size version this replaced), swap
+    // back to icon-1024.png (opaque, spec-compliant, kept in the repo).
+    iconUrl: "https://fidcaster.xyz/icons/icon-1024-transparent.png",
     homeUrl: "https://fidcaster.xyz/mini",
-    // Spec recommends 200x200 — was reusing the (wrongly-sized) icon file.
-    splashImageUrl: "https://fidcaster.xyz/icons/splash-200.png",
+    splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
     splashBackgroundColor: "#1D0070",
     webhookUrl: "https://fidcaster.xyz/api/miniapp/webhook",
     subtitle: "Earn points. Get the airdrop.",
@@ -1413,7 +1414,7 @@ const MINI_EMBED = JSON.stringify({
       type: "launch_miniapp",
       url: "https://fidcaster.xyz/mini",
       name: "FidCaster",
-      splashImageUrl: "https://fidcaster.xyz/icons/splash-200.png",
+      splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
       splashBackgroundColor: "#1D0070",
     },
   },
