@@ -1873,14 +1873,31 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
 function AllowanceBarV2({ fid }: { fid: number }) {
   const [data,    setData]    = useState<AllowanceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed,  setFailed]  = useState(false);
   const [modal,   setModal]   = useState<"none" | "gift" | "info">("none");
   const midnightMs = (() => { const d=new Date(); d.setUTCDate(d.getUTCDate()+1); d.setUTCHours(0,0,0,0); return d.getTime(); })();
   const countdown = useCountdown(midnightMs);
 
-  useEffect(() => { apiAllowance(fid).then(d => { setData(d); setLoading(false); }); }, [fid]);
+  const load = useCallback(() => {
+    setLoading(true); setFailed(false);
+    apiAllowance(fid).then(d => {
+      if (d) setData(d); else setFailed(true);
+      setLoading(false);
+    });
+  }, [fid]);
+
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <Card style={{ padding:"14px 16px" }}><Loader2 size={15} className="animate-spin" style={{ color:C.text3 }} /></Card>;
-  if (!data) return null;
+  if (failed || !data) return (
+    <Card style={{ padding:"20px 16px", textAlign:"center" }}>
+      <p style={{ color:C.text2, fontSize:13, marginBottom:10 }}>Couldn't load your allowance right now.</p>
+      <button onClick={load} style={{ background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.3)",
+        color:C.accentHi, fontSize:12.5, fontWeight:700, borderRadius:10, padding:"8px 16px", cursor:"pointer" }}>
+        Try again
+      </button>
+    </Card>
+  );
 
   const pct = data.total > 0 ? Math.max(0, (data.remaining / data.total) * 100) : 0;
 
