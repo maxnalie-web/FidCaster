@@ -62,3 +62,6 @@ artifacts/farcaster-client/server/.fidmarket-tracked.json
 artifacts/farcaster-client/*.sqlite
 artifacts/farcaster-client/*.sqlite-shm
 artifacts/farcaster-client/*.sqlite-wal
+
+# Scratch worktrees created by isolated background agent runs — session-local, not project content
+.claude/worktrees/
