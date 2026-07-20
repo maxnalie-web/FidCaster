@@ -8,6 +8,7 @@
 import {
   useEffect, useState, useCallback, useRef,
 } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { sdk } from "@farcaster/miniapp-sdk";
 import {
@@ -1761,7 +1762,12 @@ const SCORING_ROWS = [
 function AllowanceModalShell({ onClose, icon, title, children }: {
   onClose: () => void; icon: React.ReactNode; title: string; children: React.ReactNode;
 }) {
-  return (
+  // Rendered via portal straight onto <body> - this shell lives inside the
+  // scrollable content area, which has its own z-index:1 stacking context.
+  // A position:fixed element trapped inside that context can never out-
+  // stack a z-index:50 sibling (the bottom nav) no matter its own z-index,
+  // so the sheet's bottom (its buttons) was rendering underneath the nav.
+  return createPortal(
     <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
       style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)",
         display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
@@ -1777,7 +1783,8 @@ function AllowanceModalShell({ onClose, icon, title, children }: {
         </div>
         {children}
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
