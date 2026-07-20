@@ -1526,9 +1526,9 @@ app.get("/.well-known/farcaster.json", (_req: express.Request, res: express.Resp
 });
 
 // Image aliases — farcaster.json references these short paths
-app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-512.png"));
-app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/icon-512.png"));
-app.get("/image.png",  (_req, res) => res.redirect(307, "/opengraph.jpg"));
+app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-1024-transparent.png"));
+app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/splash-200-transparent.png"));
+app.get("/image.png",  (_req, res) => res.redirect(307, "/og-mini.png"));
 
 // Webhook alias — /api/webhook also accepted (used by some Farcaster clients)
 app.post("/api/webhook", express.json(), async (req: express.Request, res: express.Response) => {
