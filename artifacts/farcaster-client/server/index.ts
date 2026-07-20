@@ -14,6 +14,7 @@ import { registerRpcProxy } from "./rpc-proxy.js";
 import { registerPushRoutes } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
 import { registerActionsRoutes } from "./actions-routes.js";
+import { registerAuthRoutes } from "./auth-routes.js";
 import { registerPointsRoutes } from "./points-routes.js";
 import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
@@ -859,6 +860,7 @@ registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
 registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
 registerActionsRoutes(app); // Points/airdrop action ledger — no-ops if DATABASE_URL unset
+registerAuthRoutes(app);    // Session/nonce endpoints for binding requests to a real fid
 registerPointsRoutes(app);  // Leaderboard, snapshot, referral, watcher health
 registerMiniRoutes(app);    // Mini app eligibility (Neynar score gate)
 registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wallet)

@@ -12,6 +12,7 @@ import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js"
 import { getPool, isDbConfigured } from "./db/pool.js";
 import { POINTS } from "./db/points.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
+import { getTrustedFid } from "./auth.js";
 
 const SCORE_THRESHOLD = 30;
 
@@ -156,6 +157,9 @@ export function registerMiniRoutes(app: Express): void {
     const body = req.body as { fid?: unknown };
     const fid = fidFromQuery(body.fid);
     if (!fid) { res.status(400).json({ error: "fid required" }); return; }
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid))
+      { res.status(401).json({ error: "Token does not match claimed fid" }); return; }
     try {
       const result = await checkAndAwardNftHolderBonus(fid);
       res.json(result);

@@ -11,6 +11,7 @@ import { hexToBytes, createWalletClient, custom } from "viem";
 import type { WalletClient } from "viem";
 import { optimism } from "viem/chains";
 import { setWalletAccountChangeCallback } from "@/lib/wallet-events";
+import { establishSession } from "@/lib/session";
 import {
   encryptAndStore,
   decryptStored,
@@ -248,6 +249,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (onChainState === 1) {
         if (!cached) markSignerApproved(fidNum);
         setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null }));
+        establishSession(fidNum, signer).catch(() => {});
         return;
       }
 
@@ -290,6 +292,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
         markSignerApproved(fidNum);
         setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null, signerStatus: null }));
+        establishSession(fidNum, signer).catch(() => {});
       } catch (e: unknown) {
         const raw = e instanceof Error ? e.message : String(e);
         console.error("Signer registration failed");
@@ -305,6 +308,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           if (recheckState === 1) {
             markSignerApproved(fidNum);
             setState((s) => ({ ...s, fid, localSigner: signer, signerApproved: true, autoSignerLoading: false, signerError: null, signerStatus: null }));
+            establishSession(fidNum, signer).catch(() => {});
             return;
           }
           msg = NEEDS_FUNDS_MSG;
@@ -519,6 +523,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       addressRef.current = extAddress;
       walletClientRef.current = extWalletClient;
       localSignerRef.current = localSigner;
+      // Best-effort now (works immediately for a returning wallet whose signer
+      // was already approved in a prior session — same wallet always derives
+      // the same key). A brand-new signer isn't on-chain yet at this point;
+      // _autoActivateSigner retries establishSession once registration lands.
+      establishSession(fidNum, localSigner).catch(() => {});
 
       storeLightSession({
         fid: fidNum, address: extAddress, authMethod: "wallet",
@@ -600,6 +609,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     addressRef.current = null;
     walletClientRef.current = null;
     localSignerRef.current = localSigner;
+    if (localSigner) establishSession(fidNum, localSigner).catch(() => {});
 
     setState((s) => ({
       ...s,

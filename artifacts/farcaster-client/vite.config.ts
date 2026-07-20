@@ -186,6 +186,7 @@ export default defineConfig({
       "/api/nft-pass":       { target: "http://localhost:3001", changeOrigin: true },
       "/api/actions":        { target: "http://localhost:3001", changeOrigin: true },
       "/api/grow":           { target: "http://localhost:3001", changeOrigin: true },
+      "/api/auth":           { target: "http://localhost:3001", changeOrigin: true },
       "/api/browser-proxy":  { target: "http://localhost:3001", changeOrigin: true },
     },
   },

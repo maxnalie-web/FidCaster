@@ -100,6 +100,11 @@ function useSDK() {
   const [ready, setReady] = useState(false);
   const [inFC,  setInFC]  = useState(false);
   const [added, setAdded] = useState(false);
+  // Quick Auth JWT — only obtainable inside a real Farcaster client host, never
+  // in ?fid= preview mode. Proves fid ownership to the server without any
+  // extra user action (the host issues it silently since the user is already
+  // signed in there).
+  const [qaToken, setQaToken] = useState<string | null>(null);
 
   useEffect(() => {
     let dead = false;
@@ -147,6 +152,7 @@ function useSDK() {
         if (!dead && res?.user?.fid) {
           setCtx(res); setFid(res.user.fid); setInFC(true);
           setAdded(!!(res as any).client?.added);
+          sdk.quickAuth.getToken().then(({ token }) => { if (!dead) setQaToken(token); }).catch(() => {});
         }
       } catch {} finally { if (!dead) setReady(true); }
     })();
@@ -157,7 +163,7 @@ function useSDK() {
     try { await (sdk.actions as any).addMiniApp(); setAdded(true); } catch {}
   }, []);
 
-  return { fid, ctx, ready, inFC, added, addApp };
+  return { fid, ctx, ready, inFC, added, addApp, qaToken };
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -235,10 +241,15 @@ async function apiStats(fid: number): Promise<StatsData | null> {
   } catch { return null; }
 }
 interface NftHolderCheckResult { isHolder: boolean; alreadyAwarded: boolean; justAwarded: boolean; }
-async function apiNftHolderCheck(fid: number): Promise<NftHolderCheckResult | null> {
+async function apiNftHolderCheck(fid: number, qaToken?: string | null): Promise<NftHolderCheckResult | null> {
   try {
     const r = await fetch("/api/mini/nft-holder-check", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fid }),
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(qaToken ? { Authorization: `Bearer ${qaToken}` } : {}),
+      },
+      body: JSON.stringify({ fid }),
     });
     return r.ok ? r.json() : null;
   } catch { return null; }
@@ -560,7 +571,7 @@ function BrowserScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 // NFT PASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
-function NFTPassCard({ fid, ethAddress, onMinted }: { fid: number; ethAddress?: string; onMinted?: () => void }) {
+function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethAddress?: string; qaToken?: string | null; onMinted?: () => void }) {
   const [s, setS]             = useState<"checking"|"idle"|"connecting"|"input"|"minting"|"done"|"error">("checking");
   const [activeAddr, setAddr]  = useState(ethAddress ?? "");
   const [manualAddr, setManual] = useState("");
@@ -583,7 +594,8 @@ function NFTPassCard({ fid, ethAddress, onMinted }: { fid: number; ethAddress?: 
     setS("minting");
     try {
       const r = await fetch("/api/nft-pass/mint", {
-        method:"POST", headers:{"Content-Type":"application/json"},
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
         body: JSON.stringify({ fid, address }),
       });
       const d = await r.json();
@@ -716,7 +728,7 @@ const OB_STEPS = [
   { Icon: Globe,  title: "Join fidcaster.xyz",    hint: "Step 3 of 3" },
 ];
 
-function OnboardingFlow({ fid, ctx, onComplete }: { fid: number; ctx: MiniCtx | null; onComplete: () => void }) {
+function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: MiniCtx | null; qaToken: string | null; onComplete: () => void }) {
   const [step,    setStep]    = useState(0);
   const [minted,  setMinted]  = useState(false);
   const [eligData, setEligData] = useState<EligibilityData | null>(null);
@@ -802,7 +814,7 @@ function OnboardingFlow({ fid, ctx, onComplete }: { fid: number; ctx: MiniCtx | 
               <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{eligData.score.toFixed(0)}</strong> — eligible ✓</p>
             </div>
           )}
-          <NFTPassCard fid={fid} ethAddress={ethAddr} onMinted={() => setMinted(true)} />
+          <NFTPassCard fid={fid} ethAddress={ethAddr} qaToken={qaToken} onMinted={() => setMinted(true)} />
           {minted
             ? <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
                 background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.22)", borderRadius:14 }}>
@@ -1865,10 +1877,10 @@ function RewardsTab({ fid }: { fid: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck }: {
+function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken }: {
   fid: number; ctx: MiniCtx | null; pts: FidPts | null;
   stats: StatsData | null; rank: number | null; loading: boolean;
-  onNftRecheck: () => void;
+  onNftRecheck: () => void; qaToken: string | null;
 }) {
   const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder">("idle");
   const username    = ctx?.user?.username ?? `fid${fid}`;
@@ -1886,7 +1898,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck }: {
 
   async function checkNft() {
     setNftCheck("checking");
-    const r = await apiNftHolderCheck(fid);
+    const r = await apiNftHolderCheck(fid, qaToken);
     if (r?.isHolder) {
       onNftRecheck();
       setNftCheck("idle");
@@ -1985,7 +1997,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck }: {
       </div>
 
       {/* NFT Pass */}
-      <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} />
+      <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} qaToken={qaToken} />
 
       {/* Achievements */}
       {achievements.length > 0 && (
@@ -2282,8 +2294,8 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
-function MainApp({ fid, ctx, added, addApp }: {
-  fid: number; ctx: MiniCtx | null; added: boolean; addApp: () => void;
+function MainApp({ fid, ctx, added, addApp, qaToken }: {
+  fid: number; ctx: MiniCtx | null; added: boolean; addApp: () => void; qaToken: string | null;
 }) {
   const [tab,          setTab]         = useState<AppTab>(() => {
     const p = new URLSearchParams(window.location.search);
@@ -2335,8 +2347,8 @@ function MainApp({ fid, ctx, added, addApp }: {
     const key = `fc_nft_checked_${fid}`;
     if (localStorage.getItem(key) === "1") return;
     localStorage.setItem(key, "1");
-    apiNftHolderCheck(fid).then((r) => { if (r?.justAwarded) refetchPts(); });
-  }, [fid, refetchPts]);
+    apiNftHolderCheck(fid, qaToken).then((r) => { if (r?.justAwarded) refetchPts(); });
+  }, [fid, refetchPts, qaToken]);
 
   return (
     <div style={{ minHeight:"100svh", background:C.bg, display:"flex", flexDirection:"column" }}>
@@ -2405,7 +2417,7 @@ function MainApp({ fid, ctx, added, addApp }: {
             <RewardsTab key="rewards" fid={fid} />
           )}
           {tab === "profile" && (
-            <ProfileTab key="profile" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} loading={ptsLoad} onNftRecheck={refetchPts} />
+            <ProfileTab key="profile" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} loading={ptsLoad} onNftRecheck={refetchPts} qaToken={qaToken} />
           )}
         </AnimatePresence>
       </div>
@@ -2422,7 +2434,7 @@ function MainApp({ fid, ctx, added, addApp }: {
 const ONBOARDED_KEY = "fc_v1_onboarded";
 
 export function MiniAppPage() {
-  const { fid, ctx, ready, inFC, added, addApp } = useSDK();
+  const { fid, ctx, ready, inFC, added, addApp, qaToken } = useSDK();
   const [onboarded, setOnboarded] = useState(false);
   const [onboardChecked, setOnboardChecked] = useState(false);
 
@@ -2449,8 +2461,8 @@ export function MiniAppPage() {
   if (!onboardChecked) return <LoadingScreen />;
 
   if (!onboarded) {
-    return <OnboardingFlow fid={fid} ctx={ctx} onComplete={completeOnboarding} />;
+    return <OnboardingFlow fid={fid} ctx={ctx} qaToken={qaToken} onComplete={completeOnboarding} />;
   }
 
-  return <MainApp fid={fid} ctx={ctx} added={added} addApp={addApp} />;
+  return <MainApp fid={fid} ctx={ctx} added={added} addApp={addApp} qaToken={qaToken} />;
 }

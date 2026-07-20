@@ -16,6 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool } from "./db/pool.js";
+import { getTrustedFid } from "./auth.js";
 
 // Real gas is spent from a server-held wallet on every mint attempt, and the
 // only per-call anti-repeat check (on-chain balanceOf) is keyed on the
@@ -131,6 +132,10 @@ export function createNftPassRouter(): Router {
       return res.status(400).json({ error: "invalid address" });
     if (!fid || typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0)
       return res.status(400).json({ error: "fid required" });
+
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid))
+      return res.status(401).json({ error: "Token does not match claimed fid" });
 
     const cfg = loadConfig();
     const abi = loadAbi();
