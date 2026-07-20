@@ -140,9 +140,25 @@ app.use(helmet({
 // Helmet sets X-Frame-Options: SAMEORIGIN + CSP frame-ancestors 'self' globally,
 // which blocks any cross-origin iframe — including Warpcast. Override those
 // headers specifically for the /mini route so the app can actually launch.
+//
+// Must run BEFORE the global cors() middleware below, because that middleware
+// blocks every request whose Origin is not in ALLOWED_ORIGINS — including
+// warpcast.com and other Farcaster clients. For /mini we open CORS fully.
+app.use("/mini", cors({
+  origin: true,          // reflect any Origin — Farcaster clients are arbitrary
+  methods: ["GET", "OPTIONS"],
+  credentials: false,
+}));
+
 app.use((req, res, next) => {
-  if (req.path === "/mini" || req.path.startsWith("/mini?")) {
+  if (req.path === "/mini") {
     res.removeHeader("X-Frame-Options");
+    // Helmet sets Cross-Origin-Resource-Policy: same-origin which prevents
+    // cross-origin iframes from loading the page at all (separate from CORS).
+    res.removeHeader("Cross-Origin-Resource-Policy");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    // Allow Warpcast to open the page across origins (COOP same-origin blocks it).
+    res.removeHeader("Cross-Origin-Opener-Policy");
     res.setHeader(
       "Content-Security-Policy",
       [
