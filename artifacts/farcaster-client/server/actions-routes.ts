@@ -14,6 +14,10 @@
  *   the background verification job can confirm real follows via Neynar.
  *
  * Security layers applied at this layer:
+ *   L0 — Request auth (auth.ts): if the caller sends a verified session/Quick
+ *        Auth token, its fid MUST match the claimed fid or the request is
+ *        rejected outright. A request with NO token is still accepted (fail-
+ *        open) during rollout — see auth.ts's header comment for why.
  *   L1 — Rate limiting (per-IP)
  *   L2 — FID eligibility gate (age/followers/cast count via Neynar; cached)
  *   L3 — Proof hex-format validation (rejects obviously fake hashes)
@@ -25,6 +29,7 @@ import rateLimit from "express-rate-limit";
 import { logUserAction, isLedgerConfigured, type ActionType } from "./db/ledger.js";
 import { isFidEligible } from "./db/eligibility.js";
 import { getPool } from "./db/pool.js";
+import { getTrustedFid } from "./auth.js";
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -75,6 +80,12 @@ export function registerActionsRoutes(app: Express): void {
 
     if (payload !== undefined && (typeof payload !== "object" || payload === null || Array.isArray(payload)))
       { res.status(400).json({ error: "payload must be a plain object" }); return; }
+
+    // L0: if a verified token was sent, it must agree with the claimed fid.
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid)) {
+      res.status(401).json({ error: "Token does not match claimed fid" }); return;
+    }
 
     // L2: FID eligibility gate — fire-and-forget style: if Neynar is down we
     // still accept the action (fail-open) but log it as unverified as usual.
@@ -137,6 +148,14 @@ export function registerActionsRoutes(app: Express): void {
     if (!Array.isArray(targetFids) || targetFids.length === 0 || targetFids.length > 20_000)
       { res.status(400).json({ error: "targetFids must be a non-empty array (max 20000)" }); return; }
 
+    // L0: same check as /api/actions/log — this route had none at all until
+    // now, so anyone could impersonate any fid to credit them grow points
+    // (or burn their per-target 14-day cooldown) with zero authentication.
+    const trustedStart = await getTrustedFid(req);
+    if (trustedStart.invalidToken || (trustedStart.fid !== null && trustedStart.fid !== fid)) {
+      res.status(401).json({ error: "Token does not match claimed fid" }); return;
+    }
+
     // Store up to 2 000 target FIDs (verification job needs them to confirm real follows)
     const targetFidsSample = (targetFids as number[]).slice(0, 2_000);
 
@@ -175,6 +194,11 @@ export function registerActionsRoutes(app: Express): void {
       { res.status(400).json({ error: "Invalid campaignId" }); return; }
     if (typeof succeeded !== "number" || succeeded < 0 || typeof failed !== "number" || failed < 0)
       { res.status(400).json({ error: "succeeded and failed must be non-negative numbers" }); return; }
+
+    const trustedComplete = await getTrustedFid(req);
+    if (trustedComplete.invalidToken || (trustedComplete.fid !== null && trustedComplete.fid !== fid)) {
+      res.status(401).json({ error: "Token does not match claimed fid" }); return;
+    }
 
     // Client-reported `succeeded` is NOT trusted for points calculation.
     // The verification job will call Neynar to count real new follows from

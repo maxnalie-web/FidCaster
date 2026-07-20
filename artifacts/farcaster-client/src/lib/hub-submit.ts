@@ -30,6 +30,7 @@ import {
   Message,
 } from "@farcaster/core";
 import type { LocalSigner } from "./wallet";
+import { getSessionToken } from "./session";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -381,9 +382,13 @@ function actionPayload(action: FarcasterAction): Record<string, unknown> {
 
 function reportToLedger(fid: number, action: FarcasterAction, proof: string): void {
   if (!LEDGER_ACTION_TYPES.has(action.type)) return;
+  const token = getSessionToken(fid);
   fetch("/api/actions/log", {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body:    JSON.stringify({ fid, actionType: action.type, proof, payload: actionPayload(action) }),
     signal:  AbortSignal.timeout(8_000),
   }).catch(() => { /* best-effort, never blocks UI */ });

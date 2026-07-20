@@ -11,13 +11,13 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { sdk } from "@farcaster/miniapp-sdk";
 import {
-  ArrowRight, ArrowLeft, Copy, Check, ExternalLink,
+  ArrowRight, ArrowLeft, ArrowUp, Copy, Check, ExternalLink,
   Loader2, X,
   Zap, Trophy, Users, ShoppingBag, Tag, Share2,
   Sword, Sprout, Heart, RefreshCw, Edit3,
   Wallet, Shield, Globe, Star, Gift,
   Home, LayoutList, Award, Bell,
-  ChevronRight, Lock,
+  ChevronRight, Lock, Info, Send,
 } from "lucide-react";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -88,7 +88,9 @@ interface Achievement { id: string; label: string; icon: string; unlocked: boole
 interface StatsData {
   streak: number; level: number; xp: number; xpToNext: number;
   totalPoints: number; todayPoints: number;
-  missions: MissionItem[]; achievements: Achievement[]; seasonEnd: string;
+  missions: MissionItem[]; achievements: Achievement[];
+  nextStreakBonusPts: number; streakBonusAwarded: boolean;
+  seasonEnd: string;
 }
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
@@ -98,6 +100,11 @@ function useSDK() {
   const [ready, setReady] = useState(false);
   const [inFC,  setInFC]  = useState(false);
   const [added, setAdded] = useState(false);
+  // Quick Auth JWT — only obtainable inside a real Farcaster client host, never
+  // in ?fid= preview mode. Proves fid ownership to the server without any
+  // extra user action (the host issues it silently since the user is already
+  // signed in there).
+  const [qaToken, setQaToken] = useState<string | null>(null);
 
   useEffect(() => {
     let dead = false;
@@ -143,9 +150,9 @@ function useSDK() {
         ]);
         if (!dead && res?.user?.fid) {
           setCtx(res); setFid(res.user.fid); setInFC(true);
-          const isAdded = !!(res as any).client?.added;
-          setAdded(isAdded);
-          // If token already present from context, save it
+          setAdded(!!(res as any).client?.added);
+          sdk.quickAuth.getToken().then(({ token }) => { if (!dead) setQaToken(token); }).catch(() => {});
+          // If notification token already present from context, persist it
           const notif = (res as any).client?.notificationDetails;
           if (notif?.token && notif?.url) {
             fetch("/api/mini/notification-token", {
@@ -222,7 +229,7 @@ function useSDK() {
     } catch {}
   }, []);
 
-  return { fid, ctx, ready, inFC, added, addApp };
+  return { fid, ctx, ready, inFC, added, addApp, qaToken };
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -266,12 +273,13 @@ async function apiMiniBoard(limit = 50): Promise<LBRow[]> {
     return d.leaderboard ?? [];
   } catch { return []; }
 }
-async function apiHistory(fid: number): Promise<HistoryRow[]> {
+async function apiHistory(fid: number): Promise<HistoryRow[] | null> {
   try {
     const r = await fetch(`/api/points/history?fid=${fid}&limit=50`);
+    if (!r.ok) return null;
     const d = await r.json();
     return Array.isArray(d.history) ? d.history : [];
-  } catch { return []; }
+  } catch { return null; }
 }
 async function apiReferralList(fid: number): Promise<ReferralListData> {
   try {
@@ -298,6 +306,20 @@ async function apiStats(fid: number): Promise<StatsData | null> {
     return r.ok ? r.json() : null;
   } catch { return null; }
 }
+interface NftHolderCheckResult { isHolder: boolean; alreadyAwarded: boolean; justAwarded: boolean; }
+async function apiNftHolderCheck(fid: number, qaToken?: string | null): Promise<NftHolderCheckResult | null> {
+  try {
+    const r = await fetch("/api/mini/nft-holder-check", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(qaToken ? { Authorization: `Bearer ${qaToken}` } : {}),
+      },
+      body: JSON.stringify({ fid }),
+    });
+    return r.ok ? r.json() : null;
+  } catch { return null; }
+}
 
 // ── Animated counter ──────────────────────────────────────────────────────────
 function Counter({ to, className, style }: { to: number; className?: string; style?: React.CSSProperties }) {
@@ -305,13 +327,15 @@ function Counter({ to, className, style }: { to: number; className?: string; sty
   const prev = useRef(0);
   useEffect(() => {
     const from = prev.current, dur = 1200, t0 = performance.now();
+    let raf = 0;
     const f = (now: number) => {
       const p = Math.min((now - t0) / dur, 1);
       const e = 1 - Math.pow(1 - p, 3);
       setN(Math.round(from + (to - from) * e));
-      if (p < 1) requestAnimationFrame(f); else prev.current = to;
+      if (p < 1) raf = requestAnimationFrame(f); else prev.current = to;
     };
-    requestAnimationFrame(f);
+    raf = requestAnimationFrame(f);
+    return () => cancelAnimationFrame(raf);
   }, [to]);
   return <span className={className} style={style}>{n.toLocaleString()}</span>;
 }
@@ -336,18 +360,83 @@ function BgOrbs() {
   );
 }
 
-// ── Glass card ────────────────────────────────────────────────────────────────
-function Card({ children, style = {}, glow = false, className }: {
-  children: React.ReactNode; style?: React.CSSProperties; glow?: boolean; className?: string;
-}) {
+// ── Liquid Glass primitive ───────────────────────────────────────────────────
+// Approximates Apple's Liquid Glass material for the web: saturated backdrop
+// blur (the "refraction" of whatever sits behind), a bright top rim highlight,
+// inset shading for depth, and a specular sheen that sweeps across the surface
+// periodically (the "responds to light/motion" part — a true real-time
+// lensing refraction isn't practical in CSS, so this is the closest legible
+// stand-in). Decorative layers are plain absolutely-positioned siblings
+// painted BEFORE `children` in the DOM (not a wrapping div), so anything a
+// caller puts inside that relies on this element being its positioning
+// context — e.g. an absolutely-positioned canvas — keeps working exactly as
+// if this were still a plain div.
+function LiquidGlassSurface({ radius, sheen = true }: { radius: number; sheen?: boolean }) {
   return (
-    <div className={className} style={{
-      background: C.card, border: `1px solid ${glow ? "rgba(139,92,246,0.35)" : C.border}`,
-      borderRadius: 20, overflow: "hidden", position: "relative", backdropFilter: "blur(14px)",
-      boxShadow: glow ? `0 0 0 1px rgba(139,92,246,0.18), 0 8px 32px rgba(139,92,246,0.12)` : "none",
-      ...style,
-    }}>
-      {children}
+    <>
+      {sheen && (
+        <motion.div aria-hidden
+          animate={{ x: ["-40%", "140%"] }}
+          transition={{ duration: 5.5, repeat: Infinity, repeatDelay: 3.5, ease: "easeInOut" }}
+          style={{ position:"absolute", top:0, bottom:0, width:"35%", pointerEvents:"none", zIndex:0,
+            background:"linear-gradient(115deg, transparent, rgba(255,255,255,0.16) 45%, rgba(255,255,255,0.22) 50%, rgba(255,255,255,0.16) 55%, transparent)",
+            filter:"blur(4px)" }} />
+      )}
+      {/* top rim highlight — the bright edge where light catches curved glass */}
+      <div style={{ position:"absolute", top:0, left:radius*0.6, right:radius*0.6, height:1, pointerEvents:"none", zIndex:0,
+        background:"linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent)" }} />
+    </>
+  );
+}
+
+function Card({ children, style = {}, glow = false, className, onClick }: {
+  children: React.ReactNode; style?: React.CSSProperties; glow?: boolean; className?: string; onClick?: () => void;
+}) {
+  const Comp = onClick ? motion.div : "div";
+  const radius = typeof style.borderRadius === "number" ? style.borderRadius : 20;
+  return (
+    <Comp
+      className={className}
+      onClick={onClick}
+      {...(onClick ? { whileTap: { scale: 0.97 } } : {})}
+      style={{
+        background: "linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.015) 55%, rgba(255,255,255,0.03))",
+        border: `1px solid ${glow ? "rgba(168,85,247,0.42)" : "rgba(255,255,255,0.14)"}`,
+        borderRadius: radius, overflow: "hidden", position: "relative",
+        backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)",
+        boxShadow: glow
+          ? "0 0 0 1px rgba(139,92,246,0.22), 0 10px 34px rgba(139,92,246,0.18), inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -10px 20px -10px rgba(0,0,0,0.25)"
+          : "0 6px 26px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -10px 20px -10px rgba(0,0,0,0.2)",
+        cursor: onClick ? "pointer" : undefined,
+        ...style,
+      }}
+    >
+      <LiquidGlassSurface radius={radius} />
+      {/* CSS paint-order bug fix: non-positioned (static) content actually
+          paints BEFORE positioned z-index:0/auto siblings in the browser's
+          stacking order, regardless of DOM order — so the sheen/rim above
+          was rendering ON TOP of any plain, non-positioned child content,
+          dimming or fully hiding it depending on where the sheen sweep was.
+          Wrapping children in a position:relative div promotes them into the
+          same positioned bucket as the sheen, where DOM order (this wrapper
+          comes last) correctly puts them on top. */}
+      <div style={{ position:"relative" }}>{children}</div>
+    </Comp>
+  );
+}
+
+// ── Liquid glass stat card — used for the two floating hero cards.
+function GlassStatCard({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  const radius = 22;
+  return (
+    <div style={{ position:"relative", zIndex:4, borderRadius:radius, padding:"15px 15px 13px",
+      background:"linear-gradient(160deg,rgba(56,32,98,.55),rgba(20,11,38,.62))",
+      border:"1px solid rgba(255,255,255,0.16)",
+      boxShadow:"0 10px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.16), inset 0 -8px 16px -8px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(139,92,246,0.1)",
+      backdropFilter:"blur(20px) saturate(180%)", WebkitBackdropFilter:"blur(20px) saturate(180%)",
+      overflow:"hidden", ...style }}>
+      <LiquidGlassSurface radius={radius} />
+      <div style={{ position:"relative" }}>{children}</div>
     </div>
   );
 }
@@ -359,6 +448,25 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       textTransform: "uppercase", marginBottom: 8, paddingLeft: 2 }}>
       {children}
     </p>
+  );
+}
+
+// ── Progress ring (used for the daily allowance) ────────────────────────────────
+function ProgressRing({ pct, size = 56, stroke = 6, color }: {
+  pct: number; size?: number; stroke?: number; color: string;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform:"rotate(-90deg)", flexShrink:0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.border} strokeWidth={stroke} />
+      <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeLinecap="round" strokeDasharray={c}
+        initial={{ strokeDashoffset: c }}
+        animate={{ strokeDashoffset: c - (c * Math.max(0, Math.min(pct, 100))) / 100 }}
+        transition={{ duration: 0.8 }}
+        style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
+    </svg>
   );
 }
 
@@ -376,22 +484,19 @@ function Chip({ children, color = C.accentHi, bg = "rgba(139,92,246,0.15)", bord
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FIRE RING CANVAS
+// CAMPFIRE CANVAS — flames, embers, rocks, mini crystals (ports design/premium-home.html)
 // ─────────────────────────────────────────────────────────────────────────────
-interface Particle {
-  x: number; y: number; vx: number; vy: number;
-  life: number; maxLife: number; size: number; angle: number;
-}
+function rand(a: number, b: number) { return a + Math.random() * (b - a); }
 
-function FireRing({ radius = 68, size = 200, active = true }: {
-  radius?: number; size?: number; active?: boolean;
+interface Ember { x: number; y: number; v: number; s: number; ph: number; }
+interface Flame { dx: number; w: number; h: number; ph: number; sp: number; }
+
+function CampfireCanvas({ width = 168, height = 190, active = true }: {
+  width?: number; height?: number; active?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const particlesRef = useRef<Particle[]>([]);
-  const rafRef = useRef<number>(0);
-  const visible = useRef(active);
-
-  useEffect(() => { visible.current = active; }, [active]);
+  const activeRef = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -399,138 +504,210 @@ function FireRing({ radius = 68, size = 200, active = true }: {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cx = size / 2, cy = size / 2;
-    const SPAWN_RATE = 4;
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = width * DPR; canvas.height = height * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-    function spawnParticle() {
-      const angle = Math.random() * Math.PI * 2;
-      const r = radius + (Math.random() - 0.5) * 10;
-      const x = cx + Math.cos(angle) * r;
-      const y = cy + Math.sin(angle) * r;
-      // Velocity mostly upward along the circle tangent + inward
-      const tangentX = -Math.sin(angle);
-      const tangentY =  Math.cos(angle);
-      const inwardX  = -Math.cos(angle);
-      const inwardY  = -Math.sin(angle);
-      const speed = 0.5 + Math.random() * 1.2;
-      const inward = 0.2 + Math.random() * 0.4;
-      // Add upward bias
-      const upBias = -0.6 - Math.random() * 0.8;
-      particlesRef.current.push({
-        x, y,
-        vx: tangentX * speed * 0.3 + inwardX * inward + (Math.random() - 0.5) * 0.3,
-        vy: tangentY * speed * 0.3 + inwardY * inward + upBias,
-        life: 0, maxLife: 40 + Math.random() * 30,
-        size: 3 + Math.random() * 4,
-        angle,
-      });
-    }
+    const bx = width / 2 - 5, by = height - 43;
+    const embers: Ember[] = Array.from({ length: 26 }, () => ({
+      x: rand(bx - 54, bx + 54), y: rand(by - 90, by + 43), v: rand(0.51, 1.78), s: rand(1, 3.3), ph: rand(0, 7),
+    }));
+    const flames: Flame[] = Array.from({ length: 7 }, (_, i) => ({
+      dx: (i - 3) * 5.7, w: rand(11, 20), h: rand(38, 66) - Math.abs(i - 3) * 8.9, ph: rand(0, 7), sp: rand(2.4, 4),
+    }));
 
-    function drawFrame() {
-      if (!visible.current) { rafRef.current = requestAnimationFrame(drawFrame); return; }
-      ctx!.clearRect(0, 0, size, size);
+    let ft = 0;
+    let raf = 0;
+    function frame() {
+      ft += 1 / 60;
+      ctx!.clearRect(0, 0, width, height);
+      if (!activeRef.current) { raf = requestAnimationFrame(frame); return; }
 
-      // Spawn new particles
-      for (let i = 0; i < SPAWN_RATE; i++) spawnParticle();
+      // rocks
+      ctx!.fillStyle = "#241626";
+      ([[-33, 5, 18, 10, -0.2], [33, 8, 20, 11, 0.15], [0, 13, 25, 13, 0], [-10, 3, 13, 8, 0.4]] as const)
+        .forEach(([dx, dy, rx, ry, rot]) => {
+          ctx!.save(); ctx!.translate(bx + dx, by + dy); ctx!.rotate(rot);
+          ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.fill(); ctx!.restore();
+        });
 
-      // Draw glow ring base
-      const glowGrad = ctx!.createRadialGradient(cx, cy, radius - 12, cx, cy, radius + 12);
-      glowGrad.addColorStop(0, "rgba(255,69,0,0.0)");
-      glowGrad.addColorStop(0.5, "rgba(255,100,0,0.25)");
-      glowGrad.addColorStop(1, "rgba(255,69,0,0.0)");
-      ctx!.fillStyle = glowGrad;
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, radius + 12, 0, Math.PI * 2);
-      ctx!.arc(cx, cy, radius - 12, 0, Math.PI * 2, true);
-      ctx!.fill();
-
-      // Update & draw particles
-      particlesRef.current = particlesRef.current.filter(p => p.life < p.maxLife);
-      for (const p of particlesRef.current) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vy -= 0.02; // upward acceleration
-        p.vx += (Math.random() - 0.5) * 0.08; // drift
-        p.life++;
-
-        const t = p.life / p.maxLife;
-        const alpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
-        const shrink = 1 - t * 0.7;
-
-        // Color: white → yellow → orange → red
-        let r = 255, g = 255, b = 255;
-        if (t < 0.15) { g = Math.round(255 * (1 - t/0.15 * 0.2)); b = Math.round(255 * (1 - t/0.15)); }
-        else if (t < 0.5) { g = Math.round(200 - (t - 0.15) / 0.35 * 80); b = 0; }
-        else { r = 255; g = Math.max(0, Math.round(120 - (t - 0.5) / 0.5 * 120)); b = 0; }
-
-        const grad = ctx!.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * shrink * 1.5);
-        grad.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
-        grad.addColorStop(1, `rgba(${r},${g},0,0)`);
+      // mini crystals
+      ([[-43, -8, 11], [48, -5, 9]] as const).forEach(([dx, dy, s], i) => {
+        ctx!.save(); ctx!.translate(bx + dx, by + dy); ctx!.rotate(i ? 0.3 : -0.25);
+        const g = ctx!.createLinearGradient(0, -s, 0, s);
+        g.addColorStop(0, "#FBCFE8"); g.addColorStop(1, "#9333EA");
+        ctx!.fillStyle = g; ctx!.shadowColor = "rgba(217,70,239,.9)"; ctx!.shadowBlur = 13;
         ctx!.beginPath();
-        ctx!.arc(p.x, p.y, p.size * shrink * 1.5, 0, Math.PI * 2);
-        ctx!.fillStyle = grad;
+        ctx!.moveTo(0, -s); ctx!.lineTo(s * 0.55, 0); ctx!.lineTo(s * 0.3, s);
+        ctx!.lineTo(-s * 0.3, s); ctx!.lineTo(-s * 0.55, 0); ctx!.closePath(); ctx!.fill();
+        ctx!.restore();
+      });
+
+      // flames (additive teardrops)
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      flames.forEach(f => {
+        const flick = 0.75 + 0.35 * Math.sin(ft * f.sp + f.ph) * Math.cos(ft * 2.3 + f.ph * 2);
+        const h = f.h * flick, w = f.w * (0.8 + 0.2 * flick);
+        const x = bx + f.dx + Math.sin(ft * 3 + f.ph) * 2.5, y = by + 3;
+        const g = ctx!.createLinearGradient(0, y - h, 0, y);
+        g.addColorStop(0, "rgba(254,240,138,.95)"); g.addColorStop(0.4, "rgba(249,115,22,.85)"); g.addColorStop(1, "rgba(190,18,60,.05)");
+        ctx!.fillStyle = g; ctx!.shadowColor = "rgba(249,115,22,.9)"; ctx!.shadowBlur = 23;
+        ctx!.beginPath();
+        ctx!.moveTo(x, y - h);
+        ctx!.bezierCurveTo(x + w * 0.9, y - h * 0.45, x + w * 0.75, y, x, y);
+        ctx!.bezierCurveTo(x - w * 0.75, y, x - w * 0.9, y - h * 0.45, x, y - h);
         ctx!.fill();
-      }
+      });
 
-      rafRef.current = requestAnimationFrame(drawFrame);
+      // embers
+      embers.forEach(e => {
+        e.y -= e.v; e.x += Math.sin(ft * 2 + e.ph) * 0.35;
+        if (e.y < 13) { e.y = by - rand(0, 25); e.x = bx + rand(-20, 20); }
+        const al = Math.max(0, Math.min(1, (e.y - 13) / 114));
+        ctx!.fillStyle = `rgba(253,186,116,${0.8 * al})`;
+        ctx!.shadowColor = "rgba(249,115,22,1)"; ctx!.shadowBlur = 8;
+        ctx!.beginPath(); ctx!.arc(e.x, e.y, e.s * al + 0.4, 0, Math.PI * 2); ctx!.fill();
+      });
+      ctx!.restore();
+
+      raf = requestAnimationFrame(frame);
     }
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [width, height]);
 
-    rafRef.current = requestAnimationFrame(drawFrame);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [radius, size]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={size}
-      height={size}
-      style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
-    />
-  );
+  return <canvas ref={canvasRef} style={{ width, height, display: "block" }} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ANIMATED HEX BADGE (floating hero badge on points card)
+// HERO CANVAS — nebula cloud + pedestal ring (comet trail) + crystal shards
+// behind the floating logo (ports design/premium-home.html's heroFrame scene).
+// Auto-sizes to its container width; the caller positions the floating logo
+// and stat cards on top via absolute positioning.
 // ─────────────────────────────────────────────────────────────────────────────
-function AnimatedHexBadge({ size = 90 }: { size?: number }) {
+function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number }) {
+  const wrapRef   = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const wrap = wrapRef.current, canvas = canvasRef.current;
+    if (!wrap || !canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let HW = 0, HH = 0;
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    function sizeHero() {
+      const r = wrap!.getBoundingClientRect();
+      if (r.width < 2) return;
+      HW = r.width; HH = r.height;
+      canvas!.width = HW * DPR; canvas!.height = HH * DPR;
+      ctx!.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+    sizeHero();
+    const onResize = () => sizeHero();
+    window.addEventListener("resize", onResize);
+
+    const RING_Y = logoY + 108;
+    const crystals: [number, number, number, number, number, number, number][] = [
+      [122, -16, 15, 0.30, 0.2, 0.5, 0.0],
+      [150, 10, 10, 0.15, 0.5, 0.6, 1.4],
+      [106, 36, 7, 0.42, 0.8, 0.7, 2.8],
+      [-120, 40, 13, -0.30, 0.3, 0.5, 0.7],
+      [-142, 68, 8, -0.15, 0.7, 0.6, 3.2],
+    ];
+    const cloudTwinkles = Array.from({ length: 11 }, () => ({
+      dx: rand(-70, 70), dy: rand(-56, 56), s: rand(0.7, 1.7), sp: rand(0.5, 1.3), ph: rand(0, 7),
+    }));
+
+    function drawCrystal(x: number, y: number, s: number, tilt: number, t: number, ph: number, blur: number) {
+      ctx!.save();
+      ctx!.translate(x, y + Math.sin(t * 0.9 + ph) * 4.5);
+      ctx!.rotate(tilt + Math.sin(t * 0.5 + ph) * 0.07);
+      if (blur) ctx!.filter = `blur(${blur}px)`;
+      const g = ctx!.createLinearGradient(0, -s, 0, s);
+      g.addColorStop(0, "#E9D5FF"); g.addColorStop(0.45, "#A855F7"); g.addColorStop(1, "#5B21B6");
+      ctx!.beginPath();
+      ctx!.moveTo(0, -s); ctx!.lineTo(s * 0.62, -s * 0.15); ctx!.lineTo(s * 0.4, s);
+      ctx!.lineTo(-s * 0.4, s); ctx!.lineTo(-s * 0.62, -s * 0.15);
+      ctx!.closePath();
+      ctx!.fillStyle = g; ctx!.shadowColor = "rgba(168,85,247,.9)"; ctx!.shadowBlur = 14 + Math.sin(t * 2 + ph) * 5;
+      ctx!.fill();
+      ctx!.shadowBlur = 0; ctx!.globalAlpha = 0.55; ctx!.strokeStyle = "rgba(233,213,255,.8)"; ctx!.lineWidth = 0.8;
+      ctx!.beginPath(); ctx!.moveTo(0, -s); ctx!.lineTo(0, s * 0.9);
+      ctx!.moveTo(-s * 0.62, -s * 0.15); ctx!.lineTo(s * 0.62, -s * 0.15); ctx!.stroke();
+      ctx!.restore();
+    }
+
+    function drawNebulaCloud(cx: number, cy: number, t: number) {
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      const pulse = 1 + Math.sin(t * 0.35) * 0.06;
+      const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, 110 * pulse);
+      g.addColorStop(0, "rgba(147,51,234,.22)"); g.addColorStop(0.5, "rgba(109,40,217,.11)"); g.addColorStop(1, "transparent");
+      ctx!.fillStyle = g;
+      ctx!.beginPath(); ctx!.ellipse(cx, cy, 110 * pulse, 86 * pulse, 0, 0, Math.PI * 2); ctx!.fill();
+      ctx!.restore();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      cloudTwinkles.forEach(s => {
+        const al = 0.18 + 0.45 * Math.abs(Math.sin(t * s.sp + s.ph));
+        ctx!.fillStyle = `rgba(233,213,255,${al})`;
+        ctx!.shadowColor = "rgba(216,180,254,1)"; ctx!.shadowBlur = 6;
+        ctx!.beginPath(); ctx!.arc(cx + s.dx, cy + s.dy, s.s, 0, Math.PI * 2); ctx!.fill();
+      });
+      ctx!.restore();
+    }
+
+    function drawPedestalRing(cx: number, cy: number, t: number) {
+      ctx!.save(); ctx!.translate(cx, cy);
+      const pulse = 1 + Math.sin(t * 1.4) * 0.035;
+      const rx = 138 * pulse, ry = 34 * pulse;
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      const g = ctx!.createRadialGradient(0, 6, 0, 0, 6, 168);
+      g.addColorStop(0, "rgba(147,51,234,.26)"); g.addColorStop(0.5, "rgba(109,40,217,.10)"); g.addColorStop(1, "transparent");
+      ctx!.fillStyle = g; ctx!.beginPath(); ctx!.ellipse(0, 8, 168, 44, 0, 0, Math.PI * 2); ctx!.fill();
+      ctx!.restore();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      ctx!.strokeStyle = "rgba(192,132,252,.22)"; ctx!.lineWidth = 7;
+      ctx!.shadowColor = "rgba(168,85,247,.9)"; ctx!.shadowBlur = 18;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.stroke();
+      ctx!.restore();
+      ctx!.strokeStyle = `rgba(233,213,255,${0.62 + Math.sin(t * 1.8) * 0.12})`;
+      ctx!.lineWidth = 1.5; ctx!.shadowColor = "rgba(168,85,247,1)"; ctx!.shadowBlur = 10;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.stroke();
+      ctx!.strokeStyle = "rgba(255,255,255,.85)"; ctx!.lineWidth = 2.2; ctx!.shadowBlur = 18;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, -2.5, -1.9); ctx!.stroke();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      const head = t * 0.09 * Math.PI * 2;
+      for (let k = 0; k < 14; k++) {
+        const a = head - k * 0.05;
+        const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+        const fade = 1 - k / 14;
+        ctx!.fillStyle = `rgba(243,232,255,${fade * 0.85})`;
+        ctx!.shadowColor = "rgba(216,180,254,1)"; ctx!.shadowBlur = 9 * fade;
+        ctx!.beginPath(); ctx!.arc(x, y, 1.5 * fade + 0.5, 0, Math.PI * 2); ctx!.fill();
+      }
+      ctx!.restore();
+      ctx!.restore();
+    }
+
+    let heroT = 0, raf = 0;
+    function frame() {
+      heroT += 1 / 60;
+      const t = heroT, cx = HW / 2;
+      ctx!.clearRect(0, 0, HW, HH);
+      drawNebulaCloud(cx, RING_Y - 4, t);
+      drawPedestalRing(cx, RING_Y, t);
+      crystals.forEach(c => drawCrystal(cx + c[0], logoY + c[1], c[2], c[3], t * c[5], c[6], c[4]));
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); };
+  }, [height, logoY]);
+
   return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      {/* Orbit ring 1 */}
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-        style={{ position:"absolute", inset:-10, borderRadius:"50%",
-          border:"1.5px dashed rgba(139,92,246,0.35)" }} />
-      {/* Orbit ring 2 */}
-      <motion.div animate={{ rotate: -360 }} transition={{ duration: 14, repeat: Infinity, ease: "linear" }}
-        style={{ position:"absolute", inset:-22, borderRadius:"50%",
-          border:"1px dashed rgba(139,92,246,0.20)" }} />
-      {/* Sparkle particles */}
-      {[0,1,2,3].map(i => (
-        <motion.div key={i}
-          animate={{ opacity:[0,1,0], scale:[0,1.2,0], x:[0,(Math.cos(i*90*Math.PI/180)*28)], y:[0,(Math.sin(i*90*Math.PI/180)*28)] }}
-          transition={{ duration:2, repeat:Infinity, delay:i*0.5, ease:"easeOut" }}
-          style={{ position:"absolute", top:"50%", left:"50%", width:4, height:4, borderRadius:"50%",
-            background:C.accentHi, transform:"translate(-50%,-50%)" }} />
-      ))}
-      {/* Pulsing glow */}
-      <motion.div animate={{ scale:[1,1.4,1], opacity:[0.6,0.2,0.6] }}
-        transition={{ duration:2.5, repeat:Infinity, ease:"easeInOut" }}
-        style={{ position:"absolute", inset:-8, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(139,92,246,0.4) 0%, transparent 70%)" }} />
-      {/* Floating hex */}
-      <motion.div animate={{ y:[-4,4,-4] }} transition={{ duration:3, repeat:Infinity, ease:"easeInOut" }}
-        style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <div style={{
-          width: size, height: size,
-          background: "linear-gradient(135deg, rgba(139,92,246,0.9) 0%, rgba(124,58,237,0.7) 50%, rgba(168,85,247,0.9) 100%)",
-          clipPath: "polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          boxShadow: `0 0 30px rgba(139,92,246,0.6)`,
-        }}>
-          <img src="/icons/icon-512.png" alt="FidCaster"
-            style={{ width: size * 0.55, height: size * 0.55, objectFit:"cover",
-              borderRadius: size * 0.12, display:"block" }} />
-        </div>
-      </motion.div>
+    <div ref={wrapRef} style={{ position: "absolute", inset: 0, height, pointerEvents: "none" }}>
+      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
     </div>
   );
 }
@@ -541,14 +718,38 @@ function AnimatedHexBadge({ size = 90 }: { size?: number }) {
 function LoadingScreen() {
   return (
     <div style={{ minHeight:"100svh", background:C.bg, display:"flex", alignItems:"center",
-      justifyContent:"center", flexDirection:"column", gap:16 }}>
+      justifyContent:"center", flexDirection:"column", gap:22 }}>
       <BgOrbs />
-      <div style={{ position:"relative", zIndex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <motion.div animate={{ rotate:360 }} transition={{ duration:2, repeat:Infinity, ease:"linear" }}
-          style={{ width:48, height:48, borderRadius:"50%",
-            border:"2px solid transparent",
-            background:`linear-gradient(${C.bg},${C.bg}) padding-box, linear-gradient(135deg,${C.accent},${C.accentHi}) border-box` }} />
-        <p style={{ color:C.text3, fontSize:13 }}>Loading FidCaster…</p>
+      <div style={{ position:"relative", zIndex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:24 }}>
+        <div style={{ position:"relative", width:150, height:150, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          {/* expanding radar-ping rings */}
+          {[0, 1, 2].map(i => (
+            <motion.div key={i}
+              initial={{ scale:0.55, opacity:0.7 }}
+              animate={{ scale:1.7, opacity:0 }}
+              transition={{ duration:2.6, repeat:Infinity, delay:i * 0.85, ease:"easeOut" }}
+              style={{ position:"absolute", inset:0, borderRadius:"50%",
+                border:"1.5px solid rgba(168,85,247,0.6)" }} />
+          ))}
+          {/* breathing glow */}
+          <motion.div animate={{ opacity:[0.5, 0.9, 0.5], scale:[1, 1.12, 1] }}
+            transition={{ duration:2.3, repeat:Infinity, ease:"easeInOut" }}
+            style={{ position:"absolute", inset:-8, borderRadius:"50%",
+              background:"radial-gradient(circle, rgba(139,92,246,0.45), transparent 70%)" }} />
+          {/* floating logo */}
+          <motion.img src="/mini-logo.png" alt=""
+            animate={{ y:[-6, 6, -6] }} transition={{ duration:2.6, repeat:Infinity, ease:"easeInOut" }}
+            style={{ width:78, height:78, objectFit:"contain", position:"relative", zIndex:1,
+              filter:"drop-shadow(0 0 20px rgba(168,85,247,0.9)) drop-shadow(0 0 50px rgba(124,58,237,0.5))" }} />
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:11 }}>
+          <p style={{ color:C.text1, fontSize:15, fontWeight:700, letterSpacing:"0.02em" }}>FidCaster</p>
+          <div style={{ width:120, height:3, borderRadius:999, background:"rgba(255,255,255,0.08)", overflow:"hidden" }}>
+            <motion.div animate={{ x:["-120%", "220%"] }} transition={{ duration:1.4, repeat:Infinity, ease:"easeInOut" }}
+              style={{ width:"40%", height:"100%", borderRadius:999,
+                background:`linear-gradient(90deg, transparent, ${C.accentHi}, transparent)` }} />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -589,7 +790,7 @@ function BrowserScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 // NFT PASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
-function NFTPassCard({ fid, ethAddress, onMinted }: { fid: number; ethAddress?: string; onMinted?: () => void }) {
+function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethAddress?: string; qaToken?: string | null; onMinted?: () => void }) {
   const [s, setS]             = useState<"checking"|"idle"|"connecting"|"input"|"minting"|"done"|"error">("checking");
   const [activeAddr, setAddr]  = useState(ethAddress ?? "");
   const [manualAddr, setManual] = useState("");
@@ -608,10 +809,12 @@ function NFTPassCard({ fid, ethAddress, onMinted }: { fid: number; ethAddress?: 
   const hasWallet = !!(typeof window !== "undefined" && (window as any).ethereum);
 
   async function doMint(address: string) {
+    setAddr(address);
     setS("minting");
     try {
       const r = await fetch("/api/nft-pass/mint", {
-        method:"POST", headers:{"Content-Type":"application/json"},
+        method:"POST",
+        headers:{ "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
         body: JSON.stringify({ fid, address }),
       });
       const d = await r.json();
@@ -744,7 +947,7 @@ const OB_STEPS = [
   { Icon: Globe,  title: "Join fidcaster.xyz",    hint: "Step 3 of 3" },
 ];
 
-function OnboardingFlow({ fid, ctx, onComplete }: { fid: number; ctx: MiniCtx | null; onComplete: () => void }) {
+function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: MiniCtx | null; qaToken: string | null; onComplete: () => void }) {
   const [step,    setStep]    = useState(0);
   const [minted,  setMinted]  = useState(false);
   const [eligData, setEligData] = useState<EligibilityData | null>(null);
@@ -812,6 +1015,11 @@ function OnboardingFlow({ fid, ctx, onComplete }: { fid: number; ctx: MiniCtx | 
             Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? eligData.score.toFixed(0) : "unknown"}</strong>.
             You need at least <strong style={{ color:C.text1 }}>{eligData.threshold}</strong> to use FidCaster.
           </p>
+          <button onClick={() => setEligData(null)} style={{ marginTop:12, background:"rgba(244,63,94,0.14)",
+            border:"1px solid rgba(244,63,94,0.3)", color:C.rose, fontSize:12.5, fontWeight:700,
+            borderRadius:10, padding:"8px 14px", cursor:"pointer" }}>
+            Check again
+          </button>
         </div>
       ) : (
         <>
@@ -825,7 +1033,7 @@ function OnboardingFlow({ fid, ctx, onComplete }: { fid: number; ctx: MiniCtx | 
               <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{eligData.score.toFixed(0)}</strong> — eligible ✓</p>
             </div>
           )}
-          <NFTPassCard fid={fid} ethAddress={ethAddr} onMinted={() => setMinted(true)} />
+          <NFTPassCard fid={fid} ethAddress={ethAddr} qaToken={qaToken} onMinted={() => setMinted(true)} />
           {minted
             ? <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
                 background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.22)", borderRadius:14 }}>
@@ -943,21 +1151,59 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
   market_buy:            { label:"Buy FID",       Icon:ShoppingBag },
   market_list:           { label:"List FID",      Icon:Tag         },
   referral:              { label:"Referral",      Icon:Share2      },
+  referral_welcome:      { label:"Welcome bonus", Icon:Share2      },
   quest:                 { label:"Quest",         Icon:Sword       },
   grow_campaign_complete:{ label:"Grow Campaign", Icon:Sprout      },
   promotion:             { label:"Promotion",     Icon:Zap         },
   gift_received:         { label:"Gift received", Icon:Gift        },
   gift:                  { label:"Gift sent",     Icon:Gift        },
+  streak_bonus:          { label:"Streak bonus",  Icon:Star        },
+  nft_holder_bonus:      { label:"NFT holder bonus", Icon:Award    },
 };
+
+// Streak day-chain node: a connector line (if any) + a circle, rendered as
+// flat siblings so every line is a direct flex:1 child of the same row —
+// nesting each line inside its node's own wrapper (whose flex mode differed
+// for the "now" node vs the rest) squashed that one line to ~4px.
+function FragmentChainNode({ index, kind, prevKind, streak }: {
+  index: number; kind: "done" | "now" | "future"; prevKind?: "done" | "now" | "future"; streak: number;
+}) {
+  return (
+    <>
+      {index > 0 && (
+        <div style={{ flex:1, height:2, minWidth:4,
+          background: kind === "future" && prevKind === "future"
+            ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#7C3AED,#FF8C00)" }} />
+      )}
+      {kind === "now" ? (
+        <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0,
+          background:"radial-gradient(circle at 50% 60%,#2A1420,#190D22 70%)",
+          border:"2px solid #FB923C", color:"#fff", fontSize:12, fontWeight:800,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          boxShadow:"0 0 14px rgba(251,146,60,0.75)" }}>
+          {streak}
+        </div>
+      ) : (
+        <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          background: kind === "done" ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : "rgba(255,255,255,0.06)",
+          border: `1px solid ${kind === "done" ? "rgba(255,100,0,0.5)" : C.border}` }}>
+          {kind === "done" && <Check size={10} color="#fff" />}
+        </div>
+      )}
+    </>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowance, allowanceLoading }: {
+function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading, onNav }: {
   fid: number; ctx: MiniCtx | null;
   pts: FidPts | null; stats: StatsData | null;
-  rank: number | null; statsLoading: boolean; ptsLoading: boolean;
+  rank: number | null; board: LBRow[]; statsLoading: boolean; ptsLoading: boolean;
   allowance: AllowanceData | null; allowanceLoading: boolean;
+  onNav: (t: AppTab) => void;
 }) {
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
@@ -983,96 +1229,140 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
   // XP percent
   const xpPct = xpToNext > 0 ? Math.min((xp / xpToNext) * 100, 100) : 100;
 
+  // Streak day-chain: up to 3 recent check-ins, today (highlighted), then 2 upcoming
+  const nextBonusPts = stats?.nextStreakBonusPts ?? 500;
+  const doneCount = Math.max(0, Math.min(streak - 1, 3));
+  const chainDays: { kind: "done" | "now" | "future" }[] = [
+    ...Array.from({ length: 3 }, (_, i) => ({ kind: (i >= 3 - doneCount ? "done" : "future") as "done" | "future" })),
+    { kind: "now" as const },
+    { kind: "future" as const }, { kind: "future" as const },
+  ];
+
   return (
     <motion.div key="home-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
 
-      {/* ── Profile row ── */}
-      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-        <div style={{ position:"relative", flexShrink:0 }}>
-          {pfpUrl
-            ? <img src={pfpUrl} alt="" style={{ width:48, height:48, borderRadius:"50%",
-                border:`2px solid rgba(139,92,246,0.6)` }} />
-            : <div style={{ width:48, height:48, borderRadius:"50%",
-                background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:18, fontWeight:900, color:"#fff", border:`2px solid rgba(139,92,246,0.5)` }}>
-                {username.slice(0,2).toUpperCase()}
-              </div>
-          }
-          {/* Level badge */}
-          <div style={{ position:"absolute", bottom:-4, right:-4, width:20, height:20, borderRadius:"50%",
-            background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-            border:`2px solid ${C.bg}`, display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:9, fontWeight:900, color:"#fff" }}>
-            {level}
+      {/* ── Profile row (matches design/premium-home.html's .profile + .xp) ── */}
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:13 }}>
+          <div style={{ position:"relative", flexShrink:0, width:56, height:56, borderRadius:"50%",
+            background:`linear-gradient(135deg,${C.accent},#C084FC)`, padding:2.5,
+            boxShadow:"0 0 18px rgba(139,92,246,0.5)" }}>
+            {pfpUrl
+              ? <img src={pfpUrl} alt="" style={{ width:"100%", height:"100%", borderRadius:"50%", display:"block", objectFit:"cover" }} />
+              : <div style={{ width:"100%", height:"100%", borderRadius:"50%", background:"#1B1030",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:16, fontWeight:900, color:"#fff" }}>
+                  {username.slice(0,2).toUpperCase()}
+                </div>
+            }
+            <div style={{ position:"absolute", bottom:1, right:1, width:13, height:13, borderRadius:"50%",
+              background:"#22C55E", border:`2.5px solid ${C.bg}`, boxShadow:"0 0 8px rgba(34,197,94,0.9)" }} />
+          </div>
+
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:15.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{displayName}</p>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:2 }}>
+              <p style={{ color:C.text3, fontSize:12.5 }}>@{username}</p>
+              {rank && (
+                <Chip color={C.amber} bg="rgba(245,158,11,0.15)" border="rgba(245,158,11,0.35)">
+                  <Trophy size={10} /> #{rank}
+                </Chip>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display:"flex", alignItems:"center", gap:7, height:34, padding:"0 13px", borderRadius:999, flexShrink:0,
+            background:"linear-gradient(135deg,rgba(124,58,237,.45),rgba(88,28,135,.35))",
+            border:"1px solid rgba(168,85,247,.55)", boxShadow:"0 0 14px rgba(124,58,237,.3)" }}>
+            <Star size={13} color="#FCD34D" fill="#FCD34D" />
+            <span style={{ color:C.text1, fontSize:12.5, fontWeight:700, whiteSpace:"nowrap" }}>Level {level}</span>
           </div>
         </div>
 
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-            <p style={{ color:C.text1, fontWeight:700, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{displayName}</p>
-            {rank && (
-              <Chip color={C.amber} bg="rgba(245,158,11,0.15)" border="rgba(245,158,11,0.35)">
-                <Trophy size={10} /> #{rank}
-              </Chip>
-            )}
+        {/* Full-width XP bar with a shine sweep, right-aligned label below */}
+        <div style={{ marginTop:11 }}>
+          <div style={{ height:7, borderRadius:999, background:"#241A3F", overflow:"hidden", position:"relative" }}>
+            <motion.div initial={{ width:0 }} animate={{ width:`${xpPct}%` }}
+              transition={{ duration:0.9, delay:0.2, ease:"easeOut" }}
+              style={{ height:"100%", borderRadius:999, position:"relative", overflow:"hidden",
+                background:`linear-gradient(90deg,${C.accent},#A855F7 60%,#C084FC)`,
+                boxShadow:"0 0 12px rgba(168,85,247,0.7)" }}>
+              <motion.div animate={{ backgroundPositionX: ["180%", "-80%"] }}
+                transition={{ duration:2.8, repeat:Infinity, ease:"easeInOut" }}
+                style={{ position:"absolute", inset:0,
+                  background:"linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.45) 50%, transparent 70%)",
+                  backgroundSize:"200% 100%" }} />
+            </motion.div>
           </div>
-          {/* XP bar */}
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <p style={{ color:C.text3, fontSize:10, whiteSpace:"nowrap" }}>Lv{level}</p>
-            <div style={{ flex:1, height:5, background:C.border, borderRadius:3 }}>
-              <motion.div initial={{ width:0 }} animate={{ width:`${xpPct}%` }}
-                transition={{ duration:0.8, delay:0.2 }}
-                style={{ height:"100%", borderRadius:3, background:`linear-gradient(90deg,${C.accent},#A855F7)` }} />
-            </div>
-            <p style={{ color:C.text3, fontSize:10, whiteSpace:"nowrap" }}>{xp}/{xpToNext}</p>
-          </div>
+          <p style={{ textAlign:"right", fontSize:11.5, color:C.text3, fontWeight:600, marginTop:6 }}>
+            <b style={{ color:C.text1 }}>{xp.toLocaleString()}</b> / {xpToNext.toLocaleString()} XP
+          </p>
         </div>
       </div>
 
-      {/* ── Total Points hero card ── */}
-      <Card glow style={{ padding:"20px 20px 18px", overflow:"visible" }}>
-        {/* Deep purple radial glow background */}
-        <div style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none",
-          background:"radial-gradient(ellipse at 70% 50%, rgba(139,92,246,0.35) 0%, rgba(109,40,217,0.15) 40%, transparent 70%)" }} />
-        {/* Bottom glow pulse */}
-        <motion.div animate={{ opacity:[0.4,0.8,0.4] }} transition={{ duration:3, repeat:Infinity }}
-          style={{ position:"absolute", bottom:-20, left:"30%", right:"10%", height:60, pointerEvents:"none",
-            background:"radial-gradient(ellipse, rgba(139,92,246,0.5) 0%, transparent 70%)", filter:"blur(18px)" }} />
+      {/* ── Hero scene: nebula/pedestal-ring canvas + floating logo + stat cards ──
+          Cards sit in their own band at the top; the logo is pushed well clear of
+          them (logoY=192 vs cards ending ~112px down) so nothing overlaps. */}
+      <div style={{ position:"relative", height:330 }}>
+        <HeroCanvas height={330} logoY={192} />
 
-        <div style={{ position:"relative", display:"flex", alignItems:"center", gap:8 }}>
-          {/* Points info — left side */}
-          <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ color:"rgba(196,181,253,0.7)", fontSize:11, fontWeight:700,
-              letterSpacing:"0.14em", textTransform:"uppercase", marginBottom:6 }}>Total Points</p>
-            {ptsLoading
-              ? <Loader2 size={28} className="animate-spin" style={{ color:C.accentHi, margin:"10px 0" }} />
-              : <div style={{ fontSize:52, fontWeight:900, letterSpacing:"-0.03em", lineHeight:1,
-                  background:"linear-gradient(135deg,#FFFFFF 0%,#DDD6FE 40%,#A78BFA 100%)",
-                  WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", marginBottom:10 }}>
-                  <Counter to={totalPoints} />
-                </div>
-            }
-            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-              {todayPts > 0 && (
-                <Chip color={C.green} bg="rgba(16,185,129,0.15)" border="rgba(16,185,129,0.35)">
-                  ✓ +{todayPts} today
-                </Chip>
-              )}
-              {rank && (
-                <Chip color={C.amber} bg="rgba(245,158,11,0.15)" border="rgba(245,158,11,0.35)">
-                  <Trophy size={10} /> Global #{rank}
-                </Chip>
-              )}
-            </div>
-          </div>
-
-          {/* Animated 3D gem badge — right side, big */}
-          <div style={{ position:"relative", width:110, height:110, flexShrink:0 }}>
-            <AnimatedHexBadge size={110} />
-          </div>
+        {/* Floating logo — outer plain div does the -50%/-50% centering (a literal
+            transform string), inner motion.div only ever animates y. Framer-motion
+            takes full ownership of `transform` once any motion value is animated,
+            so mixing the two on the SAME element silently drops the centering. */}
+        <div style={{ position:"absolute", left:"50%", top:192, transform:"translate(-50%,-50%)", zIndex:3,
+          width:126, height:126, pointerEvents:"none" }}>
+          <motion.div animate={{ y:[-6, 6, -6] }} transition={{ duration:5.2, repeat:Infinity, ease:"easeInOut" }}
+            style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <img src="/mini-logo.png" alt="" style={{ width:108, height:108, objectFit:"contain",
+              filter:"drop-shadow(0 0 22px rgba(168,85,247,.85)) drop-shadow(0 0 60px rgba(124,58,237,.55)) drop-shadow(0 18px 30px rgba(0,0,0,.55))" }} />
+          </motion.div>
         </div>
-      </Card>
+
+        {/* Stat card — Total Points (left): icon chip + corner glow + big value */}
+        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:162 }}>
+          <div style={{ position:"absolute", top:-30, right:-30, width:90, height:90, borderRadius:"50%",
+            background:"radial-gradient(circle, rgba(139,92,246,0.35), transparent 70%)", pointerEvents:"none" }} />
+          <div style={{ position:"relative", display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+            <div style={{ width:32, height:32, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+              background:"linear-gradient(145deg, rgba(139,92,246,0.4), rgba(88,28,135,0.3))",
+              border:"1px solid rgba(168,85,247,0.55)", boxShadow:"0 0 14px rgba(139,92,246,0.4)" }}>
+              <Zap size={15} color={C.accentHi} />
+            </div>
+            <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Total Points</p>
+          </div>
+          {ptsLoading
+            ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
+            : <div style={{ fontSize:28, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:8,
+                color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
+                <Counter to={totalPoints} />
+              </div>
+          }
+          {todayPts > 0 && (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:11.5, fontWeight:700, color:C.green,
+              background:"rgba(34,197,94,0.14)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:999, padding:"3px 9px" }}>
+              <ArrowUp size={11} />+{todayPts} today
+            </span>
+          )}
+        </GlassStatCard>
+
+        {/* Stat card — Global Rank (right): matching icon-chip layout, gold accent */}
+        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:136, textAlign:"center" }}>
+          <div style={{ position:"absolute", top:-30, left:-20, width:80, height:80, borderRadius:"50%",
+            background:"radial-gradient(circle, rgba(251,191,36,0.3), transparent 70%)", pointerEvents:"none" }} />
+          <div style={{ position:"relative", width:32, height:32, borderRadius:11, margin:"0 auto 8px",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            background:"linear-gradient(145deg, rgba(251,191,36,0.35), rgba(180,83,9,0.25))",
+            border:"1px solid rgba(251,191,36,0.5)", boxShadow:"0 0 14px rgba(251,191,36,0.35)" }}>
+            <Trophy size={16} color={C.amber} />
+          </div>
+          <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6 }}>Global Rank</p>
+          <div style={{ fontSize:26, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
+            textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
+            {rank ? `#${rank}` : "—"}
+          </div>
+        </GlassStatCard>
+      </div>
 
       {/* ── Stats row ── */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
@@ -1081,66 +1371,102 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
           { label:"Completed", sub:"Tasks", value:completed, icon:"⚡", color:C.accentHi, glowing:false },
           { label:"Achvmts", sub:`${unlockedCount} Unlocked`, value:unlockedCount, icon:"🏅", color:C.amber, glowing:false },
           { label:"Referrals", sub:"Friends", value:referrals, icon:"👥", color:C.green, glowing:false },
-        ].map(s => (
-          <div key={s.label} style={{
-            background: s.glowing ? "rgba(255,100,0,0.08)" : C.card,
-            border: `1px solid ${s.glowing ? "rgba(255,100,0,0.3)" : C.border}`,
-            borderRadius:14, padding:"10px 6px 8px", textAlign:"center",
-            boxShadow: s.glowing ? "0 0 16px rgba(255,100,0,0.15)" : "none",
-          }}>
-            <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
-            <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
-            <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
-            <div style={{ color:"rgba(255,255,255,0.2)", fontSize:9, marginTop:1 }}>{s.sub}</div>
-          </div>
+        ].map((s, i) => (
+          <motion.div key={s.label} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
+            transition={{ delay:i*0.06, duration:0.35 }}
+            whileTap={{ scale:0.95 }}
+            style={{
+              background: s.glowing ? "linear-gradient(160deg, rgba(255,120,30,0.16), rgba(255,120,30,0.03))" : "linear-gradient(160deg, rgba(255,255,255,0.065), rgba(255,255,255,0.015))",
+              border: `1px solid ${s.glowing ? "rgba(255,140,50,0.4)" : "rgba(255,255,255,0.13)"}`,
+              borderRadius:18, padding:"10px 6px 8px", textAlign:"center", position:"relative", overflow:"hidden",
+              backdropFilter:"blur(16px) saturate(170%)", WebkitBackdropFilter:"blur(16px) saturate(170%)",
+              boxShadow: s.glowing
+                ? "0 4px 18px rgba(255,100,0,0.2), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -6px 12px -6px rgba(0,0,0,0.2)"
+                : "0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.09), inset 0 -6px 12px -6px rgba(0,0,0,0.15)",
+            }}>
+            <LiquidGlassSurface radius={18} sheen={false} />
+            <div style={{ position:"relative" }}>
+              <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
+              <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
+              <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
+              <div style={{ color:"rgba(255,255,255,0.2)", fontSize:9, marginTop:1 }}>{s.sub}</div>
+            </div>
+          </motion.div>
         ))}
       </div>
 
-      {/* ── Streak card (with fire ring) ── */}
+      {/* ── Streak card (with campfire scene) ── */}
       {streak > 0 && (
-        <Card style={{ padding:"20px", background:"rgba(255,69,0,0.06)", border:"1px solid rgba(255,100,0,0.25)" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-            {/* Fire ring around streak number */}
-            <div style={{ position:"relative", width:140, height:140, flexShrink:0 }}>
-              <FireRing radius={60} size={140} active={true} />
-              {/* Streak number in center */}
-              <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
-                alignItems:"center", justifyContent:"center" }}>
-                <span style={{ fontSize:38, fontWeight:900, lineHeight:1,
-                  background:`linear-gradient(135deg,${C.fire3},${C.fire2})`,
-                  WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>
-                  {streak}
-                </span>
-                <span style={{ color:"rgba(255,150,0,0.8)", fontSize:11, fontWeight:700 }}>days</span>
-              </div>
+        <Card style={{ position:"relative", overflow:"hidden",
+          background:"linear-gradient(115deg,#1C0F14 0%,#170B23 42%,#140A26 100%)",
+          border:"1px solid rgba(251,146,60,0.22)" }}>
+          {/* Campfire canvas — decorative background layer, left column */}
+          <div style={{ position:"absolute", left:0, top:0, width:110, height:"100%", pointerEvents:"none" }}>
+            <CampfireCanvas width={110} height={190} active={true} />
+          </div>
+          <div style={{ position:"relative", zIndex:1, padding:"16px 18px 18px 110px", minHeight:158,
+            display:"flex", flexDirection:"column", justifyContent:"center" }}>
+            {/* Title vertically centered against the fire, not pinned to the top */}
+            <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
+            <p style={{ color:C.text2, fontSize:12, lineHeight:1.5, marginBottom:12 }}>
+              Keep your streak alive and earn bigger bonuses.
+            </p>
+            {/* Day chain — each circle is a fixed-size flex item with connector
+                lines as their OWN flex:1 siblings (not nested inside a node
+                wrapper whose own flex mode varied between "now" and the rest,
+                which squashed the line right before the "now" node down to
+                its 4px minWidth — the visual "bug" in the circles). */}
+            <div style={{ display:"flex", alignItems:"center", gap:0, marginBottom:10 }}>
+              {chainDays.map((d, i) => (
+                <FragmentChainNode key={i} index={i} kind={d.kind}
+                  prevKind={i > 0 ? chainDays[i-1].kind : undefined} streak={streak} />
+              ))}
             </div>
-
-            <div style={{ flex:1 }}>
-              <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
-              <p style={{ color:C.text2, fontSize:12, lineHeight:1.5, marginBottom:12 }}>
-                {streak} day streak — keep it going!
-              </p>
-              {/* Day dots */}
-              <div style={{ display:"flex", gap:5, marginBottom:10 }}>
-                {Array.from({ length: 7 }, (_, i) => {
-                  const active = i < Math.min(streak, 7);
-                  return (
-                    <div key={i} style={{
-                      width:22, height:22, borderRadius:"50%",
-                      background: active ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : C.card,
-                      border: `1px solid ${active ? "rgba(255,100,0,0.5)" : C.border}`,
-                      boxShadow: active ? "0 0 8px rgba(255,100,0,0.4)" : "none",
-                    }} />
-                  );
-                })}
-              </div>
-              {/* Next bonus */}
-              <Chip color="#FF8C00" bg="rgba(255,100,0,0.12)" border="rgba(255,100,0,0.3)">
-                🎯 {streak < 7 ? `${7-streak} day${7-streak!==1?"s":""} to 7-day bonus` : "7-day bonus active!"}
-              </Chip>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</span>
+              <span style={{ color:"#FFD700", fontWeight:900, fontSize:15 }}>+{nextBonusPts}</span>
+              {stats?.streakBonusAwarded && (
+                <Chip color="#FFD700" bg="rgba(255,215,0,0.12)" border="rgba(255,215,0,0.35)">
+                  🎉 credited!
+                </Chip>
+              )}
             </div>
           </div>
         </Card>
+      )}
+
+      {/* ── Top Players podium ── */}
+      {board.length >= 3 && (
+        <div>
+          <SectionLabel>Top Players</SectionLabel>
+          <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
+            {[board[1], board[0], board[2]].map((r, i) => {
+              const isFirst = i === 1;
+              const medal = isFirst ? "🥇" : i === 0 ? "🥈" : "🥉";
+              const ringColor = isFirst ? C.amber : i === 0 ? "#94A3B8" : "#F87171";
+              return (
+                <div key={r.fid} style={{ flex:1, textAlign:"center",
+                  background: isFirst ? "rgba(245,158,11,0.08)" : C.card,
+                  border:`1px solid ${isFirst ? "rgba(245,158,11,0.3)" : C.border}`,
+                  borderRadius:16, padding: isFirst ? "18px 8px 12px" : "14px 8px 10px",
+                  position:"relative", marginBottom: isFirst ? 0 : 8 }}>
+                  <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)", fontSize:18 }}>{medal}</div>
+                  {r.pfpUrl
+                    ? <img src={r.pfpUrl} alt="" style={{ width: isFirst?52:42, height: isFirst?52:42, borderRadius:"50%",
+                        border:`2px solid ${ringColor}`, margin:"6px auto 8px", display:"block" }} />
+                    : <div style={{ width: isFirst?52:42, height: isFirst?52:42, borderRadius:"50%", margin:"6px auto 8px",
+                        background:`linear-gradient(135deg,${C.accent},#A855F7)`, border:`2px solid ${ringColor}`,
+                        display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:"#fff" }}>
+                        {r.username.slice(0,2).toUpperCase()}
+                      </div>
+                  }
+                  <p style={{ color:C.text1, fontSize:12.5, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.username}</p>
+                  <p style={{ color: isFirst ? C.amber : C.text3, fontSize:11, fontWeight:600, marginTop:2 }}>{r.total_points.toLocaleString()} pts</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* ── Daily Missions ── */}
@@ -1201,28 +1527,31 @@ function HomeTab({ fid, ctx, pts, stats, rank, statsLoading, ptsLoading, allowan
                   : pct > 10
                   ? `linear-gradient(90deg,${C.amber},#F97316)`
                   : `linear-gradient(90deg,${C.rose},#FB7185)`;
+                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
                 return (
-                  <Card style={{ padding:"14px 16px" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <Zap size={13} color={C.accentHi} />
-                        <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</span>
-                      </div>
-                      <span style={{ color:C.text3, fontSize:11, fontFamily:"monospace" }}>
-                        {allowance.remaining.toLocaleString()} / {allowance.total.toLocaleString()} left
-                      </span>
+                  <Card glow onClick={() => onNav("earn")}
+                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
+                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
+                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
+                      border:"1.5px solid rgba(168,85,247,0.6)",
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <Zap size={20} color={C.accentHi} />
                     </div>
-                    <div style={{ height:7, background:C.border, borderRadius:4 }}>
-                      <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }}
-                        transition={{ duration:0.8 }}
-                        style={{ height:"100%", borderRadius:4, background:barColor,
-                          boxShadow: pct > 30 ? "0 0 8px rgba(139,92,246,0.5)" : "none" }} />
-                    </div>
-                    {allowance.used > 0 && (
-                      <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>
-                        {allowance.used.toLocaleString()} pts used today
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
+                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
+                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
                       </p>
-                    )}
+                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
+                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Available to earn today"}
+                      </p>
+                    </div>
+                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
+                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
+                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
+                      </div>
+                    </div>
                   </Card>
                 );
               })()
@@ -1433,9 +1762,93 @@ const SCORING_ROWS = [
   { Icon:Gift,        action:"Gift received", pts:"varies" as unknown as number, cap:500 },
 ];
 
+function AllowanceModalShell({ onClose, icon, title, children }: {
+  onClose: () => void; icon: React.ReactNode; title: string; children: React.ReactNode;
+}) {
+  return (
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+      style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
+      <motion.div initial={{ y:40, opacity:0 }} animate={{ y:0, opacity:1 }} exit={{ y:40, opacity:0 }}
+        transition={{ duration:0.22 }} onClick={(e) => e.stopPropagation()}
+        style={{ width:"100%", maxWidth:420, maxHeight:"80vh", overflowY:"auto", background:C.bg,
+          borderTop:`1px solid ${C.borderMed}`, borderRadius:"20px 20px 0 0", padding:"18px 18px 28px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+          <p style={{ color:C.text1, fontWeight:800, fontSize:16, display:"flex", alignItems:"center", gap:8 }}>
+            {icon} {title}
+          </p>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:C.text3, cursor:"pointer" }}><X size={18} /></button>
+        </div>
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => void }) {
+  const [username, setUsername] = useState("");
+  const [amount,   setAmount]   = useState("");
+  const cap = Math.min(remaining, 500);
+  const amountNum = parseInt(amount, 10) || 0;
+  const valid = username.trim().length > 0 && amountNum > 0 && amountNum <= cap;
+
+  function send() {
+    if (!valid) return;
+    const handle = username.trim().replace(/^@/, "");
+    const text = `${amountNum} FidCaster points @${handle}`;
+    window.open(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    onClose();
+  }
+
+  return (
+    <AllowanceModalShell onClose={onClose} icon={<Gift size={16} color={C.green} />} title="Send Gift Points">
+      <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Recipient username</label>
+      <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. dwr.eth"
+        style={{ width:"100%", marginTop:6, marginBottom:14, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
+          background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
+      <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Amount (max {cap.toLocaleString()})</label>
+      <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="50" inputMode="numeric"
+        style={{ width:"100%", marginTop:6, marginBottom:6, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
+          background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
+      {remaining <= 0 && <p style={{ color:C.rose, fontSize:11.5, marginBottom:6 }}>You're out of allowance for today.</p>}
+      <p style={{ color:C.text3, fontSize:11, marginBottom:16, lineHeight:1.6 }}>
+        This opens Warpcast with a pre-filled cast. Posting it debits your allowance and credits the
+        recipient once FidCaster detects it — you'll get a notification either way.
+      </p>
+      <button onClick={send} disabled={!valid}
+        style={{ width:"100%", padding:"13px", borderRadius:14, border:"none", cursor: valid ? "pointer" : "not-allowed",
+          background: valid ? `linear-gradient(90deg,${C.accent},#A855F7)` : C.card, color: valid ? "#fff" : C.text3,
+          fontWeight:800, fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+        <Send size={15} /> Open Warpcast to Send
+      </button>
+    </AllowanceModalShell>
+  );
+}
+
+function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
+  const sections = [
+    { t:"What it is", d:"A daily budget of points you can spend — not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
+    { t:"How much you get", d:"100 base points, plus 2 points per follower, capped at +500. So 0 followers = 100/day, 250+ followers = the max, 600/day." },
+    { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn +50 points and 50 is deducted from today's allowance." },
+    { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
+    { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
+  ];
+  return (
+    <AllowanceModalShell onClose={onClose} icon={<Info size={16} color={C.accentHi} />} title="How Daily Allowance Works">
+      {sections.map((s) => (
+        <div key={s.t} style={{ marginBottom:14 }}>
+          <p style={{ color:C.text1, fontWeight:700, fontSize:13, marginBottom:4 }}>{s.t}</p>
+          <p style={{ color:C.text2, fontSize:12.5, lineHeight:1.6 }}>{s.d}</p>
+        </div>
+      ))}
+    </AllowanceModalShell>
+  );
+}
+
 function AllowanceBarV2({ fid }: { fid: number }) {
   const [data,    setData]    = useState<AllowanceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modal,   setModal]   = useState<"none" | "gift" | "info">("none");
   const midnightMs = (() => { const d=new Date(); d.setUTCDate(d.getUTCDate()+1); d.setUTCHours(0,0,0,0); return d.getTime(); })();
   const countdown = useCountdown(midnightMs);
 
@@ -1447,51 +1860,63 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   const pct = data.total > 0 ? Math.max(0, (data.remaining / data.total) * 100) : 0;
 
   return (
-    <Card glow>
-      <div style={{ padding:"14px 16px 10px" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-          <p style={{ color:C.text1, fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
-            <Zap size={14} color={C.accentHi} /> Daily Allowance
-          </p>
-          <span style={{ color:C.text3, fontSize:12 }}>Resets {countdown}</span>
-        </div>
-        <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
-          <span style={{ color:C.accentHi, fontWeight:900, fontSize:22 }}>{data.remaining.toLocaleString()}</span>
-          <span style={{ color:C.text3, fontSize:13 }}>/ {data.total.toLocaleString()} remaining</span>
-        </div>
-        <div style={{ height:6, background:C.border, borderRadius:3 }}>
-          <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
-            style={{ height:"100%", borderRadius:3,
-              background: pct > 30 ? `linear-gradient(90deg,${C.accent},#A855F7)` : pct > 10 ? `linear-gradient(90deg,${C.amber},#F97316)` : `linear-gradient(90deg,${C.rose},#FB7185)` }} />
-        </div>
-        <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used today"}</p>
-      </div>
-      <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
-        <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
-          target="_blank" rel="noopener noreferrer"
-          style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
-            textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <Zap size={14} color={C.accentHi} />
-            <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+    <>
+      <Card glow>
+        <div style={{ padding:"14px 16px 10px" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
+              <Zap size={14} color={C.accentHi} /> Daily Allowance
+              <button onClick={() => setModal("info")} aria-label="How allowance works"
+                style={{ background:"none", border:"none", cursor:"pointer", padding:0, display:"flex", alignItems:"center" }}>
+                <Info size={13} color={C.text3} />
+              </button>
+            </p>
+            <span style={{ color:C.text3, fontSize:12 }}>Resets {countdown}</span>
           </div>
-          <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-            Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
-          </p>
-          <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
-        </a>
-        <div style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <Gift size={14} color={C.green} />
-            <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
+          <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
+            <span style={{ color:C.accentHi, fontWeight:900, fontSize:22 }}>{data.remaining.toLocaleString()}</span>
+            <span style={{ color:C.text3, fontSize:13 }}>/ {data.total.toLocaleString()} remaining</span>
           </div>
-          <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-            Cast: <span style={{ color:C.accentHi, fontFamily:"monospace", fontSize:10 }}>"{"{N}"} FidCaster points @user"</span>
-          </p>
-          <span style={{ color:C.amber, fontSize:11 }}>−N allowance</span>
+          <div style={{ height:6, background:C.border, borderRadius:3 }}>
+            <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
+              style={{ height:"100%", borderRadius:3,
+                background: pct > 30 ? `linear-gradient(90deg,${C.accent},#A855F7)` : pct > 10 ? `linear-gradient(90deg,${C.amber},#F97316)` : `linear-gradient(90deg,${C.rose},#FB7185)` }} />
+          </div>
+          <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used today"}</p>
         </div>
-      </div>
-    </Card>
+        <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
+          <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
+              textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <Zap size={14} color={C.accentHi} />
+              <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+            </div>
+            <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
+              Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
+            </p>
+            <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
+          </a>
+          <button onClick={() => setModal("gift")}
+            style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px", textAlign:"left",
+              background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <Gift size={14} color={C.green} />
+              <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
+            </div>
+            <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
+              Send points to another user
+            </p>
+            <span style={{ color:C.amber, fontSize:11 }}>−N allowance</span>
+          </button>
+        </div>
+      </Card>
+      <AnimatePresence>
+        {modal === "gift" && <GiftModal remaining={data.remaining} onClose={() => setModal("none")} />}
+        {modal === "info" && <AllowanceInfoModal onClose={() => setModal("none")} />}
+      </AnimatePresence>
+    </>
   );
 }
 
@@ -1719,10 +2144,12 @@ function RewardsTab({ fid }: { fid: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
+function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken }: {
   fid: number; ctx: MiniCtx | null; pts: FidPts | null;
   stats: StatsData | null; rank: number | null; loading: boolean;
+  onNftRecheck: () => void; qaToken: string | null;
 }) {
+  const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder">("idle");
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
@@ -1734,6 +2161,18 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
   const xpPct       = xpToNext > 0 ? Math.min((xp / xpToNext) * 100, 100) : 100;
   const achievements = stats?.achievements ?? [];
   const referrals   = pts?.breakdown.find(b=>b.action_type==="referral")?.total_actions ?? 0;
+  const isNftHolder = !!pts?.breakdown.find(b=>b.action_type==="nft_holder_bonus");
+
+  async function checkNft() {
+    setNftCheck("checking");
+    const r = await apiNftHolderCheck(fid, qaToken);
+    if (r?.isHolder) {
+      onNftRecheck();
+      setNftCheck("idle");
+    } else {
+      setNftCheck("not_holder");
+    }
+  }
 
   return (
     <motion.div key="profile-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
@@ -1769,7 +2208,30 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
           <Chip color={C.amber} bg="rgba(245,158,11,0.1)" border="rgba(245,158,11,0.3)">
             Lv {level}
           </Chip>
+          {isNftHolder && (
+            <Chip color={C.accentHi} bg="rgba(139,92,246,0.14)" border="rgba(139,92,246,0.4)">
+              <Award size={10} /> FasterTask Holder
+            </Chip>
+          )}
         </div>
+        {!isNftHolder && (
+          <div style={{ marginTop:10 }}>
+            <button onClick={checkNft} disabled={nftCheck === "checking"}
+              style={{ background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)",
+                color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:999, padding:"6px 14px",
+                cursor: nftCheck === "checking" ? "default" : "pointer",
+                display:"inline-flex", alignItems:"center", gap:6 }}>
+              {nftCheck === "checking"
+                ? <><Loader2 size={12} className="animate-spin" /> Checking…</>
+                : <><Award size={12} /> Check NFT holder status</>}
+            </button>
+            {nftCheck === "not_holder" && (
+              <p style={{ color:C.text3, fontSize:11, marginTop:6 }}>
+                No FasterTask Pass NFT found for your account yet.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Level progress */}
@@ -1802,7 +2264,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
       </div>
 
       {/* NFT Pass */}
-      <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} />
+      <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} qaToken={qaToken} />
 
       {/* Achievements */}
       {achievements.length > 0 && (
@@ -1884,6 +2346,140 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HEADER DROPDOWNS — bell (real recent activity) + menu (real navigation)
+// ─────────────────────────────────────────────────────────────────────────────
+function useOutsideClose<T extends HTMLElement>(open: boolean, close: () => void) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) close(); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, close]);
+  return ref;
+}
+
+const dropdownWrap: React.CSSProperties = {
+  position:"absolute", right:0, top:42, zIndex:60,
+  background:"linear-gradient(170deg,rgba(34,21,64,0.97),rgba(15,8,30,0.98))",
+  border:"1px solid rgba(168,85,247,0.35)", borderRadius:16,
+  boxShadow:"0 18px 44px rgba(0,0,0,0.6)", padding:8,
+};
+const headerIconBtn = (open: boolean): React.CSSProperties => ({
+  background: open ? "rgba(139,92,246,0.18)" : "none",
+  border:`1px solid ${open ? "rgba(139,92,246,0.4)" : "transparent"}`,
+  borderRadius:"50%", width:34, height:34, color:C.text3, cursor:"pointer",
+  padding:0, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+});
+
+function NotifBell({ fid }: { fid: number }) {
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose<HTMLDivElement>(open, close);
+
+  function load() {
+    setFailed(false);
+    apiHistory(fid).then(h => {
+      if (h === null) setFailed(true); else setHistory(h);
+    });
+  }
+
+  function toggle() {
+    setOpen(o => {
+      const next = !o;
+      if (next && history === null && !failed) load();
+      return next;
+    });
+  }
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <button onClick={toggle} style={headerIconBtn(open)}><Bell size={17} /></button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity:0, y:-8, scale:0.96 }} animate={{ opacity:1, y:0, scale:1 }}
+            exit={{ opacity:0, y:-8, scale:0.96 }} transition={{ duration:0.16 }}
+            style={{ ...dropdownWrap, width:280, maxHeight:340, overflowY:"auto" }}>
+            <p style={{ color:C.text1, fontWeight:800, fontSize:13, padding:"6px 8px 10px" }}>Recent Activity</p>
+            {failed ? (
+              <div style={{ padding:"10px 8px", display:"flex", flexDirection:"column", gap:8, alignItems:"flex-start" }}>
+                <span style={{ color:C.text3, fontSize:12 }}>Couldn't load activity.</span>
+                <button onClick={load} style={{ background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.28)",
+                  color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:8, padding:"5px 10px", cursor:"pointer" }}>
+                  Retry
+                </button>
+              </div>
+            ) : history === null ? (
+              <div style={{ padding:"14px 8px", display:"flex", alignItems:"center", gap:8 }}>
+                <Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} />
+                <span style={{ color:C.text3, fontSize:12 }}>Loading…</span>
+              </div>
+            ) : history.length === 0 ? (
+              <p style={{ color:C.text3, fontSize:12, padding:"10px 8px" }}>No activity yet — go earn some points!</p>
+            ) : history.slice(0, 8).map(h => {
+              const meta = ACTION_MAP[h.action_type] ?? { label: h.action_type, Icon: Zap };
+              return (
+                <div key={h.id} style={{ display:"flex", alignItems:"center", gap:10, padding:8, borderRadius:10 }}>
+                  <div style={{ width:30, height:30, borderRadius:10, background:"rgba(139,92,246,0.14)",
+                    border:"1px solid rgba(139,92,246,0.28)", display:"flex", alignItems:"center",
+                    justifyContent:"center", flexShrink:0 }}>
+                    <meta.Icon size={13} color={C.accentHi} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ color:C.text1, fontSize:12.5 }}>{meta.label} <span style={{ color:C.green, fontWeight:700 }}>+{h.pts}</span></p>
+                    <p style={{ color:C.text3, fontSize:10.5 }}>{timeAgo(h.created_at)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function MenuButton({ onNav }: { onNav: (t: AppTab) => void }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose<HTMLDivElement>(open, close);
+
+  const items: { label: string; Icon: React.ElementType; onClick?: () => void; href?: string }[] = [
+    { label:"Docs", Icon:LayoutList, href:"https://fidcaster.xyz/docs" },
+  ];
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <button onClick={() => setOpen(o => !o)} style={headerIconBtn(open)}><LayoutList size={16} /></button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity:0, y:-8, scale:0.96 }} animate={{ opacity:1, y:0, scale:1 }}
+            exit={{ opacity:0, y:-8, scale:0.96 }} transition={{ duration:0.16 }}
+            style={{ ...dropdownWrap, width:210 }}>
+            {items.map(it => it.href ? (
+              <a key={it.label} href={it.href} target="_blank" rel="noopener noreferrer"
+                style={{ display:"flex", alignItems:"center", gap:10, padding:10, borderRadius:10,
+                  textDecoration:"none", color:C.text1, fontSize:13, fontWeight:600 }}>
+                <it.Icon size={15} color={C.accentHi} /> {it.label}
+              </a>
+            ) : (
+              <button key={it.label} onClick={it.onClick}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:10, borderRadius:10,
+                  background:"none", border:"none", width:"100%", textAlign:"left", cursor:"pointer",
+                  color:C.text1, fontSize:13, fontWeight:600 }}>
+                <it.Icon size={15} color={C.accentHi} /> {it.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BOTTOM NAV
 // ─────────────────────────────────────────────────────────────────────────────
 type AppTab = "home" | "leaderboard" | "earn" | "rewards" | "profile";
@@ -1922,13 +2518,13 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
                   : `0 4px 16px rgba(139,92,246,0.4)` }}
                 transition={{ duration:0.3 }}
                 style={{
-                  width:52, height:52,
-                  background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                  clipPath:"polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%)",
+                  width:52, height:52, borderRadius:"50%",
+                  background:"radial-gradient(circle at 50% 35%,#241442,#12081F 75%)",
+                  border:"1.5px solid rgba(168,85,247,0.6)",
                   display:"flex", alignItems:"center", justifyContent:"center",
                 }}>
-                <img src="/icons/icon-512.png" alt="FidCaster"
-                  style={{ width:26, height:26, objectFit:"cover", borderRadius:6, display:"block" }} />
+                <img src="/mini-logo.png" alt="" style={{ width:26, height:26, objectFit:"contain",
+                  filter:"drop-shadow(0 0 8px rgba(168,85,247,0.9))" }} />
               </motion.div>
               <span style={{ color:isActive?C.accentHi:C.text3, fontSize:10, fontWeight:700 }}>Earn</span>
             </motion.button>
@@ -1965,8 +2561,8 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
-function MainApp({ fid, ctx, added, addApp }: {
-  fid: number; ctx: MiniCtx | null; added: boolean; addApp: () => void;
+function MainApp({ fid, ctx, added, addApp, qaToken }: {
+  fid: number; ctx: MiniCtx | null; added: boolean; addApp: () => void; qaToken: string | null;
 }) {
   const [tab,          setTab]         = useState<AppTab>(() => {
     const p = new URLSearchParams(window.location.search);
@@ -1988,10 +2584,8 @@ function MainApp({ fid, ctx, added, addApp }: {
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
   const rank     = board.find(r => r.fid === fid)?.rank ?? null;
 
-  useEffect(() => {
+  const refetchPts = useCallback(() => {
     setPtsLoad(true);
-    setBoardLoad(true);
-    setStatsLoad(true);
     apiPoints(fid).then(p => {
       setPts(p);
       if (p?.pendingClaimed && p.pendingClaimed > 0) {
@@ -2000,10 +2594,28 @@ function MainApp({ fid, ctx, added, addApp }: {
       }
       setPtsLoad(false);
     });
+  }, [fid]);
+
+  useEffect(() => {
+    setBoardLoad(true);
+    setStatsLoad(true);
+    refetchPts();
     apiMiniBoard(50).then(b => { setBoard(b); setBoardLoad(false); });
     apiStats(fid).then(s => { setStats(s); setStatsLoad(false); });
     apiAllowance(fid).then(a => { setAllowance(a); setAllowLoad(false); });
-  }, [fid]);
+  }, [fid, refetchPts]);
+
+  // NFT holder check: automatic exactly once ever (first time this fid opens
+  // the app), guarded by a per-fid localStorage flag. After that, only the
+  // manual "Check NFT holder status" button in Profile triggers it — no
+  // background polling.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `fc_nft_checked_${fid}`;
+    if (localStorage.getItem(key) === "1") return;
+    localStorage.setItem(key, "1");
+    apiNftHolderCheck(fid, qaToken).then((r) => { if (r?.justAwarded) refetchPts(); });
+  }, [fid, refetchPts, qaToken]);
 
   return (
     <div style={{ minHeight:"100svh", background:C.bg, display:"flex", flexDirection:"column" }}>
@@ -2013,39 +2625,49 @@ function MainApp({ fid, ctx, added, addApp }: {
       <div style={{
         position:"sticky", top:0, zIndex:40, background:`rgba(11,9,16,0.92)`,
         backdropFilter:"blur(14px)", borderBottom:`1px solid ${C.border}`,
-        padding:"10px 16px", display:"flex", alignItems:"center", gap:10,
+        padding:"10px 16px", display:"flex", alignItems:"center", gap:8,
       }}>
-        {/* Logo */}
-        <div style={{ display:"flex", alignItems:"center", gap:8, flex:1 }}>
-          <img src="/icons/icon-512.png" alt="FidCaster"
-            style={{ width:28, height:28, borderRadius:8, objectFit:"cover", display:"block" }} />
-          <span style={{ color:C.text1, fontWeight:800, fontSize:15, letterSpacing:"-0.01em" }}>FidCaster</span>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
+          <img src="/mini-logo.png" alt="" style={{ width:26, height:26, objectFit:"contain",
+            filter:"drop-shadow(0 0 6px rgba(168,85,247,0.7))" }} />
+          <span style={{ color:C.text1, fontWeight:800, fontSize:15, letterSpacing:"-0.01em",
+            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>FidCaster</span>
         </div>
+        <span style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(23,15,44,0.85)",
+          border:"1px solid rgba(139,92,246,0.25)", borderRadius:999, padding:"5px 10px",
+          color:C.text2, fontSize:11, fontWeight:700, flexShrink:0 }}>
+          <span style={{ width:12, height:12, borderRadius:"50%", background:"#0052FF", display:"inline-block" }} />
+          Base
+        </span>
         {!added && (
           <button onClick={addApp} style={{ background:`rgba(139,92,246,0.15)`,
             border:`1px solid rgba(139,92,246,0.3)`, color:C.accentHi, borderRadius:8,
-            padding:"5px 11px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+            padding:"5px 11px", fontSize:12, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
             Add
           </button>
         )}
-        <button style={{ background:"none", border:"none", color:C.text3, cursor:"pointer", padding:4, display:"flex" }}>
-          <Bell size={18} />
-        </button>
+        <NotifBell fid={fid} />
+        <MenuButton onNav={setTab} />
       </div>
 
       {/* Pending-gift claimed toast */}
       <AnimatePresence>
         {claimedPts > 0 && (
-          <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-20 }}
-            style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", zIndex:100,
-              display:"flex", alignItems:"center", gap:10, padding:"12px 18px",
-              background:"rgba(16,185,129,0.15)", border:"1px solid rgba(16,185,129,0.35)",
-              borderRadius:14, backdropFilter:"blur(16px)", whiteSpace:"nowrap" }}>
-            <Gift size={16} color={C.green} />
-            <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>
-              🎁 Claimed {claimedPts.toLocaleString()} gifted points!
-            </p>
-          </motion.div>
+          // Outer plain div owns the translateX(-50%) centering (literal transform
+          // string); inner motion.div only ever animates opacity/y, so framer never
+          // takes over `transform` and drops the centering (same bug class as the
+          // hero logo above — see its comment).
+          <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", zIndex:100 }}>
+            <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-20 }}
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 18px",
+                background:"rgba(16,185,129,0.15)", border:"1px solid rgba(16,185,129,0.35)",
+                borderRadius:14, backdropFilter:"blur(16px)", whiteSpace:"nowrap" }}>
+              <Gift size={16} color={C.green} />
+              <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>
+                🎁 Claimed {claimedPts.toLocaleString()} gifted points!
+              </p>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -2053,9 +2675,9 @@ function MainApp({ fid, ctx, added, addApp }: {
       <div style={{ flex:1, padding:"14px 16px 90px", overflowY:"auto", position:"relative", zIndex:1 }}>
         <AnimatePresence mode="wait">
           {tab === "home" && (
-            <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank}
+            <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
               statsLoading={statsLoad} ptsLoading={ptsLoad}
-              allowance={allowance} allowanceLoading={allowLoad} />
+              allowance={allowance} allowanceLoading={allowLoad} onNav={setTab} />
           )}
           {tab === "leaderboard" && (
             <LeaderboardTab key="lb" fid={fid} board={board} loading={boardLoad} />
@@ -2067,7 +2689,7 @@ function MainApp({ fid, ctx, added, addApp }: {
             <RewardsTab key="rewards" fid={fid} />
           )}
           {tab === "profile" && (
-            <ProfileTab key="profile" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} loading={ptsLoad} />
+            <ProfileTab key="profile" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} loading={ptsLoad} onNftRecheck={refetchPts} qaToken={qaToken} />
           )}
         </AnimatePresence>
       </div>
@@ -2084,27 +2706,35 @@ function MainApp({ fid, ctx, added, addApp }: {
 const ONBOARDED_KEY = "fc_v1_onboarded";
 
 export function MiniAppPage() {
-  const { fid, ctx, ready, inFC, added, addApp } = useSDK();
-  const [onboarded, setOnboarded] = useState(() => {
-    if (typeof window === "undefined") return false;
+  const { fid, ctx, ready, inFC, added, addApp, qaToken } = useSDK();
+  const [onboarded, setOnboarded] = useState(false);
+  const [onboardChecked, setOnboardChecked] = useState(false);
+
+  useEffect(() => {
+    if (!ready || !fid || typeof window === "undefined") return;
+    // Scoped per-fid so a shared device with multiple real Farcaster accounts
+    // can't have account B silently skip onboarding because account A finished it.
+    const key = `${ONBOARDED_KEY}_${fid}`;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("reset") === "1") { localStorage.removeItem(ONBOARDED_KEY); return false; }
+    if (params.get("reset") === "1") { localStorage.removeItem(key); setOnboarded(false); setOnboardChecked(true); return; }
     // ?fid= preview mode — auto-skip onboarding so testers see the main app
-    if (params.get("fid") && params.get("fid") !== "0") return true;
-    return localStorage.getItem(ONBOARDED_KEY) === "1";
-  });
+    if (params.get("fid") && params.get("fid") !== "0") { setOnboarded(true); setOnboardChecked(true); return; }
+    setOnboarded(localStorage.getItem(key) === "1");
+    setOnboardChecked(true);
+  }, [ready, fid]);
 
   function completeOnboarding() {
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    if (fid) localStorage.setItem(`${ONBOARDED_KEY}_${fid}`, "1");
     setOnboarded(true);
   }
 
   if (!ready) return <LoadingScreen />;
   if (!fid)  return <BrowserScreen />;
+  if (!onboardChecked) return <LoadingScreen />;
 
   if (!onboarded) {
-    return <OnboardingFlow fid={fid} ctx={ctx} onComplete={completeOnboarding} />;
+    return <OnboardingFlow fid={fid} ctx={ctx} qaToken={qaToken} onComplete={completeOnboarding} />;
   }
 
-  return <MainApp fid={fid} ctx={ctx} added={added} addApp={addApp} />;
+  return <MainApp fid={fid} ctx={ctx} added={added} addApp={addApp} qaToken={qaToken} />;
 }

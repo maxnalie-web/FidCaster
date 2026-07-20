@@ -14,6 +14,7 @@ import { registerRpcProxy } from "./rpc-proxy.js";
 import { registerPushRoutes } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
 import { registerActionsRoutes } from "./actions-routes.js";
+import { registerAuthRoutes } from "./auth-routes.js";
 import { registerPointsRoutes } from "./points-routes.js";
 import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
@@ -864,6 +865,7 @@ registerProxyRoutes(app); // Neynar read proxy (cached) + Hub direct reads
 registerRpcProxy(app);    // Optimism/Base JSON-RPC proxy (rotating pool, no CORS/rate-limit)
 registerPushRoutes(app);  // FCM token registration + Neynar webhook -> push fan-out
 registerActionsRoutes(app); // Points/airdrop action ledger — no-ops if DATABASE_URL unset
+registerAuthRoutes(app);    // Session/nonce endpoints for binding requests to a real fid
 registerPointsRoutes(app);  // Leaderboard, snapshot, referral, watcher health
 registerMiniRoutes(app);    // Mini app eligibility (Neynar score gate)
 registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wallet)
@@ -1438,11 +1440,16 @@ const FARCASTER_MANIFEST = {
   miniapp: {
     version: "1",
     name: "FidCaster",
-    iconUrl: "https://fidcaster.xyz/icons/icon-512.png",
+    // NOTE: Farcaster's spec technically says iconUrl "must be 1024x1024px
+    // PNG, no alpha" — this is a transparent PNG per explicit user request,
+    // which deviates from that. If the manifest validator rejects it (same
+    // broken-icon symptom as the wrong-size version this replaced), swap
+    // back to icon-1024.png (opaque, spec-compliant, kept in the repo).
+    iconUrl: "https://fidcaster.xyz/icons/icon-1024-transparent.png",
     homeUrl: "https://fidcaster.xyz/mini",
     imageUrl: "https://fidcaster.xyz/og-mini.png",
     buttonTitle: "Open FidCaster",
-    splashImageUrl: "https://fidcaster.xyz/icons/icon-512.png",
+    splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
     splashBackgroundColor: "#1D0070",
     webhookUrl: "https://fidcaster.xyz/api/miniapp/webhook",
     subtitle: "Earn points. Get the airdrop.",
@@ -1466,7 +1473,7 @@ const MINI_EMBED = JSON.stringify({
       type: "launch_miniapp",
       url: "https://fidcaster.xyz/mini",
       name: "FidCaster",
-      splashImageUrl: "https://fidcaster.xyz/icons/icon-512-dark.png",
+      splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
       splashBackgroundColor: "#1D0070",
     },
   },

@@ -15,6 +15,22 @@
 
 import { getAllowance, processPromotionAtomic, processGiftAtomic } from "./db/allowance.js";
 import { getPool } from "./db/pool.js";
+import { getPushTokensForFid, pruneInvalidTokens } from "./push-token-store.js";
+import { sendPushToTokens } from "./fcm.js";
+
+// User-facing feedback for a fire-and-forget system: the user has no other way to
+// learn whether their promotion/gift cast actually earned points or silently failed
+// (e.g. ran out of allowance), since detection happens async via webhook.
+async function notifyFid(targetFid: number, payload: { title: string; body: string; data: Record<string, string> }): Promise<void> {
+  try {
+    const tokens = await getPushTokensForFid(targetFid);
+    if (tokens.length === 0) return;
+    const { invalidTokens } = await sendPushToTokens(tokens, payload);
+    await pruneInvalidTokens(invalidTokens);
+  } catch (e) {
+    console.warn("[promotion-watcher] push notify failed:", (e as Error).message);
+  }
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -78,10 +94,22 @@ export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise
 
     if (!result.ok) {
       console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: ${result.reason}`);
+      if (result.reason === "insufficient_allowance") {
+        await notifyFid(authorFid, {
+          title: "Promotion not counted",
+          body:  "Your promotion cast didn't earn points — you're out of daily allowance.",
+          data:  { type: "promotion_failed", castHash: cast.hash },
+        });
+      }
       return result.reason === "already_processed"; // true = was already handled, not an error
     }
 
     console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: +50 pts, allowance debited`);
+    await notifyFid(authorFid, {
+      title: "Promotion counted! +50 pts",
+      body:  "Your FidCaster promotion cast just earned you 50 points.",
+      data:  { type: "promotion_ok", castHash: cast.hash },
+    });
     return true;
   } catch (e) {
     console.warn(`[promotion] DB error for cast ${cast.hash}:`, (e as Error).message);
@@ -103,7 +131,19 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
   if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_GIFT_PTS) return false;
 
   const recipients = (cast.mentioned_profiles ?? []).filter(p => p.fid !== authorFid);
-  if (recipients.length === 0) return false;
+  if (recipients.length === 0) {
+    // Text matched the gift pattern but no real mention resolved — e.g. the
+    // user edited the pre-filled Warpcast text, mistyped the handle, or the
+    // mentioned account doesn't exist. Without this the cast just silently
+    // never earns anything, contradicting the in-app promise that a
+    // promotion/gift attempt always gets a notification either way.
+    await notifyFid(authorFid, {
+      title: "Gift not sent",
+      body:  "Your gift cast didn't tag a valid recipient, so no points moved.",
+      data:  { type: "gift_failed", castHash: cast.hash },
+    });
+    return false;
+  }
   const recipientFid = recipients[0].fid;
 
   try {
@@ -124,6 +164,13 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
       console.log(
         `[gift] fid ${authorFid} → fid ${recipientFid} (${amount} pts): ${result.reason}`,
       );
+      if (result.reason === "insufficient_allowance") {
+        await notifyFid(authorFid, {
+          title: "Gift not sent",
+          body:  `You didn't have enough daily allowance to gift ${amount} pts.`,
+          data:  { type: "gift_failed", castHash: cast.hash },
+        });
+      }
       return result.reason === "already_processed";
     }
 
@@ -131,6 +178,18 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
       `[gift] fid ${authorFid} → fid ${recipientFid}: ${amount} pts ` +
       (recipientIsRegistered ? "credited directly" : "queued (unregistered)"),
     );
+    await notifyFid(authorFid, {
+      title: "Gift sent!",
+      body:  `Your gift of ${amount} pts was delivered.`,
+      data:  { type: "gift_ok", castHash: cast.hash },
+    });
+    if (recipientIsRegistered) {
+      await notifyFid(recipientFid, {
+        title: "You received a gift!",
+        body:  `+${amount} FidCaster points from a fellow user.`,
+        data:  { type: "gift_received", castHash: cast.hash },
+      });
+    }
     return true;
   } catch (e) {
     console.warn(`[gift] DB error for cast ${cast.hash}:`, (e as Error).message);
@@ -142,9 +201,15 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
 
 export async function processCastForAllowance(cast: NeynarCastForPromotion): Promise<void> {
   try {
-    const wasPromotion = await handlePromotionCast(cast);
-    if (!wasPromotion) {
-      await handleGiftCast(cast);
+    // Gift text ("{N} FidCaster points @user") always also matches
+    // PROMO_REGEX (it contains the word "fidcaster"), so a gift whose
+    // recipient mention happens to overlap with mentioning the app account
+    // would get misclassified as a flat 50pt promotion instead of an N-pt
+    // gift if promotion were checked first. GIFT_REGEX is the more specific,
+    // anchored pattern, so it gets first refusal.
+    const wasGift = await handleGiftCast(cast);
+    if (!wasGift) {
+      await handlePromotionCast(cast);
     }
   } catch (e) {
     console.warn("[promotion-watcher] unexpected error:", (e as Error).message);

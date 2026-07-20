@@ -49,10 +49,12 @@ export type ActionType =
   | "follow" | "unfollow"
   | "market_list" | "market_buy" | "market_cancel"
   | "grow_campaign_start" | "grow_campaign_complete"
-  | "referral" | "quest" | "app_open"
+  | "referral" | "referral_welcome" | "quest" | "app_open"
   | "promotion"      // user cast promoting FidCaster — earns fixed pts
   | "gift"           // user sent a gift cast — 0 pts (allowance already debited)
-  | "gift_received"; // recipient of a gift — pts come from payload.amount
+  | "gift_received"  // recipient of a gift — pts come from payload.amount
+  | "nft_holder_bonus" // one-time bonus for holding a FasterTask Pass NFT
+  | "streak_bonus";  // awarded once per 7-day streak milestone
 
 export interface LogActionParams {
   fid: number;

@@ -13,8 +13,21 @@ import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js"
 import { getPool, isDbConfigured } from "./db/pool.js";
 import { POINTS } from "./db/points.js";
 import { upsertNotificationToken } from "./db/notifications.js";
+import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
+import { getTrustedFid } from "./auth.js";
+import { logUserActionIfNew } from "./db/ledger.js";
 
 const SCORE_THRESHOLD = 30;
+
+// Only actions that actually earn points count toward the daily streak.
+// Zero-value types (unlike, unrecast, unfollow, app_open, grow_campaign_start,
+// gift, market_cancel) are trivially cheap to fabricate a verified row for —
+// counting them would let someone maintain a streak (and collect the 500pt
+// weekly streak_bonus) for free without ever doing anything real.
+const STREAK_EXCLUDED_TYPES = new Set(["streak_bonus", "nft_holder_bonus", "referral_welcome", "referral"]);
+const STREAK_ELIGIBLE_TYPES = Object.entries(POINTS)
+  .filter(([type, v]) => v.pts > 0 && !STREAK_EXCLUDED_TYPES.has(type))
+  .map(([type]) => type);
 
 const limiter = rateLimit({
   windowMs: 60_000,
@@ -26,6 +39,17 @@ const limiter = rateLimit({
 const readLimiter = rateLimit({
   windowMs: 60_000,
   max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Each call does two RPC reads (Optimism ID Registry + Base balanceOfBatch)
+// against free public endpoints, so it gets its own tight, per-caller cap —
+// generous enough for "once on app open + occasional manual re-check", not
+// enough for anyone to hammer the RPC fallback pool.
+const nftCheckLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -140,6 +164,24 @@ export function registerMiniRoutes(app: Express): void {
     res.json(u);
   });
 
+  // ── POST /api/mini/nft-holder-check — on demand, no background polling ──────
+  // Called once automatically on first app open, and again on manual re-check.
+  app.post("/api/mini/nft-holder-check", nftCheckLimiter, async (req: Request, res: Response) => {
+    const body = req.body as { fid?: unknown };
+    const fid = fidFromQuery(body.fid);
+    if (!fid) { res.status(400).json({ error: "fid required" }); return; }
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid))
+      { res.status(401).json({ error: "Token does not match claimed fid" }); return; }
+    try {
+      const result = await checkAndAwardNftHolderBonus(fid);
+      res.json(result);
+    } catch (e) {
+      console.error("[mini] nft-holder-check error:", (e as Error).message);
+      res.status(500).json({ error: "check failed" });
+    }
+  });
+
   // ── GET /api/mini/eligibility?fid=XXX ────────────────────────────────────────
   app.get("/api/mini/eligibility", limiter, async (req: Request, res: Response) => {
     const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
@@ -197,6 +239,8 @@ export function registerMiniRoutes(app: Express): void {
         streak: 0, level: 0, xp: 0, xpToNext: 500,
         totalPoints: 0, todayPoints: 0, missions: MISSIONS.map(m => ({ ...m, count: 0 })),
         achievements: ACHIEVEMENTS.map(a => ({ id: a.id, label: a.label, icon: a.icon, unlocked: false })),
+        nextStreakBonusPts: POINTS.streak_bonus.pts,
+        streakBonusAwarded: false,
         seasonEnd: "2025-12-31",
       });
       return;
@@ -211,10 +255,27 @@ export function registerMiniRoutes(app: Express): void {
         `SELECT DISTINCT (created_at AT TIME ZONE 'UTC')::date::text AS d
          FROM user_actions
          WHERE fid = $1 AND verified = true AND excluded = false
+           AND action_type = ANY($2::text[])
          ORDER BY d DESC LIMIT 365`,
-        [fid],
+        [fid, STREAK_ELIGIBLE_TYPES],
       );
-      const streak = computeStreak(dateRows.map(r => r.d));
+      const activeDates = dateRows.map(r => r.d);
+      const streak = computeStreak(activeDates);
+
+      // Award a one-time 500pt bonus each time the streak crosses a 7-day
+      // milestone, on the day it's actually reached (idempotent on proof).
+      let streakBonusAwarded = false;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      if (streak > 0 && streak % 7 === 0 && activeDates[0] === todayStr) {
+        // Routed through the single write path (db/ledger.ts explicitly
+        // documents logUserAction/logUserActionIfNew as the only place
+        // user_actions should be inserted) instead of a raw INSERT here.
+        streakBonusAwarded = await logUserActionIfNew({
+          fid, actionType: "streak_bonus",
+          payload: { streak }, proof: `streak_bonus:${fid}:${todayStr}`,
+          verified: true,
+        }).catch(() => false);
+      }
 
       // Build the CASE expr for total/today points
       const caseExpr = Object.entries(POINTS)
@@ -249,7 +310,7 @@ export function registerMiniRoutes(app: Express): void {
                   SUM(CASE WHEN action_type='gift_received' THEN COALESCE((payload->>'amount')::int,0) ELSE 0 END) AS gift_sum
            FROM user_actions
            WHERE fid=$1 AND verified=true AND excluded=false
-             AND (created_at AT TIME ZONE 'UTC')::date = CURRENT_DATE
+             AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
            GROUP BY action_type
          ),
          scored AS (
@@ -265,7 +326,7 @@ export function registerMiniRoutes(app: Express): void {
         `SELECT action_type, COUNT(*) AS cnt
          FROM user_actions
          WHERE fid=$1 AND verified=true AND excluded=false
-           AND (created_at AT TIME ZONE 'UTC')::date = CURRENT_DATE
+           AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
          GROUP BY action_type`,
         [fid],
       );
@@ -299,6 +360,8 @@ export function registerMiniRoutes(app: Express): void {
       res.json({
         streak, level, xp, xpToNext, totalPoints, todayPoints,
         missions, achievements,
+        nextStreakBonusPts: POINTS.streak_bonus.pts,
+        streakBonusAwarded,
         seasonEnd: "2025-12-31",
       });
     } catch (e) {
