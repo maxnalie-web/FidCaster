@@ -30,6 +30,51 @@ import { logUserAction, isLedgerConfigured, type ActionType } from "./db/ledger.
 import { isFidEligible } from "./db/eligibility.js";
 import { getPool } from "./db/pool.js";
 import { getTrustedFid } from "./auth.js";
+import { verifyCastHash, verifyReaction, verifyFollow } from "./verification-job.js";
+
+function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
+
+// A few quick tries (Neynar's indexer usually catches up within a couple
+// seconds of a hub-accepted submission) so an action done through
+// FidCaster's own UI feels instant instead of waiting for the next 5-min
+// verification batch. Same checks the batch job runs later as a
+// safety net for anything still unconfirmed after this window - this
+// isn't a weaker check, just an earlier attempt at the same one.
+async function tryInstantVerify(
+  fid: number, actionType: ActionType, cleanProof: string, payload: Record<string, unknown>,
+): Promise<void> {
+  const pool = getPool();
+  if (!pool) return;
+  const attempts = [0, 1500, 3000];
+
+  for (const delay of attempts) {
+    if (delay) await sleep(delay);
+    try {
+      let ok = false;
+      if (actionType === "cast") {
+        ok = (await verifyCastHash(cleanProof, fid)) === "ok";
+      } else if (actionType === "like" || actionType === "recast") {
+        const castHash = payload.castHash as string | undefined;
+        if (!castHash) return; // nothing to check yet - let the batch job's trust window handle it
+        ok = (await verifyReaction(castHash, fid, actionType)) === true;
+      } else if (actionType === "follow") {
+        const targetFid = Number(payload.targetFid);
+        if (!targetFid) return;
+        ok = (await verifyFollow(fid, targetFid)) === true;
+      } else {
+        return; // unlike/unrecast/unfollow - not worth the calls, batch job trust-window handles them
+      }
+      if (ok) {
+        await pool.query(
+          "UPDATE user_actions SET verified = true, verified_at = now() WHERE action_type = $1 AND proof = $2",
+          [actionType, cleanProof],
+        );
+        return;
+      }
+    } catch { /* try again */ }
+  }
+  // Not confirmed within the quick window - leave it for the batch job to keep retrying.
+}
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -125,6 +170,16 @@ export function registerActionsRoutes(app: Express): void {
       }
 
       res.json({ ok: true, eligible });
+
+      // Fire-and-forget: try to confirm it right away instead of waiting for
+      // the next 5-min verification batch, so points from actions taken
+      // inside FidCaster show up quickly. Only for eligible fids - an
+      // ineligible one was already excluded above, nothing to verify.
+      if (eligible) {
+        const cleanProof = proof.startsWith("0x") ? proof.slice(2) : proof;
+        tryInstantVerify(fid, actionType as ActionType, cleanProof, (payload as Record<string, unknown> | undefined) ?? {})
+          .catch(() => {});
+      }
     } catch (e) {
       console.error("[actions] log error:", e);
       res.status(500).json({ error: "Failed to log action" });

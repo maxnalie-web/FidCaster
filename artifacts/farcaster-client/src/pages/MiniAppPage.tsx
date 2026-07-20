@@ -1992,6 +1992,10 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
       ) : (
         <div>
           <SectionLabel>Quests & Actions</SectionLabel>
+          <p style={{ color:C.text3, fontSize:11.5, lineHeight:1.6, marginBottom:12, marginTop:-4 }}>
+            These earn points when done through FidCaster, not from posting on Warpcast directly.
+            Farcaster activity earns through your Allowance instead (Promote / Gift).
+          </p>
           {/* Filter tabs */}
           <div style={{ display:"flex", gap:6, marginBottom:12, overflowX:"auto", paddingBottom:2 }}>
             {filters.map(f => (

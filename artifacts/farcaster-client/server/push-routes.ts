@@ -15,8 +15,6 @@ import {
 } from "./push-token-store.js";
 import { sendPushToTokens, isFcmConfigured } from "./fcm.js";
 import { processCastForAllowance } from "./promotion-watcher.js";
-import { logUserAction } from "./db/ledger.js";
-import { isFidEligible } from "./db/eligibility.js";
 
 const registerLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 const webhookLimiter  = rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false });
@@ -74,18 +72,13 @@ async function syncNeynarWebhookTargets(): Promise<void> {
         name: "fidcaster-push",
         url: webhookUrl,
         subscription: {
-          // target_fids: reactions ON a push-registered user's content (push notifs)
-          // fids:        reactions BY any registered app user, on anything, anywhere
-          //              (points credit - this is what makes like/recast points work
-          //              for actions taken directly in Warpcast, not just FidCaster's
-          //              own UI)
-          "reaction.created": {
-            target_fids: pushFids,
-            ...(authorFids.length > 0 ? { fids: authorFids } : {}),
-          },
+          "reaction.created": { target_fids: pushFids },
           // mentioned_fids: captures promotions (sender mentions APP_FID) + push-mention notifications
-          // author_fids:    captures every cast FROM any registered user - gift/promo
-          //                 detection AND generic cast points, same reasoning as above
+          // author_fids:    captures gift casts FROM any registered user to any recipient
+          // Points for plain casts/likes/recasts are intentionally NOT earned via this
+          // webhook - action points only count when done through FidCaster's own UI
+          // (see actions-routes.ts). Farcaster/Warpcast activity only earns via the
+          // allowance system (Promote/Gift), handled below by processCastForAllowance.
           "cast.created": {
             mentioned_fids: mentionFids,
             ...(authorFids.length > 0 ? { author_fids: authorFids } : {}),
@@ -155,58 +148,16 @@ async function pushToFid(
   await pruneInvalidTokens(invalidTokens);
 }
 
-// Credits like/recast points for the ACTOR who reacted, straight from a
-// Neynar-confirmed webhook event — this is the only path that covers
-// reactions made directly in Warpcast (or any Farcaster client), as opposed
-// to /api/actions/log which only ever fires from FidCaster's own native
-// cast/react UI. Since Neynar itself is reporting the event (not a
-// client-asserted claim), it's logged verified=true immediately — there's
-// nothing left to verify.
-async function logReactionForPoints(
-  actorFid: number, castHash: string | undefined, type: "like" | "recast",
-): Promise<void> {
-  if (!castHash) return;
-  try {
-    const eligible = await isFidEligible(actorFid).catch(() => true);
-    if (!eligible) return;
-    // FidCaster's own native react UI (hub-submit.ts) already reports this
-    // same reaction to /api/actions/log using the reaction's own hub message
-    // hash as proof - a different string than this webhook path's composite
-    // key, so the (action_type, proof) unique index alone wouldn't catch the
-    // duplicate. Check by (fid, type, castHash) instead so a reaction made
-    // through FidCaster's UI doesn't also get double-credited here.
-    const { getPool } = await import("./db/pool.js");
-    const pool = getPool();
-    if (pool) {
-      const { rows } = await pool.query(
-        `SELECT 1 FROM user_actions
-         WHERE fid = $1 AND action_type = $2 AND excluded = false
-           AND payload->>'castHash' = $3 LIMIT 1`,
-        [actorFid, type, castHash],
-      );
-      if (rows.length > 0) return;
-    }
-    await logUserAction({
-      fid: actorFid,
-      actionType: type,
-      payload: { castHash, source: "webhook" },
-      proof: `${castHash}:${type}:${actorFid}`,
-      verified: true,
-    });
-  } catch (e) {
-    console.warn("[push] reaction points log failed:", (e as Error).message);
-  }
-}
-
+// Push notifications only - deliberately does NOT award points. Points
+// only count when the action happens through FidCaster's own UI (see
+// actions-routes.ts) so users have a clear reason to use FidCaster over
+// posting directly in Warpcast. Farcaster/Warpcast activity earns via the
+// allowance system (Promote/Gift) instead - see processCastForAllowance.
 async function handleReactionCreated(
   data: { reaction_type?: string; user?: NeynarUser; cast?: NeynarCast },
 ): Promise<void> {
   const actor = data.user;
   const isLike = data.reaction_type === "like";
-  if (actor && (isLike || data.reaction_type === "recast")) {
-    logReactionForPoints(actor.fid, data.cast?.hash, isLike ? "like" : "recast");
-  }
-
   const targetFid = data.cast?.author?.fid;
   if (!targetFid || !actor || actor.fid === targetFid) return;
   const actorName = actor.display_name || actor.username || `fid ${actor.fid}`;
@@ -251,25 +202,8 @@ async function handleCastCreated(
     author:             actor,
     mentioned_profiles: data.mentioned_profiles,
   });
-
-  // Generic cast points — same reasoning as logReactionForPoints above:
-  // this is what makes plain casts (posted directly in Warpcast, or any
-  // client) earn points at all, independent of and in addition to any
-  // gift/promotion bonus the same cast might also trigger.
-  try {
-    const eligible = await isFidEligible(actor.fid).catch(() => true);
-    if (eligible) {
-      await logUserAction({
-        fid: actor.fid,
-        actionType: "cast",
-        payload: { textLength: data.text?.length ?? 0, source: "webhook" },
-        proof: data.hash,
-        verified: true,
-      });
-    }
-  } catch (e) {
-    console.warn("[push] cast points log failed:", (e as Error).message);
-  }
+  // No generic cast points here on purpose - a plain cast posted directly in
+  // Warpcast doesn't earn action points, only through FidCaster's own UI.
 }
 
 export function registerPushRoutes(app: Express): void {

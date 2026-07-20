@@ -98,7 +98,7 @@ let _timer: ReturnType<typeof setInterval> | null = null;
 
 // ── Neynar helpers ────────────────────────────────────────────────────────────
 
-async function verifyCastHash(hash: string, claimedFid: number): Promise<"ok" | "mismatch" | "notfound"> {
+export async function verifyCastHash(hash: string, claimedFid: number): Promise<"ok" | "mismatch" | "notfound"> {
   try {
     const res = await neynarFetch(
       `${NEYNAR_BASE}/cast?identifier=${encodeURIComponent(hash)}&type=hash`,
@@ -114,7 +114,7 @@ async function verifyCastHash(hash: string, claimedFid: number): Promise<"ok" | 
 
 /** Check if userFid follows targetFid using Neynar bulk user endpoint.
  *  Returns true = confirmed following, false = confirmed NOT following, null = unknown. */
-async function verifyFollow(userFid: number, targetFid: number): Promise<boolean | null> {
+export async function verifyFollow(userFid: number, targetFid: number): Promise<boolean | null> {
   try {
     const res = await neynarFetch(
       `${NEYNAR_BASE}/user/bulk?fids=${targetFid}&viewer_fid=${userFid}`,
@@ -128,7 +128,7 @@ async function verifyFollow(userFid: number, targetFid: number): Promise<boolean
 /** Check if userFid actually liked/recasted castHash, via the same cast-lookup
  *  endpoint verifyCastHash uses, with viewer_fid to get reaction context back.
  *  Returns true = confirmed reacted, false = confirmed not reacted, null = unknown. */
-async function verifyReaction(castHash: string, userFid: number, type: "like" | "recast"): Promise<boolean | null> {
+export async function verifyReaction(castHash: string, userFid: number, type: "like" | "recast"): Promise<boolean | null> {
   try {
     const res = await neynarFetch(
       `${NEYNAR_BASE}/cast?identifier=${encodeURIComponent(castHash)}&type=hash&viewer_fid=${userFid}`,
