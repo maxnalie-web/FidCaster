@@ -298,14 +298,47 @@ function BgOrbs() {
 function Card({ children, style = {}, glow = false, className, onClick }: {
   children: React.ReactNode; style?: React.CSSProperties; glow?: boolean; className?: string; onClick?: () => void;
 }) {
+  // Glass 2.0: brighter translucent border + heavier saturated blur + an inset
+  // top highlight (via box-shadow, not an extra layered div, so it can't ever
+  // shift paint order relative to children that rely on Card being their
+  // nearest positioned ancestor for their own absolute-positioned content).
+  const Comp = onClick ? motion.div : "div";
   return (
-    <div className={className} onClick={onClick} style={{
-      background: C.card, border: `1px solid ${glow ? "rgba(139,92,246,0.35)" : C.border}`,
-      borderRadius: 20, overflow: "hidden", position: "relative", backdropFilter: "blur(14px)",
-      boxShadow: glow ? `0 0 0 1px rgba(139,92,246,0.18), 0 8px 32px rgba(139,92,246,0.12)` : "none",
-      ...style,
-    }}>
+    <Comp
+      className={className}
+      onClick={onClick}
+      {...(onClick ? { whileTap: { scale: 0.985 } } : {})}
+      style={{
+        background: "linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))",
+        border: `1px solid ${glow ? "rgba(168,85,247,0.4)" : "rgba(255,255,255,0.12)"}`,
+        borderRadius: 20, overflow: "hidden", position: "relative",
+        backdropFilter: "blur(16px) saturate(160%)", WebkitBackdropFilter: "blur(16px) saturate(160%)",
+        boxShadow: glow
+          ? "0 0 0 1px rgba(139,92,246,0.2), 0 8px 32px rgba(139,92,246,0.16), inset 0 1px 0 rgba(255,255,255,0.12)"
+          : "0 4px 22px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08)",
+        cursor: onClick ? "pointer" : undefined,
+        ...style,
+      }}
+    >
       {children}
+    </Comp>
+  );
+}
+
+// ── Glass 2.0 stat card — frosted glass with a bright top sheen edge and a
+// slow ambient glow breathing behind it, for the small floating hero cards.
+function GlassStatCard({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <div style={{ position:"relative", zIndex:4, borderRadius:22, padding:"15px 15px 13px",
+      background:"linear-gradient(160deg,rgba(46,26,84,.55),rgba(20,11,38,.65))",
+      border:"1px solid rgba(255,255,255,0.14)",
+      boxShadow:"0 8px 32px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 0 1px rgba(139,92,246,0.12)",
+      backdropFilter:"blur(18px) saturate(160%)", WebkitBackdropFilter:"blur(18px) saturate(160%)",
+      overflow:"hidden", ...style }}>
+      {/* top glass sheen */}
+      <div style={{ position:"absolute", top:0, left:0, right:0, height:"48%", pointerEvents:"none",
+        background:"linear-gradient(180deg, rgba(255,255,255,0.10) 0%, transparent 100%)" }} />
+      <div style={{ position:"relative" }}>{children}</div>
     </div>
   );
 }
@@ -1006,6 +1039,40 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
   nft_holder_bonus:      { label:"NFT holder bonus", Icon:Award    },
 };
 
+// Streak day-chain node: a connector line (if any) + a circle, rendered as
+// flat siblings so every line is a direct flex:1 child of the same row —
+// nesting each line inside its node's own wrapper (whose flex mode differed
+// for the "now" node vs the rest) squashed that one line to ~4px.
+function FragmentChainNode({ index, kind, prevKind, streak }: {
+  index: number; kind: "done" | "now" | "future"; prevKind?: "done" | "now" | "future"; streak: number;
+}) {
+  return (
+    <>
+      {index > 0 && (
+        <div style={{ flex:1, height:2, minWidth:4,
+          background: kind === "future" && prevKind === "future"
+            ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#7C3AED,#FF8C00)" }} />
+      )}
+      {kind === "now" ? (
+        <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0,
+          background:"radial-gradient(circle at 50% 60%,#2A1420,#190D22 70%)",
+          border:"2px solid #FB923C", color:"#fff", fontSize:12, fontWeight:800,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          boxShadow:"0 0 14px rgba(251,146,60,0.75)" }}>
+          {streak}
+        </div>
+      ) : (
+        <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          background: kind === "done" ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : "rgba(255,255,255,0.06)",
+          border: `1px solid ${kind === "done" ? "rgba(255,100,0,0.5)" : C.border}` }}>
+          {kind === "done" && <Check size={10} color="#fff" />}
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME TAB
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1096,28 +1163,27 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
       </div>
 
-      {/* ── Hero scene: nebula/pedestal-ring canvas + floating logo + stat cards ── */}
-      <div style={{ position:"relative", height:280, margin:"0 -2px 4px" }}>
-        <HeroCanvas height={280} logoY={104} />
+      {/* ── Hero scene: nebula/pedestal-ring canvas + floating logo + stat cards ──
+          Cards sit in their own band at the top; the logo is pushed well clear of
+          them (logoY=192 vs cards ending ~112px down) so nothing overlaps. */}
+      <div style={{ position:"relative", height:330 }}>
+        <HeroCanvas height={330} logoY={192} />
 
         {/* Floating logo — outer plain div does the -50%/-50% centering (a literal
             transform string), inner motion.div only ever animates y. Framer-motion
             takes full ownership of `transform` once any motion value is animated,
             so mixing the two on the SAME element silently drops the centering. */}
-        <div style={{ position:"absolute", left:"50%", top:104, transform:"translate(-50%,-50%)", zIndex:3,
-          width:130, height:130, pointerEvents:"none" }}>
+        <div style={{ position:"absolute", left:"50%", top:192, transform:"translate(-50%,-50%)", zIndex:3,
+          width:126, height:126, pointerEvents:"none" }}>
           <motion.div animate={{ y:[-6, 6, -6] }} transition={{ duration:5.2, repeat:Infinity, ease:"easeInOut" }}
             style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <img src="/mini-logo.png" alt="" style={{ width:112, height:112, objectFit:"contain",
+            <img src="/mini-logo.png" alt="" style={{ width:108, height:108, objectFit:"contain",
               filter:"drop-shadow(0 0 22px rgba(168,85,247,.85)) drop-shadow(0 0 60px rgba(124,58,237,.55)) drop-shadow(0 18px 30px rgba(0,0,0,.55))" }} />
           </motion.div>
         </div>
 
-        {/* Stat card — Total Points (left) */}
-        <div style={{ position:"absolute", top:12, left:6, zIndex:4, width:158, padding:"15px 15px 13px",
-          borderRadius:22, background:"linear-gradient(160deg,rgba(31,19,58,.88),rgba(17,9,33,.86))",
-          border:"1px solid rgba(139,92,246,.3)", boxShadow:"0 8px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06)",
-          backdropFilter:"blur(10px)" }}>
+        {/* Stat card — Total Points (left) — glass: brighter blur, gradient sheen edge */}
+        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:160 }}>
           <p style={{ color:"#B9AEDD", fontSize:12.5, fontWeight:600, marginBottom:6 }}>Total Points</p>
           {ptsLoading
             ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
@@ -1131,13 +1197,10 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
               <ArrowUp size={12} />+{todayPts} today
             </p>
           )}
-        </div>
+        </GlassStatCard>
 
         {/* Stat card — Global Rank (right) */}
-        <div style={{ position:"absolute", top:12, right:6, zIndex:4, width:132, textAlign:"center", padding:"15px 15px 13px",
-          borderRadius:22, background:"linear-gradient(160deg,rgba(31,19,58,.88),rgba(17,9,33,.86))",
-          border:"1px solid rgba(139,92,246,.3)", boxShadow:"0 8px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06)",
-          backdropFilter:"blur(10px)" }}>
+        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:134, textAlign:"center" }}>
           <Trophy size={26} color={C.amber} style={{ margin:"0 auto 4px", display:"block",
             filter:"drop-shadow(0 0 10px rgba(251,191,36,0.7))" }} />
           <p style={{ color:"#B9AEDD", fontSize:12.5, fontWeight:600 }}>Global Rank</p>
@@ -1145,7 +1208,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
             {rank ? `#${rank}` : "—"}
           </div>
-        </div>
+        </GlassStatCard>
       </div>
 
       {/* ── Stats row ── */}
@@ -1155,18 +1218,22 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           { label:"Completed", sub:"Tasks", value:completed, icon:"⚡", color:C.accentHi, glowing:false },
           { label:"Achvmts", sub:`${unlockedCount} Unlocked`, value:unlockedCount, icon:"🏅", color:C.amber, glowing:false },
           { label:"Referrals", sub:"Friends", value:referrals, icon:"👥", color:C.green, glowing:false },
-        ].map(s => (
-          <div key={s.label} style={{
-            background: s.glowing ? "rgba(255,100,0,0.08)" : C.card,
-            border: `1px solid ${s.glowing ? "rgba(255,100,0,0.3)" : C.border}`,
-            borderRadius:14, padding:"10px 6px 8px", textAlign:"center",
-            boxShadow: s.glowing ? "0 0 16px rgba(255,100,0,0.15)" : "none",
-          }}>
+        ].map((s, i) => (
+          <motion.div key={s.label} initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
+            transition={{ delay:i*0.06, duration:0.35 }}
+            whileTap={{ scale:0.95 }}
+            style={{
+              background: s.glowing ? "linear-gradient(160deg, rgba(255,120,30,0.14), rgba(255,120,30,0.03))" : "linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.015))",
+              border: `1px solid ${s.glowing ? "rgba(255,140,50,0.35)" : "rgba(255,255,255,0.1)"}`,
+              borderRadius:16, padding:"10px 6px 8px", textAlign:"center",
+              backdropFilter:"blur(14px) saturate(150%)", WebkitBackdropFilter:"blur(14px) saturate(150%)",
+              boxShadow: s.glowing ? "0 0 18px rgba(255,100,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08)" : "inset 0 1px 0 rgba(255,255,255,0.06)",
+            }}>
             <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
             <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
             <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
             <div style={{ color:"rgba(255,255,255,0.2)", fontSize:9, marginTop:1 }}>{s.sub}</div>
-          </div>
+          </motion.div>
         ))}
       </div>
 
@@ -1179,51 +1246,33 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           <div style={{ position:"absolute", left:0, top:0, width:110, height:"100%", pointerEvents:"none" }}>
             <CampfireCanvas width={110} height={190} active={true} />
           </div>
-          {/* Full-width title row on top (never competes with Next Bonus for space —
-              that's what was squeezing "You're on fire!" into an ugly multi-line wrap),
-              then a second row with the day-chain and Next Bonus side by side. */}
-          <div style={{ position:"relative", zIndex:1, padding:"20px 18px 20px 110px" }}>
+          <div style={{ position:"relative", zIndex:1, padding:"16px 18px 18px 110px", minHeight:158,
+            display:"flex", flexDirection:"column", justifyContent:"center" }}>
+            {/* Title vertically centered against the fire, not pinned to the top */}
             <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
-            <p style={{ color:C.text2, fontSize:12, lineHeight:1.5 }}>
+            <p style={{ color:C.text2, fontSize:12, lineHeight:1.5, marginBottom:12 }}>
               Keep your streak alive and earn bigger bonuses.
             </p>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:6, marginTop:10 }}>
-              <span style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</span>
-              <span style={{ color:"#FFD700", fontWeight:900, fontSize:15 }}>+{nextBonusPts}</span>
-            </div>
-            {/* Day chain: recent check-ins → today (highlighted, shows streak count) → upcoming */}
-            <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:8, marginBottom:10 }}>
+            {/* Day chain — each circle is a fixed-size flex item with connector
+                lines as their OWN flex:1 siblings (not nested inside a node
+                wrapper whose own flex mode varied between "now" and the rest,
+                which squashed the line right before the "now" node down to
+                its 4px minWidth — the visual "bug" in the circles). */}
+            <div style={{ display:"flex", alignItems:"center", gap:0, marginBottom:10 }}>
               {chainDays.map((d, i) => (
-                <div key={i} style={{ display:"flex", alignItems:"center", flex: d.kind === "now" ? "0 0 auto" : 1 }}>
-                  {i > 0 && (
-                    <div style={{ flex:1, height:2, minWidth:4,
-                      background: d.kind === "future" && chainDays[i-1].kind === "future"
-                        ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#7C3AED,#FF8C00)" }} />
-                  )}
-                  {d.kind === "now" ? (
-                    <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0,
-                      background:"radial-gradient(circle at 50% 60%,#2A1420,#190D22 70%)",
-                      border:"2px solid #FB923C", color:"#fff", fontSize:12, fontWeight:800,
-                      display:"flex", alignItems:"center", justifyContent:"center",
-                      boxShadow:"0 0 14px rgba(251,146,60,0.75)" }}>
-                      {streak}
-                    </div>
-                  ) : (
-                    <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0,
-                      display:"flex", alignItems:"center", justifyContent:"center",
-                      background: d.kind === "done" ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : "rgba(255,255,255,0.06)",
-                      border: `1px solid ${d.kind === "done" ? "rgba(255,100,0,0.5)" : C.border}` }}>
-                      {d.kind === "done" && <Check size={10} color="#fff" />}
-                    </div>
-                  )}
-                </div>
+                <FragmentChainNode key={i} index={i} kind={d.kind}
+                  prevKind={i > 0 ? chainDays[i-1].kind : undefined} streak={streak} />
               ))}
             </div>
-            {stats?.streakBonusAwarded && (
-              <Chip color="#FFD700" bg="rgba(255,215,0,0.12)" border="rgba(255,215,0,0.35)">
-                🎉 +{nextBonusPts} streak bonus credited!
-              </Chip>
-            )}
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</span>
+              <span style={{ color:"#FFD700", fontWeight:900, fontSize:15 }}>+{nextBonusPts}</span>
+              {stats?.streakBonusAwarded && (
+                <Chip color="#FFD700" bg="rgba(255,215,0,0.12)" border="rgba(255,215,0,0.35)">
+                  🎉 credited!
+                </Chip>
+              )}
+            </div>
           </div>
         </Card>
       )}
