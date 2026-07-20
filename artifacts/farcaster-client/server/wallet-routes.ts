@@ -10,6 +10,7 @@ import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { setWalletAddress, getWalletAddress, getRegistrationCount, isValidAddress } from "./db/wallet-address.js";
 import { isLedgerConfigured } from "./db/ledger.js";
+import { getTrustedFid } from "./auth.js";
 
 const readLimiter  = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false });
 const writeLimiter = rateLimit({ windowMs: 60_000, max:  10, standardHeaders: true, legacyHeaders: false });
@@ -49,6 +50,16 @@ export function registerWalletRoutes(app: Express): void {
     }
     if (!isValidAddress(address)) {
       res.status(400).json({ error: "address must be a valid Ethereum address (0x…)" });
+      return;
+    }
+
+    // Without this, anyone could register or OVERWRITE another fid's airdrop
+    // payout address with no proof of ownership at all - a bare POST with a
+    // victim's fid and an attacker's address would silently redirect their
+    // airdrop allocation. Same trusted-fid pattern as nft-pass/mint.
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || trusted.fid === null || trusted.fid !== fid) {
+      res.status(401).json({ error: "Valid auth token required and must match fid" });
       return;
     }
 

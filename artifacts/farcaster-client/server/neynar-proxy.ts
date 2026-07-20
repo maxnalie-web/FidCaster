@@ -4,6 +4,7 @@ import { cacheGet, cacheGetSWR, cacheSet } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { neynarThrottle, singleFlight, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getCachedProfiles, setCachedProfiles } from "./profile-db.js";
+import { getTrustedFid } from "./auth.js";
 
 const NEYNAR_V2 = "https://api.neynar.com/v2";
 const HUB_BASE  = "https://hub.pinata.cloud/v1";
@@ -438,6 +439,17 @@ export function registerProxyRoutes(app: Express): void {
   // Mounted under /api/farcaster (already in Vite proxy config).
   // Intercepts GET /api/farcaster/notifications before the global 404.
   app.get("/api/farcaster/notifications", async (req: Request, res: Response) => {
+    // A user's notification feed (mentions, replies, likes, priority
+    // notifications) is private - unlike most proxied endpoints here, which
+    // only ever return public Farcaster data, this one must not be
+    // fail-open. Require a verified session/Quick Auth token whose fid
+    // matches the one being requested.
+    const requestedFid = Number(req.query.fid);
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || trusted.fid === null || !Number.isFinite(requestedFid) || trusted.fid !== requestedFid) {
+      res.status(401).json({ error: "Valid auth token required and must match fid" });
+      return;
+    }
     const qs = new URLSearchParams(req.query as Record<string, string>).toString();
     const cacheKey = `neynar:/farcaster/notifications?${qs}`;
 

@@ -116,8 +116,14 @@ export default defineConfig({
     "import.meta.env.VITE_APP_FID": JSON.stringify(
       env.APP_FID ?? process.env.APP_FID ?? ""
     ),
+    // Dev-only convenience (WalletPanel auto-imports it as a local test
+    // wallet) - FarcasterSignIn now signs the app's SignedKeyRequest
+    // server-side (/api/farcaster/signer-request) instead of in the
+    // browser, so the client no longer needs this at all in production.
+    // Baking the real mnemonic into every visitor's JS bundle would give
+    // anyone full control of FidCaster's own Farcaster account.
     "import.meta.env.VITE_APP_MNEMONIC": JSON.stringify(
-      env.APP_MNEMONIC ?? process.env.APP_MNEMONIC ?? ""
+      process.env.NODE_ENV === "production" ? "" : (env.APP_MNEMONIC ?? process.env.APP_MNEMONIC ?? "")
     ),
   },
   build: {

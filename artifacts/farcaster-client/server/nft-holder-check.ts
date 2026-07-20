@@ -119,6 +119,15 @@ export interface NftHolderCheckResult {
  * "Check NFT holder status" button. No background polling — this only
  * runs when a real request asks for it.
  */
+// This endpoint is intentionally reachable without an auth token (fail-open,
+// same rollout stance as the rest of the app), which means a caller can ask
+// about ANY fid repeatedly for free - a negative result only ever does an
+// on-chain read + a Neynar call and is never cached anywhere, so it can be
+// spammed to run up API costs. Short in-memory cooldown on negative results
+// bounds that without touching the auth policy.
+const NEGATIVE_CACHE_MS = 5 * 60_000;
+const negativeCache = new Map<number, number>();
+
 export async function checkAndAwardNftHolderBonus(fid: number): Promise<NftHolderCheckResult> {
   const pool = getPool();
   if (pool) {
@@ -131,8 +140,14 @@ export async function checkAndAwardNftHolderBonus(fid: number): Promise<NftHolde
     }
   }
 
+  const cachedAt = negativeCache.get(fid);
+  if (cachedAt && Date.now() - cachedAt < NEGATIVE_CACHE_MS) {
+    return { isHolder: false, alreadyAwarded: false, justAwarded: false };
+  }
+
   const isHolder = await checkFidHoldsFasterTaskNft(fid);
   if (!isHolder) {
+    negativeCache.set(fid, Date.now());
     return { isHolder: false, alreadyAwarded: false, justAwarded: false };
   }
 

@@ -19,7 +19,7 @@ import { registerPointsRoutes } from "./points-routes.js";
 import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
 import { initLedger } from "./db/ledger.js";
-import { restoreSweptNftHolderBonuses } from "./db/eligibility.js";
+import { restoreSweptNftHolderBonuses, repairEligibilityMisdetection } from "./db/eligibility.js";
 import { initActionsLedgerStore } from "./actions-ledger-store.js";
 import { startVerificationJob } from "./verification-job.js";
 import { startSybilDetector } from "./sybil-detector.js";
@@ -28,6 +28,7 @@ import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
 import { initSignPool } from "./sign-pool.js";
+import { getTrustedFid } from "./auth.js";
 import { healthSnapshot } from "./health.js";
 import { getSpamLabels, scheduleSpamLabelRefresh, awaitInitialSpamLabels } from "./spam-labels.js";
 import { getUserPref, setUserPref } from "./user-prefs.js";
@@ -760,7 +761,22 @@ app.post("/api/farcaster/upload-image", uploadLimiter, async (req, res) => {
       res.status(400).json({ error: "Expected JSON body {image: dataURL}" });
       return;
     }
-    if (typeof fid === "number" && fid > 0 && !isUnderUploadQuota(fid)) {
+    // fid was optional here, and the quota check below only ran `if (typeof
+    // fid === "number" ...)` - simply omitting fid (or sending a bad value)
+    // skipped the daily-quota check entirely, unlimited uploads against the
+    // shared Cloudinary/Imgur account it exists to protect. Require it, and
+    // if a verified session/Quick Auth token is present it must agree (same
+    // fail-open-if-absent pattern used elsewhere while auth rolls out).
+    if (typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0) {
+      res.status(400).json({ error: "fid required" });
+      return;
+    }
+    const trustedUpload = await getTrustedFid(req);
+    if (trustedUpload.invalidToken || (trustedUpload.fid !== null && trustedUpload.fid !== fid)) {
+      res.status(401).json({ error: "Token does not match claimed fid" });
+      return;
+    }
+    if (!isUnderUploadQuota(fid)) {
       res.status(429).json({ error: `Daily upload limit reached (${DAILY_UPLOAD_LIMIT}/day). Try again tomorrow.` });
       return;
     }
@@ -1651,14 +1667,24 @@ const server = app.listen(PORT, host, () => {
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
-  initLedger()
-    .then(() => restoreSweptNftHolderBonuses())
-    .catch((e) => console.error("[ledger] init failed:", e));
   initActionsLedgerStore(); // warm up pg pool + ensure points/airdrop ledger tables exist
-  startVerificationJob();   // background: verify hub action proofs against Neynar
-  startSybilDetector();     // background: hourly fraud exclusion rules
-  startWatchers();          // background: data-gap monitors + /api/watchers/health
-  startWebhookTargetSync(); // background: keep the Neynar cast/reaction webhook's fid filters current
+  // The background jobs below query user_actions/daily_allowance columns
+  // that initLedger()'s schema migration (ALTER TABLE ... ADD COLUMN, etc.)
+  // is responsible for creating - starting them before migration finishes
+  // (e.g. on a fresh database, or right after a deploy that adds a column)
+  // means their first tick(s) can hit "column/relation does not exist".
+  // Each job catches and logs rather than crashing, so this was self-healing
+  // on the next interval, but there's no reason to race it at all - the
+  // server itself is already listening by this point regardless.
+  initLedger()
+    .then(async () => {
+      await Promise.all([restoreSweptNftHolderBonuses(), repairEligibilityMisdetection()]);
+      startVerificationJob();   // background: verify hub action proofs against Neynar
+      startSybilDetector();     // background: hourly fraud exclusion rules
+      startWatchers();          // background: data-gap monitors + /api/watchers/health
+      startWebhookTargetSync(); // background: keep the Neynar cast/reaction webhook's fid filters current
+    })
+    .catch((e) => console.error("[ledger] init failed:", e));
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
   // Hydrate the admin-configured Neynar key (if any was saved via the admin
   // panel in a previous run) into the in-memory rate limiter on boot.

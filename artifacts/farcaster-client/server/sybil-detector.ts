@@ -52,7 +52,7 @@ async function ruleFollowChurn(): Promise<number> {
   const windowSecs = CHURN_WINDOW_DAYS * 86_400;
   const { rowCount } = await pool.query(`
     UPDATE user_actions ua
-    SET excluded = true
+    SET excluded = true, excluded_reason = 'follow_churn'
     WHERE ua.excluded = false
       AND ua.action_type IN ('follow', 'unfollow')
       AND EXISTS (
@@ -74,7 +74,7 @@ async function ruleVelocityCap(): Promise<number> {
   if (!pool) return 0;
   const { rowCount } = await pool.query(`
     UPDATE user_actions ua
-    SET excluded = true
+    SET excluded = true, excluded_reason = 'velocity_cap'
     WHERE ua.excluded = false
       AND ua.action_type IN ('cast','like','unlike','recast','unrecast','follow','unfollow')
       AND (
@@ -83,7 +83,7 @@ async function ruleVelocityCap(): Promise<number> {
           AND ua2.action_type IN ('cast','like','unlike','recast','unrecast','follow','unfollow')
           AND ua2.excluded = false
           AND ua2.created_at BETWEEN ua.created_at - INTERVAL '1 hour'
-                                 AND ua.created_at + INTERVAL '1 hour'
+                                 AND ua.created_at
       ) > 500
   `);
   return rowCount ?? 0;

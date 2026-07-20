@@ -175,13 +175,25 @@ export function createNftPassRouter(): Router {
     // stop a script from cycling fresh throwaway addresses to drain the
     // server-funded mint wallet (balanceOf alone can't catch that, since it's
     // keyed on the address, not the fid).
+    //
+    // The count-check and the log-insert below must be atomic per fid, or
+    // concurrent requests for the same fid can all pass the same stale count
+    // before any of their inserts commit — an advisory lock keyed on the fid
+    // serializes exactly (and only) concurrent attempts for that one fid,
+    // without blocking unrelated fids.
     const pool = getPool();
+    let lockClient: Awaited<ReturnType<NonNullable<typeof pool>["connect"]>> | null = null;
     if (pool) {
-      const { rows } = await pool.query(
+      lockClient = await pool.connect();
+      await lockClient.query("BEGIN");
+      await lockClient.query("SELECT pg_advisory_xact_lock($1)", [fid]);
+      const { rows } = await lockClient.query(
         `SELECT COUNT(*) AS n FROM nft_pass_mint_log WHERE fid = $1 AND created_at > now() - INTERVAL '24 hours'`,
         [fid],
       );
       if (Number(rows[0]?.n ?? 0) >= MAX_MINT_ATTEMPTS_PER_FID_24H) {
+        await lockClient.query("ROLLBACK");
+        lockClient.release();
         return res.status(429).json({ error: "Too many mint attempts for this FID today. Try again later." });
       }
     }
@@ -212,15 +224,25 @@ export function createNftPassRouter(): Router {
         args:         [address as `0x${string}`],
       }) as bigint;
 
-      if (balance > 0n)
+      if (balance > 0n) {
+        if (lockClient) { await lockClient.query("ROLLBACK"); lockClient.release(); lockClient = null; }
         return res.json({ alreadyMinted: true, balance: Number(balance) });
+      }
 
-      // Record the attempt against this fid's 24h cap before spending any gas.
-      if (pool) {
-        await pool.query(
+      // Record the attempt against this fid's 24h cap before spending any gas,
+      // inside the same transaction/lock as the count-check above so the two
+      // are atomic - then release immediately, since the actual on-chain
+      // mint below can take a while and shouldn't hold the DB connection
+      // (or block other fids, though the advisory lock never did that
+      // anyway - it only ever serializes attempts for this one fid).
+      if (lockClient) {
+        await lockClient.query(
           `INSERT INTO nft_pass_mint_log (fid, address) VALUES ($1, $2)`,
           [fid, address],
         ).catch(() => {}); // non-fatal — never block a mint on a logging failure
+        await lockClient.query("COMMIT");
+        lockClient.release();
+        lockClient = null;
       }
 
       // Simulate first (catches reverts cheaply)

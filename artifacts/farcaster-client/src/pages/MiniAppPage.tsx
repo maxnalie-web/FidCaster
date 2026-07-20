@@ -801,12 +801,22 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
   const [err, setErr]          = useState("");
 
   useEffect(() => {
+    // ethAddress can start undefined and arrive later once the host's
+    // real context loads (e.g. ?fid= preview mode sets a placeholder ctx
+    // synchronously, then replaces it once Neynar enrichment resolves) -
+    // that re-fires this effect while the fid-keyed check from the FIRST
+    // run may still be in flight. Without this guard, whichever fetch
+    // resolves last wins regardless of which one is actually current,
+    // so a real "done" from the address check could get overwritten back
+    // to "idle" by a stale fid-check response landing after it.
+    let dead = false;
     if (ethAddress) {
       setAddr(ethAddress);
       fetch(`/api/nft-pass/check/${ethAddress}`)
-        .then(r => r.json()).then(d => { if (d.hasMinted) { setS("done"); onMinted?.(); } else setS("idle"); })
-        .catch(() => setS("idle"));
-      return;
+        .then(r => r.json())
+        .then(d => { if (dead) return; if (d.hasMinted) { setS("done"); onMinted?.(); } else setS("idle"); })
+        .catch(() => { if (!dead) setS("idle"); });
+      return () => { dead = true; };
     }
     // No verified Farcaster address to check — fall back to a fid-keyed
     // lookup, since the mint may have gone through a wallet Farcaster never
@@ -814,10 +824,12 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
     fetch(`/api/nft-pass/check-fid/${fid}`)
       .then(r => r.json())
       .then(d => {
+        if (dead) return;
         if (d.hasMinted) { setAddr(d.address ?? ""); setS("done"); onMinted?.(); }
         else setS("idle");
       })
-      .catch(() => setS("idle"));
+      .catch(() => { if (!dead) setS("idle"); });
+    return () => { dead = true; };
   }, [ethAddress, fid]);
 
   const short = (a: string) => `${a.slice(0,6)}…${a.slice(-4)}`;
@@ -1197,12 +1209,11 @@ function FragmentChainNode({ index, kind, prevKind, streak }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading, onNav, onOpenAllowance }: {
+function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading, onOpenAllowance }: {
   fid: number; ctx: MiniCtx | null;
   pts: FidPts | null; stats: StatsData | null;
   rank: number | null; board: LBRow[]; statsLoading: boolean; ptsLoading: boolean;
   allowance: AllowanceData | null; allowanceLoading: boolean;
-  onNav: (t: AppTab) => void;
   onOpenAllowance: () => void;
 }) {
   const username    = ctx?.user?.username ?? `fid${fid}`;
@@ -1280,7 +1291,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             background:"linear-gradient(135deg,rgba(124,58,237,.45),rgba(88,28,135,.35))",
             border:"1px solid rgba(168,85,247,.55)", boxShadow:"0 0 14px rgba(124,58,237,.3)" }}>
             <Star size={13} color="#FCD34D" fill="#FCD34D" />
-            <span style={{ color:C.text1, fontSize:12.5, fontWeight:700, whiteSpace:"nowrap" }}>Level {level}</span>
+            <span style={{ color:C.text1, fontSize:12.5, fontWeight:700, whiteSpace:"nowrap" }}>Level {statsLoading ? "…" : level}</span>
           </div>
         </div>
 
@@ -1325,7 +1336,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
 
         {/* Stat card — Total Points (left): icon chip + corner glow + big value */}
-        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:162 }}>
+        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:"54%", maxWidth:162 }}>
           <div style={{ position:"absolute", top:-30, right:-30, width:90, height:90, borderRadius:"50%",
             background:"radial-gradient(circle, rgba(139,92,246,0.35), transparent 70%)", pointerEvents:"none" }} />
           <div style={{ position:"relative", display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
@@ -1352,7 +1363,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </GlassStatCard>
 
         {/* Stat card — Global Rank (right): matching icon-chip layout, gold accent */}
-        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:136, textAlign:"center" }}>
+        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:"44%", maxWidth:136, textAlign:"center" }}>
           <div style={{ position:"absolute", top:-30, left:-20, width:80, height:80, borderRadius:"50%",
             background:"radial-gradient(circle, rgba(251,191,36,0.3), transparent 70%)", pointerEvents:"none" }} />
           <div style={{ position:"relative", width:32, height:32, borderRadius:11, margin:"0 auto 8px",
@@ -1392,7 +1403,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             <LiquidGlassSurface radius={18} sheen={false} />
             <div style={{ position:"relative" }}>
               <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
-              <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
+              <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{statsLoading ? "…" : s.value}</div>
               <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
               <div style={{ color:"rgba(255,255,255,0.2)", fontSize:9, marginTop:1 }}>{s.sub}</div>
             </div>
@@ -1572,10 +1583,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
 // ─────────────────────────────────────────────────────────────────────────────
 function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; loading: boolean }) {
   const [tab, setTab] = useState<"global"|"nearby">("global");
-
-  // Season end countdown (configurable)
-  const seasonEnd = new Date("2025-12-31T00:00:00Z").getTime();
-  const seasonCountdown = useCountdown(seasonEnd);
+  const seasonCountdown = "TBA";
 
   if (loading) return (
     <motion.div key="lb-load" {...slideUp} style={{ padding:48, display:"flex", justifyContent:"center" }}>
@@ -1608,7 +1616,7 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
           <Award size={16} color={C.amber} />
           <span style={{ color:C.text2, fontSize:13, fontWeight:600 }}>Season ends</span>
         </div>
-        <span style={{ color:C.amber, fontWeight:700, fontSize:13, fontFamily:"monospace" }}>
+        <span style={{ color:C.amber, fontWeight:700, fontSize:13 }}>
           {seasonCountdown}
         </span>
       </div>
@@ -2213,7 +2221,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
   stats: StatsData | null; rank: number | null; loading: boolean;
   onNftRecheck: () => void; qaToken: string | null;
 }) {
-  const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder">("idle");
+  const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder" | "error">("idle");
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
@@ -2233,6 +2241,10 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
     if (r?.isHolder) {
       onNftRecheck();
       setNftCheck("idle");
+    } else if (r === null) {
+      // apiNftHolderCheck swallows network/API errors and returns null - that's
+      // not the same thing as a confirmed "no NFT found", so don't say it is.
+      setNftCheck("error");
     } else {
       setNftCheck("not_holder");
     }
@@ -2330,7 +2342,9 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
             <div style={{ flex:1 }}>
               <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask NFT Bonus</p>
               <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
-                {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet." : "One-time check, hold the FasterTask Pass to unlock it."}
+                {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet."
+                  : nftCheck === "error" ? "Couldn't check right now — try again."
+                  : "One-time check, hold the FasterTask Pass to unlock it."}
               </p>
             </div>
             <button onClick={checkNft} disabled={nftCheck === "checking"}
@@ -2756,7 +2770,7 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
           {tab === "home" && (
             <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
               statsLoading={statsLoad} ptsLoading={ptsLoad}
-              allowance={allowance} allowanceLoading={allowLoad} onNav={setTab}
+              allowance={allowance} allowanceLoading={allowLoad}
               onOpenAllowance={() => { setEarnView("allowance"); setTab("earn"); }} />
           )}
           {tab === "leaderboard" && (
@@ -2832,12 +2846,15 @@ export function MiniAppPage() {
     if (localStorage.getItem(claimedKey) === "1") return;
     fetch("/api/referral/claim", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(qaToken ? { Authorization: `Bearer ${qaToken}` } : {}),
+      },
       body: JSON.stringify({ code: ref, fid }),
     })
       .then(() => localStorage.setItem(claimedKey, "1"))
       .catch(() => {});
-  }, [ready, fid]);
+  }, [ready, fid, qaToken]);
 
   if (!ready) return <LoadingScreen />;
   if (!fid)  return <BrowserScreen />;

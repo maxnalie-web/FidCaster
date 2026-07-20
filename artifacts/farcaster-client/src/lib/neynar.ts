@@ -350,10 +350,18 @@ export async function getNotifications(
 ): Promise<{ notifications: NeynarNotification[]; next?: { cursor: string } }> {
   const q = new URLSearchParams({ fid: String(fid), limit: "25", priority_mode: "false" });
   if (cursor) q.set("cursor", cursor);
-  // Try server-side cached proxy first; fall back to direct Neynar on failure
+  // Try server-side cached proxy first; fall back to direct Neynar on failure.
+  // The proxy requires a matching session/Quick Auth token now (it returns
+  // someone's private notification feed, so it can't be fail-open like most
+  // of the other proxied read endpoints here).
   try {
+    const { getSessionToken } = await import("./session");
+    const token = getSessionToken(fid);
     const res = await fetch(`/api/farcaster/notifications?${q}`, {
-      headers: { accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: AbortSignal.timeout(10000),
     });
     const ct = res.headers.get("content-type") ?? "";

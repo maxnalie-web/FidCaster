@@ -74,7 +74,13 @@ async function fetchNeynarUser(fid: number): Promise<NeynarUser | null> {
 /** Returns user's cast count (up to 3 is enough — we only need ≥ MIN_CASTS) */
 async function fetchCastCount(fid: number): Promise<number> {
   try {
-    const res = await neynarFetch(`${NEYNAR_BASE}/casts?fid=${fid}&limit=3`);
+    // NOTE: "/casts?fid=X" is not a real Neynar endpoint - it 404'd on every
+    // call, so this always returned 0 regardless of the user's real cast
+    // count. That made castsOk permanently false for EVERY account (not
+    // just new ones), so isFidEligible() returned false for everyone with
+    // NEYNAR_API_KEY set, which fed the R5 sybil sweep excluding real
+    // users' actions network-wide. The correct path is feed/user/casts.
+    const res = await neynarFetch(`${NEYNAR_BASE}/feed/user/casts/?fid=${fid}&limit=3`);
     if (!res.ok) return 0;
     const data = await res.json() as { casts?: unknown[] };
     return data?.casts?.length ?? 0;
@@ -178,6 +184,48 @@ export async function restoreSweptNftHolderBonuses(): Promise<void> {
   }
 }
 
+/** One-time startup repair: fetchCastCount() was calling a Neynar endpoint
+ *  that doesn't exist ("/casts?fid=X" - the real path is
+ *  "/feed/user/casts/") - every call 404'd and silently returned 0, so
+ *  castsOk was permanently false for EVERY account regardless of real
+ *  activity, which made isFidEligible() return false for essentially
+ *  everyone once NEYNAR_API_KEY was set, and the R5 sweep then excluded
+ *  their real actions network-wide. Re-checks every fid currently cached as
+ *  ineligible with the now-fixed logic; for any that are actually eligible,
+ *  flips the flag and restores exactly the rows R5 excluded for that reason
+ *  (excluded_reason = 'ineligible_fid_sweep' - other fraud rules tag their
+ *  own reasons now, so this can't accidentally un-exclude something R1/R2
+ *  legitimately caught). */
+export async function repairEligibilityMisdetection(): Promise<void> {
+  const pool = getPool();
+  if (!pool) return;
+  try {
+    const { rows } = await pool.query(`SELECT fid FROM users WHERE eligible = false LIMIT 2000`);
+    let fixed = 0;
+    for (const row of rows) {
+      const fid = Number(row.fid);
+      const eligible = await computeEligibility(fid);
+      if (!eligible) continue;
+      await pool.query(
+        `UPDATE users SET eligible = true, eligible_checked_at = now() WHERE fid = $1`,
+        [fid],
+      );
+      const { rowCount } = await pool.query(
+        `UPDATE user_actions SET excluded = false, excluded_reason = NULL
+         WHERE fid = $1 AND excluded = true AND excluded_reason = 'ineligible_fid_sweep'`,
+        [fid],
+      );
+      fixed++;
+      if (rowCount && rowCount > 0) {
+        console.log(`[eligibility] fid ${fid}: re-confirmed eligible, restored ${rowCount} row(s)`);
+      }
+    }
+    if (fixed > 0) console.log(`[eligibility] repaired ${fixed} misdetected fid(s)`);
+  } catch (e) {
+    console.warn("[eligibility] repairEligibilityMisdetection failed:", (e as Error).message);
+  }
+}
+
 /** Bulk eligibility sweep used by sybil-detector.
  *  Excludes all user_actions from FIDs confirmed ineligible.
  *
@@ -195,7 +243,7 @@ export async function sweepIneligibleActions(): Promise<number> {
   if (!pool) return 0;
   const { rowCount } = await pool.query(`
     UPDATE user_actions ua
-    SET excluded = true
+    SET excluded = true, excluded_reason = 'ineligible_fid_sweep'
     WHERE ua.excluded = false
       AND ua.action_type != 'nft_holder_bonus'
       AND EXISTS (

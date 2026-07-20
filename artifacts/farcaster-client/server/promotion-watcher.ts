@@ -207,8 +207,18 @@ export async function processCastForAllowance(cast: NeynarCastForPromotion): Pro
     // would get misclassified as a flat 50pt promotion instead of an N-pt
     // gift if promotion were checked first. GIFT_REGEX is the more specific,
     // anchored pattern, so it gets first refusal.
-    const wasGift = await handleGiftCast(cast);
-    if (!wasGift) {
+    //
+    // Fall through to promotion ONLY when the text isn't gift-shaped at
+    // all (GIFT_REGEX doesn't match) — NOT just whenever handleGiftCast()
+    // returns false. A gift-shaped cast that fails for another reason
+    // (bad amount, no resolvable recipient, out of allowance, gift
+    // category cap reached) would otherwise get silently re-processed as
+    // a completely different action (a flat 50pt promotion) instead of
+    // just failing as the gift it actually was — crediting the wrong
+    // amount and bypassing the gift category's own cap.
+    if (GIFT_REGEX.test((cast.text ?? "").trim())) {
+      await handleGiftCast(cast);
+    } else {
       await handlePromotionCast(cast);
     }
   } catch (e) {

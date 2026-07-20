@@ -3,32 +3,10 @@ import { QRCode } from "@farcaster/auth-kit";
 import { useWallet } from "@/hooks/useWallet";
 import { randomSigner, type LocalSigner } from "@/lib/wallet";
 import { fetchProfile, type FarcasterProfile } from "@/lib/farcaster-api";
-import { mnemonicToAccount } from "viem/accounts";
 import {
   Loader2, CheckCircle2, AlertTriangle, ArrowLeft,
   Smartphone, QrCode, ExternalLink, ShieldCheck,
 } from "lucide-react";
-
-// ── Warpcast signed-key-request constants (mirrors server/index.ts) ───────────
-const WARPCAST_API = "https://api.warpcast.com";
-const SIGNED_KEY_REQUEST_VALIDATOR = "0x00000000fc700472606ed4fa22623acf62c60553" as `0x${string}`;
-const SIGNED_KEY_REQUEST_DOMAIN = {
-  name: "Farcaster SignedKeyRequestValidator",
-  version: "1",
-  chainId: 10,
-  verifyingContract: SIGNED_KEY_REQUEST_VALIDATOR,
-} as const;
-const SIGNED_KEY_REQUEST_TYPES = {
-  SignedKeyRequest: [
-    { name: "requestFid", type: "uint256" },
-    { name: "key", type: "bytes" },
-    { name: "deadline", type: "uint256" },
-  ],
-} as const;
-
-// App credentials baked in at build time via vite.config.ts define block
-const APP_FID_RAW = import.meta.env.VITE_APP_FID ?? "";
-const APP_MNEMONIC = import.meta.env.VITE_APP_MNEMONIC ?? "";
 
 const POLL_MS = 2000;
 
@@ -67,60 +45,36 @@ export function FarcasterSignIn({ onBack, onDone }: { onBack: () => void; onDone
     signerRef.current = localSigner;
 
     try {
-      const appFid = Number(APP_FID_RAW);
-      if (!appFid || !APP_MNEMONIC) {
-        throw new Error("SIWF is not configured: VITE_APP_FID / VITE_APP_MNEMONIC missing from build.");
-      }
-
-      // Derive the app's custody account and sign the key request locally
-      const account = mnemonicToAccount(APP_MNEMONIC.trim());
-      const deadline = Math.floor(Date.now() / 1000) + 86_400; // 24 h
-
-      const signature = await account.signTypedData({
-        domain: SIGNED_KEY_REQUEST_DOMAIN,
-        types: SIGNED_KEY_REQUEST_TYPES,
-        primaryType: "SignedKeyRequest",
-        message: {
-          requestFid: BigInt(appFid),
-          key: localSigner.publicKeyHex as `0x${string}`,
-          deadline: BigInt(deadline),
-        },
-      });
-
-      // POST the signed key request directly to Warpcast · no server hop needed
-      const res = await fetch(`${WARPCAST_API}/v2/signed-key-requests`, {
+      // The app's own custody account signs the key request server-side
+      // (see /api/farcaster/signer-request in server/index.ts) - it must
+      // never be done in the browser, since that would mean shipping
+      // FidCaster's own account mnemonic in the client bundle.
+      const res = await fetch("/api/farcaster/signer-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: localSigner.publicKeyHex,
-          requestFid: appFid,
-          signature,
-          deadline,
-        }),
+        body: JSON.stringify({ publicKey: localSigner.publicKeyHex }),
         signal: AbortSignal.timeout(15_000),
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-        throw new Error(String(body.message ?? body.error ?? `Warpcast request failed (${res.status})`));
+        throw new Error(String(body.error ?? `Sign-in request failed (${res.status})`));
       }
 
-      const data = await res.json() as { result?: { signedKeyRequest?: { token?: string; deeplinkUrl?: string } } };
-      const skr = data.result?.signedKeyRequest;
-      if (!skr?.token || !skr.deeplinkUrl) throw new Error("Warpcast returned no deeplink · try again.");
+      const skr = await res.json() as { token?: string; deeplinkUrl?: string };
+      if (!skr.token || !skr.deeplinkUrl) throw new Error("Farcaster returned no deeplink · try again.");
 
       const token = skr.token;
       setDeeplinkUrl(skr.deeplinkUrl);
       setPhase("awaiting");
 
-      // Poll Warpcast directly until the user approves in their Farcaster app
+      // Poll our own server (which polls Farcaster) until the user approves
       pollRef.current = setInterval(async () => {
         try {
-          const r = await fetch(`${WARPCAST_API}/v2/signed-key-request?token=${encodeURIComponent(token)}`);
+          const r = await fetch(`/api/farcaster/signer-request?token=${encodeURIComponent(token)}`);
           if (!r.ok) return;
-          const d = await r.json() as { result?: { signedKeyRequest?: { state?: string; userFid?: number } } };
-          const status = d.result?.signedKeyRequest;
-          if (status?.state === "completed" && status.userFid) {
+          const status = await r.json() as { state?: string; userFid?: number | null };
+          if (status.state === "completed" && status.userFid) {
             stopPoll();
             setPhase("finishing");
             let prof: FarcasterProfile | null = null;
