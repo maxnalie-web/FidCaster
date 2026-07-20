@@ -161,7 +161,11 @@ app.use((req, res, next) => {
     req.headers["sec-fetch-dest"] === "iframe" &&
     req.headers["sec-fetch-site"] === "cross-site";
   if (isMiniAppIframe) {
-    return res.redirect(302, "/mini");
+    // Preserve the query string (e.g. ?ref=CODE for referral links) - a
+    // bare "/mini" redirect was silently dropping it, breaking referrals
+    // for anyone opening a referral link inside a Farcaster client.
+    const qs = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+    return res.redirect(302, "/mini" + qs);
   }
   next();
 });

@@ -2,10 +2,13 @@
  * FasterTask NFT holder bonus.
  *
  * One-time points bonus for users who hold a FasterTask Pass NFT
- * (ERC-1155, Base mainnet, contract 0x9C4F...39Ba). Detected via the
- * user's Farcaster custody address — resolved from their fid through the
- * Farcaster ID Registry on Optimism, the same mechanism FasterTask's own
- * app uses. No wallet connection is required from the FidCaster user.
+ * (ERC-1155, Base mainnet, contract 0x9C4F...39Ba). Checked against the
+ * user's Farcaster custody address (resolved from their fid through the
+ * Farcaster ID Registry on Optimism) AND all of their verified Ethereum
+ * addresses (via Neynar) - most users mint/hold NFTs in a connected wallet,
+ * not their rarely-used custody address, so custody-only would miss almost
+ * every real holder. No wallet connection is required from the FidCaster
+ * user for this check.
  *
  * Awarded once per fid via the normal idempotent (action_type, proof)
  * ledger pattern — see db/ledger.ts logUserAction.
@@ -14,6 +17,7 @@ import { createPublicClient, http, fallback, type Address } from "viem";
 import { base, optimism } from "viem/chains";
 import { getPool } from "./db/pool.js";
 import { logUserAction } from "./db/ledger.js";
+import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 
 const FASTERTASK_NFT_ADDRESS = "0x9C4FfaE666916411aAA546D5834885b5CE4539Ba" as const;
 const ID_REGISTRY_ADDRESS    = "0x00000000Fc6c5F01Fc30151999387Bb99A9f489b" as const;
@@ -50,19 +54,53 @@ const custodyOfAbi = [{
   outputs: [{ name: "owner", type: "address" }],
 }] as const;
 
+async function getVerifiedEthAddresses(fid: number): Promise<Address[]> {
+  if (!hasAnyNeynarKey()) return [];
+  try {
+    const apiKey = await neynarThrottle();
+    const r = await fetch(`https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`, {
+      headers: { accept: "application/json", api_key: apiKey },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!r.ok) {
+      if (r.status === 429) penalize429(apiKey);
+      return [];
+    }
+    const data = await r.json() as {
+      users?: { verified_addresses?: { eth_addresses?: string[] } }[];
+    };
+    return (data.users?.[0]?.verified_addresses?.eth_addresses ?? []) as Address[];
+  } catch {
+    return [];
+  }
+}
+
+async function addressHoldsNft(address: Address): Promise<boolean> {
+  const accounts = TOKEN_IDS.map(() => address);
+  const balances = await baseClient.readContract({
+    address: FASTERTASK_NFT_ADDRESS, abi: balanceOfBatchAbi, functionName: "balanceOfBatch",
+    args: [accounts, TOKEN_IDS],
+  }) as bigint[];
+  return balances.some((b) => b > 0n);
+}
+
 export async function checkFidHoldsFasterTaskNft(fid: number): Promise<boolean> {
   try {
+    const addresses: Address[] = [];
+
     const custody = await optimismClient.readContract({
       address: ID_REGISTRY_ADDRESS, abi: custodyOfAbi, functionName: "custodyOf", args: [BigInt(fid)],
     }) as string;
-    if (!custody || custody.toLowerCase() === ZERO_ADDRESS) return false;
+    if (custody && custody.toLowerCase() !== ZERO_ADDRESS) addresses.push(custody as Address);
 
-    const accounts = TOKEN_IDS.map(() => custody as Address);
-    const balances = await baseClient.readContract({
-      address: FASTERTASK_NFT_ADDRESS, abi: balanceOfBatchAbi, functionName: "balanceOfBatch",
-      args: [accounts, TOKEN_IDS],
-    }) as bigint[];
-    return balances.some((b) => b > 0n);
+    addresses.push(...await getVerifiedEthAddresses(fid));
+
+    if (addresses.length === 0) return false;
+
+    for (const address of addresses) {
+      if (await addressHoldsNft(address)) return true;
+    }
+    return false;
   } catch (e) {
     console.warn(`[nft-holder-job] check failed for fid ${fid}:`, (e as Error).message);
     return false;

@@ -797,12 +797,24 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
   const [err, setErr]          = useState("");
 
   useEffect(() => {
-    if (!ethAddress) { setS("idle"); return; }
-    setAddr(ethAddress);
-    fetch(`/api/nft-pass/check/${ethAddress}`)
-      .then(r => r.json()).then(d => { if (d.hasMinted) { setS("done"); onMinted?.(); } else setS("idle"); })
+    if (ethAddress) {
+      setAddr(ethAddress);
+      fetch(`/api/nft-pass/check/${ethAddress}`)
+        .then(r => r.json()).then(d => { if (d.hasMinted) { setS("done"); onMinted?.(); } else setS("idle"); })
+        .catch(() => setS("idle"));
+      return;
+    }
+    // No verified Farcaster address to check — fall back to a fid-keyed
+    // lookup, since the mint may have gone through a wallet Farcaster never
+    // verified (e.g. detected via sdk.wallet.getEthereumProvider()).
+    fetch(`/api/nft-pass/check-fid/${fid}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.hasMinted) { setAddr(d.address ?? ""); setS("done"); onMinted?.(); }
+        else setS("idle");
+      })
       .catch(() => setS("idle"));
-  }, [ethAddress]);
+  }, [ethAddress, fid]);
 
   const short = (a: string) => `${a.slice(0,6)}…${a.slice(-4)}`;
 
@@ -1181,12 +1193,13 @@ function FragmentChainNode({ index, kind, prevKind, streak }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading, onNav }: {
+function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading, onNav, onOpenAllowance }: {
   fid: number; ctx: MiniCtx | null;
   pts: FidPts | null; stats: StatsData | null;
   rank: number | null; board: LBRow[]; statsLoading: boolean; ptsLoading: boolean;
   allowance: AllowanceData | null; allowanceLoading: boolean;
   onNav: (t: AppTab) => void;
+  onOpenAllowance: () => void;
 }) {
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
@@ -1512,7 +1525,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
                   : `linear-gradient(90deg,${C.rose},#FB7185)`;
                 const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
                 return (
-                  <Card glow onClick={() => onNav("earn")}
+                  <Card glow onClick={onOpenAllowance}
                     style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
                     <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
                       background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
@@ -1903,7 +1916,10 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   );
 }
 
-function EarnTab({ fid, pts, loading }: { fid: number; pts: FidPts | null; loading: boolean }) {
+function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; pts: FidPts | null; loading: boolean; initialView?: "actions"|"allowance" }) {
+  const [view, setView] = useState<"actions"|"allowance">(initialView);
+  useEffect(() => { setView(initialView); }, [initialView]);
+
   const [filter, setFilter] = useState<"all"|"social"|"market"|"referral">("all");
   const total = pts?.total_points ?? 0;
 
@@ -1922,59 +1938,75 @@ function EarnTab({ fid, pts, loading }: { fid: number; pts: FidPts | null; loadi
 
   return (
     <motion.div key="earn-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      <AllowanceBarV2 fid={fid} />
-
-      <div>
-        <SectionLabel>Quests & Actions</SectionLabel>
-        {/* Filter tabs */}
-        <div style={{ display:"flex", gap:6, marginBottom:12, overflowX:"auto", paddingBottom:2 }}>
-          {filters.map(f => (
-            <button key={f.id} onClick={() => setFilter(f.id)}
-              style={{ padding:"6px 14px", borderRadius:999, border:`1px solid ${filter===f.id?C.accent:C.border}`,
-                background: filter===f.id ? `rgba(139,92,246,0.2)` : "transparent",
-                color: filter===f.id ? C.accentHi : C.text3,
-                fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap",
-                transition:"all 0.15s" }}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <Card>
-          {filtered.map((row, i) => {
-            const earnedRow = pts?.breakdown.find(b => b.action_type === row.action.toLowerCase().replace(/ /g,"_"));
-            const earned = earnedRow?.points_earned ?? 0;
-            const pct = row.cap > 0 ? Math.min((earned / row.cap) * 100, 100) : 0;
-            return (
-              <div key={row.action}>
-                <div style={{ padding:"11px 14px" }}>
-                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <div style={{ width:32, height:32, borderRadius:10, background:"rgba(139,92,246,0.12)",
-                        border:`1px solid rgba(139,92,246,0.2)`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                        <row.Icon size={14} color={C.accentHi} />
-                      </div>
-                      <span style={{ color:C.text1, fontSize:13 }}>{row.action}</span>
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <Chip>+{row.pts} pts</Chip>
-                      <span style={{ color:C.text3, fontSize:10 }}>/{row.cap}</span>
-                    </div>
-                  </div>
-                  {!loading && earned > 0 && (
-                    <div style={{ height:3, background:C.border, borderRadius:2 }}>
-                      <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }}
-                        transition={{ duration:0.6, delay:i*0.04 }}
-                        style={{ height:"100%", borderRadius:2, background:`linear-gradient(90deg,${C.accent},#A855F7)` }} />
-                    </div>
-                  )}
-                </div>
-                {i < filtered.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
-              </div>
-            );
-          })}
-        </Card>
+      {/* Actions vs Allowance — two separate concerns, one segmented switch */}
+      <div style={{ display:"flex", gap:6, background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
+        borderRadius:14, padding:4 }}>
+        {([["actions","Actions"],["allowance","Allowance"]] as const).map(([id,label]) => (
+          <button key={id} onClick={() => setView(id)}
+            style={{ flex:1, padding:"9px 0", borderRadius:11, border:"none",
+              background: view===id ? `linear-gradient(135deg,${C.accent},#A855F7)` : "transparent",
+              color: view===id ? "#fff" : C.text3, fontSize:13, fontWeight:700, cursor:"pointer",
+              transition:"all 0.15s" }}>
+            {label}
+          </button>
+        ))}
       </div>
+
+      {view === "allowance" ? (
+        <AllowanceBarV2 fid={fid} />
+      ) : (
+        <div>
+          <SectionLabel>Quests & Actions</SectionLabel>
+          {/* Filter tabs */}
+          <div style={{ display:"flex", gap:6, marginBottom:12, overflowX:"auto", paddingBottom:2 }}>
+            {filters.map(f => (
+              <button key={f.id} onClick={() => setFilter(f.id)}
+                style={{ padding:"6px 14px", borderRadius:999, border:`1px solid ${filter===f.id?C.accent:C.border}`,
+                  background: filter===f.id ? `rgba(139,92,246,0.2)` : "transparent",
+                  color: filter===f.id ? C.accentHi : C.text3,
+                  fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap",
+                  transition:"all 0.15s" }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <Card>
+            {filtered.map((row, i) => {
+              const earnedRow = pts?.breakdown.find(b => b.action_type === row.action.toLowerCase().replace(/ /g,"_"));
+              const earned = earnedRow?.points_earned ?? 0;
+              const pct = row.cap > 0 ? Math.min((earned / row.cap) * 100, 100) : 0;
+              return (
+                <div key={row.action}>
+                  <div style={{ padding:"11px 14px" }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ width:32, height:32, borderRadius:10, background:"rgba(139,92,246,0.12)",
+                          border:`1px solid rgba(139,92,246,0.2)`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                          <row.Icon size={14} color={C.accentHi} />
+                        </div>
+                        <span style={{ color:C.text1, fontSize:13 }}>{row.action}</span>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <Chip>+{row.pts} pts</Chip>
+                        <span style={{ color:C.text3, fontSize:10 }}>/{row.cap}</span>
+                      </div>
+                    </div>
+                    {!loading && earned > 0 && (
+                      <div style={{ height:3, background:C.border, borderRadius:2 }}>
+                        <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }}
+                          transition={{ duration:0.6, delay:i*0.04 }}
+                          style={{ height:"100%", borderRadius:2, background:`linear-gradient(90deg,${C.accent},#A855F7)` }} />
+                      </div>
+                    )}
+                  </div>
+                  {i < filtered.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </div>
+              );
+            })}
+          </Card>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -2197,24 +2229,6 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
             </Chip>
           )}
         </div>
-        {!isNftHolder && (
-          <div style={{ marginTop:10 }}>
-            <button onClick={checkNft} disabled={nftCheck === "checking"}
-              style={{ background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)",
-                color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:999, padding:"6px 14px",
-                cursor: nftCheck === "checking" ? "default" : "pointer",
-                display:"inline-flex", alignItems:"center", gap:6 }}>
-              {nftCheck === "checking"
-                ? <><Loader2 size={12} className="animate-spin" /> Checking…</>
-                : <><Award size={12} /> Check NFT holder status</>}
-            </button>
-            {nftCheck === "not_holder" && (
-              <p style={{ color:C.text3, fontSize:11, marginTop:6 }}>
-                No FasterTask Pass NFT found for your account yet.
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Level progress */}
@@ -2248,6 +2262,40 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
 
       {/* NFT Pass */}
       <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} qaToken={qaToken} />
+
+      {/* FasterTask NFT holder bonus — a separate, one-time-only check */}
+      <Card style={{ padding:"14px 16px" }}>
+        {isNftHolder ? (
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <Award size={18} color={C.accentHi} />
+            <div style={{ flex:1 }}>
+              <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask Holder</p>
+              <p style={{ color:C.green, fontSize:11.5, marginTop:1, display:"flex", alignItems:"center", gap:4 }}>
+                <Check size={11} /> Bonus credited
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <Award size={18} color={C.text3} />
+            <div style={{ flex:1 }}>
+              <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask NFT Bonus</p>
+              <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
+                {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet." : "One-time check — hold the FasterTask Pass to unlock it."}
+              </p>
+            </div>
+            <button onClick={checkNft} disabled={nftCheck === "checking"}
+              style={{ background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)",
+                color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:999, padding:"7px 12px",
+                cursor: nftCheck === "checking" ? "default" : "pointer",
+                display:"inline-flex", alignItems:"center", gap:6, flexShrink:0 }}>
+              {nftCheck === "checking"
+                ? <Loader2 size={12} className="animate-spin" />
+                : <>Check</>}
+            </button>
+          </div>
+        )}
+      </Card>
 
       {/* Achievements */}
       {achievements.length > 0 && (
@@ -2562,6 +2610,11 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
   const [statsLoad,    setStatsLoad]   = useState(true);
   const [allowLoad,    setAllowLoad]   = useState(true);
   const [claimedPts,   setClaimedPts]  = useState(0);
+  // Which sub-view the Earn tab opens on. Actions (quests) and Allowance are
+  // separate concerns that happen to live under the same bottom-nav tab —
+  // tapping the Home "Daily Allowance" card should land directly on the
+  // Allowance sub-view, not the quest list.
+  const [earnView,     setEarnView]    = useState<"actions"|"allowance">("actions");
 
   const username = ctx?.user?.username ?? `fid${fid}`;
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
@@ -2660,13 +2713,14 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
           {tab === "home" && (
             <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
               statsLoading={statsLoad} ptsLoading={ptsLoad}
-              allowance={allowance} allowanceLoading={allowLoad} onNav={setTab} />
+              allowance={allowance} allowanceLoading={allowLoad} onNav={setTab}
+              onOpenAllowance={() => { setEarnView("allowance"); setTab("earn"); }} />
           )}
           {tab === "leaderboard" && (
             <LeaderboardTab key="lb" fid={fid} board={board} loading={boardLoad} />
           )}
           {tab === "earn" && (
-            <EarnTab key="earn" fid={fid} pts={pts} loading={ptsLoad} />
+            <EarnTab key="earn" fid={fid} pts={pts} loading={ptsLoad} initialView={earnView} />
           )}
           {tab === "rewards" && (
             <RewardsTab key="rewards" fid={fid} />
@@ -2678,7 +2732,7 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
       </div>
 
       {/* Bottom nav */}
-      <BottomNav tab={tab} onTab={setTab} />
+      <BottomNav tab={tab} onTab={(t) => { if (t === "earn") setEarnView("actions"); setTab(t); }} />
     </div>
   );
 }
@@ -2719,6 +2773,28 @@ export function MiniAppPage() {
     if (fid) localStorage.setItem(`${ONBOARDED_KEY}_${fid}`, "1");
     setOnboarded(true);
   }
+
+  // Claim a referral code from ?ref= if present. The referral link people
+  // share is https://fidcaster.xyz/?ref=CODE - this was generated correctly
+  // but nothing ever POSTed it to the server, so referrals silently never
+  // registered. claimReferral() is idempotent server-side (unique constraint
+  // on referred_fid), but guard with a local flag too so we don't spam the
+  // endpoint on every mount.
+  useEffect(() => {
+    if (!ready || !fid || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (!ref) return;
+    const claimedKey = `fc_ref_claimed_${fid}`;
+    if (localStorage.getItem(claimedKey) === "1") return;
+    fetch("/api/referral/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: ref, fid }),
+    })
+      .then(() => localStorage.setItem(claimedKey, "1"))
+      .catch(() => {});
+  }, [ready, fid]);
 
   if (!ready) return <LoadingScreen />;
   if (!fid)  return <BrowserScreen />;

@@ -125,6 +125,26 @@ export function createNftPassRouter(): Router {
     }
   });
 
+  // ── GET /api/nft-pass/check-fid/:fid ──────────────────────────────────────
+  // Fallback for when the caller has no verified eth address to check against
+  // (e.g. they minted through a wallet Farcaster never verified) — looks up
+  // whether this fid has a recorded mint, keyed by fid rather than address.
+  router.get("/check-fid/:fid", async (req, res) => {
+    const fid = Number(req.params.fid);
+    if (!Number.isInteger(fid) || fid <= 0)
+      return res.status(400).json({ error: "invalid fid" });
+
+    const pool = getPool();
+    if (!pool) return res.json({ hasMinted: false, address: null });
+
+    const { rows } = await pool.query(
+      `SELECT address FROM nft_pass_mint_log WHERE fid = $1 ORDER BY created_at DESC LIMIT 1`,
+      [fid],
+    );
+    if (rows.length === 0) return res.json({ hasMinted: false, address: null });
+    res.json({ hasMinted: true, address: rows[0].address });
+  });
+
   // ── POST /api/nft-pass/mint ───────────────────────────────────────────────
   router.post("/mint", mintLimiter, async (req, res) => {
     const { fid, address } = req.body as { fid?: number; address?: string };
