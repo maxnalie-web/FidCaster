@@ -80,6 +80,17 @@ async function upsertUser(pool: Pool, fid: number): Promise<void> {
   );
 }
 
+/** Register/touch a fid in the `users` table without writing a ledger row.
+ *  Call this on app open so brand-new users are immediately visible to the
+ *  Neynar webhook fid sync (see push-routes.ts) - otherwise a user who
+ *  hasn't gifted/referred/minted never appears in `users` and their casts/
+ *  reactions never get delivered to us at all. */
+export async function touchUser(fid: number): Promise<void> {
+  const pool = getPool();
+  if (!pool) return;
+  try { await upsertUser(pool, fid); } catch (e) { console.warn("[ledger] touchUser failed:", (e as Error).message); }
+}
+
 /**
  * Insert one ledger row. Safe to call multiple times with the same
  * (actionType, proof) - duplicates are silently ignored.

@@ -14,7 +14,7 @@ import rateLimit from "express-rate-limit";
 import { getLeaderboard, getFidPoints, getFullSnapshot, getPointsHistory } from "./db/points.js";
 import { fidToCode, claimReferral, getReferralList } from "./db/referrals.js";
 import { getHealthReport } from "./watcher.js";
-import { isLedgerConfigured } from "./db/ledger.js";
+import { isLedgerConfigured, touchUser } from "./db/ledger.js";
 import { getAllowance, claimAndLogPending } from "./db/allowance.js";
 
 const FID_MAX = 1_000_000_000;
@@ -61,6 +61,15 @@ export function registerPointsRoutes(app: Express): void {
     const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
     if (!fid) { res.status(400).json({ error: "?fid= must be a valid FID" }); return; }
     try {
+      // Register the fid the moment they first check their points (i.e. the
+      // moment they open the app) - without this, a brand-new user who
+      // hasn't gifted/referred/minted never appears in the `users` table,
+      // which means they never appear in the Neynar webhook's author/reaction
+      // fid filters either (see push-routes.ts) - their casts, likes,
+      // recasts, gifts and promotions would silently never be tracked at all
+      // until they happened to trigger one of the few other insert paths.
+      await touchUser(fid);
+
       // Flush pending gifted points atomically:
       // claimAndLogPending runs inside a single DB transaction — it marks
       // rows claimed AND writes ledger records together. If the ledger write

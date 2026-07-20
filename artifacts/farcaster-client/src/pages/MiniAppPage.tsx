@@ -83,7 +83,10 @@ interface HistoryRow { id: number; action_type: string; pts: number; created_at:
 interface ReferralRow { fid: number; activated: boolean; activated_at: string | null; created_at: string; }
 interface ReferralListData { referredBy: number | null; referrals: ReferralRow[]; }
 interface EligibilityData { eligible: boolean; score: number; threshold: number; reason?: string; }
-interface AllowanceData { total: number; used: number; remaining: number; resetsAt: string; }
+interface AllowanceData {
+  total: number; used: number; remaining: number; resetsAt: string;
+  promoUsed: number; promoRemaining: number; giftUsed: number; giftRemaining: number;
+}
 interface MissionItem { id: string; action: string; label: string; target: number; pts: number; count: number; done: boolean; }
 interface Achievement { id: string; label: string; icon: string; unlocked: boolean; }
 interface StatsData {
@@ -1836,7 +1839,8 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
 function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
   const sections = [
     { t:"What it is", d:"A daily budget of points you can spend, not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
-    { t:"How much you get", d:"100 base points, plus 2 points per follower, capped at +500. So 0 followers = 100/day, 250+ followers = the max, 600/day." },
+    { t:"How much you get", d:"Based on your account: 200 base points plus up to 1,500 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x). Higher-quality, higher-follower accounts get meaningfully more." },
+    { t:"Promote and Gift each have their own cap", d:"Neither can use more than 70% of a single day's allowance on its own, so you can't spend it all in one place." },
     { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn +50 points and 50 is deducted from today's allowance." },
     { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
     { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
@@ -1893,35 +1897,49 @@ function AllowanceBarV2({ fid }: { fid: number }) {
           <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used today"}</p>
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
-          <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
-            target="_blank" rel="noopener noreferrer"
-            style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
-              textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <Zap size={14} color={C.accentHi} />
-              <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+          {data.promoRemaining >= 50 ? (
+            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
+                textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <Zap size={14} color={C.accentHi} />
+                <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+              </div>
+              <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
+                Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
+              </p>
+              <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
+            </a>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
+              borderRight:`1px solid ${C.border}`, opacity:0.45 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <Zap size={14} color={C.text3} />
+                <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+              </div>
+              <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
+                Daily promote limit reached
+              </p>
             </div>
-            <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-              Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
-            </p>
-            <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
-          </a>
-          <button onClick={() => setModal("gift")}
+          )}
+          <button onClick={() => setModal("gift")} disabled={data.giftRemaining <= 0}
             style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px", textAlign:"left",
-              background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>
+              background:"none", border:"none", cursor: data.giftRemaining > 0 ? "pointer" : "default",
+              fontFamily:"inherit", opacity: data.giftRemaining > 0 ? 1 : 0.45 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
               <Gift size={14} color={C.green} />
               <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
             </div>
             <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-              Send points to another user
+              {data.giftRemaining > 0 ? "Send points to another user" : "Daily gift limit reached"}
             </p>
             <span style={{ color:C.amber, fontSize:11 }}>−N allowance</span>
           </button>
         </div>
       </Card>
       <AnimatePresence>
-        {modal === "gift" && <GiftModal remaining={data.remaining} onClose={() => setModal("none")} />}
+        {modal === "gift" && <GiftModal remaining={Math.min(data.remaining, data.giftRemaining)} onClose={() => setModal("none")} />}
         {modal === "info" && <AllowanceInfoModal onClose={() => setModal("none")} />}
       </AnimatePresence>
     </>

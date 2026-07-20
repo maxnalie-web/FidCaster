@@ -1,8 +1,14 @@
 /**
  * Daily allowance — tracks each user's daily budget for promotion/gifting.
  *
- * Formula: base(100) + min(follower_count * 2, 500)
- *   → min 100/day (no followers), max 600/day (≥250 followers)
+ * Formula: (base(200) + min(follower_count * 3, 1500)) * (0.5 + neynar_score)
+ *   neynar_score is Neynar's 0-1 account-quality score (0 for unscored, which
+ *   maps to a 0.5x multiplier - a neutral middle, not a penalty for an
+ *   unscored account).
+ *   → range: ~100/day (no followers, score 0) to ~2550/day (1500 follower
+ *     bonus, score 1.0). Two variables combined multiplicatively means
+ *     users rarely land on the same number even with similar follower
+ *     counts, unlike the old flat linear formula.
  *
  * Allowance resets at midnight UTC. Rows are keyed by (fid, UTC date).
  */
@@ -10,11 +16,13 @@
 import { getPool } from "./pool.js";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "../neynar-limit.js";
 
-const BASE_ALLOWANCE = 100;
-const MAX_BONUS      = 500; // cap on the follower-proportional bonus
+const BASE_ALLOWANCE   = 200;
+const MAX_FOLLOWER_BONUS = 1500; // cap on the follower-proportional bonus
 
-function calculateTotal(followerCount: number): number {
-  return BASE_ALLOWANCE + Math.min(followerCount * 2, MAX_BONUS);
+function calculateTotal(followerCount: number, neynarScore: number): number {
+  const followerBonus = Math.min(followerCount * 3, MAX_FOLLOWER_BONUS);
+  const qualityMultiplier = 0.5 + Math.max(0, Math.min(neynarScore, 1)); // 0.5x .. 1.5x
+  return Math.round((BASE_ALLOWANCE + followerBonus) * qualityMultiplier);
 }
 
 function todayUtc(): string {
@@ -28,8 +36,8 @@ function tomorrowMidnightUtc(): string {
   return d.toISOString();
 }
 
-async function fetchFollowerCount(fid: number): Promise<number> {
-  if (!hasAnyNeynarKey()) return 0;
+async function fetchAllowanceInputs(fid: number): Promise<{ followerCount: number; neynarScore: number }> {
+  if (!hasAnyNeynarKey()) return { followerCount: 0, neynarScore: 0 };
   try {
     const apiKey = await neynarThrottle();
     const r = await fetch(
@@ -41,12 +49,18 @@ async function fetchFollowerCount(fid: number): Promise<number> {
     );
     if (!r.ok) {
       if (r.status === 429) penalize429(apiKey);
-      return 0;
+      return { followerCount: 0, neynarScore: 0 };
     }
-    const data = await r.json() as { users?: { follower_count?: number }[] };
-    return data.users?.[0]?.follower_count ?? 0;
+    const data = await r.json() as {
+      users?: { follower_count?: number; experimental?: { neynar_user_score?: number } }[];
+    };
+    const user = data.users?.[0];
+    return {
+      followerCount: user?.follower_count ?? 0,
+      neynarScore:   typeof user?.experimental?.neynar_user_score === "number" ? user.experimental.neynar_user_score : 0,
+    };
   } catch {
-    return 0;
+    return { followerCount: 0, neynarScore: 0 };
   }
 }
 
@@ -57,6 +71,22 @@ export interface AllowanceData {
   used:     number;
   remaining: number;
   resetsAt: string;
+  promoUsed: number;
+  promoRemaining: number;
+  giftUsed: number;
+  giftRemaining: number;
+}
+
+function categoryRemaining(total: number, categoryUsed: number): number {
+  return Math.max(0, Math.round(total * CATEGORY_CAP_FRACTION) - categoryUsed);
+}
+
+function toAllowanceData(total: number, used: number, promoUsed: number, giftUsed: number, resetsAt: string): AllowanceData {
+  return {
+    total, used, remaining: Math.max(0, total - used), resetsAt,
+    promoUsed, promoRemaining: categoryRemaining(total, promoUsed),
+    giftUsed,  giftRemaining:  categoryRemaining(total, giftUsed),
+  };
 }
 
 /**
@@ -68,44 +98,46 @@ export async function getAllowance(fid: number): Promise<AllowanceData> {
   const resetsAt = tomorrowMidnightUtc();
 
   if (!pool) {
-    return { total: BASE_ALLOWANCE, used: 0, remaining: BASE_ALLOWANCE, resetsAt };
+    return toAllowanceData(BASE_ALLOWANCE, 0, 0, 0, resetsAt);
   }
 
   // Fast path: row already exists for today
   const { rows } = await pool.query(
-    `SELECT base_amount, used FROM daily_allowance WHERE fid = $1 AND date = $2`,
+    `SELECT base_amount, used, promo_used, gift_used FROM daily_allowance WHERE fid = $1 AND date = $2`,
     [fid, today],
   );
 
   if (rows.length > 0) {
-    const total = Number(rows[0].base_amount);
-    const used  = Number(rows[0].used);
-    return { total, used, remaining: Math.max(0, total - used), resetsAt };
+    return toAllowanceData(
+      Number(rows[0].base_amount), Number(rows[0].used),
+      Number(rows[0].promo_used), Number(rows[0].gift_used), resetsAt,
+    );
   }
 
-  // First access today — fetch follower count and create row
-  const followers = await fetchFollowerCount(fid);
-  const total     = calculateTotal(followers);
+  // First access today — fetch follower count + quality score and create row
+  const { followerCount, neynarScore } = await fetchAllowanceInputs(fid);
+  const total = calculateTotal(followerCount, neynarScore);
 
   await pool.query(
-    `INSERT INTO daily_allowance (fid, date, base_amount, used, refreshed_at)
-     VALUES ($1, $2, $3, 0, now())
+    `INSERT INTO daily_allowance (fid, date, base_amount, used, promo_used, gift_used, refreshed_at)
+     VALUES ($1, $2, $3, 0, 0, 0, now())
      ON CONFLICT (fid, date) DO NOTHING`,
     [fid, today, total],
   );
 
   // Re-read in case a concurrent request just inserted
   const { rows: rows2 } = await pool.query(
-    `SELECT base_amount, used FROM daily_allowance WHERE fid = $1 AND date = $2`,
+    `SELECT base_amount, used, promo_used, gift_used FROM daily_allowance WHERE fid = $1 AND date = $2`,
     [fid, today],
   );
   if (rows2.length > 0) {
-    const t = Number(rows2[0].base_amount);
-    const u = Number(rows2[0].used);
-    return { total: t, used: u, remaining: Math.max(0, t - u), resetsAt };
+    return toAllowanceData(
+      Number(rows2[0].base_amount), Number(rows2[0].used),
+      Number(rows2[0].promo_used), Number(rows2[0].gift_used), resetsAt,
+    );
   }
 
-  return { total, used: 0, remaining: total, resetsAt };
+  return toAllowanceData(total, 0, 0, 0, resetsAt);
 }
 
 /**
@@ -242,6 +274,13 @@ export async function queuePendingPoints(params: {
 
 const PROMO_COST = 50;
 
+// Neither promotion nor gifting can consume more than this fraction of a
+// day's total allowance on its own - each is capped independently, on top
+// of the overall `used <= base_amount` bound already in place, so a user
+// can't dump their entire daily allowance into a single promo spree or a
+// single gift.
+const CATEGORY_CAP_FRACTION = 0.7;
+
 /**
  * Process a promotion cast fully inside one DB transaction:
  *   1. Idempotency check (proof already in ledger → skip, no double-debit)
@@ -277,15 +316,25 @@ export async function processPromotionAtomic(params: {
     }
 
     // 2. Atomic allowance debit — only succeeds if remaining >= PROMO_COST
+    //    AND today's promo spending stays within its own category cap.
     const { rowCount: debited } = await client.query(
       `UPDATE daily_allowance
-       SET used = used + $3, refreshed_at = now()
-       WHERE fid = $1 AND date = $2 AND (base_amount - used) >= $3`,
+       SET used = used + $3, promo_used = promo_used + $3, refreshed_at = now()
+       WHERE fid = $1 AND date = $2
+         AND (base_amount - used) >= $3
+         AND (base_amount * ${CATEGORY_CAP_FRACTION} - promo_used) >= $3`,
       [params.authorFid, today, PROMO_COST],
     );
     if ((debited ?? 0) === 0) {
       await client.query("ROLLBACK");
-      return { ok: false, reason: "insufficient_allowance" };
+      const { rows: cur } = await client.query(
+        `SELECT base_amount, used, promo_used FROM daily_allowance WHERE fid = $1 AND date = $2`,
+        [params.authorFid, today],
+      );
+      const row = cur[0];
+      const reason = row && (Number(row.base_amount) * CATEGORY_CAP_FRACTION - Number(row.promo_used)) < PROMO_COST
+        ? "promo_category_cap_reached" : "insufficient_allowance";
+      return { ok: false, reason };
     }
 
     // 3. Insert ledger row (promotion now verified and allowance confirmed)
@@ -352,16 +401,26 @@ export async function processGiftAtomic(params: {
       return { ok: false, reason: "already_processed" };
     }
 
-    // 2. Atomic allowance debit
+    // 2. Atomic allowance debit — bounded by both the overall remaining
+    //    allowance and the gift category's own cap.
     const { rowCount: debited } = await client.query(
       `UPDATE daily_allowance
-       SET used = used + $3, refreshed_at = now()
-       WHERE fid = $1 AND date = $2 AND (base_amount - used) >= $3`,
+       SET used = used + $3, gift_used = gift_used + $3, refreshed_at = now()
+       WHERE fid = $1 AND date = $2
+         AND (base_amount - used) >= $3
+         AND (base_amount * ${CATEGORY_CAP_FRACTION} - gift_used) >= $3`,
       [params.authorFid, today, params.amount],
     );
     if ((debited ?? 0) === 0) {
       await client.query("ROLLBACK");
-      return { ok: false, reason: "insufficient_allowance" };
+      const { rows: cur } = await client.query(
+        `SELECT base_amount, used, gift_used FROM daily_allowance WHERE fid = $1 AND date = $2`,
+        [params.authorFid, today],
+      );
+      const row = cur[0];
+      const reason = row && (Number(row.base_amount) * CATEGORY_CAP_FRACTION - Number(row.gift_used)) < params.amount
+        ? "gift_category_cap_reached" : "insufficient_allowance";
+      return { ok: false, reason };
     }
 
     // 3. Upsert sender user row + insert gift audit record

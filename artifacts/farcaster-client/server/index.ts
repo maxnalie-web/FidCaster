@@ -11,7 +11,7 @@ import { submitFarcasterAction, signFarcasterAction, submitSignedBytes, type Far
 import { registerFidMarketRoutes } from "./fid-market-routes.js";
 import { registerProxyRoutes } from "./neynar-proxy.js";
 import { registerRpcProxy } from "./rpc-proxy.js";
-import { registerPushRoutes } from "./push-routes.js";
+import { registerPushRoutes, startWebhookTargetSync } from "./push-routes.js";
 import { initPushTokenStore } from "./push-token-store.js";
 import { registerActionsRoutes } from "./actions-routes.js";
 import { registerAuthRoutes } from "./auth-routes.js";
@@ -1647,6 +1647,7 @@ const server = app.listen(PORT, host, () => {
   startVerificationJob();   // background: verify hub action proofs against Neynar
   startSybilDetector();     // background: hourly fraud exclusion rules
   startWatchers();          // background: data-gap monitors + /api/watchers/health
+  startWebhookTargetSync(); // background: keep the Neynar cast/reaction webhook's fid filters current
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
   // Hydrate the admin-configured Neynar key (if any was saved via the admin
   // panel in a previous run) into the in-memory rate limiter on boot.

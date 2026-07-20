@@ -110,6 +110,13 @@ CREATE TABLE IF NOT EXISTS daily_allowance (
 
 CREATE INDEX IF NOT EXISTS idx_da_fid_date ON daily_allowance (fid, date DESC);
 
+-- Per-category sub-caps so a user can't dump their entire daily allowance
+-- into a single promotion or a single gift spree - promo_used and gift_used
+-- are tracked and capped independently (see db/allowance.ts), in addition
+-- to the overall `used` still being bounded by base_amount.
+ALTER TABLE daily_allowance ADD COLUMN IF NOT EXISTS promo_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE daily_allowance ADD COLUMN IF NOT EXISTS gift_used  INTEGER NOT NULL DEFAULT 0;
+
 -- ── Pending points ────────────────────────────────────────────────────────────
 -- Holds gifted points for recipients not yet registered in FidCaster.
 -- Points are credited to the ledger and marked claimed on first mini-app open.
