@@ -1100,13 +1100,18 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
       <div style={{ position:"relative", height:280, margin:"0 -2px 4px" }}>
         <HeroCanvas height={280} logoY={104} />
 
-        {/* Floating logo */}
-        <motion.div animate={{ y:[-6, 6, -6] }} transition={{ duration:5.2, repeat:Infinity, ease:"easeInOut" }}
-          style={{ position:"absolute", left:"50%", top:104, transform:"translate(-50%,-50%)", zIndex:3,
-            width:130, height:130, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
-          <img src="/mini-logo.png" alt="" style={{ width:112, height:112, objectFit:"contain",
-            filter:"drop-shadow(0 0 22px rgba(168,85,247,.85)) drop-shadow(0 0 60px rgba(124,58,237,.55)) drop-shadow(0 18px 30px rgba(0,0,0,.55))" }} />
-        </motion.div>
+        {/* Floating logo — outer plain div does the -50%/-50% centering (a literal
+            transform string), inner motion.div only ever animates y. Framer-motion
+            takes full ownership of `transform` once any motion value is animated,
+            so mixing the two on the SAME element silently drops the centering. */}
+        <div style={{ position:"absolute", left:"50%", top:104, transform:"translate(-50%,-50%)", zIndex:3,
+          width:130, height:130, pointerEvents:"none" }}>
+          <motion.div animate={{ y:[-6, 6, -6] }} transition={{ duration:5.2, repeat:Infinity, ease:"easeInOut" }}
+            style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <img src="/mini-logo.png" alt="" style={{ width:112, height:112, objectFit:"contain",
+              filter:"drop-shadow(0 0 22px rgba(168,85,247,.85)) drop-shadow(0 0 60px rgba(124,58,237,.55)) drop-shadow(0 18px 30px rgba(0,0,0,.55))" }} />
+          </motion.div>
+        </div>
 
         {/* Stat card — Total Points (left) */}
         <div style={{ position:"absolute", top:12, left:6, zIndex:4, width:158, padding:"15px 15px 13px",
@@ -1171,24 +1176,23 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           background:"linear-gradient(115deg,#1C0F14 0%,#170B23 42%,#140A26 100%)",
           border:"1px solid rgba(251,146,60,0.22)" }}>
           {/* Campfire canvas — decorative background layer, left column */}
-          <div style={{ position:"absolute", left:0, top:0, width:168, height:"100%", pointerEvents:"none" }}>
-            <CampfireCanvas width={168} height={190} active={true} />
+          <div style={{ position:"absolute", left:0, top:0, width:110, height:"100%", pointerEvents:"none" }}>
+            <CampfireCanvas width={110} height={190} active={true} />
           </div>
-          <div style={{ position:"relative", zIndex:1, padding:"20px 18px 20px 168px" }}>
-            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
-              <div>
-                <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
-                <p style={{ color:C.text2, fontSize:12, lineHeight:1.5 }}>
-                  Keep your streak alive and earn bigger bonuses.
-                </p>
-              </div>
-              <div style={{ textAlign:"right", flexShrink:0 }}>
-                <p style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</p>
-                <p style={{ color:"#FFD700", fontWeight:900, fontSize:16, marginTop:2 }}>+{nextBonusPts}</p>
-              </div>
+          {/* Full-width title row on top (never competes with Next Bonus for space —
+              that's what was squeezing "You're on fire!" into an ugly multi-line wrap),
+              then a second row with the day-chain and Next Bonus side by side. */}
+          <div style={{ position:"relative", zIndex:1, padding:"20px 18px 20px 110px" }}>
+            <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
+            <p style={{ color:C.text2, fontSize:12, lineHeight:1.5 }}>
+              Keep your streak alive and earn bigger bonuses.
+            </p>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:6, marginTop:10 }}>
+              <span style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</span>
+              <span style={{ color:"#FFD700", fontWeight:900, fontSize:15 }}>+{nextBonusPts}</span>
             </div>
             {/* Day chain: recent check-ins → today (highlighted, shows streak count) → upcoming */}
-            <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:12, marginBottom:10 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:8, marginBottom:10 }}>
               {chainDays.map((d, i) => (
                 <div key={i} style={{ display:"flex", alignItems:"center", flex: d.kind === "now" ? "0 0 auto" : 1 }}>
                   {i > 0 && (
@@ -2442,16 +2446,21 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
       {/* Pending-gift claimed toast */}
       <AnimatePresence>
         {claimedPts > 0 && (
-          <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-20 }}
-            style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", zIndex:100,
-              display:"flex", alignItems:"center", gap:10, padding:"12px 18px",
-              background:"rgba(16,185,129,0.15)", border:"1px solid rgba(16,185,129,0.35)",
-              borderRadius:14, backdropFilter:"blur(16px)", whiteSpace:"nowrap" }}>
-            <Gift size={16} color={C.green} />
-            <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>
-              🎁 Claimed {claimedPts.toLocaleString()} gifted points!
-            </p>
-          </motion.div>
+          // Outer plain div owns the translateX(-50%) centering (literal transform
+          // string); inner motion.div only ever animates opacity/y, so framer never
+          // takes over `transform` and drops the centering (same bug class as the
+          // hero logo above — see its comment).
+          <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", zIndex:100 }}>
+            <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-20 }}
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 18px",
+                background:"rgba(16,185,129,0.15)", border:"1px solid rgba(16,185,129,0.35)",
+                borderRadius:14, backdropFilter:"blur(16px)", whiteSpace:"nowrap" }}>
+              <Gift size={16} color={C.green} />
+              <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>
+                🎁 Claimed {claimedPts.toLocaleString()} gifted points!
+              </p>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
