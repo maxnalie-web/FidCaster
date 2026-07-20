@@ -1229,11 +1229,16 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
   // XP percent
   const xpPct = xpToNext > 0 ? Math.min((xp / xpToNext) * 100, 100) : 100;
 
-  // Streak day-chain: up to 3 recent check-ins, today (highlighted), then 2 upcoming
+  // Streak day-chain: up to 3 recent check-ins, today (highlighted), then 2 upcoming.
+  // Always capped at 3 "done" circles (a sliding window, not one circle per
+  // streak day - a streak of 50 still shows the same 6 circles max), and
+  // only as many leading circles as there's real history for - at streak 0
+  // that's zero, so "now" sits first instead of stranded mid-row behind
+  // three empty placeholders.
   const nextBonusPts = stats?.nextStreakBonusPts ?? 500;
   const doneCount = Math.max(0, Math.min(streak - 1, 3));
   const chainDays: { kind: "done" | "now" | "future" }[] = [
-    ...Array.from({ length: 3 }, (_, i) => ({ kind: (i >= 3 - doneCount ? "done" : "future") as "done" | "future" })),
+    ...Array.from({ length: doneCount }, () => ({ kind: "done" as const })),
     { kind: "now" as const },
     { kind: "future" as const }, { kind: "future" as const },
   ];
@@ -2111,7 +2116,7 @@ function RewardsTab({ fid }: { fid: number }) {
             <motion.button onClick={copy} whileTap={{ scale:0.97 }}
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
                 padding:"11px 14px", background:"rgba(0,0,0,0.35)", border:`1px solid ${C.borderMed}`,
-                borderRadius:12, cursor:"pointer", gap:8, marginBottom:10 }}>
+                borderRadius:12, cursor:"pointer", gap:8, marginBottom:8 }}>
               <span style={{ color:C.text2, fontSize:12, fontFamily:"monospace", overflow:"hidden",
                 textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, textAlign:"left" }}>
                 {refUrl.replace("https://","")}
@@ -2121,6 +2126,16 @@ function RewardsTab({ fid }: { fid: number }) {
                 {copied ? <><Check size={12} /> Copied!</> : <><Copy size={12} /> Copy</>}
               </span>
             </motion.button>
+            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
+                `Join me on FidCaster — earn points for every Farcaster action and get in on the airdrop.\n\n${refUrl}`,
+              )}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                padding:"10px 14px", background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.3)",
+                borderRadius:12, textDecoration:"none", marginBottom:10, boxSizing:"border-box" }}>
+              <Share2 size={13} color={C.accentHi} />
+              <span style={{ color:C.accentHi, fontSize:12.5, fontWeight:700 }}>Share on Farcaster</span>
+            </a>
 
             {/* Referral list */}
             {!refLoad && refData.referrals.length > 0 && (

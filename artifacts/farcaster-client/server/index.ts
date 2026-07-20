@@ -160,7 +160,15 @@ app.use((req, res, next) => {
     req.path === "/" &&
     req.headers["sec-fetch-dest"] === "iframe" &&
     req.headers["sec-fetch-site"] === "cross-site";
-  if (isMiniAppIframe) {
+  // A referral link (?ref=CODE) is only ever read by MiniAppPage, mounted at
+  // /mini - "/" mounts the login/docs pages instead, which never look at the
+  // query string. So a referral link opened outside the mini-app iframe path
+  // (e.g. Warpcast's in-app browser without the iframe headers, or shared
+  // into another app entirely) would land on "/" and silently never claim.
+  // Redirect straight to /mini whenever ?ref= is present, regardless of how
+  // the request got here.
+  const hasRefParam = req.path === "/" && typeof req.query.ref === "string" && req.query.ref.length > 0;
+  if (isMiniAppIframe || hasRefParam) {
     // Preserve the query string (e.g. ?ref=CODE for referral links) - a
     // bare "/mini" redirect was silently dropping it, breaking referrals
     // for anyone opening a referral link inside a Farcaster client.
