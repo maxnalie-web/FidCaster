@@ -157,8 +157,39 @@ export async function isFidEligible(fid: number): Promise<boolean> {
   return eligible;
 }
 
+/** One-time startup cleanup: restore any nft_holder_bonus rows that were
+ *  previously excluded by the R5 sweep, back before it exempted this action
+ *  type. Safe to run repeatedly (no-op once nothing matches) - there's no
+ *  other realistic reason an nft_holder_bonus row would be excluded, since
+ *  it's only ever awarded after directly checking the real on-chain balance. */
+export async function restoreSweptNftHolderBonuses(): Promise<void> {
+  const pool = getPool();
+  if (!pool) return;
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE user_actions SET excluded = false
+       WHERE action_type = 'nft_holder_bonus' AND excluded = true`,
+    );
+    if (rowCount && rowCount > 0) {
+      console.log(`[eligibility] restored ${rowCount} nft_holder_bonus row(s) previously swept by the ineligible-FID rule`);
+    }
+  } catch (e) {
+    console.warn("[eligibility] restoreSweptNftHolderBonuses failed:", (e as Error).message);
+  }
+}
+
 /** Bulk eligibility sweep used by sybil-detector.
- *  Excludes all user_actions from FIDs confirmed ineligible. */
+ *  Excludes all user_actions from FIDs confirmed ineligible.
+ *
+ *  nft_holder_bonus is deliberately exempt: the eligibility gate (follower
+ *  count, cast count, account age) exists to filter out cheap, disposable
+ *  sybil accounts farming social-graph-fakeable actions - it has nothing to
+ *  do with whether someone genuinely holds a real on-chain NFT, which
+ *  already costs real gas and wallet ownership to fake. A real person could
+ *  easily hold the NFT while having few Farcaster followers (e.g. a brand
+ *  new account), and this bonus was already awarded once, verified against
+ *  the chain - retroactively clawing it back the moment an unrelated social
+ *  metric dips below threshold isn't fraud detection, it's a false positive. */
 export async function sweepIneligibleActions(): Promise<number> {
   const pool = getPool();
   if (!pool) return 0;
@@ -166,6 +197,7 @@ export async function sweepIneligibleActions(): Promise<number> {
     UPDATE user_actions ua
     SET excluded = true
     WHERE ua.excluded = false
+      AND ua.action_type != 'nft_holder_bonus'
       AND EXISTS (
         SELECT 1 FROM users u
         WHERE u.fid = ua.fid AND u.eligible = false

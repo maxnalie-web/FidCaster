@@ -19,6 +19,7 @@ import { registerPointsRoutes } from "./points-routes.js";
 import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
 import { initLedger } from "./db/ledger.js";
+import { restoreSweptNftHolderBonuses } from "./db/eligibility.js";
 import { initActionsLedgerStore } from "./actions-ledger-store.js";
 import { startVerificationJob } from "./verification-job.js";
 import { startSybilDetector } from "./sybil-detector.js";
@@ -1650,7 +1651,9 @@ const server = app.listen(PORT, host, () => {
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
-  initLedger().catch((e) => console.error("[ledger] init failed:", e));
+  initLedger()
+    .then(() => restoreSweptNftHolderBonuses())
+    .catch((e) => console.error("[ledger] init failed:", e));
   initActionsLedgerStore(); // warm up pg pool + ensure points/airdrop ledger tables exist
   startVerificationJob();   // background: verify hub action proofs against Neynar
   startSybilDetector();     // background: hourly fraud exclusion rules
