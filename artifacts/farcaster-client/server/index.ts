@@ -206,7 +206,10 @@ app.use((_req, res, next) => {
   next();
 });
 
-app.use(cors({
+// Mini app entry-points (/mini and /) have their own open-CORS handler above.
+// The global strict CORS must NOT run for those paths or it will fire a 403
+// that overrides the per-route handler's already-set headers.
+const strictCors = cors({
   origin: (origin, callback) => {
     // No Origin header = non-browser client (curl, server-to-server). Allow GET,
     // block write methods via the CORS preflight mechanism being skipped - real
@@ -224,7 +227,12 @@ app.use(cors({
   allowedHeaders: ["Content-Type"],
   credentials: false,
   maxAge: 600,
-}));
+});
+app.use((req, res, next) => {
+  // Skip strict CORS for mini-app entry points — they use open CORS above.
+  if (req.path === "/mini" || req.path === "/") return next();
+  strictCors(req, res, next);
+});
 
 app.use(compression());
 // Small default body limit for every route - the 70MB base64 upload payload
