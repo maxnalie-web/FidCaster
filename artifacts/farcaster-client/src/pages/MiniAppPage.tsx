@@ -2265,7 +2265,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
         ].map(s => (
           <div key={s.label} style={{ background:C.card, border:`1px solid ${C.border}`,
             borderRadius:14, padding:"14px 8px", textAlign:"center" }}>
-            <s.Icon size={16} color={s.color} style={{ marginBottom:6 }} />
+            <s.Icon size={16} color={s.color} style={{ display:"block", margin:"0 auto 6px" }} />
             <p style={{ color:C.text1, fontWeight:900, fontSize:18 }}>{s.value}</p>
             <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>{s.label}</p>
           </div>
@@ -2330,14 +2330,14 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
                   opacity: a.unlocked ? 1 : 0.45,
                   boxShadow: a.unlocked ? `0 0 16px rgba(139,92,246,0.2)` : "none",
                 }}>
-                <div style={{ fontSize:24, marginBottom:6, filter: a.unlocked?"none":"grayscale(1)" }}>
+                <div style={{ fontSize:24, marginBottom:6, filter: a.unlocked?"none":"grayscale(1)", display:"flex", justifyContent:"center" }}>
                   {a.unlocked ? a.icon : <Lock size={20} color={C.text3} />}
                 </div>
                 <p style={{ color: a.unlocked ? C.text1 : C.text3, fontSize:11, fontWeight:600, lineHeight:1.3 }}>
                   {a.label}
                 </p>
                 {a.unlocked && (
-                  <div style={{ marginTop:4 }}>
+                  <div style={{ marginTop:4, display:"flex", justifyContent:"center" }}>
                     <Check size={10} color={C.green} />
                   </div>
                 )}
