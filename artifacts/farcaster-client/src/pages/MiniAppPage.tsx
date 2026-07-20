@@ -1790,7 +1790,11 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
 
   function send() {
     if (!valid) return;
-    const handle = username.trim().replace(/^@/, "");
+    // Farcaster usernames are always lowercase — a capitalized handle
+    // (e.g. from the keyboard's auto-capitalize) won't resolve as a real
+    // @mention in the composed cast, so the gift never gets tagged to
+    // anyone real.
+    const handle = username.trim().replace(/^@/, "").toLowerCase();
     const text = `${amountNum} FidCaster points @${handle}`;
     window.open(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
     onClose();
@@ -1800,6 +1804,7 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
     <AllowanceModalShell onClose={onClose} icon={<Gift size={16} color={C.green} />} title="Send Gift Points">
       <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Recipient username</label>
       <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. dwr.eth"
+        autoCapitalize="none" autoCorrect="off" spellCheck={false}
         style={{ width:"100%", marginTop:6, marginBottom:14, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
           background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
       <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Amount (max {cap.toLocaleString()})</label>
