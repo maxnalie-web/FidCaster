@@ -11,6 +11,7 @@ import rateLimit from "express-rate-limit";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getPool, isDbConfigured } from "./db/pool.js";
 import { POINTS } from "./db/points.js";
+import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 
 const SCORE_THRESHOLD = 30;
 
@@ -24,6 +25,17 @@ const limiter = rateLimit({
 const readLimiter = rateLimit({
   windowMs: 60_000,
   max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Each call does two RPC reads (Optimism ID Registry + Base balanceOfBatch)
+// against free public endpoints, so it gets its own tight, per-caller cap —
+// generous enough for "once on app open + occasional manual re-check", not
+// enough for anyone to hammer the RPC fallback pool.
+const nftCheckLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -136,6 +148,21 @@ export function registerMiniRoutes(app: Express): void {
     const u = map.get(fid);
     if (!u) { res.status(404).json({ error: "not found" }); return; }
     res.json(u);
+  });
+
+  // ── POST /api/mini/nft-holder-check — on demand, no background polling ──────
+  // Called once automatically on first app open, and again on manual re-check.
+  app.post("/api/mini/nft-holder-check", nftCheckLimiter, async (req: Request, res: Response) => {
+    const body = req.body as { fid?: unknown };
+    const fid = fidFromQuery(body.fid);
+    if (!fid) { res.status(400).json({ error: "fid required" }); return; }
+    try {
+      const result = await checkAndAwardNftHolderBonus(fid);
+      res.json(result);
+    } catch (e) {
+      console.error("[mini] nft-holder-check error:", (e as Error).message);
+      res.status(500).json({ error: "check failed" });
+    }
   });
 
   // ── GET /api/mini/eligibility?fid=XXX ────────────────────────────────────────

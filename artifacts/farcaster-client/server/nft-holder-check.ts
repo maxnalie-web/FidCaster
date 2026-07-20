@@ -69,48 +69,40 @@ export async function checkFidHoldsFasterTaskNft(fid: number): Promise<boolean> 
   }
 }
 
-const BATCH_SIZE       = 25;
-const SCAN_INTERVAL_MS = 30 * 60_000; // 30 min
-
-async function runHolderScan(): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
-  try {
-    // Only fids that don't already have the one-time bonus row. Non-holders
-    // are intentionally re-checked on every scan (not cached as "no") so a
-    // user who buys the NFT later still gets picked up automatically.
-    const { rows } = await pool.query(
-      `SELECT u.fid FROM users u
-       LEFT JOIN user_actions ua
-         ON ua.fid = u.fid AND ua.action_type = 'nft_holder_bonus' AND ua.excluded = false
-       WHERE ua.id IS NULL
-       ORDER BY u.last_seen DESC
-       LIMIT $1`,
-      [BATCH_SIZE],
-    );
-
-    for (const row of rows) {
-      const fid = Number(row.fid);
-      const isHolder = await checkFidHoldsFasterTaskNft(fid);
-      if (isHolder) {
-        await logUserAction({
-          fid, actionType: "nft_holder_bonus",
-          payload: { source: "fastertask_nft", contract: FASTERTASK_NFT_ADDRESS },
-          proof: `nft_holder_bonus:${fid}`, verified: true,
-        });
-        console.log(`[nft-holder-job] fid ${fid}: FasterTask NFT holder bonus awarded`);
-      }
-    }
-  } catch (e) {
-    console.warn("[nft-holder-job] scan error:", (e as Error).message);
-  }
+export interface NftHolderCheckResult {
+  isHolder: boolean;
+  alreadyAwarded: boolean;
+  justAwarded: boolean;
 }
 
-let _timer: ReturnType<typeof setInterval> | null = null;
+/**
+ * On-demand check, called from the client: once automatically the first
+ * time a user opens the app, and again whenever they tap the manual
+ * "Check NFT holder status" button. No background polling — this only
+ * runs when a real request asks for it.
+ */
+export async function checkAndAwardNftHolderBonus(fid: number): Promise<NftHolderCheckResult> {
+  const pool = getPool();
+  if (pool) {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM user_actions WHERE fid = $1 AND action_type = 'nft_holder_bonus' AND excluded = false LIMIT 1`,
+      [fid],
+    );
+    if (rows.length > 0) {
+      return { isHolder: true, alreadyAwarded: true, justAwarded: false };
+    }
+  }
 
-export function startNftHolderJob(): void {
-  if (_timer) return;
-  runHolderScan();
-  _timer = setInterval(runHolderScan, SCAN_INTERVAL_MS);
-  console.log(`[nft-holder-job] started (every ${SCAN_INTERVAL_MS / 60_000}min, batch=${BATCH_SIZE})`);
+  const isHolder = await checkFidHoldsFasterTaskNft(fid);
+  if (!isHolder) {
+    return { isHolder: false, alreadyAwarded: false, justAwarded: false };
+  }
+
+  await logUserAction({
+    fid, actionType: "nft_holder_bonus",
+    payload: { source: "fastertask_nft", contract: FASTERTASK_NFT_ADDRESS },
+    proof: `nft_holder_bonus:${fid}`, verified: true,
+  });
+  console.log(`[nft-holder-check] fid ${fid}: FasterTask NFT holder bonus awarded`);
+  return { isHolder: true, alreadyAwarded: false, justAwarded: true };
 }

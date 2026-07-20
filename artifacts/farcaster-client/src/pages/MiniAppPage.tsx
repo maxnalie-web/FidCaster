@@ -234,6 +234,15 @@ async function apiStats(fid: number): Promise<StatsData | null> {
     return r.ok ? r.json() : null;
   } catch { return null; }
 }
+interface NftHolderCheckResult { isHolder: boolean; alreadyAwarded: boolean; justAwarded: boolean; }
+async function apiNftHolderCheck(fid: number): Promise<NftHolderCheckResult | null> {
+  try {
+    const r = await fetch("/api/mini/nft-holder-check", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fid }),
+    });
+    return r.ok ? r.json() : null;
+  } catch { return null; }
+}
 
 // ── Animated counter ──────────────────────────────────────────────────────────
 function Counter({ to, className, style }: { to: number; className?: string; style?: React.CSSProperties }) {
@@ -1856,10 +1865,12 @@ function RewardsTab({ fid }: { fid: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
+function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck }: {
   fid: number; ctx: MiniCtx | null; pts: FidPts | null;
   stats: StatsData | null; rank: number | null; loading: boolean;
+  onNftRecheck: () => void;
 }) {
+  const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder">("idle");
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
@@ -1872,6 +1883,17 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
   const achievements = stats?.achievements ?? [];
   const referrals   = pts?.breakdown.find(b=>b.action_type==="referral")?.total_actions ?? 0;
   const isNftHolder = !!pts?.breakdown.find(b=>b.action_type==="nft_holder_bonus");
+
+  async function checkNft() {
+    setNftCheck("checking");
+    const r = await apiNftHolderCheck(fid);
+    if (r?.isHolder) {
+      onNftRecheck();
+      setNftCheck("idle");
+    } else {
+      setNftCheck("not_holder");
+    }
+  }
 
   return (
     <motion.div key="profile-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
@@ -1913,6 +1935,24 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
             </Chip>
           )}
         </div>
+        {!isNftHolder && (
+          <div style={{ marginTop:10 }}>
+            <button onClick={checkNft} disabled={nftCheck === "checking"}
+              style={{ background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)",
+                color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:999, padding:"6px 14px",
+                cursor: nftCheck === "checking" ? "default" : "pointer",
+                display:"inline-flex", alignItems:"center", gap:6 }}>
+              {nftCheck === "checking"
+                ? <><Loader2 size={12} className="animate-spin" /> Checking…</>
+                : <><Award size={12} /> Check NFT holder status</>}
+            </button>
+            {nftCheck === "not_holder" && (
+              <p style={{ color:C.text3, fontSize:11, marginTop:6 }}>
+                No FasterTask Pass NFT found for your account yet.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Level progress */}
@@ -2265,10 +2305,8 @@ function MainApp({ fid, ctx, added, addApp }: {
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
   const rank     = board.find(r => r.fid === fid)?.rank ?? null;
 
-  useEffect(() => {
+  const refetchPts = useCallback(() => {
     setPtsLoad(true);
-    setBoardLoad(true);
-    setStatsLoad(true);
     apiPoints(fid).then(p => {
       setPts(p);
       if (p?.pendingClaimed && p.pendingClaimed > 0) {
@@ -2277,10 +2315,28 @@ function MainApp({ fid, ctx, added, addApp }: {
       }
       setPtsLoad(false);
     });
+  }, [fid]);
+
+  useEffect(() => {
+    setBoardLoad(true);
+    setStatsLoad(true);
+    refetchPts();
     apiMiniBoard(50).then(b => { setBoard(b); setBoardLoad(false); });
     apiStats(fid).then(s => { setStats(s); setStatsLoad(false); });
     apiAllowance(fid).then(a => { setAllowance(a); setAllowLoad(false); });
-  }, [fid]);
+  }, [fid, refetchPts]);
+
+  // NFT holder check: automatic exactly once ever (first time this fid opens
+  // the app), guarded by a per-fid localStorage flag. After that, only the
+  // manual "Check NFT holder status" button in Profile triggers it — no
+  // background polling.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `fc_nft_checked_${fid}`;
+    if (localStorage.getItem(key) === "1") return;
+    localStorage.setItem(key, "1");
+    apiNftHolderCheck(fid).then((r) => { if (r?.justAwarded) refetchPts(); });
+  }, [fid, refetchPts]);
 
   return (
     <div style={{ minHeight:"100svh", background:C.bg, display:"flex", flexDirection:"column" }}>
@@ -2349,7 +2405,7 @@ function MainApp({ fid, ctx, added, addApp }: {
             <RewardsTab key="rewards" fid={fid} />
           )}
           {tab === "profile" && (
-            <ProfileTab key="profile" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} loading={ptsLoad} />
+            <ProfileTab key="profile" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} loading={ptsLoad} onNftRecheck={refetchPts} />
           )}
         </AnimatePresence>
       </div>

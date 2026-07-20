@@ -21,7 +21,6 @@ import { initLedger } from "./db/ledger.js";
 import { startVerificationJob } from "./verification-job.js";
 import { startSybilDetector } from "./sybil-detector.js";
 import { startWatchers } from "./watcher.js";
-import { startNftHolderJob } from "./nft-holder-job.js";
 import { safeFetch } from "./ssrf-guard.js";
 import { cacheStats } from "./cache.js";
 import { metrics } from "./metrics.js";
@@ -1521,7 +1520,6 @@ const server = app.listen(PORT, host, () => {
   startVerificationJob();   // background: verify hub action proofs against Neynar
   startSybilDetector();     // background: hourly fraud exclusion rules
   startWatchers();          // background: data-gap monitors + /api/watchers/health
-  startNftHolderJob();      // background: FasterTask Pass NFT holder bonus scan
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
   // Hydrate the admin-configured Neynar key (if any was saved via the admin
   // panel in a previous run) into the in-memory rate limiter on boot.
