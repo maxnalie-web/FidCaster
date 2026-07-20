@@ -11,7 +11,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { sdk } from "@farcaster/miniapp-sdk";
 import {
-  ArrowRight, ArrowLeft, Copy, Check, ExternalLink,
+  ArrowRight, ArrowLeft, ArrowUp, Copy, Check, ExternalLink,
   Loader2, X,
   Zap, Trophy, Users, ShoppingBag, Tag, Share2,
   Sword, Sprout, Heart, RefreshCw, Edit3,
@@ -353,22 +353,19 @@ function Chip({ children, color = C.accentHi, bg = "rgba(139,92,246,0.15)", bord
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FIRE RING CANVAS
+// CAMPFIRE CANVAS — flames, embers, rocks, mini crystals (ports design/premium-home.html)
 // ─────────────────────────────────────────────────────────────────────────────
-interface Particle {
-  x: number; y: number; vx: number; vy: number;
-  life: number; maxLife: number; size: number; angle: number;
-}
+function rand(a: number, b: number) { return a + Math.random() * (b - a); }
 
-function FireRing({ radius = 68, size = 200, active = true }: {
-  radius?: number; size?: number; active?: boolean;
+interface Ember { x: number; y: number; v: number; s: number; ph: number; }
+interface Flame { dx: number; w: number; h: number; ph: number; sp: number; }
+
+function CampfireCanvas({ width = 168, height = 190, active = true }: {
+  width?: number; height?: number; active?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const particlesRef = useRef<Particle[]>([]);
-  const rafRef = useRef<number>(0);
-  const visible = useRef(active);
-
-  useEffect(() => { visible.current = active; }, [active]);
+  const activeRef = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -376,143 +373,210 @@ function FireRing({ radius = 68, size = 200, active = true }: {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cx = size / 2, cy = size / 2;
-    const SPAWN_RATE = 4;
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = width * DPR; canvas.height = height * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-    function spawnParticle() {
-      const angle = Math.random() * Math.PI * 2;
-      const r = radius + (Math.random() - 0.5) * 10;
-      const x = cx + Math.cos(angle) * r;
-      const y = cy + Math.sin(angle) * r;
-      // Velocity mostly upward along the circle tangent + inward
-      const tangentX = -Math.sin(angle);
-      const tangentY =  Math.cos(angle);
-      const inwardX  = -Math.cos(angle);
-      const inwardY  = -Math.sin(angle);
-      const speed = 0.5 + Math.random() * 1.2;
-      const inward = 0.2 + Math.random() * 0.4;
-      // Add upward bias
-      const upBias = -0.6 - Math.random() * 0.8;
-      particlesRef.current.push({
-        x, y,
-        vx: tangentX * speed * 0.3 + inwardX * inward + (Math.random() - 0.5) * 0.3,
-        vy: tangentY * speed * 0.3 + inwardY * inward + upBias,
-        life: 0, maxLife: 40 + Math.random() * 30,
-        size: 3 + Math.random() * 4,
-        angle,
-      });
-    }
+    const bx = width / 2 - 5, by = height - 43;
+    const embers: Ember[] = Array.from({ length: 26 }, () => ({
+      x: rand(bx - 54, bx + 54), y: rand(by - 90, by + 43), v: rand(0.51, 1.78), s: rand(1, 3.3), ph: rand(0, 7),
+    }));
+    const flames: Flame[] = Array.from({ length: 7 }, (_, i) => ({
+      dx: (i - 3) * 5.7, w: rand(11, 20), h: rand(38, 66) - Math.abs(i - 3) * 8.9, ph: rand(0, 7), sp: rand(2.4, 4),
+    }));
 
-    function drawFrame() {
-      if (!visible.current) { rafRef.current = requestAnimationFrame(drawFrame); return; }
-      ctx!.clearRect(0, 0, size, size);
+    let ft = 0;
+    let raf = 0;
+    function frame() {
+      ft += 1 / 60;
+      ctx!.clearRect(0, 0, width, height);
+      if (!activeRef.current) { raf = requestAnimationFrame(frame); return; }
 
-      // Spawn new particles
-      for (let i = 0; i < SPAWN_RATE; i++) spawnParticle();
+      // rocks
+      ctx!.fillStyle = "#241626";
+      ([[-33, 5, 18, 10, -0.2], [33, 8, 20, 11, 0.15], [0, 13, 25, 13, 0], [-10, 3, 13, 8, 0.4]] as const)
+        .forEach(([dx, dy, rx, ry, rot]) => {
+          ctx!.save(); ctx!.translate(bx + dx, by + dy); ctx!.rotate(rot);
+          ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.fill(); ctx!.restore();
+        });
 
-      // Draw glow ring base
-      const glowGrad = ctx!.createRadialGradient(cx, cy, radius - 12, cx, cy, radius + 12);
-      glowGrad.addColorStop(0, "rgba(255,69,0,0.0)");
-      glowGrad.addColorStop(0.5, "rgba(255,100,0,0.25)");
-      glowGrad.addColorStop(1, "rgba(255,69,0,0.0)");
-      ctx!.fillStyle = glowGrad;
-      ctx!.beginPath();
-      ctx!.arc(cx, cy, radius + 12, 0, Math.PI * 2);
-      ctx!.arc(cx, cy, radius - 12, 0, Math.PI * 2, true);
-      ctx!.fill();
-
-      // Update & draw particles
-      particlesRef.current = particlesRef.current.filter(p => p.life < p.maxLife);
-      for (const p of particlesRef.current) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vy -= 0.02; // upward acceleration
-        p.vx += (Math.random() - 0.5) * 0.08; // drift
-        p.life++;
-
-        const t = p.life / p.maxLife;
-        const alpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
-        const shrink = 1 - t * 0.7;
-
-        // Color: white → yellow → orange → red
-        let r = 255, g = 255, b = 255;
-        if (t < 0.15) { g = Math.round(255 * (1 - t/0.15 * 0.2)); b = Math.round(255 * (1 - t/0.15)); }
-        else if (t < 0.5) { g = Math.round(200 - (t - 0.15) / 0.35 * 80); b = 0; }
-        else { r = 255; g = Math.max(0, Math.round(120 - (t - 0.5) / 0.5 * 120)); b = 0; }
-
-        const grad = ctx!.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * shrink * 1.5);
-        grad.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
-        grad.addColorStop(1, `rgba(${r},${g},0,0)`);
+      // mini crystals
+      ([[-43, -8, 11], [48, -5, 9]] as const).forEach(([dx, dy, s], i) => {
+        ctx!.save(); ctx!.translate(bx + dx, by + dy); ctx!.rotate(i ? 0.3 : -0.25);
+        const g = ctx!.createLinearGradient(0, -s, 0, s);
+        g.addColorStop(0, "#FBCFE8"); g.addColorStop(1, "#9333EA");
+        ctx!.fillStyle = g; ctx!.shadowColor = "rgba(217,70,239,.9)"; ctx!.shadowBlur = 13;
         ctx!.beginPath();
-        ctx!.arc(p.x, p.y, p.size * shrink * 1.5, 0, Math.PI * 2);
-        ctx!.fillStyle = grad;
-        ctx!.fill();
-      }
+        ctx!.moveTo(0, -s); ctx!.lineTo(s * 0.55, 0); ctx!.lineTo(s * 0.3, s);
+        ctx!.lineTo(-s * 0.3, s); ctx!.lineTo(-s * 0.55, 0); ctx!.closePath(); ctx!.fill();
+        ctx!.restore();
+      });
 
-      rafRef.current = requestAnimationFrame(drawFrame);
+      // flames (additive teardrops)
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      flames.forEach(f => {
+        const flick = 0.75 + 0.35 * Math.sin(ft * f.sp + f.ph) * Math.cos(ft * 2.3 + f.ph * 2);
+        const h = f.h * flick, w = f.w * (0.8 + 0.2 * flick);
+        const x = bx + f.dx + Math.sin(ft * 3 + f.ph) * 2.5, y = by + 3;
+        const g = ctx!.createLinearGradient(0, y - h, 0, y);
+        g.addColorStop(0, "rgba(254,240,138,.95)"); g.addColorStop(0.4, "rgba(249,115,22,.85)"); g.addColorStop(1, "rgba(190,18,60,.05)");
+        ctx!.fillStyle = g; ctx!.shadowColor = "rgba(249,115,22,.9)"; ctx!.shadowBlur = 23;
+        ctx!.beginPath();
+        ctx!.moveTo(x, y - h);
+        ctx!.bezierCurveTo(x + w * 0.9, y - h * 0.45, x + w * 0.75, y, x, y);
+        ctx!.bezierCurveTo(x - w * 0.75, y, x - w * 0.9, y - h * 0.45, x, y - h);
+        ctx!.fill();
+      });
+
+      // embers
+      embers.forEach(e => {
+        e.y -= e.v; e.x += Math.sin(ft * 2 + e.ph) * 0.35;
+        if (e.y < 13) { e.y = by - rand(0, 25); e.x = bx + rand(-20, 20); }
+        const al = Math.max(0, Math.min(1, (e.y - 13) / 114));
+        ctx!.fillStyle = `rgba(253,186,116,${0.8 * al})`;
+        ctx!.shadowColor = "rgba(249,115,22,1)"; ctx!.shadowBlur = 8;
+        ctx!.beginPath(); ctx!.arc(e.x, e.y, e.s * al + 0.4, 0, Math.PI * 2); ctx!.fill();
+      });
+      ctx!.restore();
+
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [width, height]);
+
+  return <canvas ref={canvasRef} style={{ width, height, display: "block" }} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HERO CANVAS — nebula cloud + pedestal ring (comet trail) + crystal shards
+// behind the floating logo (ports design/premium-home.html's heroFrame scene).
+// Auto-sizes to its container width; the caller positions the floating logo
+// and stat cards on top via absolute positioning.
+// ─────────────────────────────────────────────────────────────────────────────
+function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number }) {
+  const wrapRef   = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const wrap = wrapRef.current, canvas = canvasRef.current;
+    if (!wrap || !canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let HW = 0, HH = 0;
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    function sizeHero() {
+      const r = wrap!.getBoundingClientRect();
+      if (r.width < 2) return;
+      HW = r.width; HH = r.height;
+      canvas!.width = HW * DPR; canvas!.height = HH * DPR;
+      ctx!.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+    sizeHero();
+    const onResize = () => sizeHero();
+    window.addEventListener("resize", onResize);
+
+    const RING_Y = logoY + 108;
+    const crystals: [number, number, number, number, number, number, number][] = [
+      [122, -16, 15, 0.30, 0.2, 0.5, 0.0],
+      [150, 10, 10, 0.15, 0.5, 0.6, 1.4],
+      [106, 36, 7, 0.42, 0.8, 0.7, 2.8],
+      [-120, 40, 13, -0.30, 0.3, 0.5, 0.7],
+      [-142, 68, 8, -0.15, 0.7, 0.6, 3.2],
+    ];
+    const cloudTwinkles = Array.from({ length: 11 }, () => ({
+      dx: rand(-70, 70), dy: rand(-56, 56), s: rand(0.7, 1.7), sp: rand(0.5, 1.3), ph: rand(0, 7),
+    }));
+
+    function drawCrystal(x: number, y: number, s: number, tilt: number, t: number, ph: number, blur: number) {
+      ctx!.save();
+      ctx!.translate(x, y + Math.sin(t * 0.9 + ph) * 4.5);
+      ctx!.rotate(tilt + Math.sin(t * 0.5 + ph) * 0.07);
+      if (blur) ctx!.filter = `blur(${blur}px)`;
+      const g = ctx!.createLinearGradient(0, -s, 0, s);
+      g.addColorStop(0, "#E9D5FF"); g.addColorStop(0.45, "#A855F7"); g.addColorStop(1, "#5B21B6");
+      ctx!.beginPath();
+      ctx!.moveTo(0, -s); ctx!.lineTo(s * 0.62, -s * 0.15); ctx!.lineTo(s * 0.4, s);
+      ctx!.lineTo(-s * 0.4, s); ctx!.lineTo(-s * 0.62, -s * 0.15);
+      ctx!.closePath();
+      ctx!.fillStyle = g; ctx!.shadowColor = "rgba(168,85,247,.9)"; ctx!.shadowBlur = 14 + Math.sin(t * 2 + ph) * 5;
+      ctx!.fill();
+      ctx!.shadowBlur = 0; ctx!.globalAlpha = 0.55; ctx!.strokeStyle = "rgba(233,213,255,.8)"; ctx!.lineWidth = 0.8;
+      ctx!.beginPath(); ctx!.moveTo(0, -s); ctx!.lineTo(0, s * 0.9);
+      ctx!.moveTo(-s * 0.62, -s * 0.15); ctx!.lineTo(s * 0.62, -s * 0.15); ctx!.stroke();
+      ctx!.restore();
     }
 
-    rafRef.current = requestAnimationFrame(drawFrame);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [radius, size]);
+    function drawNebulaCloud(cx: number, cy: number, t: number) {
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      const pulse = 1 + Math.sin(t * 0.35) * 0.06;
+      const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, 110 * pulse);
+      g.addColorStop(0, "rgba(147,51,234,.22)"); g.addColorStop(0.5, "rgba(109,40,217,.11)"); g.addColorStop(1, "transparent");
+      ctx!.fillStyle = g;
+      ctx!.beginPath(); ctx!.ellipse(cx, cy, 110 * pulse, 86 * pulse, 0, 0, Math.PI * 2); ctx!.fill();
+      ctx!.restore();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      cloudTwinkles.forEach(s => {
+        const al = 0.18 + 0.45 * Math.abs(Math.sin(t * s.sp + s.ph));
+        ctx!.fillStyle = `rgba(233,213,255,${al})`;
+        ctx!.shadowColor = "rgba(216,180,254,1)"; ctx!.shadowBlur = 6;
+        ctx!.beginPath(); ctx!.arc(cx + s.dx, cy + s.dy, s.s, 0, Math.PI * 2); ctx!.fill();
+      });
+      ctx!.restore();
+    }
+
+    function drawPedestalRing(cx: number, cy: number, t: number) {
+      ctx!.save(); ctx!.translate(cx, cy);
+      const pulse = 1 + Math.sin(t * 1.4) * 0.035;
+      const rx = 138 * pulse, ry = 34 * pulse;
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      const g = ctx!.createRadialGradient(0, 6, 0, 0, 6, 168);
+      g.addColorStop(0, "rgba(147,51,234,.26)"); g.addColorStop(0.5, "rgba(109,40,217,.10)"); g.addColorStop(1, "transparent");
+      ctx!.fillStyle = g; ctx!.beginPath(); ctx!.ellipse(0, 8, 168, 44, 0, 0, Math.PI * 2); ctx!.fill();
+      ctx!.restore();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      ctx!.strokeStyle = "rgba(192,132,252,.22)"; ctx!.lineWidth = 7;
+      ctx!.shadowColor = "rgba(168,85,247,.9)"; ctx!.shadowBlur = 18;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.stroke();
+      ctx!.restore();
+      ctx!.strokeStyle = `rgba(233,213,255,${0.62 + Math.sin(t * 1.8) * 0.12})`;
+      ctx!.lineWidth = 1.5; ctx!.shadowColor = "rgba(168,85,247,1)"; ctx!.shadowBlur = 10;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.stroke();
+      ctx!.strokeStyle = "rgba(255,255,255,.85)"; ctx!.lineWidth = 2.2; ctx!.shadowBlur = 18;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, -2.5, -1.9); ctx!.stroke();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      const head = t * 0.09 * Math.PI * 2;
+      for (let k = 0; k < 14; k++) {
+        const a = head - k * 0.05;
+        const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+        const fade = 1 - k / 14;
+        ctx!.fillStyle = `rgba(243,232,255,${fade * 0.85})`;
+        ctx!.shadowColor = "rgba(216,180,254,1)"; ctx!.shadowBlur = 9 * fade;
+        ctx!.beginPath(); ctx!.arc(x, y, 1.5 * fade + 0.5, 0, Math.PI * 2); ctx!.fill();
+      }
+      ctx!.restore();
+      ctx!.restore();
+    }
+
+    let heroT = 0, raf = 0;
+    function frame() {
+      heroT += 1 / 60;
+      const t = heroT, cx = HW / 2;
+      ctx!.clearRect(0, 0, HW, HH);
+      drawNebulaCloud(cx, RING_Y - 4, t);
+      drawPedestalRing(cx, RING_Y, t);
+      crystals.forEach(c => drawCrystal(cx + c[0], logoY + c[1], c[2], c[3], t * c[5], c[6], c[4]));
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); };
+  }, [height, logoY]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={size}
-      height={size}
-      style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
-    />
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HERO LOGO ORB — floating F logo with a halo ring, crystals, and a soft glow.
-// Pure CSS/framer-motion (no canvas) so it's cheap to mount on the hero card.
-// ─────────────────────────────────────────────────────────────────────────────
-function Crystal({ size, style }: { size: number; style: React.CSSProperties }) {
-  return (
-    <motion.div
-      animate={{ y: [0, -5, 0], rotate: [0, 4, 0] }}
-      transition={{ duration: 4 + Math.random() * 2, repeat: Infinity, ease: "easeInOut" }}
-      style={{
-        position: "absolute", width: size, height: size * 1.15, ...style,
-        background: "linear-gradient(160deg,#E9D5FF 0%,#A855F7 45%,#5B21B6 100%)",
-        clipPath: "polygon(50% 0%, 88% 20%, 68% 100%, 32% 100%, 12% 20%)",
-        filter: "drop-shadow(0 0 6px rgba(168,85,247,0.85))",
-      }}
-    />
-  );
-}
-
-function HeroLogoOrb({ size = 110 }: { size?: number }) {
-  const logoSize = size * 0.66;
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      {/* soft ambient glow */}
-      <motion.div animate={{ scale: [1, 1.15, 1], opacity: [0.55, 0.85, 0.55] }}
-        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-        style={{ position: "absolute", inset: -size * 0.25, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(139,92,246,0.45) 0%, transparent 70%)" }} />
-      {/* tilted halo ring, slow rotation */}
-      <motion.div initial={{ rotateX: 72 }} animate={{ rotateX: 72, rotate: 360 }}
-        transition={{ duration: 26, repeat: Infinity, ease: "linear" }}
-        style={{ position: "absolute", inset: -size * 0.16, borderRadius: "50%",
-          border: "1.5px solid rgba(233,213,255,0.55)",
-          boxShadow: "0 0 14px rgba(168,85,247,0.6)" }} />
-      <motion.div initial={{ rotateX: 72 }} animate={{ rotateX: 72, rotate: -360 }}
-        transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
-        style={{ position: "absolute", inset: -size * 0.3, borderRadius: "50%",
-          border: "1px dashed rgba(168,85,247,0.28)" }} />
-      {/* scattered crystal shards */}
-      <Crystal size={size * 0.16} style={{ top: -size * 0.12, right: -size * 0.14 }} />
-      <Crystal size={size * 0.11} style={{ bottom: -size * 0.08, left: -size * 0.16 }} />
-      {/* floating logo */}
-      <motion.div animate={{ y: [-5, 5, -5] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <img src="/mini-logo.png" alt="" style={{ width: logoSize, height: logoSize, objectFit: "contain",
-          filter: "drop-shadow(0 0 16px rgba(168,85,247,0.8)) drop-shadow(0 6px 12px rgba(0,0,0,0.4))" }} />
-      </motion.div>
+    <div ref={wrapRef} style={{ position: "absolute", inset: 0, height, pointerEvents: "none" }}>
+      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
     </div>
   );
 }
@@ -1032,49 +1096,52 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
       </div>
 
-      {/* ── Total Points hero card ── */}
-      <Card glow style={{ padding:"20px 20px 18px", overflow:"visible" }}>
-        {/* Deep purple radial glow background */}
-        <div style={{ position:"absolute", inset:0, borderRadius:20, pointerEvents:"none",
-          background:"radial-gradient(ellipse at 70% 50%, rgba(139,92,246,0.35) 0%, rgba(109,40,217,0.15) 40%, transparent 70%)" }} />
-        {/* Bottom glow pulse */}
-        <motion.div animate={{ opacity:[0.4,0.8,0.4] }} transition={{ duration:3, repeat:Infinity }}
-          style={{ position:"absolute", bottom:-20, left:"30%", right:"10%", height:60, pointerEvents:"none",
-            background:"radial-gradient(ellipse, rgba(139,92,246,0.5) 0%, transparent 70%)", filter:"blur(18px)" }} />
+      {/* ── Hero scene: nebula/pedestal-ring canvas + floating logo + stat cards ── */}
+      <div style={{ position:"relative", height:280, margin:"0 -2px 4px" }}>
+        <HeroCanvas height={280} logoY={104} />
 
-        <div style={{ position:"relative", display:"flex", alignItems:"center", gap:8 }}>
-          {/* Points info — left side */}
-          <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ color:"rgba(196,181,253,0.7)", fontSize:11, fontWeight:700,
-              letterSpacing:"0.14em", textTransform:"uppercase", marginBottom:6 }}>Total Points</p>
-            {ptsLoading
-              ? <Loader2 size={28} className="animate-spin" style={{ color:C.accentHi, margin:"10px 0" }} />
-              : <div style={{ fontSize:52, fontWeight:900, letterSpacing:"-0.03em", lineHeight:1,
-                  background:"linear-gradient(135deg,#FFFFFF 0%,#DDD6FE 40%,#A78BFA 100%)",
-                  WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", marginBottom:10 }}>
-                  <Counter to={totalPoints} />
-                </div>
-            }
-            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-              {todayPts > 0 && (
-                <Chip color={C.green} bg="rgba(16,185,129,0.15)" border="rgba(16,185,129,0.35)">
-                  ✓ +{todayPts} today
-                </Chip>
-              )}
-              {rank && (
-                <Chip color={C.amber} bg="rgba(245,158,11,0.15)" border="rgba(245,158,11,0.35)">
-                  <Trophy size={10} /> Global #{rank}
-                </Chip>
-              )}
-            </div>
-          </div>
+        {/* Floating logo */}
+        <motion.div animate={{ y:[-6, 6, -6] }} transition={{ duration:5.2, repeat:Infinity, ease:"easeInOut" }}
+          style={{ position:"absolute", left:"50%", top:104, transform:"translate(-50%,-50%)", zIndex:3,
+            width:130, height:130, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+          <img src="/mini-logo.png" alt="" style={{ width:112, height:112, objectFit:"contain",
+            filter:"drop-shadow(0 0 22px rgba(168,85,247,.85)) drop-shadow(0 0 60px rgba(124,58,237,.55)) drop-shadow(0 18px 30px rgba(0,0,0,.55))" }} />
+        </motion.div>
 
-          {/* Floating logo orb — right side, big */}
-          <div style={{ position:"relative", width:110, height:110, flexShrink:0 }}>
-            <HeroLogoOrb size={110} />
+        {/* Stat card — Total Points (left) */}
+        <div style={{ position:"absolute", top:12, left:6, zIndex:4, width:158, padding:"15px 15px 13px",
+          borderRadius:22, background:"linear-gradient(160deg,rgba(31,19,58,.88),rgba(17,9,33,.86))",
+          border:"1px solid rgba(139,92,246,.3)", boxShadow:"0 8px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06)",
+          backdropFilter:"blur(10px)" }}>
+          <p style={{ color:"#B9AEDD", fontSize:12.5, fontWeight:600, marginBottom:6 }}>Total Points</p>
+          {ptsLoading
+            ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
+            : <div style={{ fontSize:27, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:5,
+                color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
+                <Counter to={totalPoints} />
+              </div>
+          }
+          {todayPts > 0 && (
+            <p style={{ display:"flex", alignItems:"center", gap:4, fontSize:12.5, fontWeight:700, color:C.green }}>
+              <ArrowUp size={12} />+{todayPts} today
+            </p>
+          )}
+        </div>
+
+        {/* Stat card — Global Rank (right) */}
+        <div style={{ position:"absolute", top:12, right:6, zIndex:4, width:132, textAlign:"center", padding:"15px 15px 13px",
+          borderRadius:22, background:"linear-gradient(160deg,rgba(31,19,58,.88),rgba(17,9,33,.86))",
+          border:"1px solid rgba(139,92,246,.3)", boxShadow:"0 8px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06)",
+          backdropFilter:"blur(10px)" }}>
+          <Trophy size={26} color={C.amber} style={{ margin:"0 auto 4px", display:"block",
+            filter:"drop-shadow(0 0 10px rgba(251,191,36,0.7))" }} />
+          <p style={{ color:"#B9AEDD", fontSize:12.5, fontWeight:600 }}>Global Rank</p>
+          <div style={{ fontSize:29, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
+            textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
+            {rank ? `#${rank}` : "—"}
           </div>
         </div>
-      </Card>
+      </div>
 
       {/* ── Stats row ── */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
@@ -1098,72 +1165,61 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         ))}
       </div>
 
-      {/* ── Streak card (with fire ring) ── */}
+      {/* ── Streak card (with campfire scene) ── */}
       {streak > 0 && (
-        <Card style={{ padding:"20px", background:"rgba(255,69,0,0.06)", border:"1px solid rgba(255,100,0,0.25)" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-            {/* Fire ring around streak number */}
-            <div style={{ position:"relative", width:140, height:140, flexShrink:0 }}>
-              <FireRing radius={60} size={140} active={true} />
-              {/* Streak number in center */}
-              <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
-                alignItems:"center", justifyContent:"center" }}>
-                <span style={{ fontSize:38, fontWeight:900, lineHeight:1,
-                  background:`linear-gradient(135deg,${C.fire3},${C.fire2})`,
-                  WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>
-                  {streak}
-                </span>
-                <span style={{ color:"rgba(255,150,0,0.8)", fontSize:11, fontWeight:700 }}>days</span>
+        <Card style={{ position:"relative", overflow:"hidden",
+          background:"linear-gradient(115deg,#1C0F14 0%,#170B23 42%,#140A26 100%)",
+          border:"1px solid rgba(251,146,60,0.22)" }}>
+          {/* Campfire canvas — decorative background layer, left column */}
+          <div style={{ position:"absolute", left:0, top:0, width:168, height:"100%", pointerEvents:"none" }}>
+            <CampfireCanvas width={168} height={190} active={true} />
+          </div>
+          <div style={{ position:"relative", zIndex:1, padding:"20px 18px 20px 168px" }}>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
+              <div>
+                <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
+                <p style={{ color:C.text2, fontSize:12, lineHeight:1.5 }}>
+                  Keep your streak alive and earn bigger bonuses.
+                </p>
+              </div>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                <p style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</p>
+                <p style={{ color:"#FFD700", fontWeight:900, fontSize:16, marginTop:2 }}>+{nextBonusPts}</p>
               </div>
             </div>
-
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
-                <div>
-                  <p style={{ color:"#FF8C00", fontWeight:800, fontSize:16, marginBottom:4 }}>You're on fire! 🔥</p>
-                  <p style={{ color:C.text2, fontSize:12, lineHeight:1.5 }}>
-                    Keep your streak alive and earn bigger bonuses.
-                  </p>
+            {/* Day chain: recent check-ins → today (highlighted, shows streak count) → upcoming */}
+            <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:12, marginBottom:10 }}>
+              {chainDays.map((d, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", flex: d.kind === "now" ? "0 0 auto" : 1 }}>
+                  {i > 0 && (
+                    <div style={{ flex:1, height:2, minWidth:4,
+                      background: d.kind === "future" && chainDays[i-1].kind === "future"
+                        ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#7C3AED,#FF8C00)" }} />
+                  )}
+                  {d.kind === "now" ? (
+                    <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0,
+                      background:"radial-gradient(circle at 50% 60%,#2A1420,#190D22 70%)",
+                      border:"2px solid #FB923C", color:"#fff", fontSize:12, fontWeight:800,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      boxShadow:"0 0 14px rgba(251,146,60,0.75)" }}>
+                      {streak}
+                    </div>
+                  ) : (
+                    <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      background: d.kind === "done" ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : "rgba(255,255,255,0.06)",
+                      border: `1px solid ${d.kind === "done" ? "rgba(255,100,0,0.5)" : C.border}` }}>
+                      {d.kind === "done" && <Check size={10} color="#fff" />}
+                    </div>
+                  )}
                 </div>
-                <div style={{ textAlign:"right", flexShrink:0 }}>
-                  <p style={{ color:"rgba(255,150,0,0.75)", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Next Bonus</p>
-                  <p style={{ color:"#FFD700", fontWeight:900, fontSize:16, marginTop:2 }}>+{nextBonusPts}</p>
-                </div>
-              </div>
-              {/* Day chain: recent check-ins → today (highlighted) → upcoming */}
-              <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:12, marginBottom:10 }}>
-                {chainDays.map((d, i) => (
-                  <div key={i} style={{ display:"flex", alignItems:"center", flex: d.kind === "now" ? "0 0 auto" : 1 }}>
-                    {i > 0 && (
-                      <div style={{ flex:1, height:2, minWidth:4,
-                        background: d.kind === "future" && chainDays[i-1].kind === "future"
-                          ? "rgba(255,255,255,0.08)" : "linear-gradient(90deg,#7C3AED,#FF8C00)" }} />
-                    )}
-                    {d.kind === "now" ? (
-                      <div style={{ width:34, height:34, borderRadius:"50%", flexShrink:0,
-                        background:"radial-gradient(circle at 50% 60%,#2A1420,#190D22 70%)",
-                        border:"2px solid #FB923C", color:"#fff", fontSize:12, fontWeight:800,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        boxShadow:"0 0 14px rgba(251,146,60,0.75)" }}>
-                        {streak}
-                      </div>
-                    ) : (
-                      <div style={{ width:20, height:20, borderRadius:"50%", flexShrink:0,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        background: d.kind === "done" ? `linear-gradient(135deg,${C.fire2},${C.fire1})` : "rgba(255,255,255,0.06)",
-                        border: `1px solid ${d.kind === "done" ? "rgba(255,100,0,0.5)" : C.border}` }}>
-                        {d.kind === "done" && <Check size={10} color="#fff" />}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {stats?.streakBonusAwarded && (
-                <Chip color="#FFD700" bg="rgba(255,215,0,0.12)" border="rgba(255,215,0,0.35)">
-                  🎉 +{nextBonusPts} streak bonus credited!
-                </Chip>
-              )}
+              ))}
             </div>
+            {stats?.streakBonusAwarded && (
+              <Chip color="#FFD700" bg="rgba(255,215,0,0.12)" border="rgba(255,215,0,0.35)">
+                🎉 +{nextBonusPts} streak bonus credited!
+              </Chip>
+            )}
           </div>
         </Card>
       )}
