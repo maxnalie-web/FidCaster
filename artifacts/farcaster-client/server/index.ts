@@ -19,6 +19,7 @@ import { registerPointsRoutes } from "./points-routes.js";
 import { registerMiniRoutes } from "./mini-routes.js";
 import { registerWalletRoutes } from "./wallet-routes.js";
 import { initLedger } from "./db/ledger.js";
+import { initActionsLedgerStore } from "./actions-ledger-store.js";
 import { startVerificationJob } from "./verification-job.js";
 import { startSybilDetector } from "./sybil-detector.js";
 import { startWatchers } from "./watcher.js";
@@ -38,6 +39,11 @@ import {
 import { createNftPassRouter } from "./nft-pass-routes.js";
 import { getPublicConfig, setPublicConfig, getAdminSecrets, setAdminSecrets } from "./admin-store.js";
 import { setAdminNeynarKey } from "./neynar-limit.js";
+import {
+  upsertNotificationToken,
+  disableNotificationToken,
+  deleteNotificationToken,
+} from "./db/notifications.js";
 
 // Load .env from project root (tsx doesn't auto-load .env like Vite does)
 try {
@@ -80,6 +86,7 @@ const ALLOWED_ORIGINS = [
   /^https:\/\/[\w.-]+\.worf\.replit\.dev$/,
   /^https:\/\/(www\.)?fidcaster\.xyz$/,
   /^https:\/\/(www\.)?fidcaster\.com$/,
+  /^https:\/\/docs\.fidcaster\.xyz$/,
   ...extraOrigins,
 ];
 
@@ -130,29 +137,60 @@ app.use(helmet({
 }));
 
 // Farcaster Mini Apps run inside an iframe inside Warpcast/other FC clients.
-// Helmet sets X-Frame-Options: SAMEORIGIN + CSP frame-ancestors 'self' globally,
-// which blocks any cross-origin iframe — including Warpcast. Override those
-// headers specifically for the /mini route so the app can actually launch.
+// The hosted Farcaster manifest for this app has homeUrl = https://fidcaster.xyz
+// (the root), NOT /mini. So we must handle BOTH "/" and "/mini" as valid mini
+// app entry points.
+//
+// Must run BEFORE the global cors() middleware below, because that middleware
+// blocks every request whose Origin is not in ALLOWED_ORIGINS — including
+// warpcast.com and other Farcaster clients. For mini-app routes we open CORS.
+const miniAppCors = cors({
+  origin: true,          // reflect any Origin — Farcaster clients are arbitrary
+  methods: ["GET", "OPTIONS"],
+  credentials: false,
+});
+app.use("/mini", miniAppCors);
+app.use("/", miniAppCors);   // hosted manifest uses root as homeUrl
+
+// When the root "/" is loaded inside a cross-origin iframe (i.e. Warpcast is
+// embedding it as a mini app), redirect immediately to /mini which contains
+// the actual mini app UI and calls sdk.actions.ready().
 app.use((req, res, next) => {
-  if (req.path === "/mini" || req.path.startsWith("/mini?")) {
+  const isMiniAppIframe =
+    req.path === "/" &&
+    req.headers["sec-fetch-dest"] === "iframe" &&
+    req.headers["sec-fetch-site"] === "cross-site";
+  if (isMiniAppIframe) {
+    return res.redirect(302, "/mini");
+  }
+  next();
+});
+
+const MINI_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
+  "img-src 'self' data: https: blob:",
+  "media-src 'self' https: blob:",
+  "worker-src 'self' blob:",
+  "connect-src 'self' https: wss:",
+  "frame-src 'self' https:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors *",   // allow all Farcaster clients to embed
+].join(";");
+
+app.use((req, res, next) => {
+  if (req.path === "/mini" || req.path === "/") {
     res.removeHeader("X-Frame-Options");
-    res.setHeader(
-      "Content-Security-Policy",
-      [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
-        "img-src 'self' data: https: blob:",
-        "media-src 'self' https: blob:",
-        "worker-src 'self' blob:",
-        "connect-src 'self' https: wss:",
-        "frame-src 'self' https:",
-        "object-src 'none'",
-        "base-uri 'self'",
-        "frame-ancestors *",   // allow all Farcaster clients to embed /mini
-      ].join(";"),
-    );
+    // Helmet sets Cross-Origin-Resource-Policy: same-origin which prevents
+    // cross-origin iframes from loading the page at all (separate from CORS).
+    res.removeHeader("Cross-Origin-Resource-Policy");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    // Allow Warpcast to open the page across origins (COOP same-origin blocks it).
+    res.removeHeader("Cross-Origin-Opener-Policy");
+    res.setHeader("Content-Security-Policy", MINI_CSP);
   }
   next();
 });
@@ -168,7 +206,10 @@ app.use((_req, res, next) => {
   next();
 });
 
-app.use(cors({
+// Mini app entry-points (/mini and /) have their own open-CORS handler above.
+// The global strict CORS must NOT run for those paths or it will fire a 403
+// that overrides the per-route handler's already-set headers.
+const strictCors = cors({
   origin: (origin, callback) => {
     // No Origin header = non-browser client (curl, server-to-server). Allow GET,
     // block write methods via the CORS preflight mechanism being skipped - real
@@ -186,7 +227,12 @@ app.use(cors({
   allowedHeaders: ["Content-Type"],
   credentials: false,
   maxAge: 600,
-}));
+});
+app.use((req, res, next) => {
+  // Skip strict CORS for mini-app entry points — they use open CORS above.
+  if (req.path === "/mini" || req.path === "/") return next();
+  strictCors(req, res, next);
+});
 
 app.use(compression());
 // Small default body limit for every route - the 70MB base64 upload payload
@@ -867,9 +913,60 @@ registerWalletRoutes(app);  // Airdrop ETH address registration (/api/airdrop/wa
 app.use("/api/nft-pass", createNftPassRouter()); // FidCaster Pass NFT mint + check
 
 // Mini App webhook — Farcaster sends events here when users add/remove the mini app.
-// No-op for now (acknowledged with 200); extend to handle notifications later.
-app.post("/api/miniapp/webhook", express.json(), (_req: express.Request, res: express.Response) => {
-  res.json({ ok: true });
+// Handles both JWS format (from Farcaster servers) and direct format (from our client).
+function decodeBase64Url(str: string): string {
+  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (4 - (padded.length % 4)) % 4;
+  return Buffer.from(padded + "=".repeat(pad), "base64").toString("utf-8");
+}
+
+async function handleMiniAppWebhookBody(body: Record<string, unknown>): Promise<void> {
+  let fid: number | null = null;
+  let event: string | null = null;
+  let notifDetails: { token?: string; url?: string } | null = null;
+
+  // ── JWS format (from Farcaster notification servers) ──────────────────
+  if (body.header && body.payload && typeof body.header === "string") {
+    try {
+      const header  = JSON.parse(decodeBase64Url(body.header as string));
+      const payload = JSON.parse(decodeBase64Url(body.payload as string));
+      fid           = Number(header.fid) || null;
+      event         = String(payload.event ?? "");
+      notifDetails  = payload.notificationDetails ?? null;
+    } catch { /* malformed JWS — fall through */ }
+  }
+  // ── Direct format (from our client or farcaster direct) ───────────────
+  else if (body.event) {
+    event        = String(body.event);
+    fid          = body.fid ? Number(body.fid) : null;
+    notifDetails = (body.notificationDetails as { token?: string; url?: string }) ?? null;
+  }
+
+  if (!event) return;
+
+  const normalised = event.toLowerCase().replace(/^frame_/, "miniapp_");
+  if (
+    (normalised === "miniapp_added" || normalised === "notifications_enabled") &&
+    fid && notifDetails?.token && notifDetails?.url
+  ) {
+    await upsertNotificationToken(fid, notifDetails.token, notifDetails.url);
+    console.log(`[miniapp-webhook] token saved fid=${fid} event=${event}`);
+  } else if (normalised === "miniapp_removed" && fid) {
+    await deleteNotificationToken(fid);
+    console.log(`[miniapp-webhook] token deleted fid=${fid}`);
+  } else if (normalised === "notifications_disabled" && fid) {
+    await disableNotificationToken(fid);
+    console.log(`[miniapp-webhook] token disabled fid=${fid}`);
+  }
+}
+
+app.post("/api/miniapp/webhook", express.json(), async (_req: express.Request, res: express.Response) => {
+  try {
+    await handleMiniAppWebhookBody(_req.body as Record<string, unknown>);
+  } catch (e) {
+    console.warn("[miniapp-webhook] error:", (e as Error).message);
+  }
+  res.json({ ok: true }); // always 200
 });
 
 // Real Farcaster spam labels (github.com/merkle-team/labels), NOT a Neynar
@@ -1380,7 +1477,8 @@ const FARCASTER_MANIFEST = {
     payload: "eyJkb21haW4iOiJmaWRjYXN0ZXIueHl6In0",
     signature: "c9x9zyX8rIh8/oWJJhgweM9JzmtTSnCZ24m/RKwOBi9CVLHxRQXXInL4T44BfVPP8LYEJywagy0tilT5ypMpiBs=",
   },
-  frame: {
+  // ⚠️  Must use "miniapp" key (not "frame") — Farcaster Mini App spec v1
+  miniapp: {
     version: "1",
     name: "FidCaster",
     // NOTE: Farcaster's spec technically says iconUrl "must be 1024x1024px
@@ -1390,6 +1488,8 @@ const FARCASTER_MANIFEST = {
     // back to icon-1024.png (opaque, spec-compliant, kept in the repo).
     iconUrl: "https://fidcaster.xyz/icons/icon-1024-transparent.png",
     homeUrl: "https://fidcaster.xyz/mini",
+    imageUrl: "https://fidcaster.xyz/og-mini.png",
+    buttonTitle: "Open FidCaster",
     splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
     splashBackgroundColor: "#1D0070",
     webhookUrl: "https://fidcaster.xyz/api/miniapp/webhook",
@@ -1426,12 +1526,13 @@ app.get("/.well-known/farcaster.json", (_req: express.Request, res: express.Resp
 });
 
 // Image aliases — farcaster.json references these short paths
-app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-512.png"));
-app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/icon-512.png"));
-app.get("/image.png",  (_req, res) => res.redirect(307, "/opengraph.jpg"));
+app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-1024-transparent.png"));
+app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/splash-200-transparent.png"));
+app.get("/image.png",  (_req, res) => res.redirect(307, "/og-mini.png"));
 
-// Webhook alias — farcaster.json uses /api/webhook, server listens on /api/miniapp/webhook
-app.post("/api/webhook", express.json(), (_req: express.Request, res: express.Response) => {
+// Webhook alias — /api/webhook also accepted (used by some Farcaster clients)
+app.post("/api/webhook", express.json(), async (req: express.Request, res: express.Response) => {
+  await handleMiniAppWebhookBody(req.body as Record<string, unknown>);
   res.json({ ok: true });
 });
 
@@ -1524,6 +1625,7 @@ const server = app.listen(PORT, host, () => {
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
   initLedger().catch((e) => console.error("[ledger] init failed:", e));
+  initActionsLedgerStore(); // warm up pg pool + ensure points/airdrop ledger tables exist
   startVerificationJob();   // background: verify hub action proofs against Neynar
   startSybilDetector();     // background: hourly fraud exclusion rules
   startWatchers();          // background: data-gap monitors + /api/watchers/health

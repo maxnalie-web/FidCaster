@@ -12,6 +12,7 @@ export function reportGrowCampaignStart(params: {
   fid: number;
   campaignId: string;
   mode: "follow" | "unfollow";
+  targetFid?: number;
   filters?: Record<string, unknown>;
   targetFids: number[];
 }): void {
