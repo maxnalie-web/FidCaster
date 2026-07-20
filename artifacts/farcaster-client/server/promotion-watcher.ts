@@ -94,20 +94,23 @@ export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise
 
     if (!result.ok) {
       console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: ${result.reason}`);
-      if (result.reason === "insufficient_allowance") {
+      if (result.reason === "insufficient_allowance" || result.reason === "promo_category_cap_reached") {
         await notifyFid(authorFid, {
           title: "Promotion not counted",
-          body:  "Your promotion cast didn't earn points — you're out of daily allowance.",
+          body:  result.reason === "promo_category_cap_reached"
+            ? "Your promotion cast didn't earn points — you've hit today's promote limit."
+            : "Your promotion cast didn't earn points — you're out of daily allowance.",
           data:  { type: "promotion_failed", castHash: cast.hash },
         });
       }
       return result.reason === "already_processed"; // true = was already handled, not an error
     }
 
-    console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: +50 pts, allowance debited`);
+    const promoPoints = result.promoPoints ?? 50;
+    console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: +${promoPoints} pts, allowance debited`);
     await notifyFid(authorFid, {
-      title: "Promotion counted! +50 pts",
-      body:  "Your FidCaster promotion cast just earned you 50 points.",
+      title: `Promotion counted! +${promoPoints} pts`,
+      body:  `Your FidCaster promotion cast just earned you ${promoPoints} points.`,
       data:  { type: "promotion_ok", castHash: cast.hash },
     });
     return true;

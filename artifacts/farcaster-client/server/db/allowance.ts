@@ -1,14 +1,13 @@
 /**
  * Daily allowance — tracks each user's daily budget for promotion/gifting.
  *
- * Formula: (base(200) + min(follower_count * 3, 1500)) * (0.5 + neynar_score)
+ * Formula: (base(300) + min(follower_count * 4, 3000)) * (0.5 + neynar_score)
  *   neynar_score is Neynar's 0-1 account-quality score (0 for unscored, which
  *   maps to a 0.5x multiplier - a neutral middle, not a penalty for an
  *   unscored account).
- *   → range: ~100/day (no followers, score 0) to ~2550/day (1500 follower
- *     bonus, score 1.0). Two variables combined multiplicatively means
- *     users rarely land on the same number even with similar follower
- *     counts, unlike the old flat linear formula.
+ *   → range: ~150/day (no followers, score 0) up to a hard cap of 5000/day.
+ *   Two variables combined multiplicatively means users rarely land on the
+ *   same number even with similar follower counts.
  *
  * Allowance resets at midnight UTC. Rows are keyed by (fid, UTC date).
  */
@@ -16,13 +15,15 @@
 import { getPool } from "./pool.js";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "../neynar-limit.js";
 
-const BASE_ALLOWANCE   = 200;
-const MAX_FOLLOWER_BONUS = 1500; // cap on the follower-proportional bonus
+export const BASE_ALLOWANCE   = 300;
+export const MIN_ALLOWANCE    = 150; // floor: BASE * the 0.5x minimum multiplier
+export const MAX_ALLOWANCE    = 5000; // hard cap
+const MAX_FOLLOWER_BONUS      = 3000; // cap on the follower-proportional bonus
 
 function calculateTotal(followerCount: number, neynarScore: number): number {
-  const followerBonus = Math.min(followerCount * 3, MAX_FOLLOWER_BONUS);
+  const followerBonus = Math.min(followerCount * 4, MAX_FOLLOWER_BONUS);
   const qualityMultiplier = 0.5 + Math.max(0, Math.min(neynarScore, 1)); // 0.5x .. 1.5x
-  return Math.round((BASE_ALLOWANCE + followerBonus) * qualityMultiplier);
+  return Math.min(MAX_ALLOWANCE, Math.round((BASE_ALLOWANCE + followerBonus) * qualityMultiplier));
 }
 
 function todayUtc(): string {
@@ -274,6 +275,20 @@ export async function queuePendingPoints(params: {
 
 const PROMO_COST = 50;
 
+// A promote's point award scales with the promoter's own daily allowance
+// (a proxy for account quality/reach already computed in calculateTotal) -
+// a brand-new account still gets the original flat 50, a big account with
+// the max 5000/day allowance gets up to 500 (the daily cap for this action
+// type - one big promote CAN exhaust it, that's intentional, it's meant to
+// feel proportionate to their reach).
+const MIN_PROMO_PTS = 50;
+const MAX_PROMO_PTS = 500;
+
+function scalePromoPoints(dailyAllowanceTotal: number): number {
+  const t = Math.max(0, Math.min(1, (dailyAllowanceTotal - MIN_ALLOWANCE) / (MAX_ALLOWANCE - MIN_ALLOWANCE)));
+  return Math.round(MIN_PROMO_PTS + (MAX_PROMO_PTS - MIN_PROMO_PTS) * t);
+}
+
 // Neither promotion nor gifting can consume more than this fraction of a
 // day's total allowance on its own - each is capped independently, on top
 // of the overall `used <= base_amount` bound already in place, so a user
@@ -296,7 +311,7 @@ export async function processPromotionAtomic(params: {
   authorFid: number;
   castHash:  string;
   appFid:    number;
-}): Promise<{ ok: boolean; reason?: string }> {
+}): Promise<{ ok: boolean; reason?: string; promoPoints?: number }> {
   const pool = getPool();
   if (!pool) return { ok: false, reason: "db_not_configured" };
 
@@ -317,12 +332,13 @@ export async function processPromotionAtomic(params: {
 
     // 2. Atomic allowance debit — only succeeds if remaining >= PROMO_COST
     //    AND today's promo spending stays within its own category cap.
-    const { rowCount: debited } = await client.query(
+    const { rowCount: debited, rows: debitedRows } = await client.query(
       `UPDATE daily_allowance
        SET used = used + $3, promo_used = promo_used + $3, refreshed_at = now()
        WHERE fid = $1 AND date = $2
          AND (base_amount - used) >= $3
-         AND (base_amount * ${CATEGORY_CAP_FRACTION} - promo_used) >= $3`,
+         AND (base_amount * ${CATEGORY_CAP_FRACTION} - promo_used) >= $3
+       RETURNING base_amount`,
       [params.authorFid, today, PROMO_COST],
     );
     if ((debited ?? 0) === 0) {
@@ -338,6 +354,7 @@ export async function processPromotionAtomic(params: {
     }
 
     // 3. Insert ledger row (promotion now verified and allowance confirmed)
+    const promoPoints = scalePromoPoints(Number(debitedRows[0]?.base_amount ?? MIN_ALLOWANCE));
     await client.query(
       `INSERT INTO users (fid) VALUES ($1) ON CONFLICT (fid) DO UPDATE SET last_seen = now()`,
       [params.authorFid],
@@ -347,13 +364,13 @@ export async function processPromotionAtomic(params: {
        VALUES ($1, 'promotion', $2, $3, true, now())`,
       [
         params.authorFid,
-        JSON.stringify({ castHash: params.castHash, appFid: params.appFid }),
+        JSON.stringify({ castHash: params.castHash, appFid: params.appFid, amount: promoPoints }),
         params.castHash,
       ],
     );
 
     await client.query("COMMIT");
-    return { ok: true };
+    return { ok: true, promoPoints };
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;

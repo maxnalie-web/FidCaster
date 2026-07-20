@@ -39,6 +39,13 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   // server/nft-holder-job.ts. Awarded once per fid, like referral_welcome.
   nft_holder_bonus:        { pts: 300, dailyCap: 300  },
   // ── Allowance-gated actions ────────────────────────────────────────────────
+  // promotion's award scales with the promoter's own daily allowance (see
+  // db/allowance.ts processPromotionAtomic) - a bigger allowance (higher
+  // follower count / account quality) earns more per promote, not the same
+  // flat amount as a brand-new account. The actual amount lives in
+  // payload.amount per row, same pattern as gift_received below; `pts` here
+  // is unused for scoring (kept only as a display default), dailyCap 500
+  // is enforced in SQL via PROMO_CASE.
   promotion:               { pts: 50,  dailyCap: 500  },
   gift:                    { pts: 0,   dailyCap: 0    }, // sender: 0 pts (allowance debited)
   // gift_received uses payload.amount (variable); dailyCap 500 enforced in SQL
@@ -46,9 +53,9 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
 };
 
 // Build the CASE expression once (avoids repeating in every query).
-// Excludes gift_received — handled via GIFT_CASE (payload-based variable amount).
+// Excludes gift_received/promotion — both handled via payload-based variable-amount CASE branches.
 const CASE_EXPR = Object.entries(POINTS)
-  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received")
+  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received" && type !== "promotion")
   .map(([type, { pts, dailyCap }]) =>
     `WHEN '${type}' THEN LEAST(cnt * ${pts}, ${dailyCap})`)
   .join("\n      ");
@@ -56,6 +63,8 @@ const CASE_EXPR = Object.entries(POINTS)
 // gift_received: each row has payload->>'amount' with the actual pts value.
 // We sum those amounts per (fid, day) and cap at 500.
 const GIFT_CASE = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
+// promotion: same pattern — payload->>'amount' holds the actual scaled award.
+const PROMO_CASE = `WHEN 'promotion' THEN LEAST(COALESCE(promo_sum, 0), 500)`;
 
 // ── Core SQL ──────────────────────────────────────────────────────────────────
 
@@ -66,7 +75,10 @@ WITH counted AS (
          COUNT(*) AS cnt,
          SUM(CASE WHEN action_type = 'gift_received'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS gift_sum
+                  ELSE 0 END) AS gift_sum,
+         SUM(CASE WHEN action_type = 'promotion'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS promo_sum
   FROM user_actions
   WHERE verified = true AND excluded = false
   GROUP BY fid, action_type, d
@@ -74,6 +86,7 @@ WITH counted AS (
 scored AS (
   SELECT fid, CASE action_type
     ${GIFT_CASE}
+    ${PROMO_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -101,14 +114,18 @@ WITH counted AS (
          COUNT(*) AS cnt,
          SUM(CASE WHEN action_type = 'gift_received'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS gift_sum
+                  ELSE 0 END) AS gift_sum,
+         SUM(CASE WHEN action_type = 'promotion'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS promo_sum
   FROM user_actions
   WHERE fid = $1 AND verified = true AND excluded = false
   GROUP BY action_type, d
 ),
 scored AS (
-  SELECT action_type, d, cnt, gift_sum, CASE action_type
+  SELECT action_type, d, cnt, gift_sum, promo_sum, CASE action_type
     ${GIFT_CASE}
+    ${PROMO_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts

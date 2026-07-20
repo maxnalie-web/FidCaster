@@ -1852,9 +1852,9 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
 function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
   const sections = [
     { t:"What it is", d:"A daily budget of points you can spend, not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
-    { t:"How much you get", d:"Based on your account: 200 base points plus up to 1,500 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x). Higher-quality, higher-follower accounts get meaningfully more." },
+    { t:"How much you get", d:"Based on your account: 300 base points plus up to 3,000 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x), capped at 5,000/day. Higher-quality, higher-follower accounts get meaningfully more." },
     { t:"Promote and Gift each have their own cap", d:"Neither can use more than 70% of a single day's allowance on its own, so you can't spend it all in one place." },
-    { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn +50 points and 50 is deducted from today's allowance." },
+    { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
     { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
     { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
   ];
@@ -1920,7 +1920,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
                 <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
               </div>
               <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-                Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
+                Earn <strong style={{ color:C.accentHi }}>50-500 pts</strong> per cast
               </p>
               <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
             </a>
