@@ -264,7 +264,7 @@ export function registerMiniRoutes(app: Express): void {
                   SUM(CASE WHEN action_type='gift_received' THEN COALESCE((payload->>'amount')::int,0) ELSE 0 END) AS gift_sum
            FROM user_actions
            WHERE fid=$1 AND verified=true AND excluded=false
-             AND (created_at AT TIME ZONE 'UTC')::date = CURRENT_DATE
+             AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
            GROUP BY action_type
          ),
          scored AS (
@@ -280,7 +280,7 @@ export function registerMiniRoutes(app: Express): void {
         `SELECT action_type, COUNT(*) AS cnt
          FROM user_actions
          WHERE fid=$1 AND verified=true AND excluded=false
-           AND (created_at AT TIME ZONE 'UTC')::date = CURRENT_DATE
+           AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
          GROUP BY action_type`,
         [fid],
       );

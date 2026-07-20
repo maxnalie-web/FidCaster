@@ -15,10 +15,17 @@
  *     Missing targetFid → trust window (24h) then verify.
  *     Confirmed NOT following → exclude.
  *
- *   like / unlike / recast / unrecast:
- *     Trust window = 24h (reduced from 48h).  These have 1-3 pts and the
- *     attack surface vs verification cost is not worth a Neynar call.
- *     Format validation (hex) blocks the bulk fake-hash attack.
+ *   like / recast:
+ *     Semi-strict — same pattern as follow: Neynar cast lookup with
+ *     viewer_fid returns viewer_context.{liked,recasted} for that fid, so we
+ *     can confirm the reaction actually exists on the network before it
+ *     counts for points. payload.castHash is required (hub-submit.ts always
+ *     includes it). Missing castHash → trust window (24h) then verify, same
+ *     fallback as follow without a targetFid.
+ *
+ *   unlike / unrecast:
+ *     Trust window = 24h. Both are worth 0 points (POINTS.unlike/unrecast),
+ *     so there's nothing to gain by fabricating them — not worth a Neynar call.
  *
  *   grow_campaign_complete:
  *     Server-side follow verification — check how many of the targetFidsSample
@@ -118,6 +125,22 @@ async function verifyFollow(userFid: number, targetFid: number): Promise<boolean
   } catch { return null; }
 }
 
+/** Check if userFid actually liked/recasted castHash, via the same cast-lookup
+ *  endpoint verifyCastHash uses, with viewer_fid to get reaction context back.
+ *  Returns true = confirmed reacted, false = confirmed not reacted, null = unknown. */
+async function verifyReaction(castHash: string, userFid: number, type: "like" | "recast"): Promise<boolean | null> {
+  try {
+    const res = await neynarFetch(
+      `${NEYNAR_BASE}/cast?identifier=${encodeURIComponent(castHash)}&type=hash&viewer_fid=${userFid}`,
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { cast?: { viewer_context?: { liked?: boolean; recasted?: boolean } } };
+    const vc = data?.cast?.viewer_context;
+    if (!vc) return null;
+    return (type === "like" ? vc.liked : vc.recasted) === true;
+  } catch { return null; }
+}
+
 /** For a grow campaign: count how many of targetFids are actually followed by userFid.
  *  Uses batched Neynar bulk requests (max 100 fids each). */
 async function countRealFollows(userFid: number, targetFids: number[]): Promise<number> {
@@ -210,9 +233,27 @@ async function runVerificationBatch(): Promise<void> {
     const ageH = (Date.now() - new Date(row.created_at).getTime()) / 3_600_000;
 
     if (isFollowing === true) {
-      // User IS following the target → valid follow action, verified
-      await pool.query("UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1", [row.id]);
-      verificationStats.verifiedCount++;
+      // An already-established follow can otherwise be re-submitted with a
+      // fresh proof hash every day and re-verified indefinitely (the graph
+      // check alone can't tell "still following" from "just followed") —
+      // only the first credited row for a given (fid, targetFid) counts.
+      const { rows: dupRows } = await pool.query(
+        `SELECT 1 FROM user_actions
+         WHERE fid = $1 AND action_type = 'follow' AND excluded = false AND id != $2
+           AND payload->>'targetFid' = $3
+         LIMIT 1`,
+        [userFid, row.id, String(targetFid)],
+      );
+      if (dupRows.length > 0) {
+        await pool.query(
+          "UPDATE user_actions SET excluded = true, excluded_reason = 'duplicate_follow_target' WHERE id = $1",
+          [row.id],
+        );
+        verificationStats.excludedCount++;
+      } else {
+        await pool.query("UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1", [row.id]);
+        verificationStats.verifiedCount++;
+      }
     } else if (ageH > HUB_TRUST_WINDOW_H) {
       // Not following after trust window → exclude (user unfollowed or action was fake)
       await pool.query("UPDATE user_actions SET excluded = true, excluded_reason = 'follow_not_confirmed' WHERE id = $1", [row.id]);
@@ -221,10 +262,47 @@ async function runVerificationBatch(): Promise<void> {
     // Still within trust window and not following yet → retry next run
   }
 
-  // ── 3. Trust-window auto-verify: like/recast (low value, short window) ──
+  // ── 3. Reaction verification (like/recast, semi-strict — real Neynar check) ──
+  const { rows: reactionRows } = await pool.query(
+    `SELECT id, fid, action_type, payload, created_at FROM user_actions
+     WHERE action_type IN ('like','recast')
+       AND verified = false AND excluded = false
+       AND created_at < now() - INTERVAL '10 minutes'
+     ORDER BY RANDOM() LIMIT $1`,
+    [BATCH_SIZE],
+  );
+
+  for (const row of reactionRows) {
+    const userFid  = Number(row.fid);
+    const castHash = (row.payload as Record<string, string> | null)?.castHash;
+    const ageH     = (Date.now() - new Date(row.created_at).getTime()) / 3_600_000;
+
+    if (!castHash) {
+      // No target reference to check against — fall back to the trust window.
+      if (ageH > HUB_TRUST_WINDOW_H) {
+        await pool.query("UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1", [row.id]);
+        verificationStats.verifiedCount++;
+      }
+      continue;
+    }
+
+    const reacted = await verifyReaction(castHash, userFid, row.action_type as "like" | "recast");
+    if (reacted === null) continue; // API error → retry next run
+
+    if (reacted === true) {
+      await pool.query("UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1", [row.id]);
+      verificationStats.verifiedCount++;
+    } else if (ageH > HUB_TRUST_WINDOW_H) {
+      await pool.query("UPDATE user_actions SET excluded = true, excluded_reason = 'reaction_not_confirmed' WHERE id = $1", [row.id]);
+      verificationStats.excludedCount++;
+    }
+    // still within the trust window and not confirmed yet → retry next run
+  }
+
+  // ── 3b. Trust-window auto-verify: unlike/unrecast (0 pts — not worth a Neynar call) ──
   const { rowCount: hubCount } = await pool.query(
     `UPDATE user_actions SET verified = true, verified_at = now()
-     WHERE action_type IN ('like','unlike','recast','unrecast')
+     WHERE action_type IN ('unlike','unrecast')
        AND verified = false AND excluded = false
        AND created_at < now() - ($1 || ' hours')::interval`,
     [HUB_TRUST_WINDOW_H],

@@ -201,12 +201,13 @@ async function apiMiniBoard(limit = 50): Promise<LBRow[]> {
     return d.leaderboard ?? [];
   } catch { return []; }
 }
-async function apiHistory(fid: number): Promise<HistoryRow[]> {
+async function apiHistory(fid: number): Promise<HistoryRow[] | null> {
   try {
     const r = await fetch(`/api/points/history?fid=${fid}&limit=50`);
+    if (!r.ok) return null;
     const d = await r.json();
     return Array.isArray(d.history) ? d.history : [];
-  } catch { return []; }
+  } catch { return null; }
 }
 async function apiReferralList(fid: number): Promise<ReferralListData> {
   try {
@@ -240,13 +241,15 @@ function Counter({ to, className, style }: { to: number; className?: string; sty
   const prev = useRef(0);
   useEffect(() => {
     const from = prev.current, dur = 1200, t0 = performance.now();
+    let raf = 0;
     const f = (now: number) => {
       const p = Math.min((now - t0) / dur, 1);
       const e = 1 - Math.pow(1 - p, 3);
       setN(Math.round(from + (to - from) * e));
-      if (p < 1) requestAnimationFrame(f); else prev.current = to;
+      if (p < 1) raf = requestAnimationFrame(f); else prev.current = to;
     };
-    requestAnimationFrame(f);
+    raf = requestAnimationFrame(f);
+    return () => cancelAnimationFrame(raf);
   }, [to]);
   return <span className={className} style={style}>{n.toLocaleString()}</span>;
 }
@@ -472,13 +475,15 @@ function HeroLogoOrb({ size = 110 }: { size?: number }) {
         style={{ position: "absolute", inset: -size * 0.25, borderRadius: "50%",
           background: "radial-gradient(circle, rgba(139,92,246,0.45) 0%, transparent 70%)" }} />
       {/* tilted halo ring, slow rotation */}
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 26, repeat: Infinity, ease: "linear" }}
+      <motion.div initial={{ rotateX: 72 }} animate={{ rotateX: 72, rotate: 360 }}
+        transition={{ duration: 26, repeat: Infinity, ease: "linear" }}
         style={{ position: "absolute", inset: -size * 0.16, borderRadius: "50%",
-          border: "1.5px solid rgba(233,213,255,0.55)", transform: "rotateX(72deg)",
+          border: "1.5px solid rgba(233,213,255,0.55)",
           boxShadow: "0 0 14px rgba(168,85,247,0.6)" }} />
-      <motion.div animate={{ rotate: -360 }} transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+      <motion.div initial={{ rotateX: 72 }} animate={{ rotateX: 72, rotate: -360 }}
+        transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
         style={{ position: "absolute", inset: -size * 0.3, borderRadius: "50%",
-          border: "1px dashed rgba(168,85,247,0.28)", transform: "rotateX(72deg)" }} />
+          border: "1px dashed rgba(168,85,247,0.28)" }} />
       {/* scattered crystal shards */}
       <Crystal size={size * 0.16} style={{ top: -size * 0.12, right: -size * 0.14 }} />
       <Crystal size={size * 0.11} style={{ bottom: -size * 0.08, left: -size * 0.16 }} />
@@ -565,6 +570,7 @@ function NFTPassCard({ fid, ethAddress, onMinted }: { fid: number; ethAddress?: 
   const hasWallet = !!(typeof window !== "undefined" && (window as any).ethereum);
 
   async function doMint(address: string) {
+    setAddr(address);
     setS("minting");
     try {
       const r = await fetch("/api/nft-pass/mint", {
@@ -769,6 +775,11 @@ function OnboardingFlow({ fid, ctx, onComplete }: { fid: number; ctx: MiniCtx | 
             Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? eligData.score.toFixed(0) : "unknown"}</strong>.
             You need at least <strong style={{ color:C.text1 }}>{eligData.threshold}</strong> to use FidCaster.
           </p>
+          <button onClick={() => setEligData(null)} style={{ marginTop:12, background:"rgba(244,63,94,0.14)",
+            border:"1px solid rgba(244,63,94,0.3)", color:C.rose, fontSize:12.5, fontWeight:700,
+            borderRadius:10, padding:"8px 14px", cursor:"pointer" }}>
+            Check again
+          </button>
         </div>
       ) : (
         <>
@@ -900,6 +911,7 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
   market_buy:            { label:"Buy FID",       Icon:ShoppingBag },
   market_list:           { label:"List FID",      Icon:Tag         },
   referral:              { label:"Referral",      Icon:Share2      },
+  referral_welcome:      { label:"Welcome bonus", Icon:Share2      },
   quest:                 { label:"Quest",         Icon:Sword       },
   grow_campaign_complete:{ label:"Grow Campaign", Icon:Sprout      },
   promotion:             { label:"Promotion",     Icon:Zap         },
@@ -1939,13 +1951,21 @@ const headerIconBtn = (open: boolean): React.CSSProperties => ({
 function NotifBell({ fid }: { fid: number }) {
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useOutsideClose<HTMLDivElement>(open, close);
+
+  function load() {
+    setFailed(false);
+    apiHistory(fid).then(h => {
+      if (h === null) setFailed(true); else setHistory(h);
+    });
+  }
 
   function toggle() {
     setOpen(o => {
       const next = !o;
-      if (next && history === null) apiHistory(fid).then(setHistory);
+      if (next && history === null && !failed) load();
       return next;
     });
   }
@@ -1959,7 +1979,15 @@ function NotifBell({ fid }: { fid: number }) {
             exit={{ opacity:0, y:-8, scale:0.96 }} transition={{ duration:0.16 }}
             style={{ ...dropdownWrap, width:280, maxHeight:340, overflowY:"auto" }}>
             <p style={{ color:C.text1, fontWeight:800, fontSize:13, padding:"6px 8px 10px" }}>Recent Activity</p>
-            {history === null ? (
+            {failed ? (
+              <div style={{ padding:"10px 8px", display:"flex", flexDirection:"column", gap:8, alignItems:"flex-start" }}>
+                <span style={{ color:C.text3, fontSize:12 }}>Couldn't load activity.</span>
+                <button onClick={load} style={{ background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.28)",
+                  color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:8, padding:"5px 10px", cursor:"pointer" }}>
+                  Retry
+                </button>
+              </div>
+            ) : history === null ? (
               <div style={{ padding:"14px 8px", display:"flex", alignItems:"center", gap:8 }}>
                 <Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} />
                 <span style={{ color:C.text3, fontSize:12 }}>Loading…</span>
@@ -2236,22 +2264,30 @@ const ONBOARDED_KEY = "fc_v1_onboarded";
 
 export function MiniAppPage() {
   const { fid, ctx, ready, inFC, added, addApp } = useSDK();
-  const [onboarded, setOnboarded] = useState(() => {
-    if (typeof window === "undefined") return false;
+  const [onboarded, setOnboarded] = useState(false);
+  const [onboardChecked, setOnboardChecked] = useState(false);
+
+  useEffect(() => {
+    if (!ready || !fid || typeof window === "undefined") return;
+    // Scoped per-fid so a shared device with multiple real Farcaster accounts
+    // can't have account B silently skip onboarding because account A finished it.
+    const key = `${ONBOARDED_KEY}_${fid}`;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("reset") === "1") { localStorage.removeItem(ONBOARDED_KEY); return false; }
+    if (params.get("reset") === "1") { localStorage.removeItem(key); setOnboarded(false); setOnboardChecked(true); return; }
     // ?fid= preview mode — auto-skip onboarding so testers see the main app
-    if (params.get("fid") && params.get("fid") !== "0") return true;
-    return localStorage.getItem(ONBOARDED_KEY) === "1";
-  });
+    if (params.get("fid") && params.get("fid") !== "0") { setOnboarded(true); setOnboardChecked(true); return; }
+    setOnboarded(localStorage.getItem(key) === "1");
+    setOnboardChecked(true);
+  }, [ready, fid]);
 
   function completeOnboarding() {
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    if (fid) localStorage.setItem(`${ONBOARDED_KEY}_${fid}`, "1");
     setOnboarded(true);
   }
 
   if (!ready) return <LoadingScreen />;
   if (!fid)  return <BrowserScreen />;
+  if (!onboardChecked) return <LoadingScreen />;
 
   if (!onboarded) {
     return <OnboardingFlow fid={fid} ctx={ctx} onComplete={completeOnboarding} />;

@@ -126,3 +126,18 @@ CREATE TABLE IF NOT EXISTS pending_points (
 
 CREATE INDEX  IF NOT EXISTS idx_pp_recipient ON pending_points (recipient_fid) WHERE claimed = false;
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_pp_cast_hash ON pending_points (cast_hash);
+
+-- ── NFT pass mint attempt log ─────────────────────────────────────────────────
+-- /api/nft-pass/mint pays real gas from a server-held wallet on every attempt
+-- (balanceOf is keyed on the caller-supplied address, which is free to
+-- regenerate, so it can't rate-limit by itself). This table lets the route
+-- enforce a per-fid attempt cap so a script can't drain the mint wallet.
+CREATE TABLE IF NOT EXISTS nft_pass_mint_log (
+  id         BIGSERIAL   PRIMARY KEY,
+  fid        BIGINT      NOT NULL,
+  address    TEXT        NOT NULL,
+  tx_hash    TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_npm_fid_created ON nft_pass_mint_log (fid, created_at DESC);

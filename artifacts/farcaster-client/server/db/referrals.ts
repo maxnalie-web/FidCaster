@@ -80,8 +80,8 @@ export async function claimReferral(
   // Welcome bonus for new user (immediate — they're a real person signing up)
   await logUserAction({
     fid: newFid,
-    actionType: "quest",
-    payload: { quest: "referral_welcome", referred_by: referrerFid },
+    actionType: "referral_welcome",
+    payload: { referred_by: referrerFid },
     proof: `referral_welcome:${newFid}`,
     verified: true,
   });
@@ -127,9 +127,9 @@ export async function activatePendingReferrals(): Promise<number> {
 
     // Check if referred user has earned enough organic points
     const pts = await getFidPoints(referredFid);
-    // Exclude referral/quest pts from the threshold check to prevent circular gaming
+    // Exclude referral/quest/welcome-bonus pts from the threshold check to prevent circular gaming
     const organicPts = pts.breakdown
-      .filter(b => b.action_type !== "referral" && b.action_type !== "quest")
+      .filter(b => b.action_type !== "referral" && b.action_type !== "quest" && b.action_type !== "referral_welcome")
       .reduce((sum, b) => sum + b.points_earned, 0);
 
     if (organicPts < ACTIVATION_THRESHOLD) continue; // not ready yet

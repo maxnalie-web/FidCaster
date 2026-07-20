@@ -8,12 +8,21 @@
  * POST /api/nft-pass/mint                — { fid, address } → { txHash, tokenId }
  */
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { createWalletClient, createPublicClient, http, isAddress } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getPool } from "./db/pool.js";
+
+// Real gas is spent from a server-held wallet on every mint attempt, and the
+// only per-call anti-repeat check (on-chain balanceOf) is keyed on the
+// caller-supplied address, which costs nothing to regenerate. So this route
+// needs its own tight limits, independent of the generic app-wide limiter.
+const mintLimiter = rateLimit({ windowMs: 10 * 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
+const MAX_MINT_ATTEMPTS_PER_FID_24H = 3;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -116,17 +125,32 @@ export function createNftPassRouter(): Router {
   });
 
   // ── POST /api/nft-pass/mint ───────────────────────────────────────────────
-  router.post("/mint", async (req, res) => {
+  router.post("/mint", mintLimiter, async (req, res) => {
     const { fid, address } = req.body as { fid?: number; address?: string };
     if (!address || !isAddress(address))
       return res.status(400).json({ error: "invalid address" });
-    if (!fid || typeof fid !== "number")
+    if (!fid || typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0)
       return res.status(400).json({ error: "fid required" });
 
     const cfg = loadConfig();
     const abi = loadAbi();
     if (!cfg || !abi)
       return res.status(503).json({ error: "NFT contract not deployed yet" });
+
+    // Per-fid attempt cap — a legitimate user mints once; this only exists to
+    // stop a script from cycling fresh throwaway addresses to drain the
+    // server-funded mint wallet (balanceOf alone can't catch that, since it's
+    // keyed on the address, not the fid).
+    const pool = getPool();
+    if (pool) {
+      const { rows } = await pool.query(
+        `SELECT COUNT(*) AS n FROM nft_pass_mint_log WHERE fid = $1 AND created_at > now() - INTERVAL '24 hours'`,
+        [fid],
+      );
+      if (Number(rows[0]?.n ?? 0) >= MAX_MINT_ATTEMPTS_PER_FID_24H) {
+        return res.status(429).json({ error: "Too many mint attempts for this FID today. Try again later." });
+      }
+    }
 
     const rawKey = process.env.NFT_MINT_PRIVATE_KYES;
     if (!rawKey) return res.status(503).json({ error: "mint key not configured" });
@@ -156,6 +180,14 @@ export function createNftPassRouter(): Router {
 
       if (balance > 0n)
         return res.json({ alreadyMinted: true, balance: Number(balance) });
+
+      // Record the attempt against this fid's 24h cap before spending any gas.
+      if (pool) {
+        await pool.query(
+          `INSERT INTO nft_pass_mint_log (fid, address) VALUES ($1, $2)`,
+          [fid, address],
+        ).catch(() => {}); // non-fatal — never block a mint on a logging failure
+      }
 
       // Simulate first (catches reverts cheaply)
       await publicClient.simulateContract({
