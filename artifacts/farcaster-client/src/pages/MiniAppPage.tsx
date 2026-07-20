@@ -2182,7 +2182,7 @@ function RewardsTab({ fid }: { fid: number }) {
         <SectionLabel>Ways to Earn More</SectionLabel>
         <Card>
           {[
-            { icon:"⚡", label:"Cast on Farcaster", desc:"Earn 10 pts per cast (up to 50/day)", href:"https://warpcast.com" },
+            { icon:"⚡", label:"Cast on FidCaster", desc:"Earn 10 pts per cast (up to 50/day)", href:"https://fidcaster.xyz" },
             { icon:"🛒", label:"Trade FIDs", desc:"100 pts per buy, 50 pts per listing", href:"https://fidcaster.xyz/market" },
             { icon:"🚀", label:"Complete Quests", desc:"100 pts per quest action", href:"https://fidcaster.xyz" },
           ].map((row, i, arr) => (
