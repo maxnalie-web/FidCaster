@@ -9,7 +9,6 @@ import { reportGrowCampaignStart, reportGrowCampaignComplete } from "@/lib/grow-
 import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
-import { reportGrowCampaignStart, reportGrowCampaignComplete } from "@/lib/grow-report";
 import { loadSignerPrivKey } from "@/lib/account-store";
 import { useWallet } from "@/hooks/useWallet";
 import { toast } from "sonner";

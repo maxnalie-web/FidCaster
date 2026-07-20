@@ -380,38 +380,6 @@ async function submit(
 // it cannot be fabricated for another FID without stealing their private key.
 // A background verification job spot-checks these hashes against Neynar/hub.
 
-type LedgerActionType = "cast" | "like" | "unlike" | "recast" | "unrecast" | "follow" | "unfollow";
-const LEDGER_ACTION_TYPES = new Set<string>(["cast","like","unlike","recast","unrecast","follow","unfollow"]);
-
-function actionPayload(action: FarcasterAction): Record<string, unknown> {
-  switch (action.type) {
-    case "follow":
-    case "unfollow":
-      return { targetFid: action.targetFid };
-    case "like":
-    case "unlike":
-    case "recast":
-    case "unrecast":
-      return { castHash: action.castHash, castAuthorFid: action.castAuthorFid };
-    default:
-      return {};
-  }
-}
-
-function reportToLedger(fid: number, action: FarcasterAction, proof: string): void {
-  if (!LEDGER_ACTION_TYPES.has(action.type)) return;
-  const token = getSessionToken(fid);
-  fetch("/api/actions/log", {
-    method:  "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body:    JSON.stringify({ fid, actionType: action.type, proof, payload: actionPayload(action) }),
-    signal:  AbortSignal.timeout(8_000),
-  }).catch(() => { /* best-effort, never blocks UI */ });
-}
-
 // ─── public API (same signatures as before) ───────────────────────────────────
 
 export async function hubPublishCast(
