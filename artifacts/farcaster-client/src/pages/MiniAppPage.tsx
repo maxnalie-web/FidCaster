@@ -294,50 +294,74 @@ function BgOrbs() {
   );
 }
 
-// ── Glass card ────────────────────────────────────────────────────────────────
+// ── Liquid Glass primitive ───────────────────────────────────────────────────
+// Approximates Apple's Liquid Glass material for the web: saturated backdrop
+// blur (the "refraction" of whatever sits behind), a bright top rim highlight,
+// inset shading for depth, and a specular sheen that sweeps across the surface
+// periodically (the "responds to light/motion" part — a true real-time
+// lensing refraction isn't practical in CSS, so this is the closest legible
+// stand-in). Decorative layers are plain absolutely-positioned siblings
+// painted BEFORE `children` in the DOM (not a wrapping div), so anything a
+// caller puts inside that relies on this element being its positioning
+// context — e.g. an absolutely-positioned canvas — keeps working exactly as
+// if this were still a plain div.
+function LiquidGlassSurface({ radius, sheen = true }: { radius: number; sheen?: boolean }) {
+  return (
+    <>
+      {sheen && (
+        <motion.div aria-hidden
+          animate={{ x: ["-40%", "140%"] }}
+          transition={{ duration: 5.5, repeat: Infinity, repeatDelay: 3.5, ease: "easeInOut" }}
+          style={{ position:"absolute", top:0, bottom:0, width:"35%", pointerEvents:"none", zIndex:0,
+            background:"linear-gradient(115deg, transparent, rgba(255,255,255,0.16) 45%, rgba(255,255,255,0.22) 50%, rgba(255,255,255,0.16) 55%, transparent)",
+            filter:"blur(4px)" }} />
+      )}
+      {/* top rim highlight — the bright edge where light catches curved glass */}
+      <div style={{ position:"absolute", top:0, left:radius*0.6, right:radius*0.6, height:1, pointerEvents:"none", zIndex:0,
+        background:"linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent)" }} />
+    </>
+  );
+}
+
 function Card({ children, style = {}, glow = false, className, onClick }: {
   children: React.ReactNode; style?: React.CSSProperties; glow?: boolean; className?: string; onClick?: () => void;
 }) {
-  // Glass 2.0: brighter translucent border + heavier saturated blur + an inset
-  // top highlight (via box-shadow, not an extra layered div, so it can't ever
-  // shift paint order relative to children that rely on Card being their
-  // nearest positioned ancestor for their own absolute-positioned content).
   const Comp = onClick ? motion.div : "div";
+  const radius = typeof style.borderRadius === "number" ? style.borderRadius : 20;
   return (
     <Comp
       className={className}
       onClick={onClick}
-      {...(onClick ? { whileTap: { scale: 0.985 } } : {})}
+      {...(onClick ? { whileTap: { scale: 0.97 } } : {})}
       style={{
-        background: "linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))",
-        border: `1px solid ${glow ? "rgba(168,85,247,0.4)" : "rgba(255,255,255,0.12)"}`,
-        borderRadius: 20, overflow: "hidden", position: "relative",
-        backdropFilter: "blur(16px) saturate(160%)", WebkitBackdropFilter: "blur(16px) saturate(160%)",
+        background: "linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.015) 55%, rgba(255,255,255,0.03))",
+        border: `1px solid ${glow ? "rgba(168,85,247,0.42)" : "rgba(255,255,255,0.14)"}`,
+        borderRadius: radius, overflow: "hidden", position: "relative",
+        backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)",
         boxShadow: glow
-          ? "0 0 0 1px rgba(139,92,246,0.2), 0 8px 32px rgba(139,92,246,0.16), inset 0 1px 0 rgba(255,255,255,0.12)"
-          : "0 4px 22px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08)",
+          ? "0 0 0 1px rgba(139,92,246,0.22), 0 10px 34px rgba(139,92,246,0.18), inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -10px 20px -10px rgba(0,0,0,0.25)"
+          : "0 6px 26px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -10px 20px -10px rgba(0,0,0,0.2)",
         cursor: onClick ? "pointer" : undefined,
         ...style,
       }}
     >
+      <LiquidGlassSurface radius={radius} />
       {children}
     </Comp>
   );
 }
 
-// ── Glass 2.0 stat card — frosted glass with a bright top sheen edge and a
-// slow ambient glow breathing behind it, for the small floating hero cards.
+// ── Liquid glass stat card — used for the two floating hero cards.
 function GlassStatCard({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  const radius = 22;
   return (
-    <div style={{ position:"relative", zIndex:4, borderRadius:22, padding:"15px 15px 13px",
-      background:"linear-gradient(160deg,rgba(46,26,84,.55),rgba(20,11,38,.65))",
-      border:"1px solid rgba(255,255,255,0.14)",
-      boxShadow:"0 8px 32px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 0 1px rgba(139,92,246,0.12)",
-      backdropFilter:"blur(18px) saturate(160%)", WebkitBackdropFilter:"blur(18px) saturate(160%)",
+    <div style={{ position:"relative", zIndex:4, borderRadius:radius, padding:"15px 15px 13px",
+      background:"linear-gradient(160deg,rgba(56,32,98,.55),rgba(20,11,38,.62))",
+      border:"1px solid rgba(255,255,255,0.16)",
+      boxShadow:"0 10px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.16), inset 0 -8px 16px -8px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(139,92,246,0.1)",
+      backdropFilter:"blur(20px) saturate(180%)", WebkitBackdropFilter:"blur(20px) saturate(180%)",
       overflow:"hidden", ...style }}>
-      {/* top glass sheen */}
-      <div style={{ position:"absolute", top:0, left:0, right:0, height:"48%", pointerEvents:"none",
-        background:"linear-gradient(180deg, rgba(255,255,255,0.10) 0%, transparent 100%)" }} />
+      <LiquidGlassSurface radius={radius} />
       <div style={{ position:"relative" }}>{children}</div>
     </div>
   );
@@ -1223,12 +1247,15 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             transition={{ delay:i*0.06, duration:0.35 }}
             whileTap={{ scale:0.95 }}
             style={{
-              background: s.glowing ? "linear-gradient(160deg, rgba(255,120,30,0.14), rgba(255,120,30,0.03))" : "linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.015))",
-              border: `1px solid ${s.glowing ? "rgba(255,140,50,0.35)" : "rgba(255,255,255,0.1)"}`,
-              borderRadius:16, padding:"10px 6px 8px", textAlign:"center",
-              backdropFilter:"blur(14px) saturate(150%)", WebkitBackdropFilter:"blur(14px) saturate(150%)",
-              boxShadow: s.glowing ? "0 0 18px rgba(255,100,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08)" : "inset 0 1px 0 rgba(255,255,255,0.06)",
+              background: s.glowing ? "linear-gradient(160deg, rgba(255,120,30,0.16), rgba(255,120,30,0.03))" : "linear-gradient(160deg, rgba(255,255,255,0.065), rgba(255,255,255,0.015))",
+              border: `1px solid ${s.glowing ? "rgba(255,140,50,0.4)" : "rgba(255,255,255,0.13)"}`,
+              borderRadius:18, padding:"10px 6px 8px", textAlign:"center", position:"relative", overflow:"hidden",
+              backdropFilter:"blur(16px) saturate(170%)", WebkitBackdropFilter:"blur(16px) saturate(170%)",
+              boxShadow: s.glowing
+                ? "0 4px 18px rgba(255,100,0,0.2), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -6px 12px -6px rgba(0,0,0,0.2)"
+                : "0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.09), inset 0 -6px 12px -6px rgba(0,0,0,0.15)",
             }}>
+            <LiquidGlassSurface radius={18} sheen={false} />
             <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
             <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
             <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
