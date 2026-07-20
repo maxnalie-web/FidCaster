@@ -67,7 +67,7 @@ export function createNftPassRouter(): Router {
   router.get("/contract-metadata", (_req, res) => {
     res.json({
       name:              "FidCaster Pass",
-      description:       "The official FidCaster Pass. Mint yours for free to access the FidCaster app and earn points toward the $FCAST airdrop.",
+      description:       "The official FidCaster Pass. Mint yours for free to access the FidCaster app and earn points toward the airdrop.",
       image:             NFT_IMAGE_URL,
       external_link:     "https://fidcaster.xyz",
       seller_fee_basis_points: 0,
@@ -85,7 +85,7 @@ export function createNftPassRouter(): Router {
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.json({
       name:         `FidCaster Pass #${tokenId}`,
-      description:  "The official FidCaster Pass. Mint yours for free to access the FidCaster app and earn points toward the $FCAST airdrop.",
+      description:  "The official FidCaster Pass. Mint yours for free to access the FidCaster app and earn points toward the airdrop.",
       image:        NFT_IMAGE_URL,
       external_url: "https://fidcaster.xyz",
       background_color: "06011A",   // matches app dark background (no #)
