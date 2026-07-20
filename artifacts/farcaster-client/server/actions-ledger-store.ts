@@ -31,7 +31,16 @@ export function isActionsLedgerConfigured(): boolean {
   return !!process.env.DATABASE_URL;
 }
 
-/** Ensure the tables exist (idempotent — called once at startup). */
+/**
+ * Warm up the pg pool. Table/index creation for `users` and `user_actions`
+ * lives solely in db/schema.sql (run by initLedger()) — this function used
+ * to define its own copies of those CREATE TABLE statements, which raced
+ * initLedger()'s migration on a fresh database (both run unawaited at
+ * startup) and could abort schema.sql partway through with a Postgres
+ * "duplicate key value violates unique constraint pg_type_typname_nsp_index"
+ * error, silently leaving later columns (excluded, eligible, ...) missing.
+ * schema.sql is now the single source of truth for these tables.
+ */
 export async function initActionsLedgerStore(): Promise<void> {
   const p = pool();
   if (!p) {
@@ -39,37 +48,7 @@ export async function initActionsLedgerStore(): Promise<void> {
     return;
   }
   try {
-    await p.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        fid        BIGINT PRIMARY KEY,
-        first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
-        last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-
-      CREATE TABLE IF NOT EXISTS user_actions (
-        id           BIGSERIAL PRIMARY KEY,
-        fid          BIGINT NOT NULL REFERENCES users(fid),
-        action_type  TEXT NOT NULL,
-        payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
-        -- message hash (cast/like/recast/follow) or tx hash (market events);
-        -- NULL for first-party events (app_open, quest, referral) where the
-        -- row itself, written by our own server, is the proof.
-        proof        TEXT,
-        verified     BOOLEAN NOT NULL DEFAULT false,
-        verified_at  TIMESTAMPTZ,
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_user_actions_fid_type_created
-        ON user_actions (fid, action_type, created_at);
-
-      -- Idempotent inserts: the market-event indexer re-scans overlapping
-      -- block ranges every poll, and a client could retry a log call after a
-      -- network blip — both must be no-ops on repeat, not duplicate points.
-      CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_actions_type_proof
-        ON user_actions (action_type, proof) WHERE proof IS NOT NULL;
-    `);
-    console.log("[actions-ledger] schema is up to date");
+    await p.query("SELECT 1");
   } catch (e) {
     console.warn("[actions-ledger] init error:", (e as Error).message);
   }

@@ -1667,7 +1667,6 @@ const server = app.listen(PORT, host, () => {
   // If tsx/ESM worker init fails, signFarcasterAction falls back to main thread silently.
   initSignPool();
   initPushTokenStore(); // warm up pg pool + ensure table exists
-  initActionsLedgerStore(); // warm up pg pool + ensure points/airdrop ledger tables exist
   // The background jobs below query user_actions/daily_allowance columns
   // that initLedger()'s schema migration (ALTER TABLE ... ADD COLUMN, etc.)
   // is responsible for creating - starting them before migration finishes
@@ -1676,7 +1675,11 @@ const server = app.listen(PORT, host, () => {
   // Each job catches and logs rather than crashing, so this was self-healing
   // on the next interval, but there's no reason to race it at all - the
   // server itself is already listening by this point regardless.
-  initLedger()
+  // initActionsLedgerStore() just warms the pg pool (schema.sql owns all
+  // table/index creation) but is still awaited first for a clean startup
+  // order rather than firing concurrently with initLedger().
+  initActionsLedgerStore()
+    .then(() => initLedger())
     .then(async () => {
       await Promise.all([restoreSweptNftHolderBonuses(), repairEligibilityMisdetection()]);
       startVerificationJob();   // background: verify hub action proofs against Neynar
