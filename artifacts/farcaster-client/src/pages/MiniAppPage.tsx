@@ -17,7 +17,7 @@ import {
   Sword, Sprout, Heart, RefreshCw, Edit3,
   Wallet, Shield, Globe, Star, Gift,
   Home, LayoutList, Award, Bell,
-  ChevronRight, Lock,
+  ChevronRight, Lock, Info, Send,
 } from "lucide-react";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -275,11 +275,11 @@ function BgOrbs() {
 }
 
 // ── Glass card ────────────────────────────────────────────────────────────────
-function Card({ children, style = {}, glow = false, className }: {
-  children: React.ReactNode; style?: React.CSSProperties; glow?: boolean; className?: string;
+function Card({ children, style = {}, glow = false, className, onClick }: {
+  children: React.ReactNode; style?: React.CSSProperties; glow?: boolean; className?: string; onClick?: () => void;
 }) {
   return (
-    <div className={className} style={{
+    <div className={className} onClick={onClick} style={{
       background: C.card, border: `1px solid ${glow ? "rgba(139,92,246,0.35)" : C.border}`,
       borderRadius: 20, overflow: "hidden", position: "relative", backdropFilter: "blur(14px)",
       boxShadow: glow ? `0 0 0 1px rgba(139,92,246,0.18), 0 8px 32px rgba(139,92,246,0.12)` : "none",
@@ -923,11 +923,12 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading }: {
+function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, allowance, allowanceLoading, onNav }: {
   fid: number; ctx: MiniCtx | null;
   pts: FidPts | null; stats: StatsData | null;
   rank: number | null; board: LBRow[]; statsLoading: boolean; ptsLoading: boolean;
   allowance: AllowanceData | null; allowanceLoading: boolean;
+  onNav: (t: AppTab) => void;
 }) {
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
@@ -1239,7 +1240,8 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
                   : `linear-gradient(90deg,${C.rose},#FB7185)`;
                 const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
                 return (
-                  <Card glow style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14 }}>
+                  <Card glow onClick={() => onNav("earn")}
+                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
                     <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
                       background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
                       border:"1.5px solid rgba(168,85,247,0.6)",
@@ -1471,9 +1473,93 @@ const SCORING_ROWS = [
   { Icon:Gift,        action:"Gift received", pts:"varies" as unknown as number, cap:500 },
 ];
 
+function AllowanceModalShell({ onClose, icon, title, children }: {
+  onClose: () => void; icon: React.ReactNode; title: string; children: React.ReactNode;
+}) {
+  return (
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+      style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
+      <motion.div initial={{ y:40, opacity:0 }} animate={{ y:0, opacity:1 }} exit={{ y:40, opacity:0 }}
+        transition={{ duration:0.22 }} onClick={(e) => e.stopPropagation()}
+        style={{ width:"100%", maxWidth:420, maxHeight:"80vh", overflowY:"auto", background:C.bg,
+          borderTop:`1px solid ${C.borderMed}`, borderRadius:"20px 20px 0 0", padding:"18px 18px 28px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+          <p style={{ color:C.text1, fontWeight:800, fontSize:16, display:"flex", alignItems:"center", gap:8 }}>
+            {icon} {title}
+          </p>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:C.text3, cursor:"pointer" }}><X size={18} /></button>
+        </div>
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => void }) {
+  const [username, setUsername] = useState("");
+  const [amount,   setAmount]   = useState("");
+  const cap = Math.min(remaining, 500);
+  const amountNum = parseInt(amount, 10) || 0;
+  const valid = username.trim().length > 0 && amountNum > 0 && amountNum <= cap;
+
+  function send() {
+    if (!valid) return;
+    const handle = username.trim().replace(/^@/, "");
+    const text = `${amountNum} FidCaster points @${handle}`;
+    window.open(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    onClose();
+  }
+
+  return (
+    <AllowanceModalShell onClose={onClose} icon={<Gift size={16} color={C.green} />} title="Send Gift Points">
+      <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Recipient username</label>
+      <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. dwr.eth"
+        style={{ width:"100%", marginTop:6, marginBottom:14, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
+          background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
+      <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Amount (max {cap.toLocaleString()})</label>
+      <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="50" inputMode="numeric"
+        style={{ width:"100%", marginTop:6, marginBottom:6, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
+          background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
+      {remaining <= 0 && <p style={{ color:C.rose, fontSize:11.5, marginBottom:6 }}>You're out of allowance for today.</p>}
+      <p style={{ color:C.text3, fontSize:11, marginBottom:16, lineHeight:1.6 }}>
+        This opens Warpcast with a pre-filled cast. Posting it debits your allowance and credits the
+        recipient once FidCaster detects it — you'll get a notification either way.
+      </p>
+      <button onClick={send} disabled={!valid}
+        style={{ width:"100%", padding:"13px", borderRadius:14, border:"none", cursor: valid ? "pointer" : "not-allowed",
+          background: valid ? `linear-gradient(90deg,${C.accent},#A855F7)` : C.card, color: valid ? "#fff" : C.text3,
+          fontWeight:800, fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+        <Send size={15} /> Open Warpcast to Send
+      </button>
+    </AllowanceModalShell>
+  );
+}
+
+function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
+  const sections = [
+    { t:"What it is", d:"A daily budget of points you can spend — not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
+    { t:"How much you get", d:"100 base points, plus 2 points per follower, capped at +500. So 0 followers = 100/day, 250+ followers = the max, 600/day." },
+    { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn +50 points and 50 is deducted from today's allowance." },
+    { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
+    { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
+  ];
+  return (
+    <AllowanceModalShell onClose={onClose} icon={<Info size={16} color={C.accentHi} />} title="How Daily Allowance Works">
+      {sections.map((s) => (
+        <div key={s.t} style={{ marginBottom:14 }}>
+          <p style={{ color:C.text1, fontWeight:700, fontSize:13, marginBottom:4 }}>{s.t}</p>
+          <p style={{ color:C.text2, fontSize:12.5, lineHeight:1.6 }}>{s.d}</p>
+        </div>
+      ))}
+    </AllowanceModalShell>
+  );
+}
+
 function AllowanceBarV2({ fid }: { fid: number }) {
   const [data,    setData]    = useState<AllowanceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modal,   setModal]   = useState<"none" | "gift" | "info">("none");
   const midnightMs = (() => { const d=new Date(); d.setUTCDate(d.getUTCDate()+1); d.setUTCHours(0,0,0,0); return d.getTime(); })();
   const countdown = useCountdown(midnightMs);
 
@@ -1485,51 +1571,63 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   const pct = data.total > 0 ? Math.max(0, (data.remaining / data.total) * 100) : 0;
 
   return (
-    <Card glow>
-      <div style={{ padding:"14px 16px 10px" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-          <p style={{ color:C.text1, fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
-            <Zap size={14} color={C.accentHi} /> Daily Allowance
-          </p>
-          <span style={{ color:C.text3, fontSize:12 }}>Resets {countdown}</span>
-        </div>
-        <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
-          <span style={{ color:C.accentHi, fontWeight:900, fontSize:22 }}>{data.remaining.toLocaleString()}</span>
-          <span style={{ color:C.text3, fontSize:13 }}>/ {data.total.toLocaleString()} remaining</span>
-        </div>
-        <div style={{ height:6, background:C.border, borderRadius:3 }}>
-          <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
-            style={{ height:"100%", borderRadius:3,
-              background: pct > 30 ? `linear-gradient(90deg,${C.accent},#A855F7)` : pct > 10 ? `linear-gradient(90deg,${C.amber},#F97316)` : `linear-gradient(90deg,${C.rose},#FB7185)` }} />
-        </div>
-        <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used today"}</p>
-      </div>
-      <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
-        <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
-          target="_blank" rel="noopener noreferrer"
-          style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
-            textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <Zap size={14} color={C.accentHi} />
-            <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+    <>
+      <Card glow>
+        <div style={{ padding:"14px 16px 10px" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
+              <Zap size={14} color={C.accentHi} /> Daily Allowance
+              <button onClick={() => setModal("info")} aria-label="How allowance works"
+                style={{ background:"none", border:"none", cursor:"pointer", padding:0, display:"flex", alignItems:"center" }}>
+                <Info size={13} color={C.text3} />
+              </button>
+            </p>
+            <span style={{ color:C.text3, fontSize:12 }}>Resets {countdown}</span>
           </div>
-          <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-            Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
-          </p>
-          <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
-        </a>
-        <div style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <Gift size={14} color={C.green} />
-            <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
+          <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
+            <span style={{ color:C.accentHi, fontWeight:900, fontSize:22 }}>{data.remaining.toLocaleString()}</span>
+            <span style={{ color:C.text3, fontSize:13 }}>/ {data.total.toLocaleString()} remaining</span>
           </div>
-          <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-            Cast: <span style={{ color:C.accentHi, fontFamily:"monospace", fontSize:10 }}>"{"{N}"} FidCaster points @user"</span>
-          </p>
-          <span style={{ color:C.amber, fontSize:11 }}>−N allowance</span>
+          <div style={{ height:6, background:C.border, borderRadius:3 }}>
+            <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
+              style={{ height:"100%", borderRadius:3,
+                background: pct > 30 ? `linear-gradient(90deg,${C.accent},#A855F7)` : pct > 10 ? `linear-gradient(90deg,${C.amber},#F97316)` : `linear-gradient(90deg,${C.rose},#FB7185)` }} />
+          </div>
+          <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used today"}</p>
         </div>
-      </div>
-    </Card>
+        <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
+          <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
+              textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <Zap size={14} color={C.accentHi} />
+              <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
+            </div>
+            <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
+              Earn <strong style={{ color:C.accentHi }}>+50 pts</strong> per cast
+            </p>
+            <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
+          </a>
+          <button onClick={() => setModal("gift")}
+            style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px", textAlign:"left",
+              background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <Gift size={14} color={C.green} />
+              <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
+            </div>
+            <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
+              Send points to another user
+            </p>
+            <span style={{ color:C.amber, fontSize:11 }}>−N allowance</span>
+          </button>
+        </div>
+      </Card>
+      <AnimatePresence>
+        {modal === "gift" && <GiftModal remaining={data.remaining} onClose={() => setModal("none")} />}
+        {modal === "info" && <AllowanceInfoModal onClose={() => setModal("none")} />}
+      </AnimatePresence>
+    </>
   );
 }
 
@@ -2023,8 +2121,6 @@ function MenuButton({ onNav }: { onNav: (t: AppTab) => void }) {
   const ref = useOutsideClose<HTMLDivElement>(open, close);
 
   const items: { label: string; Icon: React.ElementType; onClick?: () => void; href?: string }[] = [
-    { label:"Quests & Actions", Icon:Zap, onClick: () => { onNav("earn"); setOpen(false); } },
-    { label:"FID Market", Icon:ShoppingBag, href:"https://fidcaster.xyz/market" },
     { label:"Docs", Icon:LayoutList, href:"https://fidcaster.xyz/docs" },
   ];
 
@@ -2234,7 +2330,7 @@ function MainApp({ fid, ctx, added, addApp }: {
           {tab === "home" && (
             <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
               statsLoading={statsLoad} ptsLoading={ptsLoad}
-              allowance={allowance} allowanceLoading={allowLoad} />
+              allowance={allowance} allowanceLoading={allowLoad} onNav={setTab} />
           )}
           {tab === "leaderboard" && (
             <LeaderboardTab key="lb" fid={fid} board={board} loading={boardLoad} />
