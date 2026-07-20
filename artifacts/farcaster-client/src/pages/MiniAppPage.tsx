@@ -1299,8 +1299,8 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
       {/* ── Hero scene: nebula/pedestal-ring canvas + floating logo + stat cards ──
           Cards sit in their own band at the top; the logo is pushed well clear of
           them (logoY=192 vs cards ending ~112px down) so nothing overlaps. */}
-      <div style={{ position:"relative", height:330 }}>
-        <HeroCanvas height={330} logoY={192} />
+      <div style={{ position:"relative", height:385 }}>
+        <HeroCanvas height={385} logoY={192} />
 
         {/* Floating logo — outer plain div does the -50%/-50% centering (a literal
             transform string), inner motion.div only ever animates y. Framer-motion
@@ -2674,12 +2674,6 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
           <span style={{ color:C.text1, fontWeight:800, fontSize:15, letterSpacing:"-0.01em",
             overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>FidCaster</span>
         </div>
-        <span style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(23,15,44,0.85)",
-          border:"1px solid rgba(139,92,246,0.25)", borderRadius:999, padding:"5px 10px",
-          color:C.text2, fontSize:11, fontWeight:700, flexShrink:0 }}>
-          <span style={{ width:12, height:12, borderRadius:"50%", background:"#0052FF", display:"inline-block" }} />
-          Base
-        </span>
         {!added && (
           <button onClick={addApp} style={{ background:`rgba(139,92,246,0.15)`,
             border:`1px solid rgba(139,92,246,0.3)`, color:C.accentHi, borderRadius:8,
