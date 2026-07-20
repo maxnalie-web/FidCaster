@@ -2293,7 +2293,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
             <div style={{ flex:1 }}>
               <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask NFT Bonus</p>
               <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
-                {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet." : "One-time check — hold the FasterTask Pass to unlock it."}
+                {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet." : "One-time check, hold the FasterTask Pass to unlock it."}
               </p>
             </div>
             <button onClick={checkNft} disabled={nftCheck === "checking"}
