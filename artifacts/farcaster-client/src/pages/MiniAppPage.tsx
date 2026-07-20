@@ -2023,7 +2023,7 @@ function RewardsTab({ fid }: { fid: number }) {
   const [copied, setCopied] = useState(false);
   const [refData, setRefData] = useState<ReferralListData>({ referredBy: null, referrals: [] });
   const [refLoad, setRefLoad] = useState(true);
-  const refUrl = `https://fidcaster.xyz/?ref=${fid.toString(36).toUpperCase()}`;
+  const refUrl = `https://fidcaster.xyz/?ref=FC-${fid.toString(36).toUpperCase()}`;
 
   useEffect(() => {
     apiReferralList(fid).then(d => { setRefData(d); setRefLoad(false); });

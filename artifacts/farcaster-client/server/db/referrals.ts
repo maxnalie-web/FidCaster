@@ -32,12 +32,19 @@ const LIFETIME_MAX          = 20;  // max referrals that pay out per referrer (e
 
 // ── Code helpers ──────────────────────────────────────────────────────────────
 
+// "FC-" prefix is cosmetic (a bare base36 fid like "CLP" reads as an
+// arbitrary 3-letter string, not obviously a referral code) - codeToFid
+// strips it if present so old links shared without it still work.
+const CODE_PREFIX = "FC-";
+
 export function fidToCode(fid: number): string {
-  return fid.toString(36).toUpperCase(); // e.g. 16333 -> "CJXP"
+  return CODE_PREFIX + fid.toString(36).toUpperCase(); // e.g. 16333 -> "FC-CLP"
 }
 
 export function codeToFid(code: string): number | null {
-  const n = parseInt(code.trim().toLowerCase(), 36);
+  let c = code.trim().toLowerCase();
+  if (c.startsWith(CODE_PREFIX.toLowerCase())) c = c.slice(CODE_PREFIX.length);
+  const n = parseInt(c, 36);
   return Number.isFinite(n) && n > 0 && n < 1_000_000_000 ? n : null;
 }
 
