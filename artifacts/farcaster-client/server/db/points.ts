@@ -34,6 +34,10 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   app_open:                { pts: 0,   dailyCap: 0    },
   // Awarded once per 7-day streak milestone reached (see mini-routes.ts).
   streak_bonus:            { pts: 500, dailyCap: 500  },
+  // One-time bonus for holding a FasterTask Pass NFT (ERC-1155 on Base),
+  // detected server-side via the user's Farcaster custody address — see
+  // server/nft-holder-job.ts. Awarded once per fid, like referral_welcome.
+  nft_holder_bonus:        { pts: 300, dailyCap: 300  },
   // ── Allowance-gated actions ────────────────────────────────────────────────
   promotion:               { pts: 50,  dailyCap: 500  },
   gift:                    { pts: 0,   dailyCap: 0    }, // sender: 0 pts (allowance debited)

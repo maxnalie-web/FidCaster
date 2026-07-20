@@ -52,7 +52,8 @@ export type ActionType =
   | "referral" | "referral_welcome" | "quest" | "app_open"
   | "promotion"      // user cast promoting FidCaster — earns fixed pts
   | "gift"           // user sent a gift cast — 0 pts (allowance already debited)
-  | "gift_received"; // recipient of a gift — pts come from payload.amount
+  | "gift_received"  // recipient of a gift — pts come from payload.amount
+  | "nft_holder_bonus"; // one-time bonus for holding a FasterTask Pass NFT
 
 export interface LogActionParams {
   fid: number;

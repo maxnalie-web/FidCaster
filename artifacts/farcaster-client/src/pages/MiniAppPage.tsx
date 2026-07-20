@@ -918,6 +918,7 @@ const ACTION_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
   gift_received:         { label:"Gift received", Icon:Gift        },
   gift:                  { label:"Gift sent",     Icon:Gift        },
   streak_bonus:          { label:"Streak bonus",  Icon:Star        },
+  nft_holder_bonus:      { label:"NFT holder bonus", Icon:Award    },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1870,6 +1871,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
   const xpPct       = xpToNext > 0 ? Math.min((xp / xpToNext) * 100, 100) : 100;
   const achievements = stats?.achievements ?? [];
   const referrals   = pts?.breakdown.find(b=>b.action_type==="referral")?.total_actions ?? 0;
+  const isNftHolder = !!pts?.breakdown.find(b=>b.action_type==="nft_holder_bonus");
 
   return (
     <motion.div key="profile-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
@@ -1905,6 +1907,11 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading }: {
           <Chip color={C.amber} bg="rgba(245,158,11,0.1)" border="rgba(245,158,11,0.3)">
             Lv {level}
           </Chip>
+          {isNftHolder && (
+            <Chip color={C.accentHi} bg="rgba(139,92,246,0.14)" border="rgba(139,92,246,0.4)">
+              <Award size={10} /> FasterTask Holder
+            </Chip>
+          )}
         </div>
       </div>
 
