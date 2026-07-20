@@ -133,9 +133,18 @@ export function createNftPassRouter(): Router {
     if (!fid || typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0)
       return res.status(400).json({ error: "fid required" });
 
+    // Hard-required (not the "soft, fail-open if absent" pattern used elsewhere):
+    // this route spends real gas from the server wallet immediately, with no
+    // downstream verification pass that could later catch and reverse a
+    // forged fid the way /api/actions/log's background job does. The
+    // per-fid attempt cap is meaningless against an attacker who can freely
+    // choose which fid to claim, so a missing or mismatched token is rejected
+    // outright. NFTPassCard (the only caller) only ever runs inside the mini
+    // app, where a Quick Auth token is always obtainable, so this can't
+    // break the real flow.
     const trusted = await getTrustedFid(req);
-    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid))
-      return res.status(401).json({ error: "Token does not match claimed fid" });
+    if (trusted.fid === null || trusted.fid !== fid)
+      return res.status(401).json({ error: "Valid auth token required and must match fid" });
 
     const cfg = loadConfig();
     const abi = loadAbi();

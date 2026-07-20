@@ -278,10 +278,20 @@ async function runVerificationBatch(): Promise<void> {
     const ageH     = (Date.now() - new Date(row.created_at).getTime()) / 3_600_000;
 
     if (!castHash) {
-      // No target reference to check against — fall back to the trust window.
+      // No target reference to check against, so there is nothing to verify
+      // against Neynar. This USED to blind-auto-verify after the trust
+      // window, which was a real bypass: /api/actions/log is a public
+      // endpoint, and any caller could earn like/recast points for free by
+      // simply omitting payload.castHash from the request — the "real
+      // Neynar check" added earlier only fires when the field is present.
+      // A row with no castHash can never be confirmed real, so it's excluded
+      // instead of trusted.
       if (ageH > HUB_TRUST_WINDOW_H) {
-        await pool.query("UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1", [row.id]);
-        verificationStats.verifiedCount++;
+        await pool.query(
+          "UPDATE user_actions SET excluded = true, excluded_reason = 'missing_cast_reference' WHERE id = $1",
+          [row.id],
+        );
+        verificationStats.excludedCount++;
       }
       continue;
     }
@@ -309,16 +319,33 @@ async function runVerificationBatch(): Promise<void> {
   );
   verificationStats.verifiedCount += hubCount ?? 0;
 
-  // ── 4. Follow trust-window fallback (no targetFid in payload) ──
-  const { rowCount: followFallback } = await pool.query(
-    `UPDATE user_actions SET verified = true, verified_at = now()
-     WHERE action_type IN ('follow','unfollow')
+  // ── 4. Follow rows missing targetFid ──
+  // Same reasoning as the reaction fallback above: this used to blind-verify
+  // 'follow' after the trust window with no Neynar check at all whenever the
+  // caller omitted payload.targetFid — a free, unlimited way to fabricate
+  // follow points via the public /api/actions/log endpoint. 'follow' earns
+  // real points, so a row with nothing to verify against gets excluded, not
+  // trusted. 'unfollow' is worth 0 points either way, so it's harmless to
+  // keep auto-verifying it (it just marks the row as processed).
+  const { rowCount: followFallbackExcluded } = await pool.query(
+    `UPDATE user_actions SET excluded = true, excluded_reason = 'missing_target_fid'
+     WHERE action_type = 'follow'
        AND verified = false AND excluded = false
        AND payload->>'targetFid' IS NULL
        AND created_at < now() - ($1 || ' hours')::interval`,
     [HUB_TRUST_WINDOW_H],
   );
-  verificationStats.verifiedCount += followFallback ?? 0;
+  verificationStats.excludedCount += followFallbackExcluded ?? 0;
+
+  const { rowCount: unfollowFallback } = await pool.query(
+    `UPDATE user_actions SET verified = true, verified_at = now()
+     WHERE action_type = 'unfollow'
+       AND verified = false AND excluded = false
+       AND payload->>'targetFid' IS NULL
+       AND created_at < now() - ($1 || ' hours')::interval`,
+    [HUB_TRUST_WINDOW_H],
+  );
+  verificationStats.verifiedCount += unfollowFallback ?? 0;
 
   // ── 5. Grow campaign verification (server-side Neynar check) ──
   const { rows: growRows } = await pool.query(

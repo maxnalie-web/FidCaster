@@ -131,7 +131,19 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
   if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_GIFT_PTS) return false;
 
   const recipients = (cast.mentioned_profiles ?? []).filter(p => p.fid !== authorFid);
-  if (recipients.length === 0) return false;
+  if (recipients.length === 0) {
+    // Text matched the gift pattern but no real mention resolved — e.g. the
+    // user edited the pre-filled Warpcast text, mistyped the handle, or the
+    // mentioned account doesn't exist. Without this the cast just silently
+    // never earns anything, contradicting the in-app promise that a
+    // promotion/gift attempt always gets a notification either way.
+    await notifyFid(authorFid, {
+      title: "Gift not sent",
+      body:  "Your gift cast didn't tag a valid recipient, so no points moved.",
+      data:  { type: "gift_failed", castHash: cast.hash },
+    });
+    return false;
+  }
   const recipientFid = recipients[0].fid;
 
   try {
@@ -189,9 +201,15 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
 
 export async function processCastForAllowance(cast: NeynarCastForPromotion): Promise<void> {
   try {
-    const wasPromotion = await handlePromotionCast(cast);
-    if (!wasPromotion) {
-      await handleGiftCast(cast);
+    // Gift text ("{N} FidCaster points @user") always also matches
+    // PROMO_REGEX (it contains the word "fidcaster"), so a gift whose
+    // recipient mention happens to overlap with mentioning the app account
+    // would get misclassified as a flat 50pt promotion instead of an N-pt
+    // gift if promotion were checked first. GIFT_REGEX is the more specific,
+    // anchored pattern, so it gets first refusal.
+    const wasGift = await handleGiftCast(cast);
+    if (!wasGift) {
+      await handlePromotionCast(cast);
     }
   } catch (e) {
     console.warn("[promotion-watcher] unexpected error:", (e as Error).message);

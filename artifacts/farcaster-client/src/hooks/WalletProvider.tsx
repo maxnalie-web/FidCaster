@@ -11,7 +11,7 @@ import { hexToBytes, createWalletClient, custom } from "viem";
 import type { WalletClient } from "viem";
 import { optimism } from "viem/chains";
 import { setWalletAccountChangeCallback } from "@/lib/wallet-events";
-import { establishSession } from "@/lib/session";
+import { establishSession, clearSession } from "@/lib/session";
 import {
   encryptAndStore,
   decryptStored,
@@ -1160,6 +1160,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       clearSignerApproved(currentFid);
       clearSignerPrivKey(currentFid);
       await removeAccountMnemonic(currentFid);
+      clearSession(); // drop the in-memory request-auth token — it was never actually invalidated on logout otherwise
     }
 
     const remaining = loadAccountsMeta();

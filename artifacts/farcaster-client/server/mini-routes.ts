@@ -13,8 +13,19 @@ import { getPool, isDbConfigured } from "./db/pool.js";
 import { POINTS } from "./db/points.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 import { getTrustedFid } from "./auth.js";
+import { logUserActionIfNew } from "./db/ledger.js";
 
 const SCORE_THRESHOLD = 30;
+
+// Only actions that actually earn points count toward the daily streak.
+// Zero-value types (unlike, unrecast, unfollow, app_open, grow_campaign_start,
+// gift, market_cancel) are trivially cheap to fabricate a verified row for —
+// counting them would let someone maintain a streak (and collect the 500pt
+// weekly streak_bonus) for free without ever doing anything real.
+const STREAK_EXCLUDED_TYPES = new Set(["streak_bonus", "nft_holder_bonus", "referral_welcome", "referral"]);
+const STREAK_ELIGIBLE_TYPES = Object.entries(POINTS)
+  .filter(([type, v]) => v.pts > 0 && !STREAK_EXCLUDED_TYPES.has(type))
+  .map(([type]) => type);
 
 const limiter = rateLimit({
   windowMs: 60_000,
@@ -242,8 +253,9 @@ export function registerMiniRoutes(app: Express): void {
         `SELECT DISTINCT (created_at AT TIME ZONE 'UTC')::date::text AS d
          FROM user_actions
          WHERE fid = $1 AND verified = true AND excluded = false
+           AND action_type = ANY($2::text[])
          ORDER BY d DESC LIMIT 365`,
-        [fid],
+        [fid, STREAK_ELIGIBLE_TYPES],
       );
       const activeDates = dateRows.map(r => r.d);
       const streak = computeStreak(activeDates);
@@ -253,13 +265,14 @@ export function registerMiniRoutes(app: Express): void {
       let streakBonusAwarded = false;
       const todayStr = new Date().toISOString().slice(0, 10);
       if (streak > 0 && streak % 7 === 0 && activeDates[0] === todayStr) {
-        const { rowCount } = await pool.query(
-          `INSERT INTO user_actions (fid, action_type, payload, proof, verified, excluded, verified_at)
-           VALUES ($1, 'streak_bonus', $2, $3, true, false, now())
-           ON CONFLICT (action_type, proof) WHERE proof IS NOT NULL DO NOTHING`,
-          [fid, JSON.stringify({ streak }), `streak_bonus:${fid}:${todayStr}`],
-        );
-        streakBonusAwarded = (rowCount ?? 0) > 0;
+        // Routed through the single write path (db/ledger.ts explicitly
+        // documents logUserAction/logUserActionIfNew as the only place
+        // user_actions should be inserted) instead of a raw INSERT here.
+        streakBonusAwarded = await logUserActionIfNew({
+          fid, actionType: "streak_bonus",
+          payload: { streak }, proof: `streak_bonus:${fid}:${todayStr}`,
+          verified: true,
+        }).catch(() => false);
       }
 
       // Build the CASE expr for total/today points

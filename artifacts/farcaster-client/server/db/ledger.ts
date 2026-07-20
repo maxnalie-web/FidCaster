@@ -53,7 +53,8 @@ export type ActionType =
   | "promotion"      // user cast promoting FidCaster — earns fixed pts
   | "gift"           // user sent a gift cast — 0 pts (allowance already debited)
   | "gift_received"  // recipient of a gift — pts come from payload.amount
-  | "nft_holder_bonus"; // one-time bonus for holding a FasterTask Pass NFT
+  | "nft_holder_bonus" // one-time bonus for holding a FasterTask Pass NFT
+  | "streak_bonus";  // awarded once per 7-day streak milestone
 
 export interface LogActionParams {
   fid: number;
