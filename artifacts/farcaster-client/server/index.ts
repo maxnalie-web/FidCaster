@@ -1529,6 +1529,20 @@ app.get("/.well-known/farcaster.json", (_req: express.Request, res: express.Resp
   res.json(FARCASTER_MANIFEST);
 });
 
+// ── Cross-origin asset access for Farcaster ────────────────────────────────
+// Helmet sets Cross-Origin-Resource-Policy: same-origin globally which prevents
+// Warpcast (a different origin) from loading iconUrl / imageUrl / splashImageUrl.
+// We must override it to "cross-origin" for every asset the manifest references.
+app.use(
+  ["/icons", "/og-mini.png", "/icon.png", "/splash.png", "/image.png"],
+  (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    // Also allow Warpcast to cache-bust these images without CORS errors
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    next();
+  },
+);
+
 // Image aliases — farcaster.json references these short paths
 app.get("/icon.png",   (_req, res) => res.redirect(307, "/icons/icon-1024-transparent.png"));
 app.get("/splash.png", (_req, res) => res.redirect(307, "/icons/splash-200-transparent.png"));
