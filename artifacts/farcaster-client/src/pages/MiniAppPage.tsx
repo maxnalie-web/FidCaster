@@ -346,7 +346,15 @@ function Card({ children, style = {}, glow = false, className, onClick }: {
       }}
     >
       <LiquidGlassSurface radius={radius} />
-      {children}
+      {/* CSS paint-order bug fix: non-positioned (static) content actually
+          paints BEFORE positioned z-index:0/auto siblings in the browser's
+          stacking order, regardless of DOM order — so the sheen/rim above
+          was rendering ON TOP of any plain, non-positioned child content,
+          dimming or fully hiding it depending on where the sheen sweep was.
+          Wrapping children in a position:relative div promotes them into the
+          same positioned bucket as the sheen, where DOM order (this wrapper
+          comes last) correctly puts them on top. */}
+      <div style={{ position:"relative" }}>{children}</div>
     </Comp>
   );
 }
@@ -1143,47 +1151,62 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
   return (
     <motion.div key="home-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
 
-      {/* ── Profile row ── */}
-      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-        <div style={{ position:"relative", flexShrink:0 }}>
-          {pfpUrl
-            ? <img src={pfpUrl} alt="" style={{ width:48, height:48, borderRadius:"50%",
-                border:`2px solid rgba(139,92,246,0.6)` }} />
-            : <div style={{ width:48, height:48, borderRadius:"50%",
-                background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:18, fontWeight:900, color:"#fff", border:`2px solid rgba(139,92,246,0.5)` }}>
-                {username.slice(0,2).toUpperCase()}
-              </div>
-          }
-          {/* Level badge */}
-          <div style={{ position:"absolute", bottom:-4, right:-4, width:20, height:20, borderRadius:"50%",
-            background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-            border:`2px solid ${C.bg}`, display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:9, fontWeight:900, color:"#fff" }}>
-            {level}
+      {/* ── Profile row (matches design/premium-home.html's .profile + .xp) ── */}
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:13 }}>
+          <div style={{ position:"relative", flexShrink:0, width:56, height:56, borderRadius:"50%",
+            background:`linear-gradient(135deg,${C.accent},#C084FC)`, padding:2.5,
+            boxShadow:"0 0 18px rgba(139,92,246,0.5)" }}>
+            {pfpUrl
+              ? <img src={pfpUrl} alt="" style={{ width:"100%", height:"100%", borderRadius:"50%", display:"block", objectFit:"cover" }} />
+              : <div style={{ width:"100%", height:"100%", borderRadius:"50%", background:"#1B1030",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:16, fontWeight:900, color:"#fff" }}>
+                  {username.slice(0,2).toUpperCase()}
+                </div>
+            }
+            <div style={{ position:"absolute", bottom:1, right:1, width:13, height:13, borderRadius:"50%",
+              background:"#22C55E", border:`2.5px solid ${C.bg}`, boxShadow:"0 0 8px rgba(34,197,94,0.9)" }} />
+          </div>
+
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:15.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{displayName}</p>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:2 }}>
+              <p style={{ color:C.text3, fontSize:12.5 }}>@{username}</p>
+              {rank && (
+                <Chip color={C.amber} bg="rgba(245,158,11,0.15)" border="rgba(245,158,11,0.35)">
+                  <Trophy size={10} /> #{rank}
+                </Chip>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display:"flex", alignItems:"center", gap:7, height:34, padding:"0 13px", borderRadius:999, flexShrink:0,
+            background:"linear-gradient(135deg,rgba(124,58,237,.45),rgba(88,28,135,.35))",
+            border:"1px solid rgba(168,85,247,.55)", boxShadow:"0 0 14px rgba(124,58,237,.3)" }}>
+            <Star size={13} color="#FCD34D" fill="#FCD34D" />
+            <span style={{ color:C.text1, fontSize:12.5, fontWeight:700, whiteSpace:"nowrap" }}>Level {level}</span>
           </div>
         </div>
 
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-            <p style={{ color:C.text1, fontWeight:700, fontSize:15, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{displayName}</p>
-            {rank && (
-              <Chip color={C.amber} bg="rgba(245,158,11,0.15)" border="rgba(245,158,11,0.35)">
-                <Trophy size={10} /> #{rank}
-              </Chip>
-            )}
+        {/* Full-width XP bar with a shine sweep, right-aligned label below */}
+        <div style={{ marginTop:11 }}>
+          <div style={{ height:7, borderRadius:999, background:"#241A3F", overflow:"hidden", position:"relative" }}>
+            <motion.div initial={{ width:0 }} animate={{ width:`${xpPct}%` }}
+              transition={{ duration:0.9, delay:0.2, ease:"easeOut" }}
+              style={{ height:"100%", borderRadius:999, position:"relative", overflow:"hidden",
+                background:`linear-gradient(90deg,${C.accent},#A855F7 60%,#C084FC)`,
+                boxShadow:"0 0 12px rgba(168,85,247,0.7)" }}>
+              <motion.div animate={{ backgroundPositionX: ["180%", "-80%"] }}
+                transition={{ duration:2.8, repeat:Infinity, ease:"easeInOut" }}
+                style={{ position:"absolute", inset:0,
+                  background:"linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.45) 50%, transparent 70%)",
+                  backgroundSize:"200% 100%" }} />
+            </motion.div>
           </div>
-          {/* XP bar */}
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <p style={{ color:C.text3, fontSize:10, whiteSpace:"nowrap" }}>Lv{level}</p>
-            <div style={{ flex:1, height:5, background:C.border, borderRadius:3 }}>
-              <motion.div initial={{ width:0 }} animate={{ width:`${xpPct}%` }}
-                transition={{ duration:0.8, delay:0.2 }}
-                style={{ height:"100%", borderRadius:3, background:`linear-gradient(90deg,${C.accent},#A855F7)` }} />
-            </div>
-            <p style={{ color:C.text3, fontSize:10, whiteSpace:"nowrap" }}>{xp}/{xpToNext}</p>
-          </div>
+          <p style={{ textAlign:"right", fontSize:11.5, color:C.text3, fontWeight:600, marginTop:6 }}>
+            <b style={{ color:C.text1 }}>{xp.toLocaleString()}</b> / {xpToNext.toLocaleString()} XP
+          </p>
         </div>
       </div>
 
@@ -1206,29 +1229,45 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </motion.div>
         </div>
 
-        {/* Stat card — Total Points (left) — glass: brighter blur, gradient sheen edge */}
-        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:160 }}>
-          <p style={{ color:"#B9AEDD", fontSize:12.5, fontWeight:600, marginBottom:6 }}>Total Points</p>
+        {/* Stat card — Total Points (left): icon chip + corner glow + big value */}
+        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:162 }}>
+          <div style={{ position:"absolute", top:-30, right:-30, width:90, height:90, borderRadius:"50%",
+            background:"radial-gradient(circle, rgba(139,92,246,0.35), transparent 70%)", pointerEvents:"none" }} />
+          <div style={{ position:"relative", display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+            <div style={{ width:32, height:32, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+              background:"linear-gradient(145deg, rgba(139,92,246,0.4), rgba(88,28,135,0.3))",
+              border:"1px solid rgba(168,85,247,0.55)", boxShadow:"0 0 14px rgba(139,92,246,0.4)" }}>
+              <Zap size={15} color={C.accentHi} />
+            </div>
+            <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Total Points</p>
+          </div>
           {ptsLoading
             ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
-            : <div style={{ fontSize:27, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:5,
+            : <div style={{ fontSize:28, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:8,
                 color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
                 <Counter to={totalPoints} />
               </div>
           }
           {todayPts > 0 && (
-            <p style={{ display:"flex", alignItems:"center", gap:4, fontSize:12.5, fontWeight:700, color:C.green }}>
-              <ArrowUp size={12} />+{todayPts} today
-            </p>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:11.5, fontWeight:700, color:C.green,
+              background:"rgba(34,197,94,0.14)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:999, padding:"3px 9px" }}>
+              <ArrowUp size={11} />+{todayPts} today
+            </span>
           )}
         </GlassStatCard>
 
-        {/* Stat card — Global Rank (right) */}
-        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:134, textAlign:"center" }}>
-          <Trophy size={26} color={C.amber} style={{ margin:"0 auto 4px", display:"block",
-            filter:"drop-shadow(0 0 10px rgba(251,191,36,0.7))" }} />
-          <p style={{ color:"#B9AEDD", fontSize:12.5, fontWeight:600 }}>Global Rank</p>
-          <div style={{ fontSize:29, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
+        {/* Stat card — Global Rank (right): matching icon-chip layout, gold accent */}
+        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:136, textAlign:"center" }}>
+          <div style={{ position:"absolute", top:-30, left:-20, width:80, height:80, borderRadius:"50%",
+            background:"radial-gradient(circle, rgba(251,191,36,0.3), transparent 70%)", pointerEvents:"none" }} />
+          <div style={{ position:"relative", width:32, height:32, borderRadius:11, margin:"0 auto 8px",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            background:"linear-gradient(145deg, rgba(251,191,36,0.35), rgba(180,83,9,0.25))",
+            border:"1px solid rgba(251,191,36,0.5)", boxShadow:"0 0 14px rgba(251,191,36,0.35)" }}>
+            <Trophy size={16} color={C.amber} />
+          </div>
+          <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6 }}>Global Rank</p>
+          <div style={{ fontSize:26, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
             textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
             {rank ? `#${rank}` : "—"}
           </div>
@@ -1256,10 +1295,12 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
                 : "0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.09), inset 0 -6px 12px -6px rgba(0,0,0,0.15)",
             }}>
             <LiquidGlassSurface radius={18} sheen={false} />
-            <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
-            <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
-            <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
-            <div style={{ color:"rgba(255,255,255,0.2)", fontSize:9, marginTop:1 }}>{s.sub}</div>
+            <div style={{ position:"relative" }}>
+              <div style={{ fontSize:16, marginBottom:3 }}>{s.icon}</div>
+              <div style={{ color:s.color, fontWeight:900, fontSize:18, lineHeight:1 }}>{s.value}</div>
+              <div style={{ color:C.text3, fontSize:9, marginTop:3, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>{s.label}</div>
+              <div style={{ color:"rgba(255,255,255,0.2)", fontSize:9, marginTop:1 }}>{s.sub}</div>
+            </div>
           </motion.div>
         ))}
       </div>
