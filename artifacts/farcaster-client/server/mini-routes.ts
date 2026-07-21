@@ -15,7 +15,7 @@ import { POINTS } from "./db/points.js";
 import { upsertNotificationToken } from "./db/notifications.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 import { getTrustedFid } from "./auth.js";
-import { logUserActionIfNew } from "./db/ledger.js";
+import { logUserAction, logUserActionIfNew } from "./db/ledger.js";
 
 // Neynar's neynar_user_score is a 0-1 float (not a 0-100 scale).
 const SCORE_THRESHOLD = 0.3;
@@ -123,44 +123,44 @@ const MISSIONS = [
 type AchievementMetric = "cast" | "like" | "recast" | "follow" | "points" | "referral" | "market" | "promotion" | "gift" | "streak" | "nft";
 interface AchievementDef {
   id: string; label: string; icon: string; tier: "bronze" | "silver" | "gold" | "platinum";
-  metric: AchievementMetric; target: number; requirement: string;
+  metric: AchievementMetric; target: number; requirement: string; pts: number;
 }
 const ACHIEVEMENTS: AchievementDef[] = [
   // Casts
-  { id: "first_cast",  label: "First Cast",      icon: "🎙️", tier: "bronze", metric: "cast",   target: 1,   requirement: "Cast 1 time" },
-  { id: "cast_10",     label: "Getting Vocal",    icon: "🗣️", tier: "bronze", metric: "cast",   target: 10,  requirement: "Cast 10 times" },
-  { id: "cast_50",     label: "Cast Master",      icon: "⚡", tier: "silver", metric: "cast",   target: 50,  requirement: "Cast 50 times" },
-  { id: "cast_200",    label: "Broadcast Legend", icon: "📡", tier: "gold",   metric: "cast",   target: 200, requirement: "Cast 200 times" },
+  { id: "first_cast",  label: "First Cast",      icon: "🎙️", tier: "bronze", metric: "cast",   target: 1,   requirement: "Cast 1 time",   pts: 10  },
+  { id: "cast_10",     label: "Getting Vocal",    icon: "🗣️", tier: "bronze", metric: "cast",   target: 10,  requirement: "Cast 10 times",  pts: 20  },
+  { id: "cast_50",     label: "Cast Master",      icon: "⚡", tier: "silver", metric: "cast",   target: 50,  requirement: "Cast 50 times",  pts: 75  },
+  { id: "cast_200",    label: "Broadcast Legend", icon: "📡", tier: "gold",   metric: "cast",   target: 200, requirement: "Cast 200 times", pts: 250 },
   // Likes
-  { id: "like_25",     label: "Appreciator",      icon: "❤️", tier: "bronze", metric: "like",   target: 25,  requirement: "Like 25 posts" },
-  { id: "like_100",    label: "Serial Liker",     icon: "💯", tier: "silver", metric: "like",   target: 100, requirement: "Like 100 posts" },
+  { id: "like_25",     label: "Appreciator",      icon: "❤️", tier: "bronze", metric: "like",   target: 25,  requirement: "Like 25 posts",  pts: 15  },
+  { id: "like_100",    label: "Serial Liker",     icon: "💯", tier: "silver", metric: "like",   target: 100, requirement: "Like 100 posts", pts: 50  },
   // Recasts
-  { id: "recast_10",   label: "Amplifier",        icon: "🔁", tier: "bronze", metric: "recast", target: 10,  requirement: "Recast 10 posts" },
-  { id: "recast_50",   label: "Signal Booster",   icon: "📶", tier: "silver", metric: "recast", target: 50,  requirement: "Recast 50 posts" },
+  { id: "recast_10",   label: "Amplifier",        icon: "🔁", tier: "bronze", metric: "recast", target: 10,  requirement: "Recast 10 posts", pts: 15 },
+  { id: "recast_50",   label: "Signal Booster",   icon: "📶", tier: "silver", metric: "recast", target: 50,  requirement: "Recast 50 posts", pts: 60 },
   // Follows
-  { id: "social",      label: "Social Butterfly", icon: "🦋", tier: "bronze", metric: "follow", target: 10,  requirement: "Follow 10 users" },
-  { id: "social_50",   label: "Networker",        icon: "🌐", tier: "silver", metric: "follow", target: 50,  requirement: "Follow 50 users" },
+  { id: "social",      label: "Social Butterfly", icon: "🦋", tier: "bronze", metric: "follow", target: 10,  requirement: "Follow 10 users", pts: 15 },
+  { id: "social_50",   label: "Networker",        icon: "🌐", tier: "silver", metric: "follow", target: 50,  requirement: "Follow 50 users", pts: 60 },
   // Points
-  { id: "pts_1k",      label: "1K Points",        icon: "🏅", tier: "bronze", metric: "points", target: 1_000,  requirement: "Reach 1,000 total points" },
-  { id: "pts_10k",     label: "10K Points",       icon: "💎", tier: "silver", metric: "points", target: 10_000, requirement: "Reach 10,000 total points" },
-  { id: "pts_50k",     label: "Points Legend",    icon: "👑", tier: "gold",   metric: "points", target: 50_000, requirement: "Reach 50,000 total points" },
+  { id: "pts_1k",      label: "1K Points",        icon: "🏅", tier: "bronze", metric: "points", target: 1_000,  requirement: "Reach 1,000 total points",  pts: 50  },
+  { id: "pts_10k",     label: "10K Points",       icon: "💎", tier: "silver", metric: "points", target: 10_000, requirement: "Reach 10,000 total points", pts: 200 },
+  { id: "pts_50k",     label: "Points Legend",    icon: "👑", tier: "gold",   metric: "points", target: 50_000, requirement: "Reach 50,000 total points", pts: 500 },
   // Referrals
-  { id: "referral",    label: "Recruiter",        icon: "👥", tier: "bronze", metric: "referral", target: 1,  requirement: "Refer 1 friend" },
-  { id: "referral_5",  label: "Talent Scout",     icon: "🧲", tier: "silver", metric: "referral", target: 5,  requirement: "Refer 5 friends" },
-  { id: "referral_20", label: "Community Builder",icon: "🏛️", tier: "gold",   metric: "referral", target: 20, requirement: "Refer 20 friends (lifetime cap)" },
+  { id: "referral",    label: "Recruiter",        icon: "👥", tier: "bronze", metric: "referral", target: 1,  requirement: "Refer 1 friend",                 pts: 30  },
+  { id: "referral_5",  label: "Talent Scout",     icon: "🧲", tier: "silver", metric: "referral", target: 5,  requirement: "Refer 5 friends",                pts: 100 },
+  { id: "referral_20", label: "Community Builder",icon: "🏛️", tier: "gold",   metric: "referral", target: 20, requirement: "Refer 20 friends (lifetime cap)", pts: 400 },
   // Market
-  { id: "market_maker",label: "Market Maker",     icon: "📊", tier: "bronze", metric: "market",   target: 1,  requirement: "Complete 1 FID Market trade" },
-  { id: "market_pro",  label: "Market Pro",       icon: "📈", tier: "silver", metric: "market",   target: 10, requirement: "Complete 10 FID Market trades" },
+  { id: "market_maker",label: "Market Maker",     icon: "📊", tier: "bronze", metric: "market",   target: 1,  requirement: "Complete 1 FID Market trade",  pts: 25  },
+  { id: "market_pro",  label: "Market Pro",       icon: "📈", tier: "silver", metric: "market",   target: 10, requirement: "Complete 10 FID Market trades", pts: 100 },
   // Promotion / Gift (Allowance-funded)
-  { id: "promoter",    label: "Promoter",         icon: "📣", tier: "bronze", metric: "promotion",target: 1,  requirement: "Post 1 Promote cast" },
-  { id: "promoter_10", label: "Growth Hacker",    icon: "🚀", tier: "silver", metric: "promotion",target: 10, requirement: "Post 10 Promote casts" },
-  { id: "gift_giver",  label: "Gift Giver",       icon: "🎁", tier: "bronze", metric: "gift",     target: 1,  requirement: "Send 1 gift" },
-  { id: "gift_giver_10",label: "Generous Soul",   icon: "🎀", tier: "silver", metric: "gift",     target: 10, requirement: "Send 10 gifts" },
+  { id: "promoter",    label: "Promoter",         icon: "📣", tier: "bronze", metric: "promotion",target: 1,  requirement: "Post 1 Promote cast",  pts: 25  },
+  { id: "promoter_10", label: "Growth Hacker",    icon: "🚀", tier: "silver", metric: "promotion",target: 10, requirement: "Post 10 Promote casts", pts: 100 },
+  { id: "gift_giver",  label: "Gift Giver",       icon: "🎁", tier: "bronze", metric: "gift",     target: 1,  requirement: "Send 1 gift",   pts: 20 },
+  { id: "gift_giver_10",label: "Generous Soul",   icon: "🎀", tier: "silver", metric: "gift",     target: 10, requirement: "Send 10 gifts", pts: 80 },
   // Streak
-  { id: "streak_7",    label: "Week Warrior",     icon: "🔥", tier: "silver", metric: "streak",   target: 7,  requirement: "Reach a 7-day streak" },
-  { id: "streak_30",   label: "Unstoppable",      icon: "🌋", tier: "gold",   metric: "streak",   target: 30, requirement: "Reach a 30-day streak" },
+  { id: "streak_7",    label: "Week Warrior",     icon: "🔥", tier: "silver", metric: "streak",   target: 7,  requirement: "Reach a 7-day streak",  pts: 100 },
+  { id: "streak_30",   label: "Unstoppable",      icon: "🌋", tier: "gold",   metric: "streak",   target: 30, requirement: "Reach a 30-day streak", pts: 400 },
   // Special
-  { id: "nft_holder",  label: "Pass Holder",      icon: "🛡️", tier: "platinum", metric: "nft",    target: 1,  requirement: "Hold a FasterTask Pass NFT" },
+  { id: "nft_holder",  label: "Pass Holder",      icon: "🛡️", tier: "platinum", metric: "nft",    target: 1,  requirement: "Hold a FasterTask Pass NFT", pts: 150 },
 ];
 
 function achievementProgress(a: AchievementDef, totalCounts: Record<string, number>, totalPoints: number, streak: number): number {
@@ -298,7 +298,7 @@ export function registerMiniRoutes(app: Express): void {
         totalPoints: 0, todayPoints: 0, missions: MISSIONS.map(m => ({ ...m, count: 0 })),
         achievements: ACHIEVEMENTS.map(a => ({
           id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
-          target: a.target, progress: 0, unlocked: false,
+          target: a.target, progress: 0, unlocked: false, pts: a.pts,
         })),
         nextStreakBonusPts: POINTS.streak_bonus.pts,
         streakBonusAwarded: false,
@@ -415,10 +415,24 @@ export function registerMiniRoutes(app: Express): void {
 
       const achievements = ACHIEVEMENTS.map(a => {
         const progress = achievementProgress(a, totalCounts, totalPoints, streak);
+        const unlocked = progress >= a.target;
+        // Fire-and-forget: logUserAction is idempotent on (action_type, proof)
+        // and never throws, so it's safe to call on every stats fetch once an
+        // achievement is unlocked — it only actually inserts (and awards
+        // a.pts) the first time. Not awaited: this endpoint shouldn't wait on
+        // a DB write for a response that already has everything it needs.
+        if (unlocked && a.pts > 0) {
+          void logUserAction({
+            fid, actionType: "achievement",
+            payload: { id: a.id, amount: a.pts },
+            proof: `achievement:${a.id}:${fid}`,
+            verified: true,
+          });
+        }
         return {
           id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
           target: a.target, progress: Math.min(progress, a.target),
-          unlocked: progress >= a.target,
+          unlocked, pts: a.pts,
         };
       });
 

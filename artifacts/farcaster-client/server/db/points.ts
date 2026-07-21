@@ -50,12 +50,20 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   gift:                    { pts: 0,   dailyCap: 0    }, // sender: 0 pts (allowance debited)
   // gift_received uses payload.amount (variable); dailyCap 500 enforced in SQL
   gift_received:           { pts: 0,   dailyCap: 0    }, // handled via GIFT_CASE below
+  // One-time bonus per achievement unlocked (mini-routes.ts ACHIEVEMENTS) -
+  // each id can only ever award once per fid (proof = `achievement:{id}:{fid}`,
+  // enforced by the ledger's unique (action_type, proof) constraint), so this
+  // isn't a repeatable/farmable action like the other payload-based types
+  // above. The 3000 cap is just a defensive ceiling - the real 24 achievements
+  // sum to well under that even if every one of them unlocked the same day.
+  achievement:             { pts: 0,   dailyCap: 0    }, // handled via ACHIEVEMENT_CASE below
 };
 
 // Build the CASE expression once (avoids repeating in every query).
-// Excludes gift_received/promotion — both handled via payload-based variable-amount CASE branches.
+// Excludes gift_received/promotion/achievement — all three are handled via
+// payload-based variable-amount CASE branches instead of a fixed per-type pts.
 const CASE_EXPR = Object.entries(POINTS)
-  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received" && type !== "promotion")
+  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received" && type !== "promotion" && type !== "achievement")
   .map(([type, { pts, dailyCap }]) =>
     `WHEN '${type}' THEN LEAST(cnt * ${pts}, ${dailyCap})`)
   .join("\n      ");
@@ -65,6 +73,8 @@ const CASE_EXPR = Object.entries(POINTS)
 const GIFT_CASE = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
 // promotion: same pattern — payload->>'amount' holds the actual scaled award.
 const PROMO_CASE = `WHEN 'promotion' THEN LEAST(COALESCE(promo_sum, 0), 500)`;
+// achievement: same pattern — each row is a one-time unlock worth payload->>'amount'.
+const ACHIEVEMENT_CASE = `WHEN 'achievement' THEN LEAST(COALESCE(achievement_sum, 0), 3000)`;
 
 // ── Core SQL ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +88,10 @@ WITH counted AS (
                   ELSE 0 END) AS gift_sum,
          SUM(CASE WHEN action_type = 'promotion'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS promo_sum
+                  ELSE 0 END) AS promo_sum,
+         SUM(CASE WHEN action_type = 'achievement'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS achievement_sum
   FROM user_actions
   WHERE verified = true AND excluded = false
   GROUP BY fid, action_type, d
@@ -87,6 +100,7 @@ scored AS (
   SELECT fid, CASE action_type
     ${GIFT_CASE}
     ${PROMO_CASE}
+    ${ACHIEVEMENT_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -117,15 +131,19 @@ WITH counted AS (
                   ELSE 0 END) AS gift_sum,
          SUM(CASE WHEN action_type = 'promotion'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS promo_sum
+                  ELSE 0 END) AS promo_sum,
+         SUM(CASE WHEN action_type = 'achievement'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS achievement_sum
   FROM user_actions
   WHERE fid = $1 AND verified = true AND excluded = false
   GROUP BY action_type, d
 ),
 scored AS (
-  SELECT action_type, d, cnt, gift_sum, promo_sum, CASE action_type
+  SELECT action_type, d, cnt, gift_sum, promo_sum, achievement_sum, CASE action_type
     ${GIFT_CASE}
     ${PROMO_CASE}
+    ${ACHIEVEMENT_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts

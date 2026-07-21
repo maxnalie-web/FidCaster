@@ -91,7 +91,7 @@ interface MissionItem { id: string; action: string; label: string; target: numbe
 interface Achievement {
   id: string; label: string; icon: string; unlocked: boolean;
   tier: "bronze" | "silver" | "gold" | "platinum"; requirement: string;
-  target: number; progress: number;
+  target: number; progress: number; pts: number;
 }
 const TIER_STYLE: Record<Achievement["tier"], { label: string; color: string; bg: string; border: string }> = {
   bronze:   { label: "Bronze",   color: "#D89B6A", bg: "rgba(216,155,106,0.14)", border: "rgba(216,155,106,0.4)" },
@@ -2542,6 +2542,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
                         <span style={{ color:t.color, background:t.bg, border:`1px solid ${t.border}`,
                           fontSize:9.5, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.05em",
                           borderRadius:999, padding:"1.5px 7px" }}>{t.label}</span>
+                        {a.pts > 0 && <Chip>+{a.pts} pts</Chip>}
                         {a.unlocked && <Check size={12} color={C.green} />}
                       </div>
                       <p style={{ color:C.text3, fontSize:11.5, marginBottom:6 }}>{a.requirement}</p>
