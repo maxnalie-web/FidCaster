@@ -21,6 +21,10 @@ import {
   ChevronRight, Lock, Info, Send,
 } from "lucide-react";
 
+// Must match server/db/points.ts's nft_holder_bonus.pts - shown here purely
+// for copy, the server is still the only source of truth for the award.
+const POINTS_NFT_HOLDER_BONUS = 750;
+
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   bg:        "#0B0910",
@@ -2735,40 +2739,55 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
       {/* NFT Pass */}
       <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} qaToken={qaToken} />
 
-      {/* FasterTask NFT holder bonus — a separate, one-time-only check */}
+      {/* FasterTask NFT holder bonus — a separate, one-time-only check.
+          Minting itself happens on FasterTask's own site (faster-tasks.com/nft),
+          not inside FidCaster: their mint assigns rarity/legendary slots from
+          their own live database state, which FidCaster has no access to and
+          shouldn't try to replicate — a duplicated/guessed version of that
+          logic could double-mint or hand out the wrong rarity. FidCaster's
+          part is only detecting the resulting holder status and paying the
+          bonus, same as before. The "Mint" link is a plain secondary button
+          on purpose, not a big CTA — this is an optional bonus, not a step
+          anyone needs to complete to use FidCaster. */}
       <Card style={{ padding:"14px 16px" }}>
-        {isNftHolder ? (
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <Award size={18} color={C.accentHi} />
-            <div style={{ flex:1 }}>
-              <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask Holder</p>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <img src="https://ipfs.io/ipfs/QmRbHogLHr3s1nAh9qCD3J1ygZVcJrzqXCFoP5aGc9ygZE/1.png" alt=""
+            style={{ width:36, height:36, borderRadius:8, objectFit:"cover", flexShrink:0,
+              border:`1px solid ${C.border}`, opacity: isNftHolder ? 1 : 0.65 }} />
+          <div style={{ flex:1 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask Pass Bonus</p>
+            {isNftHolder ? (
               <p style={{ color:C.green, fontSize:11.5, marginTop:1, display:"flex", alignItems:"center", gap:4 }}>
                 <Check size={11} /> Bonus credited
               </p>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <Award size={18} color={C.text3} />
-            <div style={{ flex:1 }}>
-              <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask NFT Bonus</p>
+            ) : (
               <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
                 {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet."
                   : nftCheck === "error" ? "Couldn't check right now, try again."
-                  : "One-time check, hold the FasterTask Pass to unlock it."}
+                  : <>Hold a FasterTask Pass (~$5) to unlock <strong style={{ color:C.amber }}>+{POINTS_NFT_HOLDER_BONUS} pts</strong></>}
               </p>
-            </div>
-            <button onClick={checkNft} disabled={nftCheck === "checking"}
-              style={{ background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)",
-                color:C.accentHi, fontSize:11.5, fontWeight:700, borderRadius:999, padding:"7px 12px",
-                cursor: nftCheck === "checking" ? "default" : "pointer",
-                display:"inline-flex", alignItems:"center", gap:6, flexShrink:0 }}>
-              {nftCheck === "checking"
-                ? <Loader2 size={12} className="animate-spin" />
-                : <>Check</>}
-            </button>
+            )}
           </div>
-        )}
+          {!isNftHolder && (
+            <div style={{ display:"flex", flexDirection:"column", gap:6, flexShrink:0 }}>
+              <a href="https://faster-tasks.com/nft" target="_blank" rel="noopener noreferrer"
+                style={{ background:"transparent", border:`1px solid ${C.border}`,
+                  color:C.text2, fontSize:11, fontWeight:600, borderRadius:999, padding:"6px 11px",
+                  textDecoration:"none", textAlign:"center" }}>
+                Mint
+              </a>
+              <button onClick={checkNft} disabled={nftCheck === "checking"}
+                style={{ background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)",
+                  color:C.accentHi, fontSize:11, fontWeight:700, borderRadius:999, padding:"6px 11px",
+                  cursor: nftCheck === "checking" ? "default" : "pointer",
+                  display:"inline-flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                {nftCheck === "checking"
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <>Check</>}
+              </button>
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Achievements — tiered like a real competitive game: every entry
