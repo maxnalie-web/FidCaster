@@ -80,6 +80,14 @@ const ACHIEVEMENT_CASE = `WHEN 'achievement' THEN LEAST(COALESCE(achievement_sum
 
 // ── Core SQL ──────────────────────────────────────────────────────────────────
 
+// Only fids that have minted the FidCaster Pass NFT count toward points or
+// show up on the leaderboard - real actions still get logged for everyone
+// (nothing here changes what's written to user_actions), but they simply
+// don't score until the fid mints. The moment they do, every already-logged,
+// already-verified action they've earned counts immediately - nothing is
+// lost or has to be re-earned, it was just not aggregated until now.
+const MINT_GATE_SQL = `fid IN (SELECT fid FROM nft_pass_mint_log)`;
+
 const LEADERBOARD_SQL = `
 WITH counted AS (
   SELECT fid, action_type,
@@ -95,7 +103,7 @@ WITH counted AS (
                   THEN COALESCE((payload->>'amount')::integer, 0)
                   ELSE 0 END) AS achievement_sum
   FROM user_actions
-  WHERE verified = true AND excluded = false
+  WHERE verified = true AND excluded = false AND ${MINT_GATE_SQL}
   GROUP BY fid, action_type, d
 ),
 scored AS (
@@ -187,9 +195,20 @@ export interface FidPoints {
   breakdown: BreakdownRow[];
 }
 
+// Cheap, indexed existence check - used to short-circuit the heavier
+// aggregate queries below entirely for a fid that hasn't minted, rather
+// than running them and then zeroing the result.
+export async function hasMintedPass(fid: number): Promise<boolean> {
+  const pool = getPool();
+  if (!pool) return false;
+  const { rows } = await pool.query(`SELECT 1 FROM nft_pass_mint_log WHERE fid = $1 LIMIT 1`, [fid]);
+  return rows.length > 0;
+}
+
 export async function getFidPoints(fid: number): Promise<FidPoints> {
   const pool = getPool();
   if (!pool) return { fid, total_points: 0, breakdown: [] };
+  if (!(await hasMintedPass(fid))) return { fid, total_points: 0, breakdown: [] };
   const { rows } = await pool.query(SINGLE_FID_SQL, [fid]);
   const breakdown = rows.map(r => ({
     action_type:   r.action_type,
@@ -242,6 +261,7 @@ SELECT COALESCE(SUM(day_pts), 0) AS today_points FROM scored
 export async function getFidTodayPoints(fid: number): Promise<number> {
   const pool = getPool();
   if (!pool) return 0;
+  if (!(await hasMintedPass(fid))) return 0;
   const { rows } = await pool.query(TODAY_POINTS_SQL, [fid]);
   return Number(rows[0]?.today_points ?? 0);
 }
@@ -281,6 +301,7 @@ export interface HistoryRow {
 export async function getPointsHistory(fid: number, limit = 50): Promise<HistoryRow[]> {
   const pool = getPool();
   if (!pool) return [];
+  if (!(await hasMintedPass(fid))) return [];
   const { rows } = await pool.query(
     `SELECT id, action_type, payload, created_at
      FROM user_actions

@@ -1413,7 +1413,12 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
-  const totalPoints = pts?.total_points ?? 0;
+  // Prefer stats.totalPoints over pts.total_points: /api/mini/stats computes
+  // any achievement it awards synchronously into its own response, but
+  // /api/points/my reads the ledger directly and can race the (fire-and-
+  // forget) DB insert for that same award, showing a total that's stale by
+  // exactly the just-unlocked achievement's points until the next refetch.
+  const totalPoints = stats?.totalPoints ?? pts?.total_points ?? 0;
   const todayPts    = stats?.todayPoints ?? 0;
   const streak      = stats?.streak ?? 0;
   const level       = stats?.level ?? 0;
@@ -1529,47 +1534,63 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </motion.div>
         </div>
 
-        {/* Stat card — Total Points (left): icon chip + corner glow + big value */}
-        <GlassStatCard style={{ position:"absolute", top:0, left:2, width:"54%", maxWidth:162 }}>
-          <div style={{ position:"absolute", top:-30, right:-30, width:90, height:90, borderRadius:"50%",
-            background:"radial-gradient(circle, rgba(139,92,246,0.35), transparent 70%)", pointerEvents:"none" }} />
-          <div style={{ position:"relative", display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
-            <div style={{ width:32, height:32, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
-              background:"linear-gradient(145deg, rgba(139,92,246,0.4), rgba(88,28,135,0.3))",
-              border:"1px solid rgba(168,85,247,0.55)", boxShadow:"0 0 14px rgba(139,92,246,0.4)" }}>
-              <Zap size={15} color={C.accentHi} />
-            </div>
-            <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Total Points</p>
-          </div>
-          {ptsLoading
-            ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
-            : <div style={{ fontSize:28, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:8,
-                color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
-                <Counter to={totalPoints} />
+        {/* Total Points + Global Rank — was two separate cards, merged into one
+            per feedback (felt like clutter split apart). A small mascot peeks
+            out of the top corner for personality; it's a single emoji with a
+            transform-only idle animation (translate/rotate, GPU-composited,
+            no canvas), the same cheap pattern already used for the floating
+            logo above, so it costs nothing extra on older phones. */}
+        <GlassStatCard style={{ position:"absolute", top:0, left:2, right:2 }}>
+          <motion.div
+            animate={{ y:[-4, 3, -4], rotate:[-6, 6, -6] }}
+            transition={{ duration:3.4, repeat:Infinity, ease:"easeInOut" }}
+            style={{ position:"absolute", top:-16, right:10, fontSize:26, zIndex:5,
+              filter:"drop-shadow(0 4px 10px rgba(0,0,0,.45))", pointerEvents:"none" }}
+          >
+            👾
+          </motion.div>
+          <div style={{ position:"absolute", top:-30, left:-20, width:90, height:90, borderRadius:"50%",
+            background:"radial-gradient(circle, rgba(139,92,246,0.3), transparent 70%)", pointerEvents:"none" }} />
+          <div style={{ position:"relative", display:"flex", alignItems:"stretch", gap:0 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+                <div style={{ width:32, height:32, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+                  background:"linear-gradient(145deg, rgba(139,92,246,0.4), rgba(88,28,135,0.3))",
+                  border:"1px solid rgba(168,85,247,0.55)", boxShadow:"0 0 14px rgba(139,92,246,0.4)" }}>
+                  <Zap size={15} color={C.accentHi} />
+                </div>
+                <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Total Points</p>
               </div>
-          }
-          {todayPts > 0 && (
-            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:11.5, fontWeight:700, color:C.green,
-              background:"rgba(34,197,94,0.14)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:999, padding:"3px 9px" }}>
-              <ArrowUp size={11} />+{todayPts} today
-            </span>
-          )}
-        </GlassStatCard>
+              {ptsLoading
+                ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
+                : <div style={{ fontSize:28, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:8,
+                    color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
+                    <Counter to={totalPoints} />
+                  </div>
+              }
+              {todayPts > 0 && (
+                <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:11.5, fontWeight:700, color:C.green,
+                  background:"rgba(34,197,94,0.14)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:999, padding:"3px 9px" }}>
+                  <ArrowUp size={11} />+{todayPts} today
+                </span>
+              )}
+            </div>
 
-        {/* Stat card — Global Rank (right): matching icon-chip layout, gold accent */}
-        <GlassStatCard style={{ position:"absolute", top:0, right:2, width:"44%", maxWidth:136, textAlign:"center" }}>
-          <div style={{ position:"absolute", top:-30, left:-20, width:80, height:80, borderRadius:"50%",
-            background:"radial-gradient(circle, rgba(251,191,36,0.3), transparent 70%)", pointerEvents:"none" }} />
-          <div style={{ position:"relative", width:32, height:32, borderRadius:11, margin:"0 auto 8px",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            background:"linear-gradient(145deg, rgba(251,191,36,0.35), rgba(180,83,9,0.25))",
-            border:"1px solid rgba(251,191,36,0.5)", boxShadow:"0 0 14px rgba(251,191,36,0.35)" }}>
-            <Trophy size={16} color={C.amber} />
-          </div>
-          <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6 }}>Global Rank</p>
-          <div style={{ fontSize:26, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
-            textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
-            {rank ? `#${rank}` : "N/A"}
+            <div style={{ width:1, alignSelf:"stretch", background:"rgba(255,255,255,0.14)", margin:"2px 16px" }} />
+
+            <div style={{ flexShrink:0, textAlign:"center" }}>
+              <div style={{ width:32, height:32, borderRadius:11, margin:"0 auto 8px",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                background:"linear-gradient(145deg, rgba(251,191,36,0.35), rgba(180,83,9,0.25))",
+                border:"1px solid rgba(251,191,36,0.5)", boxShadow:"0 0 14px rgba(251,191,36,0.35)" }}>
+                <Trophy size={16} color={C.amber} />
+              </div>
+              <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6, whiteSpace:"nowrap" }}>Global Rank</p>
+              <div style={{ fontSize:26, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
+                textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
+                {rank ? `#${rank}` : "N/A"}
+              </div>
+            </div>
           </div>
         </GlassStatCard>
       </div>
@@ -1963,17 +1984,26 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
 // ─────────────────────────────────────────────────────────────────────────────
 // EARN TAB (Quests + Allowance)
 // ─────────────────────────────────────────────────────────────────────────────
+// `key` is the real action_type from server/db/points.ts (what pts.breakdown
+// is actually keyed on) - it used to be derived from `action` by lowercasing
+// and swapping spaces for underscores, which happened to match for half
+// these rows (cast/recast/like/follow/gift received) and silently broke for
+// the other half: "Buy FID" -> "buy_fid" vs the real "market_buy", "List
+// FID" -> "list_fid" vs "market_list", "Refer User" -> "refer_user" vs
+// "referral", "Grow Campaign" -> "grow_campaign" vs "grow_campaign_complete",
+// "Promote" -> "promote" vs "promotion". Every one of those five progress
+// bars always read 0 earned regardless of how many real points had landed.
 const SCORING_ROWS = [
-  { Icon:Edit3,       action:"Cast",          pts:10,  cap:50   },
-  { Icon:RefreshCw,   action:"Recast",        pts:3,   cap:30   },
-  { Icon:Heart,       action:"Like",          pts:1,   cap:50   },
-  { Icon:Users,       action:"Follow",        pts:2,   cap:50   },
-  { Icon:ShoppingBag, action:"Buy FID",       pts:100, cap:300  },
-  { Icon:Tag,         action:"List FID",      pts:50,  cap:250  },
-  { Icon:Share2,      action:"Refer User",    pts:200, cap:2000 },
-  { Icon:Sprout,      action:"Grow Campaign", pts:30,  cap:150  },
-  { Icon:Zap,         action:"Promote",       pts:50,  cap:500  },
-  { Icon:Gift,        action:"Gift received", pts:"varies" as unknown as number, cap:500 },
+  { Icon:Edit3,       action:"Cast",          key:"cast",                   pts:10,  cap:50   },
+  { Icon:RefreshCw,   action:"Recast",        key:"recast",                 pts:3,   cap:30   },
+  { Icon:Heart,       action:"Like",          key:"like",                   pts:1,   cap:50   },
+  { Icon:Users,       action:"Follow",        key:"follow",                 pts:2,   cap:50   },
+  { Icon:ShoppingBag, action:"Buy FID",       key:"market_buy",             pts:100, cap:300  },
+  { Icon:Tag,         action:"List FID",      key:"market_list",           pts:50,  cap:250  },
+  { Icon:Share2,      action:"Refer User",    key:"referral",               pts:200, cap:2000 },
+  { Icon:Sprout,      action:"Grow Campaign", key:"grow_campaign_complete", pts:30,  cap:150  },
+  { Icon:Zap,         action:"Promote",       key:"promotion",             pts:50,  cap:500  },
+  { Icon:Gift,        action:"Gift received", key:"gift_received",         pts:"varies" as unknown as number, cap:500 },
 ];
 
 function AllowanceModalShell({ onClose, icon, title, children }: {
@@ -2051,19 +2081,28 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
 }
 
 function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
-  const sections = [
+  const sections: { t: string; d: string; badge?: string }[] = [
     { t:"What it is", d:"A daily budget of points you can spend, not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
     { t:"How much you get", d:"Based on your account: 300 base points plus up to 3,000 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x), capped at 5,000/day. Higher-quality, higher-follower accounts get meaningfully more." },
     { t:"Promote and Gift each have their own cap", d:"Neither can use more than 70% of a single day's allowance on its own, so you can't spend it all in one place." },
-    { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
-    { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
+    { t:"Promote", badge:"−50 allowance", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
+    { t:"Send Gift", badge:"−N allowance", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
     { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
   ];
   return (
     <AllowanceModalShell onClose={onClose} icon={<Info size={16} color={C.accentHi} />} title="How Daily Allowance Works">
       {sections.map((s) => (
         <div key={s.t} style={{ marginBottom:14 }}>
-          <p style={{ color:C.text1, fontWeight:700, fontSize:13, marginBottom:4 }}>{s.t}</p>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>{s.t}</p>
+            {s.badge && (
+              <span style={{ color:C.rose, fontSize:10.5, fontWeight:800, padding:"2px 8px",
+                borderRadius:999, border:`1px solid ${C.rose}55`, background:`${C.rose}18`,
+                letterSpacing:"0.01em" }}>
+                {s.badge}
+              </span>
+            )}
+          </div>
           <p style={{ color:C.text2, fontSize:12.5, lineHeight:1.6 }}>{s.d}</p>
         </div>
       ))}
@@ -2431,7 +2470,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
 
           <Card>
             {filtered.map((row, i) => {
-              const earnedRow = pts?.breakdown.find(b => b.action_type === row.action.toLowerCase().replace(/ /g,"_"));
+              const earnedRow = pts?.breakdown.find(b => b.action_type === row.key);
               const earned = earnedRow?.points_earned ?? 0;
               const pct = row.cap > 0 ? Math.min((earned / row.cap) * 100, 100) : 0;
               return (
@@ -2644,7 +2683,12 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
   const ethAddrs    = ctx?.user?.verifiedAddresses?.eth_addresses ?? [];
-  const totalPoints = pts?.total_points ?? 0;
+  // Prefer stats.totalPoints over pts.total_points: /api/mini/stats computes
+  // any achievement it awards synchronously into its own response, but
+  // /api/points/my reads the ledger directly and can race the (fire-and-
+  // forget) DB insert for that same award, showing a total that's stale by
+  // exactly the just-unlocked achievement's points until the next refetch.
+  const totalPoints = stats?.totalPoints ?? pts?.total_points ?? 0;
   const level       = stats?.level ?? 0;
   const xp          = stats?.xp ?? 0;
   const xpToNext    = stats?.xpToNext ?? 500;
