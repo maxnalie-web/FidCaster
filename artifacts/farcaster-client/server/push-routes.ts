@@ -122,17 +122,45 @@ export function startWebhookTargetSync(): void {
   periodicSyncTimer = setInterval(() => { syncNeynarWebhookTargets(); }, PERIODIC_WEBHOOK_SYNC_MS);
 }
 
-function verifyNeynarSignature(req: Request): boolean {
+// ── Recent webhook event log (in-memory, last 30) ─────────────────────────
+// Gift/promotion failures were completely invisible before this - the only
+// way to tell "Neynar never sent the event" apart from "it was sent and
+// silently rejected/skipped somewhere in the pipeline" was to have shell
+// access to production logs at the exact moment it happened. This exposes
+// the last few webhook deliveries (accepted or rejected, and why) through
+// the debug-status endpoint instead.
+interface WebhookLogEntry {
+  at: string;
+  type: string | null;
+  authorFid: number | null;
+  castHash: string | null;
+  textPreview: string | null;
+  signatureOk: boolean;
+  rejectReason: string | null;
+}
+const recentWebhookEvents: WebhookLogEntry[] = [];
+function logWebhookEvent(entry: WebhookLogEntry): void {
+  recentWebhookEvents.push(entry);
+  if (recentWebhookEvents.length > 30) recentWebhookEvents.shift();
+}
+
+// Returns a reason string on failure instead of just false - this used to
+// fail 100% silently (no log line at all), so a missing/wrong
+// NEYNAR_WEBHOOK_SECRET meant every single webhook call was rejected with a
+// 401 and there was no trace of it anywhere - impossible to tell apart from
+// "Neynar never sent anything" without shell access to check env vars.
+function verifyNeynarSignature(req: Request): { ok: true } | { ok: false; reason: string } {
   const secret = process.env.NEYNAR_WEBHOOK_SECRET;
-  if (!secret) return false;
+  if (!secret) return { ok: false, reason: "NEYNAR_WEBHOOK_SECRET not set" };
   const sig = req.header("X-Neynar-Signature");
-  if (!sig) return false;
+  if (!sig) return { ok: false, reason: "missing X-Neynar-Signature header" };
   const raw = (req as Request & { rawBody?: Buffer }).rawBody;
-  if (!raw) return false;
+  if (!raw) return { ok: false, reason: "no rawBody captured" };
   const expected = createHmac("sha512", secret).update(raw).digest("hex");
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(sig, "utf8");
-  return a.length === b.length && timingSafeEqual(a, b);
+  const match = a.length === b.length && timingSafeEqual(a, b);
+  return match ? { ok: true } : { ok: false, reason: "signature mismatch" };
 }
 
 type NeynarUser = { fid: number; username?: string; display_name?: string };
@@ -239,10 +267,26 @@ export function registerPushRoutes(app: Express): void {
   });
 
   app.post("/api/push/webhook", webhookLimiter, async (req: Request, res: Response) => {
-    if (!verifyNeynarSignature(req)) { res.status(401).json({ error: "Invalid signature" }); return; }
+    const body = req.body as { type?: string; data?: { hash?: string; text?: string; author?: NeynarUser } };
+    const sigCheck = verifyNeynarSignature(req);
+    if (!sigCheck.ok) {
+      console.warn(`[push] webhook rejected: ${sigCheck.reason}`);
+      logWebhookEvent({
+        at: new Date().toISOString(), type: body?.type ?? null,
+        authorFid: body?.data?.author?.fid ?? null, castHash: body?.data?.hash ?? null,
+        textPreview: body?.data?.text?.slice(0, 60) ?? null,
+        signatureOk: false, rejectReason: sigCheck.reason,
+      });
+      res.status(401).json({ error: "Invalid signature" }); return;
+    }
     res.status(200).json({ ok: true });
+    logWebhookEvent({
+      at: new Date().toISOString(), type: body.type ?? null,
+      authorFid: body.data?.author?.fid ?? null, castHash: body.data?.hash ?? null,
+      textPreview: body.data?.text?.slice(0, 60) ?? null,
+      signatureOk: true, rejectReason: null,
+    });
     try {
-      const body = req.body as { type?: string; data?: unknown };
       if (body.type === "reaction.created") {
         await handleReactionCreated(body.data as { reaction_type?: string; user?: NeynarUser; cast?: NeynarCast });
       } else if (body.type === "cast.created") {
@@ -261,9 +305,16 @@ export function registerPushRoutes(app: Express): void {
       res.json({
         fcmConfigured:            isFcmConfigured(),
         neynarWebhookConfigured:  !!(process.env.NEYNAR_API_KEY && process.env.NEYNAR_WEBHOOK_ID && process.env.PUSH_WEBHOOK_URL),
+        // Separate from neynarWebhookConfigured on purpose: this is a 4th,
+        // easy-to-miss env var that gates every single incoming webhook call
+        // with zero prior visibility - the other 3 vars only control OUTGOING
+        // registration with Neynar, this one gates whether we accept what
+        // Neynar sends back at all.
+        neynarWebhookSecretConfigured: !!process.env.NEYNAR_WEBHOOK_SECRET,
         totalRegisteredFids:      fids.length,
         tokenCountForFid:         Number.isFinite(fid) && fid > 0 ? (await getPushTokensForFid(fid)).length : null,
         store:                    "postgresql",
+        recentWebhookEvents,
       });
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
