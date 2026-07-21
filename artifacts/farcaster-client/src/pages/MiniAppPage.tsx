@@ -25,13 +25,12 @@ import {
 // for copy, the server is still the only source of truth for the award.
 const POINTS_NFT_HOLDER_BONUS = 750;
 
-// A promotion always COSTS a flat 50 allowance, but the points it EARNS scale
-// from 50 to 500 with the promoter's own daily allowance total (a proxy for
-// their account reach). This mirrors server/db/allowance.ts's scalePromoPoints
-// EXACTLY so the Promote card can show this user's real per-cast reward for
-// their account ("their page") instead of a generic 50–500 range. Display
-// only — the server stays the source of truth for the actual award.
-const PROMO_ALLOWANCE_COST = 50;
+// A promotion's cost AND its point reward both scale together, from 50 to
+// 500, with the promoter's own daily allowance total (a proxy for their
+// account reach) - so the badge always reads "costs N, earns N" for this
+// user's actual account. This mirrors server/db/allowance.ts's
+// scalePromoPoints EXACTLY. Display only - the server stays the source of
+// truth for the actual debit and award.
 function scalePromoPointsClient(allowanceTotal: number): number {
   const MIN_ALLOWANCE = 150, MAX_ALLOWANCE = 5000, MIN_PTS = 50, MAX_PTS = 500;
   const t = Math.max(0, Math.min(1, (allowanceTotal - MIN_ALLOWANCE) / (MAX_ALLOWANCE - MIN_ALLOWANCE)));
@@ -2397,7 +2396,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
           <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} spent today` : "Nothing spent yet today"}</p>
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
-          {data.promoRemaining >= 50 ? (
+          {data.promoRemaining >= scalePromoPointsClient(data.total) ? (
             <a href={composeUrl(promoText)}
               target="_blank" rel="noopener noreferrer"
               style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px",
@@ -2411,7 +2410,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
               </p>
               <span style={{ color:C.amber, fontSize:10.5, fontWeight:700, background:`${C.amber}18`,
                 border:`1px solid ${C.amber}44`, borderRadius:999, padding:"2px 8px", alignSelf:"flex-start" }}>
-                Costs {PROMO_ALLOWANCE_COST} allowance
+                Costs {scalePromoPointsClient(data.total).toLocaleString()} allowance
               </span>
             </a>
           ) : (

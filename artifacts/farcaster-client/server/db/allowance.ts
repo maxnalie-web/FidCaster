@@ -311,14 +311,14 @@ export async function queuePendingPoints(params: {
 
 // ── Transactional helpers for promotion/gift ───────────────────────────────────
 
-const PROMO_COST = 50;
-
-// A promote's point award scales with the promoter's own daily allowance
-// (a proxy for account quality/reach already computed in calculateTotal) -
-// a brand-new account still gets the original flat 50, a big account with
-// the max 5000/day allowance gets up to 500 (the daily cap for this action
-// type - one big promote CAN exhaust it, that's intentional, it's meant to
-// feel proportionate to their reach).
+// A promote's cost AND point award both scale with the promoter's own daily
+// allowance (a proxy for account quality/reach already computed in
+// calculateTotal) - a brand-new account spends 50 allowance to earn 50
+// points, a big account with the max 5000/day allowance spends up to 500 to
+// earn up to 500 (the daily cap for this action type - one big promote CAN
+// exhaust the category cap, that's intentional, it's meant to feel
+// proportionate to their reach). Cost and reward use the same formula on
+// purpose so the badge always reads "costs N, earns N" for any account size.
 const MIN_PROMO_PTS = 50;
 const MAX_PROMO_PTS = 500;
 
@@ -368,31 +368,41 @@ export async function processPromotionAtomic(params: {
       return { ok: false, reason: "already_processed" };
     }
 
-    // 2. Atomic allowance debit — only succeeds if remaining >= PROMO_COST
+    // 2. Read this fid's base_amount under lock so the cost (which scales
+    //    with it, just like the reward) can't be computed from a stale value
+    //    while another request is mid-write on the same row.
+    const { rows: cur } = await client.query(
+      `SELECT base_amount, used, promo_used FROM daily_allowance WHERE fid = $1 AND date = $2 FOR UPDATE`,
+      [params.authorFid, today],
+    );
+    if (cur.length === 0) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "insufficient_allowance" };
+    }
+    const baseAmount = Number(cur[0].base_amount);
+    // Cost and reward are the same scaled number — see the comment above
+    // scalePromoPoints for why.
+    const promoCost = scalePromoPoints(baseAmount);
+
+    // 3. Atomic allowance debit — only succeeds if remaining >= promoCost
     //    AND today's promo spending stays within its own category cap.
-    const { rowCount: debited, rows: debitedRows } = await client.query(
+    const { rowCount: debited } = await client.query(
       `UPDATE daily_allowance
        SET used = used + $3, promo_used = promo_used + $3, refreshed_at = now()
        WHERE fid = $1 AND date = $2
          AND (base_amount - used) >= $3
-         AND (base_amount * ${CATEGORY_CAP_FRACTION} - promo_used) >= $3
-       RETURNING base_amount`,
-      [params.authorFid, today, PROMO_COST],
+         AND (base_amount * ${CATEGORY_CAP_FRACTION} - promo_used) >= $3`,
+      [params.authorFid, today, promoCost],
     );
     if ((debited ?? 0) === 0) {
       await client.query("ROLLBACK");
-      const { rows: cur } = await client.query(
-        `SELECT base_amount, used, promo_used FROM daily_allowance WHERE fid = $1 AND date = $2`,
-        [params.authorFid, today],
-      );
-      const row = cur[0];
-      const reason = row && (Number(row.base_amount) * CATEGORY_CAP_FRACTION - Number(row.promo_used)) < PROMO_COST
+      const reason = (baseAmount * CATEGORY_CAP_FRACTION - Number(cur[0].promo_used)) < promoCost
         ? "promo_category_cap_reached" : "insufficient_allowance";
       return { ok: false, reason };
     }
 
-    // 3. Insert ledger row (promotion now verified and allowance confirmed)
-    const promoPoints = scalePromoPoints(Number(debitedRows[0]?.base_amount ?? MIN_ALLOWANCE));
+    // 4. Insert ledger row (promotion now verified and allowance confirmed)
+    const promoPoints = promoCost;
     await client.query(
       `INSERT INTO users (fid) VALUES ($1) ON CONFLICT (fid) DO UPDATE SET last_seen = now()`,
       [params.authorFid],
