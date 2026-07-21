@@ -246,7 +246,7 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     }
 
     const attempt = (targetFid: number) =>
-      hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey });
+      hubFollow(myFid, signer, targetFid, { unfollow: mode === "unfollow", neynarKey, growCampaign: true });
 
     const update = (waitMsg?: string) =>
       upsertOp(key, prev =>

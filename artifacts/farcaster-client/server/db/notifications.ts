@@ -111,8 +111,8 @@ export async function sendFarcasterNotification(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             notificationId: id,
-            title,
-            body,
+            title: title.slice(0, 32),
+            body: body.slice(0, 128),
             targetUrl,
             tokens: chunk,
           }),

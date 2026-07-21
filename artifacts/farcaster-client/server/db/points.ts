@@ -54,8 +54,10 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   // each id can only ever award once per fid (proof = `achievement:{id}:{fid}`,
   // enforced by the ledger's unique (action_type, proof) constraint), so this
   // isn't a repeatable/farmable action like the other payload-based types
-  // above. The 3000 cap is just a defensive ceiling - the real 24 achievements
-  // sum to well under that even if every one of them unlocked the same day.
+  // above. The 6000 cap is just a defensive ceiling, comfortably above the
+  // ~4,025 all 25 achievements sum to, so a user who unlocks all of them on
+  // the same day (e.g. an early adopter backfilling history right after
+  // launch) doesn't get truncated for genuinely earning every one of them.
   achievement:             { pts: 0,   dailyCap: 0    }, // handled via ACHIEVEMENT_CASE below
 };
 
@@ -74,7 +76,7 @@ const GIFT_CASE = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
 // promotion: same pattern — payload->>'amount' holds the actual scaled award.
 const PROMO_CASE = `WHEN 'promotion' THEN LEAST(COALESCE(promo_sum, 0), 500)`;
 // achievement: same pattern — each row is a one-time unlock worth payload->>'amount'.
-const ACHIEVEMENT_CASE = `WHEN 'achievement' THEN LEAST(COALESCE(achievement_sum, 0), 3000)`;
+const ACHIEVEMENT_CASE = `WHEN 'achievement' THEN LEAST(COALESCE(achievement_sum, 0), 6000)`;
 
 // ── Core SQL ──────────────────────────────────────────────────────────────────
 
@@ -198,6 +200,52 @@ export async function getFidPoints(fid: number): Promise<FidPoints> {
   return { fid, total_points, breakdown };
 }
 
+// Same CASE logic as SINGLE_FID_SQL/LEADERBOARD_SQL, just filtered to today
+// (UTC) and summed instead of grouped by action_type. Built from the exact
+// same GIFT_CASE/PROMO_CASE/ACHIEVEMENT_CASE/CASE_EXPR fragments those use -
+// mini-routes.ts used to hand-roll its own separate copy of this for
+// "today's points", which had drifted to be missing the promotion and
+// achievement branches entirely (so anyone who earned either was scored low
+// for level/XP and the points-based achievement tiers). One definition, no
+// second copy to drift again.
+const TODAY_POINTS_SQL = `
+WITH counted AS (
+  SELECT action_type,
+         COUNT(*) AS cnt,
+         SUM(CASE WHEN action_type = 'gift_received'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS gift_sum,
+         SUM(CASE WHEN action_type = 'promotion'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS promo_sum,
+         SUM(CASE WHEN action_type = 'achievement'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS achievement_sum
+  FROM user_actions
+  WHERE fid = $1 AND verified = true AND excluded = false
+    AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
+  GROUP BY action_type
+),
+scored AS (
+  SELECT CASE action_type
+    ${GIFT_CASE}
+    ${PROMO_CASE}
+    ${ACHIEVEMENT_CASE}
+    ${CASE_EXPR}
+    ELSE 0
+  END AS day_pts
+  FROM counted
+)
+SELECT COALESCE(SUM(day_pts), 0) AS today_points FROM scored
+`;
+
+export async function getFidTodayPoints(fid: number): Promise<number> {
+  const pool = getPool();
+  if (!pool) return 0;
+  const { rows } = await pool.query(TODAY_POINTS_SQL, [fid]);
+  return Number(rows[0]?.today_points ?? 0);
+}
+
 /** Full snapshot for Clanker airdrop input. Returns ALL eligible fids. */
 export async function getFullSnapshot(): Promise<LeaderboardRow[]> {
   const pool = getPool();
@@ -207,10 +255,15 @@ export async function getFullSnapshot(): Promise<LeaderboardRow[]> {
 }
 
 // ── Point types that actually earn something ──────────────────────────────────
-// Include gift_received even though its POINTS entry is 0 (SQL handles the variable amount).
+// Payload-based variable-amount types (gift_received/promotion/achievement)
+// all have a 0/unused `pts` in POINTS, so the plain `v.pts > 0` filter below
+// would silently drop every one of them from the activity feed — gift_received
+// was special-cased back in, but promotion and achievement were not, so
+// neither ever showed up in "Recent Activity" no matter how many of either
+// a user had earned.
 const EARNING_TYPES = [
   ...Object.entries(POINTS).filter(([, v]) => v.pts > 0).map(([k]) => k),
-  "gift_received",
+  "gift_received", "promotion", "achievement",
 ];
 
 export interface HistoryRow {
@@ -229,7 +282,7 @@ export async function getPointsHistory(fid: number, limit = 50): Promise<History
   const pool = getPool();
   if (!pool) return [];
   const { rows } = await pool.query(
-    `SELECT id, action_type, created_at
+    `SELECT id, action_type, payload, created_at
      FROM user_actions
      WHERE fid = $1
        AND verified = true
@@ -239,10 +292,18 @@ export async function getPointsHistory(fid: number, limit = 50): Promise<History
      LIMIT $2`,
     [fid, Math.min(limit, 100), EARNING_TYPES],
   );
+  // gift_received/promotion/achievement carry their real, variable amount in
+  // payload.amount — POINTS[type].pts for those is either 0 or an unused
+  // display default, and showing it instead of the real amount misrepresented
+  // exactly how many points that row actually earned (e.g. every promotion
+  // row read "+50" regardless of its real scaled award, which can be up to 500).
+  const VARIABLE_TYPES = new Set(["gift_received", "promotion", "achievement"]);
   return rows.map(r => ({
     id:          Number(r.id),
     action_type: r.action_type,
-    pts:         POINTS[r.action_type]?.pts ?? 0,
+    pts:         VARIABLE_TYPES.has(r.action_type)
+      ? Number(r.payload?.amount ?? 0)
+      : (POINTS[r.action_type]?.pts ?? 0),
     created_at:  r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
   }));
 }

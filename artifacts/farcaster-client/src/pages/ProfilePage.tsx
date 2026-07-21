@@ -615,7 +615,7 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
           name · matches the profile's own identity the way the full banner
           does further down the page. */}
       {(showHeader ?? !embedded) && (
-        <header className="sticky top-0 z-40 border-b border-border/50 overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <header className="sticky top-0 z-40 border-b border-border/50 overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" , transform: "translateZ(0)", WebkitTransform: "translateZ(0)" }}>
           {user?.profile?.banner?.url && (
             <div className="absolute inset-0 -z-10">
               <img src={user.profile.banner.url} alt="" className="w-full h-full object-cover scale-110 blur-md" />
@@ -1012,8 +1012,14 @@ export function ProfilePage({ fid: fidProp, embedded = false, showHeader, onOpen
               </div>
             )}
 
-            {/* ── Tabs ── */}
-            <div className="flex border-b border-border/40 sticky top-14 z-30 bg-background">
+            {/* ── Tabs ──
+                top-14 alone assumes the header above is exactly 56px tall,
+                but the header also carries paddingTop: env(safe-area-inset-top)
+                for the notch/Dynamic Island — on any device with a nonzero
+                safe area, top-14 sticks this bar to a point still inside the
+                header's real height, causing an overlap/gap while scrolling. */}
+            <div className="flex border-b border-border/40 sticky z-30 bg-background"
+              style={{ top: "calc(3.5rem + env(safe-area-inset-top))" }}>
               {TAB_META.map(t => (
                 <button
                   key={t.id}

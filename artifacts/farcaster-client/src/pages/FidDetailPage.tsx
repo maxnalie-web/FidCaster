@@ -717,7 +717,7 @@ export default function FidDetailPage() {
         </div>
       )}
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header className="sticky top-0 z-40 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" , transform: "translateZ(0)", WebkitTransform: "translateZ(0)" }}>
         <div className="max-w-2xl mx-auto h-14 flex items-center gap-3 px-4">
           <button
             onClick={() => { if (window.history.length > 1) window.history.back(); else navigate("/market"); }}

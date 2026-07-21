@@ -11,8 +11,9 @@ import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getPool, isDbConfigured } from "./db/pool.js";
-import { POINTS } from "./db/points.js";
-import { upsertNotificationToken } from "./db/notifications.js";
+import { POINTS, getFidPoints, getFidTodayPoints } from "./db/points.js";
+import { upsertNotificationToken, sendFarcasterNotification } from "./db/notifications.js";
+import { achievementUnlockedNotif } from "./notification-templates.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 import { getTrustedFid } from "./auth.js";
 import { logUserAction, logUserActionIfNew } from "./db/ledger.js";
@@ -106,7 +107,6 @@ const MISSIONS = [
   { id: "like_10",    action: "like",         label: "Like 10 posts",          target: 10, pts: 10  },
   { id: "recast_3",   action: "recast",       label: "Recast 3 posts",         target: 3,  pts: 9   },
   { id: "follow_3",   action: "follow",       label: "Follow 3 users",         target: 3,  pts: 6   },
-  { id: "quest_1",    action: "quest",        label: "Complete a quest",       target: 1,  pts: 100 },
   { id: "promo_1",    action: "promotion",    label: "Promote FidCaster",      target: 1,  pts: 20  },
   { id: "gift_1",     action: "gift",         label: "Send a gift",            target: 1,  pts: 15  },
   { id: "market_1",   action: "market_list",  label: "List on FID Market",     target: 1,  pts: 20  },
@@ -130,7 +130,7 @@ const ACHIEVEMENTS: AchievementDef[] = [
   { id: "first_cast",  label: "First Cast",      icon: "🎙️", tier: "bronze", metric: "cast",   target: 1,   requirement: "Cast 1 time",   pts: 10  },
   { id: "cast_10",     label: "Getting Vocal",    icon: "🗣️", tier: "bronze", metric: "cast",   target: 10,  requirement: "Cast 10 times",  pts: 20  },
   { id: "cast_50",     label: "Cast Master",      icon: "⚡", tier: "silver", metric: "cast",   target: 50,  requirement: "Cast 50 times",  pts: 75  },
-  { id: "cast_200",    label: "Broadcast Legend", icon: "📡", tier: "gold",   metric: "cast",   target: 200, requirement: "Cast 200 times", pts: 250 },
+  { id: "cast_200",    label: "Broadcast Legend", icon: "📡", tier: "gold",   metric: "cast",   target: 200, requirement: "Cast 200 times", pts: 350 },
   // Likes
   { id: "like_25",     label: "Appreciator",      icon: "❤️", tier: "bronze", metric: "like",   target: 25,  requirement: "Like 25 posts",  pts: 15  },
   { id: "like_100",    label: "Serial Liker",     icon: "💯", tier: "silver", metric: "like",   target: 100, requirement: "Like 100 posts", pts: 50  },
@@ -141,13 +141,13 @@ const ACHIEVEMENTS: AchievementDef[] = [
   { id: "social",      label: "Social Butterfly", icon: "🦋", tier: "bronze", metric: "follow", target: 10,  requirement: "Follow 10 users", pts: 15 },
   { id: "social_50",   label: "Networker",        icon: "🌐", tier: "silver", metric: "follow", target: 50,  requirement: "Follow 50 users", pts: 60 },
   // Points
-  { id: "pts_1k",      label: "1K Points",        icon: "🏅", tier: "bronze", metric: "points", target: 1_000,  requirement: "Reach 1,000 total points",  pts: 50  },
-  { id: "pts_10k",     label: "10K Points",       icon: "💎", tier: "silver", metric: "points", target: 10_000, requirement: "Reach 10,000 total points", pts: 200 },
-  { id: "pts_50k",     label: "Points Legend",    icon: "👑", tier: "gold",   metric: "points", target: 50_000, requirement: "Reach 50,000 total points", pts: 500 },
+  { id: "pts_1k",      label: "1K Points",        icon: "🏅", tier: "bronze", metric: "points", target: 1_000,  requirement: "Reach 1,000 total points",  pts: 75   },
+  { id: "pts_10k",     label: "10K Points",       icon: "💎", tier: "silver", metric: "points", target: 10_000, requirement: "Reach 10,000 total points", pts: 350  },
+  { id: "pts_50k",     label: "Points Legend",    icon: "👑", tier: "gold",   metric: "points", target: 50_000, requirement: "Reach 50,000 total points", pts: 1000 },
   // Referrals
   { id: "referral",    label: "Recruiter",        icon: "👥", tier: "bronze", metric: "referral", target: 1,  requirement: "Refer 1 friend",                 pts: 30  },
   { id: "referral_5",  label: "Talent Scout",     icon: "🧲", tier: "silver", metric: "referral", target: 5,  requirement: "Refer 5 friends",                pts: 100 },
-  { id: "referral_20", label: "Community Builder",icon: "🏛️", tier: "gold",   metric: "referral", target: 20, requirement: "Refer 20 friends (lifetime cap)", pts: 400 },
+  { id: "referral_20", label: "Community Builder",icon: "🏛️", tier: "gold",   metric: "referral", target: 20, requirement: "Refer 20 friends (lifetime cap)", pts: 600 },
   // Market
   { id: "market_maker",label: "Market Maker",     icon: "📊", tier: "bronze", metric: "market",   target: 1,  requirement: "Complete 1 FID Market trade",  pts: 25  },
   { id: "market_pro",  label: "Market Pro",       icon: "📈", tier: "silver", metric: "market",   target: 10, requirement: "Complete 10 FID Market trades", pts: 100 },
@@ -158,7 +158,7 @@ const ACHIEVEMENTS: AchievementDef[] = [
   { id: "gift_giver_10",label: "Generous Soul",   icon: "🎀", tier: "silver", metric: "gift",     target: 10, requirement: "Send 10 gifts", pts: 80 },
   // Streak
   { id: "streak_7",    label: "Week Warrior",     icon: "🔥", tier: "silver", metric: "streak",   target: 7,  requirement: "Reach a 7-day streak",  pts: 100 },
-  { id: "streak_30",   label: "Unstoppable",      icon: "🌋", tier: "gold",   metric: "streak",   target: 30, requirement: "Reach a 30-day streak", pts: 400 },
+  { id: "streak_30",   label: "Unstoppable",      icon: "🌋", tier: "gold",   metric: "streak",   target: 30, requirement: "Reach a 30-day streak", pts: 600 },
   // Special
   { id: "nft_holder",  label: "Pass Holder",      icon: "🛡️", tier: "platinum", metric: "nft",    target: 1,  requirement: "Hold a FasterTask Pass NFT", pts: 150 },
 ];
@@ -338,49 +338,14 @@ export function registerMiniRoutes(app: Express): void {
         }).catch(() => false);
       }
 
-      // Build the CASE expr for total/today points
-      const caseExpr = Object.entries(POINTS)
-        .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received")
-        .map(([type, { pts, dailyCap }]) =>
-          `WHEN '${type}' THEN LEAST(cnt * ${pts}, ${dailyCap})`)
-        .join("\n");
-      const giftCase = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
-
-      // Total points
-      const { rows: totalRows } = await pool.query<{ total_points: string }>(
-        `WITH counted AS (
-           SELECT action_type, (created_at AT TIME ZONE 'UTC')::date AS d,
-                  COUNT(*) AS cnt,
-                  SUM(CASE WHEN action_type='gift_received' THEN COALESCE((payload->>'amount')::int,0) ELSE 0 END) AS gift_sum
-           FROM user_actions
-           WHERE fid=$1 AND verified=true AND excluded=false
-           GROUP BY action_type, d
-         ),
-         scored AS (
-           SELECT CASE action_type ${giftCase} ${caseExpr} ELSE 0 END AS day_pts FROM counted
-         )
-         SELECT COALESCE(SUM(day_pts), 0) AS total_points FROM scored`,
-        [fid],
-      );
-      const totalPoints = Number(totalRows[0]?.total_points ?? 0);
-
-      // Today's points
-      const { rows: todayRows } = await pool.query<{ today_points: string }>(
-        `WITH counted AS (
-           SELECT action_type, COUNT(*) AS cnt,
-                  SUM(CASE WHEN action_type='gift_received' THEN COALESCE((payload->>'amount')::int,0) ELSE 0 END) AS gift_sum
-           FROM user_actions
-           WHERE fid=$1 AND verified=true AND excluded=false
-             AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
-           GROUP BY action_type
-         ),
-         scored AS (
-           SELECT CASE action_type ${giftCase} ${caseExpr} ELSE 0 END AS day_pts FROM counted
-         )
-         SELECT COALESCE(SUM(day_pts), 0) AS today_points FROM scored`,
-        [fid],
-      );
-      const todayPoints = Number(todayRows[0]?.today_points ?? 0);
+      // Total + today's points — both come from db/points.ts's single
+      // maintained scoring definition (getFidPoints/getFidTodayPoints), not
+      // a second hand-rolled copy of the CASE logic here. That copy used to
+      // exist and had drifted to omit the promotion/achievement branches
+      // entirely, silently under-scoring level/XP and the points-tier
+      // achievements for anyone who'd earned either.
+      const { total_points: totalPoints } = await getFidPoints(fid);
+      const todayPoints = await getFidTodayPoints(fid);
 
       // Today's action counts per type (for missions)
       const { rows: todayActionRows } = await pool.query<{ action_type: string; cnt: string }>(
@@ -413,25 +378,46 @@ export function registerMiniRoutes(app: Express): void {
         done: (todayCounts[m.action] ?? 0) >= m.target,
       }));
 
+      // Achievements are permanent once earned. Progress can DROP after an
+      // unlock — a streak breaks (streak_7's progress is the CURRENT streak),
+      // totalPoints shrinks when fraud detection excludes rows — and deriving
+      // unlocked from live progress alone would visually re-lock an
+      // achievement whose one-time points were already (correctly, and
+      // permanently) awarded. The awarded ledger rows are the durable record
+      // of "earned", so anything with a row stays unlocked forever.
+      const { rows: awardedRows } = await pool.query<{ id: string }>(
+        `SELECT payload->>'id' AS id FROM user_actions
+         WHERE fid=$1 AND action_type='achievement'`,
+        [fid],
+      );
+      const awardedIds = new Set(awardedRows.map(r => r.id));
+
       const achievements = ACHIEVEMENTS.map(a => {
         const progress = achievementProgress(a, totalCounts, totalPoints, streak);
-        const unlocked = progress >= a.target;
+        const unlocked = progress >= a.target || awardedIds.has(a.id);
         // Fire-and-forget: logUserAction is idempotent on (action_type, proof)
         // and never throws, so it's safe to call on every stats fetch once an
         // achievement is unlocked — it only actually inserts (and awards
         // a.pts) the first time. Not awaited: this endpoint shouldn't wait on
         // a DB write for a response that already has everything it needs.
-        if (unlocked && a.pts > 0) {
+        if (unlocked && a.pts > 0 && !awardedIds.has(a.id)) {
           void logUserAction({
             fid, actionType: "achievement",
             payload: { id: a.id, amount: a.pts },
             proof: `achievement:${a.id}:${fid}`,
             verified: true,
           });
+          void sendFarcasterNotification({
+            ...achievementUnlockedNotif(a.label, a.pts),
+            targetFids: [fid],
+            targetUrl: "https://fidcaster.xyz/mini",
+          });
         }
         return {
           id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
-          target: a.target, progress: Math.min(progress, a.target),
+          // An unlocked achievement is done — show it full even if the live
+          // metric has since dipped back under the target.
+          target: a.target, progress: unlocked ? a.target : Math.min(progress, a.target),
           unlocked, pts: a.pts,
         };
       });
