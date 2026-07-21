@@ -754,7 +754,7 @@ export function FollowPage() {
       )}
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" , transform: "translateZ(0)", WebkitTransform: "translateZ(0)" }}>
         <div className="h-[53px] flex items-center gap-3 px-4 max-w-[900px] mx-auto w-full">
           <button
             onClick={() => navigate("/dashboard")}
@@ -1360,8 +1360,13 @@ export function FollowPage() {
                 </div>
               )}
 
-              {/* List header */}
-              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/10 sticky top-[53px] z-10">
+              {/* List header
+                  top-[53px] alone ignores the header's own paddingTop:
+                  env(safe-area-inset-top) above it, so on notched phones
+                  this bar sticks partway inside the header instead of
+                  right below it. */}
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/10 sticky z-10"
+                style={{ top: "calc(53px + env(safe-area-inset-top))" }}>
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-semibold text-foreground">
                     {allUsers.length.toLocaleString()} users

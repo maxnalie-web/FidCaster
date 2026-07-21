@@ -6,7 +6,7 @@
  * Fire ring particle canvas around streak number.
  */
 import {
-  useEffect, useState, useCallback, useRef,
+  useEffect, useState, useCallback, useRef, useMemo,
 } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -668,6 +668,12 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
     const cloudTwinkles = Array.from({ length: 11 }, () => ({
       dx: rand(-70, 70), dy: rand(-56, 56), s: rand(0.7, 1.7), sp: rand(0.5, 1.3), ph: rand(0, 7),
     }));
+    // Sparse background stars spread across the whole scene (not just the
+    // cloud cluster) so the hero reads as a fuller starfield rather than one
+    // glowing patch. Cheap: a handful of small dots, no shadowBlur.
+    const farStars = Array.from({ length: 16 }, () => ({
+      dx: rand(-180, 180), dy: rand(-130, 90), s: rand(0.5, 1.2), sp: rand(0.4, 1.1), ph: rand(0, 7),
+    }));
 
     function drawCrystal(x: number, y: number, s: number, tilt: number, t: number, ph: number, blur: number) {
       ctx!.save();
@@ -706,10 +712,27 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.restore();
     }
 
+    function drawFarStars(cx: number, cy: number, t: number) {
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      farStars.forEach(s => {
+        const al = 0.15 + 0.4 * Math.abs(Math.sin(t * s.sp + s.ph));
+        ctx!.fillStyle = `rgba(216,180,254,${al})`;
+        ctx!.beginPath(); ctx!.arc(cx + s.dx, cy + s.dy, s.s, 0, Math.PI * 2); ctx!.fill();
+      });
+      ctx!.restore();
+    }
+
     function drawPedestalRing(cx: number, cy: number, t: number) {
       ctx!.save(); ctx!.translate(cx, cy);
       const pulse = 1 + Math.sin(t * 1.4) * 0.035;
       const rx = 138 * pulse, ry = 34 * pulse;
+      // Slow counter-rotating outer halo for depth behind the main ring —
+      // a single cheap stroke, no shadowBlur, so it costs almost nothing.
+      const haloA = -t * 0.035;
+      ctx!.save(); ctx!.rotate(haloA);
+      ctx!.strokeStyle = "rgba(192,132,252,.14)"; ctx!.lineWidth = 1;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx * 1.22, ry * 1.22, 0, 0, Math.PI * 2); ctx!.stroke();
+      ctx!.restore();
       ctx!.save(); ctx!.globalCompositeOperation = "lighter";
       const g = ctx!.createRadialGradient(0, 6, 0, 0, 6, 168);
       g.addColorStop(0, "rgba(147,51,234,.26)"); g.addColorStop(0.5, "rgba(109,40,217,.10)"); g.addColorStop(1, "transparent");
@@ -723,10 +746,16 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.strokeStyle = `rgba(233,213,255,${0.62 + Math.sin(t * 1.8) * 0.12})`;
       ctx!.lineWidth = 1.5; ctx!.shadowColor = "rgba(168,85,247,1)"; ctx!.shadowBlur = 10;
       ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.stroke();
-      ctx!.strokeStyle = "rgba(255,255,255,.85)"; ctx!.lineWidth = 2.2; ctx!.shadowBlur = 18;
-      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, -2.5, -1.9); ctx!.stroke();
-      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      // Specular highlight arc — was a fixed angle range (always in the same
+      // spot on the ring, looking like a stray static artifact next to the
+      // comet trail that visibly orbits). Now drifts slowly around the ring
+      // on its own independent speed, so it still reads as a highlight
+      // catching the light rather than a frozen leftover.
       const head = t * 0.09 * Math.PI * 2;
+      const highlightA = t * 0.05 * Math.PI * 2;
+      ctx!.strokeStyle = "rgba(255,255,255,.85)"; ctx!.lineWidth = 2.2; ctx!.shadowBlur = 18;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, highlightA - 0.3, highlightA + 0.3); ctx!.stroke();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
       for (let k = 0; k < 14; k++) {
         const a = head - k * 0.05;
         const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
@@ -754,6 +783,7 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       lastFrameMs = nowMs;
       const t = nowMs / 1000, cx = HW / 2;
       ctx!.clearRect(0, 0, HW, HH);
+      drawFarStars(cx, logoY, t);
       drawNebulaCloud(cx, RING_Y - 4, t);
       drawPedestalRing(cx, RING_Y, t);
       crystals.forEach(c => drawCrystal(cx + c[0], logoY + c[1], c[2], c[3], t * c[5], c[6], c[4]));
@@ -1632,6 +1662,54 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
       )}
 
+      {/* ── Daily Allowance — kept above Daily Missions: it's the budget
+          that gates Promote/Gift, so it's the more time-sensitive of the
+          two to see first (missions reset daily too, but nothing about
+          them is spendable/expiring the way unused allowance is). ── */}
+      <div>
+        <SectionLabel>Daily Allowance</SectionLabel>
+        {allowanceLoading
+          ? <Card style={{ padding:"14px 16px" }}><Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} /></Card>
+          : allowance
+            ? (() => {
+                const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
+                const barColor = pct > 30
+                  ? `linear-gradient(90deg,${C.accent},#A855F7)`
+                  : pct > 10
+                  ? `linear-gradient(90deg,${C.amber},#F97316)`
+                  : `linear-gradient(90deg,${C.rose},#FB7185)`;
+                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
+                return (
+                  <Card glow onClick={onOpenAllowance}
+                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
+                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
+                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
+                      border:"1.5px solid rgba(168,85,247,0.6)",
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <Zap size={20} color={C.accentHi} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
+                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
+                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
+                      </p>
+                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
+                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Ready to spend on Promote & Gift"}
+                      </p>
+                    </div>
+                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
+                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
+                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })()
+            : null
+        }
+      </div>
+
       {/* ── Daily Missions ── */}
       {missions.length > 0 && (
         <div>
@@ -1678,51 +1756,6 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </Card>
         </div>
       )}
-
-      {/* ── Daily Allowance ── */}
-      <div>
-        <SectionLabel>Daily Cap</SectionLabel>
-        {allowanceLoading
-          ? <Card style={{ padding:"14px 16px" }}><Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} /></Card>
-          : allowance
-            ? (() => {
-                const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
-                const barColor = pct > 30
-                  ? `linear-gradient(90deg,${C.accent},#A855F7)`
-                  : pct > 10
-                  ? `linear-gradient(90deg,${C.amber},#F97316)`
-                  : `linear-gradient(90deg,${C.rose},#FB7185)`;
-                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
-                return (
-                  <Card glow onClick={onOpenAllowance}
-                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
-                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
-                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
-                      border:"1.5px solid rgba(168,85,247,0.6)",
-                      display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <Zap size={20} color={C.accentHi} />
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
-                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
-                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
-                      </p>
-                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
-                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Available to earn today"}
-                      </p>
-                    </div>
-                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
-                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
-                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })()
-            : null
-        }
-      </div>
     </motion.div>
   );
 }
@@ -1918,7 +1951,6 @@ const SCORING_ROWS = [
   { Icon:ShoppingBag, action:"Buy FID",       pts:100, cap:300  },
   { Icon:Tag,         action:"List FID",      pts:50,  cap:250  },
   { Icon:Share2,      action:"Refer User",    pts:200, cap:2000 },
-  { Icon:Sword,       action:"Quest",         pts:100, cap:500  },
   { Icon:Sprout,      action:"Grow Campaign", pts:30,  cap:150  },
   { Icon:Zap,         action:"Promote",       pts:50,  cap:500  },
   { Icon:Gift,        action:"Gift received", pts:"varies" as unknown as number, cap:500 },
@@ -2021,14 +2053,14 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
 
 function HowItWorksModal({ onClose }: { onClose: () => void }) {
   const sections = [
-    { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points — but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
-    { t:"Farcaster activity itself doesn't earn points", d:"Posting, liking, or following directly on Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead — via Promote and Gift casts." },
+    { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points, but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
+    { t:"Farcaster activity itself doesn't earn points", d:"Posting, liking, or following directly on Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead, via Promote and Gift casts." },
     { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
-    { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points — they won't count even if they briefly showed up." },
+    { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points, so they won't count even if they briefly showed up." },
     { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
     { t:"Referrals pay out immediately but are capped", d:"You and anyone you refer both get points right away. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
-    { t:"If something looks like fraud, it gets excluded — not silently kept", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
-    { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that — so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
+    { t:"If something looks like fraud, it gets excluded (not silently kept)", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
+    { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that, so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
   ];
   return (
     <AllowanceModalShell onClose={onClose} icon={<Shield size={16} color={C.accentHi} />} title="How Points & Anti-Fraud Work">
@@ -2042,6 +2074,163 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+const PROMO_CAST_TEMPLATES: string[] = [
+  "Earning points on FidCaster toward the airdrop 🚀 Try it yourself: @fidcaster",
+  "Earning points on FidCaster toward the airdrop ⚡ Check it out: @fidcaster",
+  "Earning points on FidCaster toward the airdrop 🔥 You should try it too: @fidcaster",
+  "Earning points on FidCaster toward the airdrop ✨ Join in: @fidcaster",
+  "Earning points on FidCaster toward the airdrop 🏆 Come earn with me: @fidcaster",
+  "Earning points on FidCaster toward the airdrop 📈 Give it a shot: @fidcaster",
+  "Earning points on FidCaster toward the airdrop 💜 Worth checking out: @fidcaster",
+  "Earning points on FidCaster toward the airdrop 🎯 See for yourself: @fidcaster",
+  "Earning points on FidCaster toward the airdrop 🌌 Get in early: @fidcaster",
+  "Earning points on FidCaster toward the airdrop ⭐ Come see: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 🚀 @fidcaster",
+  "Racking up points on FidCaster for the airdrop ⚡ Try it yourself: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 🔥 Check it out: @fidcaster",
+  "Racking up points on FidCaster for the airdrop ✨ You should try it too: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 🏆 Join in: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 📈 Come earn with me: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 💜 Give it a shot: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 🎯 Worth checking out: @fidcaster",
+  "Racking up points on FidCaster for the airdrop 🌌 See for yourself: @fidcaster",
+  "Racking up points on FidCaster for the airdrop ⭐ Get in early: @fidcaster",
+  "Grinding my FidCaster points daily 🚀 Come see: @fidcaster",
+  "Grinding my FidCaster points daily ⚡ @fidcaster",
+  "Grinding my FidCaster points daily 🔥 Try it yourself: @fidcaster",
+  "Grinding my FidCaster points daily ✨ Check it out: @fidcaster",
+  "Grinding my FidCaster points daily 🏆 You should try it too: @fidcaster",
+  "Grinding my FidCaster points daily 📈 Join in: @fidcaster",
+  "Grinding my FidCaster points daily 💜 Come earn with me: @fidcaster",
+  "Grinding my FidCaster points daily 🎯 Give it a shot: @fidcaster",
+  "Grinding my FidCaster points daily 🌌 Worth checking out: @fidcaster",
+  "Grinding my FidCaster points daily ⭐ See for yourself: @fidcaster",
+  "Building my FidCaster score for the airdrop 🚀 Get in early: @fidcaster",
+  "Building my FidCaster score for the airdrop ⚡ Come see: @fidcaster",
+  "Building my FidCaster score for the airdrop 🔥 @fidcaster",
+  "Building my FidCaster score for the airdrop ✨ Try it yourself: @fidcaster",
+  "Building my FidCaster score for the airdrop 🏆 Check it out: @fidcaster",
+  "Building my FidCaster score for the airdrop 📈 You should try it too: @fidcaster",
+  "Building my FidCaster score for the airdrop 💜 Join in: @fidcaster",
+  "Building my FidCaster score for the airdrop 🎯 Come earn with me: @fidcaster",
+  "Building my FidCaster score for the airdrop 🌌 Give it a shot: @fidcaster",
+  "Building my FidCaster score for the airdrop ⭐ Worth checking out: @fidcaster",
+  "Stacking points on FidCaster every day 🚀 See for yourself: @fidcaster",
+  "Stacking points on FidCaster every day ⚡ Get in early: @fidcaster",
+  "Stacking points on FidCaster every day 🔥 Come see: @fidcaster",
+  "Stacking points on FidCaster every day ✨ @fidcaster",
+  "Stacking points on FidCaster every day 🏆 Try it yourself: @fidcaster",
+  "Stacking points on FidCaster every day 📈 Check it out: @fidcaster",
+  "Stacking points on FidCaster every day 💜 You should try it too: @fidcaster",
+  "Stacking points on FidCaster every day 🎯 Join in: @fidcaster",
+  "Stacking points on FidCaster every day 🌌 Come earn with me: @fidcaster",
+  "Stacking points on FidCaster every day ⭐ Give it a shot: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 🚀 Worth checking out: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop ⚡ See for yourself: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 🔥 Get in early: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop ✨ Come see: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 🏆 @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 📈 Try it yourself: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 💜 Check it out: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 🎯 You should try it too: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop 🌌 Join in: @fidcaster",
+  "Leveling up on FidCaster toward the airdrop ⭐ Come earn with me: @fidcaster",
+  "Climbing the FidCaster leaderboard 🚀 Give it a shot: @fidcaster",
+  "Climbing the FidCaster leaderboard ⚡ Worth checking out: @fidcaster",
+  "Climbing the FidCaster leaderboard 🔥 See for yourself: @fidcaster",
+  "Climbing the FidCaster leaderboard ✨ Get in early: @fidcaster",
+  "Climbing the FidCaster leaderboard 🏆 Come see: @fidcaster",
+  "Climbing the FidCaster leaderboard 📈 @fidcaster",
+  "Climbing the FidCaster leaderboard 💜 Try it yourself: @fidcaster",
+  "Climbing the FidCaster leaderboard 🎯 Check it out: @fidcaster",
+  "Climbing the FidCaster leaderboard 🌌 You should try it too: @fidcaster",
+  "Climbing the FidCaster leaderboard ⭐ Join in: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 🚀 Come earn with me: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time ⚡ Give it a shot: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 🔥 Worth checking out: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time ✨ See for yourself: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 🏆 Get in early: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 📈 Come see: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 💜 @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 🎯 Try it yourself: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time 🌌 Check it out: @fidcaster",
+  "Chasing the FidCaster airdrop, one cast at a time ⭐ You should try it too: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 🚀 Join in: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop ⚡ Come earn with me: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 🔥 Give it a shot: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop ✨ Worth checking out: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 🏆 See for yourself: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 📈 Get in early: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 💜 Come see: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 🎯 @fidcaster",
+  "Putting in the work on FidCaster for the airdrop 🌌 Try it yourself: @fidcaster",
+  "Putting in the work on FidCaster for the airdrop ⭐ Check it out: @fidcaster",
+  "Farming the legit way on FidCaster 🚀 You should try it too: @fidcaster",
+  "Farming the legit way on FidCaster ⚡ Join in: @fidcaster",
+  "Farming the legit way on FidCaster 🔥 Come earn with me: @fidcaster",
+  "Farming the legit way on FidCaster ✨ Give it a shot: @fidcaster",
+  "Farming the legit way on FidCaster 🏆 Worth checking out: @fidcaster",
+  "Farming the legit way on FidCaster 📈 See for yourself: @fidcaster",
+  "Farming the legit way on FidCaster 💜 Get in early: @fidcaster",
+  "Farming the legit way on FidCaster 🎯 Come see: @fidcaster",
+  "Farming the legit way on FidCaster 🌌 @fidcaster",
+  "Farming the legit way on FidCaster ⭐ Try it yourself: @fidcaster",
+  "Just hit a new streak on FidCaster 🚀 Check it out: @fidcaster",
+  "Just hit a new streak on FidCaster ⚡ You should try it too: @fidcaster",
+  "Just hit a new streak on FidCaster 🔥 Join in: @fidcaster",
+  "Just hit a new streak on FidCaster ✨ Come earn with me: @fidcaster",
+  "Just hit a new streak on FidCaster 🏆 Give it a shot: @fidcaster",
+  "Just hit a new streak on FidCaster 📈 Worth checking out: @fidcaster",
+  "Just hit a new streak on FidCaster 💜 See for yourself: @fidcaster",
+  "Just hit a new streak on FidCaster 🎯 Get in early: @fidcaster",
+  "Just hit a new streak on FidCaster 🌌 Come see: @fidcaster",
+  "Just hit a new streak on FidCaster ⭐ @fidcaster",
+  "FidCaster has been my daily habit lately 🚀 Try it yourself: @fidcaster",
+  "FidCaster has been my daily habit lately ⚡ Check it out: @fidcaster",
+  "FidCaster has been my daily habit lately 🔥 You should try it too: @fidcaster",
+  "FidCaster has been my daily habit lately ✨ Join in: @fidcaster",
+  "FidCaster has been my daily habit lately 🏆 Come earn with me: @fidcaster",
+  "FidCaster has been my daily habit lately 📈 Give it a shot: @fidcaster",
+  "FidCaster has been my daily habit lately 💜 Worth checking out: @fidcaster",
+  "FidCaster has been my daily habit lately 🎯 See for yourself: @fidcaster",
+  "FidCaster has been my daily habit lately 🌌 Get in early: @fidcaster",
+  "FidCaster has been my daily habit lately ⭐ Come see: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 🚀 @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster ⚡ Try it yourself: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 🔥 Check it out: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster ✨ You should try it too: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 🏆 Join in: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 📈 Come earn with me: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 💜 Give it a shot: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 🎯 Worth checking out: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster 🌌 See for yourself: @fidcaster",
+  "Turned my Farcaster activity into real points via FidCaster ⭐ Get in early: @fidcaster",
+  "My FidCaster points are adding up nicely 🚀 Come see: @fidcaster",
+  "My FidCaster points are adding up nicely ⚡ @fidcaster",
+  "My FidCaster points are adding up nicely 🔥 Try it yourself: @fidcaster",
+  "My FidCaster points are adding up nicely ✨ Check it out: @fidcaster",
+  "My FidCaster points are adding up nicely 🏆 You should try it too: @fidcaster",
+  "My FidCaster points are adding up nicely 📈 Join in: @fidcaster",
+  "My FidCaster points are adding up nicely 💜 Come earn with me: @fidcaster",
+  "My FidCaster points are adding up nicely 🎯 Give it a shot: @fidcaster",
+  "My FidCaster points are adding up nicely 🌌 Worth checking out: @fidcaster",
+  "My FidCaster points are adding up nicely ⭐ See for yourself: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 🚀 Get in early: @fidcaster",
+  "Been using FidCaster to track my on-chain grind ⚡ Come see: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 🔥 @fidcaster",
+  "Been using FidCaster to track my on-chain grind ✨ Try it yourself: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 🏆 Check it out: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 📈 You should try it too: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 💜 Join in: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 🎯 Come earn with me: @fidcaster",
+  "Been using FidCaster to track my on-chain grind 🌌 Give it a shot: @fidcaster",
+  "Been using FidCaster to track my on-chain grind ⭐ Worth checking out: @fidcaster",
+];
+
+function randomPromoText(): string {
+  return PROMO_CAST_TEMPLATES[Math.floor(Math.random() * PROMO_CAST_TEMPLATES.length)];
+}
+
 function AllowanceBarV2({ fid }: { fid: number }) {
   const [data,    setData]    = useState<AllowanceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2049,6 +2238,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   const [modal,   setModal]   = useState<"none" | "gift" | "info">("none");
   const midnightMs = (() => { const d=new Date(); d.setUTCDate(d.getUTCDate()+1); d.setUTCHours(0,0,0,0); return d.getTime(); })();
   const countdown = useCountdown(midnightMs);
+  const promoText = useMemo(() => randomPromoText(), []);
 
   const load = useCallback(() => {
     setLoading(true); setFailed(false);
@@ -2058,7 +2248,19 @@ function AllowanceBarV2({ fid }: { fid: number }) {
     });
   }, [fid]);
 
-  useEffect(() => { load(); }, [load]);
+  // Promote/Gift both send the user out to Warpcast to actually post the
+  // cast, then back to this tab, mount-only fetch left the allowance number
+  // stuck showing what it was BEFORE spending until they navigated away and
+  // back (remounting this component). Refetch (quietly, no spinner) whenever
+  // the tab regains visibility so the debit actually shows up on return.
+  useEffect(() => {
+    load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") apiAllowance(fid).then(d => { if (d) setData(d); });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load, fid]);
 
   if (loading) return <Card style={{ padding:"14px 16px" }}><Loader2 size={15} className="animate-spin" style={{ color:C.text3 }} /></Card>;
   if (failed || !data) return (
@@ -2100,7 +2302,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
           {data.promoRemaining >= 50 ? (
-            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points toward the airdrop 🚀 @fidcaster")}`}
+            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(promoText)}`}
               target="_blank" rel="noopener noreferrer"
               style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
@@ -2164,7 +2366,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
     if (filter === "all") return true;
     if (filter === "social") return ["Cast","Recast","Like","Follow"].includes(r.action);
     if (filter === "market") return ["Buy FID","List FID"].includes(r.action);
-    if (filter === "referral") return ["Refer User","Quest","Grow Campaign","Promote"].includes(r.action);
+    if (filter === "referral") return ["Refer User","Grow Campaign","Promote"].includes(r.action);
     return true;
   });
 
@@ -2302,7 +2504,7 @@ function RewardsTab({ fid }: { fid: number }) {
               <div>
                 <p style={{ color:C.text1, fontWeight:700, fontSize:15 }}>Refer Friends</p>
                 <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
-                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> per activated referral
+                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> instantly per friend who joins
                 </p>
               </div>
               {!refLoad && refData.referrals.filter(r=>r.activated).length > 0 && (
@@ -2328,7 +2530,7 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                `Join me on FidCaster — earn points and get in on the airdrop.\n\n${refUrl}`,
+                `Join me on FidCaster, earn points and get in on the airdrop.\n\n${refUrl}`,
               )}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
@@ -2381,7 +2583,6 @@ function RewardsTab({ fid }: { fid: number }) {
           {[
             { icon:"⚡", label:"Cast on FidCaster", desc:"Earn 10 pts per cast (up to 50/day)", href:"https://fidcaster.xyz" },
             { icon:"🛒", label:"Trade FIDs", desc:"100 pts per buy, 50 pts per listing", href:"https://fidcaster.xyz/market" },
-            { icon:"🚀", label:"Complete Quests", desc:"100 pts per quest action", href:"https://fidcaster.xyz" },
           ].map((row, i, arr) => (
             <div key={row.label}>
               <a href={row.href} target="_blank" rel="noopener noreferrer"
@@ -2533,7 +2734,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
               <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask NFT Bonus</p>
               <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
                 {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet."
-                  : nftCheck === "error" ? "Couldn't check right now — try again."
+                  : nftCheck === "error" ? "Couldn't check right now, try again."
                   : "One-time check, hold the FasterTask Pass to unlock it."}
               </p>
             </div>
@@ -2782,7 +2983,8 @@ function MenuButton({ onNav }: { onNav: (t: AppTab) => void }) {
   const ref = useOutsideClose<HTMLDivElement>(open, close);
 
   const items: { label: string; Icon: React.ElementType; onClick?: () => void; href?: string }[] = [
-    { label:"Docs", Icon:LayoutList, href:"https://fidcaster.xyz/docs" },
+    { label:"Open FidCaster", Icon:Globe, href:"https://fidcaster.xyz" },
+    { label:"Docs", Icon:LayoutList, href:"https://docs.fidcaster.xyz" },
   ];
 
   return (
@@ -2919,6 +3121,14 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
   // tapping the Home "Daily Allowance" card should land directly on the
   // Allowance sub-view, not the quest list.
   const [earnView,     setEarnView]    = useState<"actions"|"allowance">("actions");
+  // The scrollable content area (below) is one persistent DOM node across
+  // every tab - only its children swap via AnimatePresence - so its
+  // scrollTop was never reset on tab switch. Scrolling down on a tall tab
+  // (e.g. Profile) then switching to a shorter one landed you partway down
+  // the new tab's content instead of at its top, which read as the whole
+  // app "opening scrolled to the middle."
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [tab]);
 
   const username = ctx?.user?.username ?? `fid${fid}`;
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
@@ -2936,14 +3146,41 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
     });
   }, [fid]);
 
-  useEffect(() => {
+  // Server-side crediting is near-instant (tryInstantVerify, the webhook
+  // handlers, etc.) but none of that matters if the client only ever fetches
+  // once on mount, which this used to do - a cast/like/follow done in the
+  // full client, a gift/promotion cast, a friend joining via referral, all
+  // land in the DB right away but stayed invisible here until the user
+  // force-reloaded the whole mini app. refetchAll below is now called on
+  // mount, whenever the mini app regains visibility (the common real case:
+  // it was backgrounded while the user cast something in the full Farcaster
+  // client and is now being looked at again), and on a light interval while
+  // visible so points/allowance/leaderboard catch up on their own.
+  const refetchAll = useCallback(() => {
     setBoardLoad(true);
     setStatsLoad(true);
+    setAllowLoad(true);
     refetchPts();
     apiMiniBoard(50).then(b => { setBoard(b); setBoardLoad(false); });
     apiStats(fid).then(s => { setStats(s); setStatsLoad(false); });
     apiAllowance(fid).then(a => { setAllowance(a); setAllowLoad(false); });
   }, [fid, refetchPts]);
+
+  useEffect(() => {
+    refetchAll();
+
+    const onVisible = () => { if (document.visibilityState === "visible") refetchAll(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refetchAll();
+    }, 20_000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
+    };
+  }, [refetchAll]);
 
   // NFT holder check: automatic exactly once ever (first time this fid opens
   // the app), guarded by a per-fid localStorage flag. After that, only the
@@ -3006,7 +3243,7 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
       </AnimatePresence>
 
       {/* Content */}
-      <div style={{ flex:1, padding:"14px 16px 90px", overflowY:"auto", position:"relative", zIndex:1 }}>
+      <div ref={contentRef} style={{ flex:1, padding:"14px 16px 90px", overflowY:"auto", position:"relative", zIndex:1 }}>
         <AnimatePresence mode="wait">
           {tab === "home" && (
             <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
@@ -3107,8 +3344,16 @@ export function MiniAppPage() {
       },
       body: JSON.stringify({ code: ref, fid }),
     })
+      // Only remember "claimed" once the server actually responded - success
+      // or a definitive rejection (already referred, self-referral, etc.)
+      // both mean there's nothing left to retry. A network failure (this
+      // branch never runs; see .catch below) used to get marked claimed
+      // anyway, which meant a transient blip on the very first load - before
+      // qaToken or the session was even ready - silently killed the referral
+      // forever with no error surfaced anywhere and no way to retry, since
+      // every future mount would see the "claimed" flag and skip it.
       .then(() => localStorage.setItem(claimedKey, "1"))
-      .catch(() => {});
+      .catch(() => { /* network-level failure - leave unclaimed so the next mount retries */ });
   }, [ready, fid, qaToken]);
 
   if (!ready) return <LoadingScreen />;

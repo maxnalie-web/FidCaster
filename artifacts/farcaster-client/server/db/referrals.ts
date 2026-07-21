@@ -26,7 +26,9 @@
 
 import { getPool } from "./pool.js";
 import { logUserAction } from "./ledger.js";
-import { getFidPoints } from "./points.js";
+import { getFidPoints, POINTS } from "./points.js";
+import { sendFarcasterNotification } from "./notifications.js";
+import { referralWelcomeNotif, referralBonusNotif } from "../notification-templates.js";
 
 const ACTIVATION_THRESHOLD = 100; // referred user must earn 100 pts before referrer gets credit
 const LIFETIME_MAX          = 20;  // max referrals that pay out per referrer (ever, not per day)
@@ -94,6 +96,11 @@ export async function claimReferral(
     proof: `referral_welcome:${newFid}`,
     verified: true,
   });
+  void sendFarcasterNotification({
+    ...referralWelcomeNotif(),
+    targetFids: [newFid],
+    targetUrl: "https://fidcaster.xyz/mini",
+  });
 
   // Referrer's bonus — immediate too, still subject to the lifetime cap so a
   // single account can't be re-used indefinitely to farm 200pts a pop.
@@ -112,6 +119,11 @@ export async function claimReferral(
       payload: { referred_fid: newFid },
       proof: `referral:${referrerFid}:${newFid}`,
       verified: true,
+    });
+    void sendFarcasterNotification({
+      ...referralBonusNotif(POINTS.referral.pts),
+      targetFids: [referrerFid],
+      targetUrl: "https://fidcaster.xyz/mini",
     });
   }
 

@@ -400,23 +400,33 @@ async function runVerificationBatch(): Promise<void> {
       continue;
     }
 
-    // Count how many fresh targets are actually followed now
-    const realFollows = await countRealFollows(fid, freshTargets);
+    // countRealFollows reports how many of freshTargets `fid` is CURRENTLY
+    // following. That's the right number for a follow campaign, but it's
+    // backwards for an unfollow/purge campaign — a genuinely successful
+    // purge means that count goes DOWN, so using it directly here excluded
+    // every real, successful unfollow campaign as if it were fraud (the
+    // more thoroughly someone actually purged their following list, the
+    // more certain they were to fail this check and never get credited).
+    // For unfollow mode, the real completion count is the inverse: how many
+    // targets are now confirmed NOT followed.
+    const isUnfollow = startPayload.mode === "unfollow";
+    const stillFollowing = await countRealFollows(fid, freshTargets);
+    const realCompleted = isUnfollow ? (freshTargets.length - stillFollowing) : stillFollowing;
 
-    if (realFollows < MIN_GROW_REAL_FOLLOWS) {
-      // Didn't actually follow enough real accounts → exclude
+    if (realCompleted < MIN_GROW_REAL_FOLLOWS) {
+      // Didn't actually follow/unfollow enough real accounts → exclude
       await pool.query(
         "UPDATE user_actions SET excluded = true WHERE id = $1",
         [row.complete_id],
       );
       verificationStats.excludedCount++;
     } else {
-      // Verified: user genuinely followed new people
+      // Verified: user genuinely followed (or unfollowed) new people
       await pool.query(
         `UPDATE user_actions SET verified = true, verified_at = now(),
           payload = payload || $2::jsonb
          WHERE id = $1`,
-        [row.complete_id, JSON.stringify({ realFollows })],
+        [row.complete_id, JSON.stringify({ realCompleted })],
       );
       verificationStats.verifiedCount++;
       // Record targets in grow_targets for future cooldown checks
