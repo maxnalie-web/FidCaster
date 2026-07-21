@@ -54,23 +54,33 @@ async function syncNeynarWebhookTargets(): Promise<void> {
   const webhookUrl = process.env.PUSH_WEBHOOK_URL;
   if (!apiKey || !webhookId || !webhookUrl) return;
 
+  // Neynar caps how many fids a webhook filter may list. If we exceed it the
+  // whole PUT is rejected and the subscription keeps its OLD filters (or none),
+  // silently breaking promotion AND gift detection for everyone at once. So
+  // every list below is hard-capped, and APP_FID is force-included first in
+  // mentioned_fids no matter what - that single entry is what makes both
+  // promotion and gift casts (both now mention @fidcaster) get delivered,
+  // independent of who sent them.
+  const FILTER_CAP = 900;
+
   // Push-notification targets (push token holders)
   const pushFids = await getAllRegisteredFids();
 
-  // All FIDs that have ever used the app — used as author_fids so that gift casts
-  // FROM any registered user are delivered even when the mentioned recipient has
-  // no push token (and therefore wouldn't appear in mentioned_fids).
+  // All FIDs that have ever used the app — a secondary safety net for gift
+  // casts in the (unconfirmed) case a client posts @fidcaster as plain text
+  // instead of a real structured mention. Not the primary path anymore.
   const allAppFids = await getAllAppFids();
 
-  // Always include APP_FID in mentioned_fids so promotion casts (which must
-  // mention the app account) are delivered regardless of who the sender is.
+  // Always include APP_FID first in mentioned_fids so promotion + gift casts
+  // (both mention the app account) are delivered regardless of the sender,
+  // even if the cap trims everything else.
   const appFid = Number(process.env.APP_FID);
-  const mentionFids = appFid > 0
+  const mentionFids = (appFid > 0
     ? Array.from(new Set([appFid, ...pushFids]))
-    : pushFids;
+    : Array.from(new Set(pushFids))
+  ).slice(0, FILTER_CAP);
 
-  // Deduplicate and union allAppFids + pushFids for author_fids
-  const authorFids = Array.from(new Set([...allAppFids, ...pushFids]));
+  const authorFids = Array.from(new Set([...allAppFids, ...pushFids])).slice(0, FILTER_CAP);
 
   try {
     const r = await fetch("https://api.neynar.com/v2/farcaster/webhook/", {

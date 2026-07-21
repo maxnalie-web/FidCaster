@@ -1746,7 +1746,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
                         {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
                       </p>
                       <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
-                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Ready to spend on Promote & Gift"}
+                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} spent today` : "Ready to spend on Promote & Gift"}
                       </p>
                     </div>
                     <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
@@ -2063,7 +2063,12 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
     // @mention in the composed cast, so the gift never gets tagged to
     // anyone real.
     const handle = username.trim().replace(/^@/, "").toLowerCase();
-    const text = `${amountNum} FidCaster points @${handle}`;
+    // Mentions @fidcaster on purpose: the gift detector's webhook only reliably
+    // fires for casts that mention the app account (mentioned_fids=[APP_FID]),
+    // which never overflows Neynar's filter-size cap the way a per-sender
+    // author_fids list does. Recipient stays first (right after "points") so
+    // the detector still reads it as the gift target, @fidcaster last.
+    const text = `${amountNum} FidCaster points @${handle} via @fidcaster`;
     window.open(composeUrl(text), "_blank", "noopener,noreferrer");
     onClose();
   }
@@ -2352,7 +2357,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
     <>
       <Card glow>
         <div style={{ padding:"14px 16px 10px" }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:3 }}>
             <p style={{ color:C.text1, fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
               <Zap size={14} color={C.accentHi} /> Daily Allowance
               <button onClick={() => setModal("info")} aria-label="How allowance works"
@@ -2362,50 +2367,54 @@ function AllowanceBarV2({ fid }: { fid: number }) {
             </p>
             <span style={{ color:C.text3, fontSize:12 }}>Resets {countdown}</span>
           </div>
+          {/* Plain-language explanation up top: the #1 confusion is allowance
+              vs points. Allowance is a spend budget, NOT points you keep. */}
+          <p style={{ color:C.text3, fontSize:11, lineHeight:1.5, marginBottom:9 }}>
+            A daily budget you <strong style={{ color:C.text2 }}>spend</strong> (not points you keep) to Promote FidCaster or Gift points to friends. Resets every day.
+          </p>
           <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
             <span style={{ color:C.accentHi, fontWeight:900, fontSize:22 }}>{data.remaining.toLocaleString()}</span>
-            <span style={{ color:C.text3, fontSize:13 }}>/ {data.total.toLocaleString()} remaining</span>
+            <span style={{ color:C.text3, fontSize:13 }}>of {data.total.toLocaleString()} left today</span>
           </div>
           <div style={{ height:6, background:C.border, borderRadius:3 }}>
             <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
               style={{ height:"100%", borderRadius:3,
                 background: pct > 30 ? `linear-gradient(90deg,${C.accent},#A855F7)` : pct > 10 ? `linear-gradient(90deg,${C.amber},#F97316)` : `linear-gradient(90deg,${C.rose},#FB7185)` }} />
           </div>
-          <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} used` : "No allowance used today"}</p>
+          <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} spent today` : "Nothing spent yet today"}</p>
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
           {data.promoRemaining >= 50 ? (
             <a href={composeUrl(promoText)}
               target="_blank" rel="noopener noreferrer"
-              style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
+              style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <Zap size={14} color={C.accentHi} />
                 <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
               </div>
               <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-                Earn <strong style={{ color:C.accentHi }}>50-500 pts</strong> per cast
+                Post about FidCaster and <strong style={{ color:C.accentHi }}>earn 50–500 points</strong> back
               </p>
-              <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10.5, fontWeight:700,
-                padding:"2px 8px", borderRadius:999, background:"rgba(251,113,133,0.18)",
-                border:"1px solid rgba(251,113,133,0.35)", color:"#fb7185" }}>
-                50 allowance used
+              <span style={{ color:C.amber, fontSize:10.5, fontWeight:700, background:`${C.amber}18`,
+                border:`1px solid ${C.amber}44`, borderRadius:999, padding:"2px 8px", alignSelf:"flex-start" }}>
+                Costs 50 allowance
               </span>
             </a>
           ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
+            <div style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px",
               borderRight:`1px solid ${C.border}`, opacity:0.45 }}>
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <Zap size={14} color={C.text3} />
                 <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
               </div>
               <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-                Daily promote limit reached
+                You've hit today's promote limit. Comes back tomorrow.
               </p>
             </div>
           )}
           <button onClick={() => setModal("gift")} disabled={data.giftRemaining <= 0}
-            style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px", textAlign:"left",
+            style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px", textAlign:"left",
               background:"none", border:"none", cursor: data.giftRemaining > 0 ? "pointer" : "default",
               fontFamily:"inherit", opacity: data.giftRemaining > 0 ? 1 : 0.45 }}>
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -2413,13 +2422,14 @@ function AllowanceBarV2({ fid }: { fid: number }) {
               <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
             </div>
             <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-              {data.giftRemaining > 0 ? "Send points to another user" : "Daily gift limit reached"}
+              {data.giftRemaining > 0 ? "Send points to a friend as a gift" : "You've hit today's gift limit"}
             </p>
-            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10.5, fontWeight:700,
-              padding:"2px 8px", borderRadius:999, background:"rgba(251,113,133,0.18)",
-              border:"1px solid rgba(251,113,133,0.35)", color:"#fb7185" }}>
-              1–500 allowance used
-            </span>
+            {data.giftRemaining > 0 && (
+              <span style={{ color:C.amber, fontSize:10.5, fontWeight:700, background:`${C.amber}18`,
+                border:`1px solid ${C.amber}44`, borderRadius:999, padding:"2px 8px", alignSelf:"flex-start" }}>
+                Costs the amount you send
+              </span>
+            )}
           </button>
         </div>
       </Card>

@@ -215,14 +215,22 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
   const amount = parseInt(match[1], 10);
   if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_GIFT_PTS) return false;
 
-  let recipientFid = (cast.mentioned_profiles ?? []).find(p => p.fid !== authorFid)?.fid ?? null;
+  // Gift casts now also mention @fidcaster (so the webhook reliably fires on
+  // mentioned_fids=[APP_FID]). That means there are TWO structured mentions -
+  // the recipient and the app - so the recipient is the mentioned profile
+  // that's neither the author NOR the app account.
+  const appFid = getAppFid();
+  let recipientFid = (cast.mentioned_profiles ?? [])
+    .find(p => p.fid !== authorFid && p.fid !== appFid)?.fid ?? null;
   if (!recipientFid) {
     // Structured mention missing (see the fallback block's comment above) -
-    // fall back to resolving the "@handle" straight out of the cast text.
+    // fall back to resolving the FIRST "@handle" after "points" out of the
+    // cast text. That's the recipient; the trailing "via @fidcaster" is the
+    // app and is ignored by this anchored pattern.
     const handleMatch = /^\d+\s+fidcaster\s+points\s+@([a-z0-9_.-]+)/i.exec(text);
     if (handleMatch) recipientFid = await resolveUsernameToFid(handleMatch[1]);
   }
-  if (!recipientFid || recipientFid === authorFid) {
+  if (!recipientFid || recipientFid === authorFid || recipientFid === appFid) {
     // Text matched the gift pattern but no real recipient resolved — e.g. the
     // user edited the pre-filled Warpcast text, mistyped the handle, or the
     // mentioned account doesn't exist. Without this the cast just silently
