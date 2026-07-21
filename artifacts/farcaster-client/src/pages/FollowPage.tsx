@@ -6,6 +6,7 @@ import {
   X, ChevronDown, CheckSquare, Square,
   Heart, Ban, Check, AlertCircle, Scissors, ChevronRight,
   ListChecks, XCircle, Clock, Eye, Award, Sparkles, Trash2,
+  Radio, History as HistoryIcon,
 } from "lucide-react";
 import { cn, formatCompactCount } from "@/lib/utils";
 import {
@@ -31,6 +32,7 @@ import {
   LIMIT_PRESETS, MAX_SCAN, parseExclusions, applyFilters, smartScore, etaStr, AVG_ACTION_SECS,
 } from "@/lib/batch-follow-utils";
 import type { BatchOp } from "@/hooks/BatchOperationContext";
+import { fetchGrowHistory, type GrowHistoryEntry } from "@/lib/grow-report";
 import type { CleanupKind } from "@/lib/cast-cleanup";
 
 // ─── Mode ──────────────────────────────────────────────────────────────────────
@@ -1478,23 +1480,138 @@ function ActiveGrowsView({
   onDismissCleanup: (myFid: number, kind: CleanupKind) => void;
   onUnhideCleanup: (myFid: number, kind: CleanupKind) => void;
 }) {
-  const totalOps = ops.length + cleanupOps.length;
-  if (totalOps === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground px-6 text-center">
-        <ListChecks className="w-10 h-10 opacity-15" />
-        <p className="text-sm">Nothing running right now.</p>
-        <p className="text-[12px] text-muted-foreground/70">
-          Follow/unfollow grows and Purge cleanups all show up here while (and after) they run.
-          Start one from the Follow, Clean Up, or Purge tab.
-        </p>
-      </div>
-    );
-  }
+  const { fid } = useWallet();
+  const myFid = fid != null ? Number(fid) : null;
+  const [subTab, setSubTab] = useState<"live" | "completed" | "cancelled" | "history">("live");
+  const [history, setHistory] = useState<GrowHistoryEntry[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  // Live = the current session's in-memory ops (real-time progress). The
+  // other three tabs read the durable, per-fid history table so they survive
+  // reloads and show up on any device the user signs in from.
+  useEffect(() => {
+    if (subTab === "live" || myFid == null) return;
+    let dead = false;
+    setHistLoading(true);
+    fetchGrowHistory(myFid).then(h => { if (!dead) { setHistory(h); setHistLoading(false); } });
+    return () => { dead = true; };
+  }, [subTab, myFid]);
+
+  const liveOps = ops.filter(o => o.phase === "running");
+  const liveCleanup = cleanupOps.filter(o => o.phase === "running");
+  const liveEmpty = liveOps.length + liveCleanup.length === 0;
+
+  const shownHistory = subTab === "history"
+    ? history
+    : history.filter(h => h.status === subTab);
+
+  const SUB_TABS = [
+    { id: "live"      as const, label: "Live",      Icon: Radio },
+    { id: "completed" as const, label: "Completed", Icon: CheckSquare },
+    { id: "cancelled" as const, label: "Cancelled", Icon: XCircle },
+    { id: "history"   as const, label: "History",   Icon: HistoryIcon },
+  ];
+
+  const kindLabelMap: Record<string, string> = {
+    follow: "Follow", unfollow: "Unfollow", purge: "Purge",
+    casts: "Casts", replies: "Comments", unlike: "Likes", unrecast: "Recasts",
+  };
 
   return (
-    <div className="px-4 lg:px-0 space-y-2.5 pb-4">
-      {ops.map(op => {
+    <div className="px-4 lg:px-0 pb-4">
+      {/* Activity sub-tabs */}
+      <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+        {SUB_TABS.map(t => {
+          const running = t.id === "live" && !liveEmpty;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setSubTab(t.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors border",
+                subTab === t.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "text-muted-foreground border-border hover:text-foreground hover:bg-background/60"
+              )}
+            >
+              <t.Icon className="w-3.5 h-3.5" />
+              {t.label}
+              {running && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {subTab !== "live" ? (
+        histLoading ? (
+          <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+        ) : shownHistory.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground px-6 text-center">
+            <HistoryIcon className="w-10 h-10 opacity-15" />
+            <p className="text-sm">No {subTab === "history" ? "" : subTab + " "}campaigns yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {shownHistory.map(h => {
+              const pct = h.total > 0 ? Math.round((h.succeeded / h.total) * 100) : 0;
+              const when = new Date(h.updatedAt);
+              const isFollow = h.kind === "follow";
+              return (
+                <div key={h.campaignId} className="rounded-2xl border border-border bg-card p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                      h.status === "completed" ? "bg-emerald-500/10 text-emerald-500"
+                        : h.status === "cancelled" ? "bg-muted/60 text-muted-foreground"
+                        : "bg-primary/10 text-primary")}>
+                      {h.kind === "purge" || h.kind === "unfollow" ? <UserMinus className="w-4 h-4" />
+                        : isFollow ? <UserPlus className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-bold text-foreground truncate">
+                        {kindLabelMap[h.kind] ?? h.kind}{h.label ? ` · ${h.label}` : ""}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {h.accountLabel ?? ""} · {when.toLocaleDateString()} {when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0",
+                      h.status === "completed" ? "bg-emerald-500/15 text-emerald-500"
+                        : h.status === "cancelled" ? "bg-muted text-muted-foreground"
+                        : "bg-primary/15 text-primary")}>
+                      {h.status === "completed" ? "Completed" : h.status === "cancelled" ? "Cancelled" : "Live"}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-3">
+                    <div className={cn("h-full rounded-full", h.status === "completed" ? "bg-emerald-500" : "bg-muted-foreground/40")}
+                      style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between mt-2 text-[11px] text-muted-foreground">
+                    <span>{h.succeeded}/{h.total} done</span>
+                    {(h.skipped > 0 || h.failed > 0) && (
+                      <span className="text-muted-foreground/70">
+                        {h.skipped > 0 && `${h.skipped} skipped`}
+                        {h.skipped > 0 && h.failed > 0 && " · "}
+                        {h.failed > 0 && `${h.failed} failed`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : liveEmpty ? (
+        <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground px-6 text-center">
+          <ListChecks className="w-10 h-10 opacity-15" />
+          <p className="text-sm">Nothing running right now.</p>
+          <p className="text-[12px] text-muted-foreground/70">
+            Follow/unfollow grows and Purge cleanups show up here live while they run.
+            Completed and cancelled ones move to their own tabs above.
+          </p>
+        </div>
+      ) : (
+    <div className="space-y-2.5">
+      {liveOps.map(op => {
         const remaining = Math.max(0, op.total - op.done - op.errors - op.skipped);
         const pct = op.total > 0 ? (op.done / op.total) * 100 : 0;
         const etaSecs = remaining * AVG_ACTION_SECS;
@@ -1572,7 +1689,7 @@ function ActiveGrowsView({
       })}
 
       {/* ── Cleanup ops ── */}
-      {cleanupOps.map(op => {
+      {liveCleanup.map(op => {
         const isRunning = op.phase === "running";
         const isDone = op.phase === "done" || op.phase === "cancelled";
         const kindLabel: Record<string, string> = {
@@ -1648,6 +1765,8 @@ function ActiveGrowsView({
           </div>
         );
       })}
+    </div>
+      )}
     </div>
   );
 }

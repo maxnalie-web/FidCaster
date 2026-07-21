@@ -165,3 +165,24 @@ CREATE TABLE IF NOT EXISTS nft_pass_mint_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_npm_fid_created ON nft_pass_mint_log (fid, created_at DESC);
+
+-- Durable per-user history of Grow campaigns (follow / unfollow / purge / cleanup),
+-- so the Grow → Activity tab can show Live / Completed / Cancelled / full History
+-- across sessions and devices instead of only the current tab's in-memory ops.
+CREATE TABLE IF NOT EXISTS grow_history (
+  id            BIGSERIAL   PRIMARY KEY,
+  fid           BIGINT      NOT NULL,
+  campaign_id   TEXT        NOT NULL,
+  kind          TEXT        NOT NULL,          -- follow | unfollow | purge | casts | replies | unlike | unrecast
+  status        TEXT        NOT NULL,          -- live | completed | cancelled
+  label         TEXT,
+  account_label TEXT,
+  total         INTEGER     NOT NULL DEFAULT 0,
+  succeeded     INTEGER     NOT NULL DEFAULT 0,
+  failed        INTEGER     NOT NULL DEFAULT 0,
+  skipped       INTEGER     NOT NULL DEFAULT 0,
+  started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_grow_history_campaign ON grow_history (fid, campaign_id);
+CREATE INDEX IF NOT EXISTS idx_grow_history_fid_status ON grow_history (fid, status, updated_at DESC);
