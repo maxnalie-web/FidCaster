@@ -29,6 +29,7 @@ export function reportGrowCampaignComplete(params: {
   campaignId: string;
   succeeded: number;
   failed: number;
+  total: number;
   startedAt: number;
 }): void {
   fetch("/api/grow/campaign-complete", {

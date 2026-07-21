@@ -346,10 +346,6 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         await new Promise(r => setTimeout(r, concurrency > 1 ? FOUNDER_CHUNK_DELAY_MS : DELAY_MS));
     }
 
-    if (isNewCampaign) {
-      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, startedAt: campaignStartedAt });
-    }
-
     clearBatch(myFid, mode);
     bustProfileCache();
     upsertOp(key, prev =>
@@ -358,12 +354,16 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         : null
     );
 
-    // Only report completion when this run also reported the start — a resumed
-    // batch (initialDone > 0, after a page reload) generates a fresh campaignId
-    // that has no matching campaign-start row, so reporting it here would leave
-    // an orphaned "complete" event the verification job can never match.
-    if (initialDone === 0) {
-      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, startedAt: campaignStartedAt });
+    // Report completion for the grow points ONCE, and ONLY when the campaign
+    // ran all the way through on its own instead of being cancelled early.
+    // Stopping at 99 of 100 (cancelRef flipped) must NOT earn the campaign
+    // point — a "completed" campaign is the whole batch finishing. Also gated
+    // on isNewCampaign (initialDone === 0): a resumed batch generates a fresh
+    // campaignId with no matching start row, so it can't be credited anyway.
+    // (This used to fire twice — once here, once above — relying on the
+    // server's proof dedup to swallow the duplicate.)
+    if (isNewCampaign && !cancelRef.current) {
+      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, total, startedAt: campaignStartedAt });
     }
   }, [upsertOp]);
 

@@ -264,8 +264,8 @@ export function registerActionsRoutes(app: Express): void {
   app.post("/api/grow/campaign-complete", growLimiter, async (req: Request, res: Response) => {
     if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
 
-    const { fid, campaignId, succeeded, failed, startedAt } = req.body as {
-      fid?: unknown; campaignId?: unknown; succeeded?: unknown; failed?: unknown; startedAt?: unknown;
+    const { fid, campaignId, succeeded, failed, total, startedAt } = req.body as {
+      fid?: unknown; campaignId?: unknown; succeeded?: unknown; failed?: unknown; total?: unknown; startedAt?: unknown;
     };
 
     if (!validFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
@@ -279,24 +279,34 @@ export function registerActionsRoutes(app: Express): void {
       res.status(401).json({ error: "Token does not match claimed fid" }); return;
     }
 
-    // Client-reported `succeeded` is NOT trusted for points calculation.
-    // The verification job will call Neynar to count real new follows from
-    // the targetFidsSample stored at campaign-start, and set verified=true
-    // only if ≥ 5 real new follows are confirmed (or exclude if fewer).
+    // The client only ever POSTs this when a campaign ran all the way to the
+    // end without being cancelled (see BatchOperationContext) — a run stopped
+    // early never reaches here. So a completed campaign earns its point right
+    // away, exactly like every other action in the app: verified on insert,
+    // no 2-hour trust window, no Neynar follow-graph sampling, no minimum-real-
+    // follows gate, no 14-day per-target cooldown. The only remaining guard is
+    // grow_campaign_complete's own daily cap (150 = 5 campaigns/day) in
+    // db/points.ts. A campaign that genuinely did nothing (0 real actions) is
+    // still not worth a point, so require at least one success.
+    if (succeeded < 1) {
+      res.json({ ok: true, credited: false, reason: "no_successful_actions" });
+      return;
+    }
     try {
       await logUserAction({
         fid,
         actionType: "grow_campaign_complete",
         payload: {
           campaignId,
-          clientReportedSucceeded: succeeded, // stored for audit but not used for points
+          succeeded,
           failed,
+          total: typeof total === "number" ? total : null,
           durationMs: typeof startedAt === "number" ? Date.now() - startedAt : null,
         },
         proof: `grow:${fid}:${campaignId}:complete`,
-        verified: false, // background job verifies via Neynar following check
+        verified: true, // instant, like every other action — no background gate
       });
-      res.json({ ok: true });
+      res.json({ ok: true, credited: true });
     } catch (e) {
       console.error("[actions] grow campaign-complete error:", e);
       res.status(500).json({ error: "Failed to log campaign complete" });
