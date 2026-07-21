@@ -723,10 +723,16 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.strokeStyle = `rgba(233,213,255,${0.62 + Math.sin(t * 1.8) * 0.12})`;
       ctx!.lineWidth = 1.5; ctx!.shadowColor = "rgba(168,85,247,1)"; ctx!.shadowBlur = 10;
       ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx!.stroke();
-      ctx!.strokeStyle = "rgba(255,255,255,.85)"; ctx!.lineWidth = 2.2; ctx!.shadowBlur = 18;
-      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, -2.5, -1.9); ctx!.stroke();
-      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      // Specular highlight arc — was a fixed angle range (always in the same
+      // spot on the ring, looking like a stray static artifact next to the
+      // comet trail that visibly orbits). Now drifts slowly around the ring
+      // on its own independent speed, so it still reads as a highlight
+      // catching the light rather than a frozen leftover.
       const head = t * 0.09 * Math.PI * 2;
+      const highlightA = t * 0.05 * Math.PI * 2;
+      ctx!.strokeStyle = "rgba(255,255,255,.85)"; ctx!.lineWidth = 2.2; ctx!.shadowBlur = 18;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx, ry, 0, highlightA - 0.3, highlightA + 0.3); ctx!.stroke();
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
       for (let k = 0; k < 14; k++) {
         const a = head - k * 0.05;
         const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
@@ -1632,6 +1638,54 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
       )}
 
+      {/* ── Daily Allowance — kept above Daily Missions: it's the budget
+          that gates Promote/Gift, so it's the more time-sensitive of the
+          two to see first (missions reset daily too, but nothing about
+          them is spendable/expiring the way unused allowance is). ── */}
+      <div>
+        <SectionLabel>Daily Allowance</SectionLabel>
+        {allowanceLoading
+          ? <Card style={{ padding:"14px 16px" }}><Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} /></Card>
+          : allowance
+            ? (() => {
+                const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
+                const barColor = pct > 30
+                  ? `linear-gradient(90deg,${C.accent},#A855F7)`
+                  : pct > 10
+                  ? `linear-gradient(90deg,${C.amber},#F97316)`
+                  : `linear-gradient(90deg,${C.rose},#FB7185)`;
+                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
+                return (
+                  <Card glow onClick={onOpenAllowance}
+                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
+                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
+                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
+                      border:"1.5px solid rgba(168,85,247,0.6)",
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <Zap size={20} color={C.accentHi} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
+                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
+                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
+                      </p>
+                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
+                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Ready to spend on Promote & Gift"}
+                      </p>
+                    </div>
+                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
+                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
+                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })()
+            : null
+        }
+      </div>
+
       {/* ── Daily Missions ── */}
       {missions.length > 0 && (
         <div>
@@ -1678,51 +1732,6 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </Card>
         </div>
       )}
-
-      {/* ── Daily Allowance ── */}
-      <div>
-        <SectionLabel>Daily Allowance</SectionLabel>
-        {allowanceLoading
-          ? <Card style={{ padding:"14px 16px" }}><Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} /></Card>
-          : allowance
-            ? (() => {
-                const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
-                const barColor = pct > 30
-                  ? `linear-gradient(90deg,${C.accent},#A855F7)`
-                  : pct > 10
-                  ? `linear-gradient(90deg,${C.amber},#F97316)`
-                  : `linear-gradient(90deg,${C.rose},#FB7185)`;
-                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
-                return (
-                  <Card glow onClick={onOpenAllowance}
-                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
-                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
-                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
-                      border:"1.5px solid rgba(168,85,247,0.6)",
-                      display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <Zap size={20} color={C.accentHi} />
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
-                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
-                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
-                      </p>
-                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
-                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Ready to spend on Promote & Gift"}
-                      </p>
-                    </div>
-                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
-                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
-                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })()
-            : null
-        }
-      </div>
     </motion.div>
   );
 }
@@ -1918,7 +1927,6 @@ const SCORING_ROWS = [
   { Icon:ShoppingBag, action:"Buy FID",       pts:100, cap:300  },
   { Icon:Tag,         action:"List FID",      pts:50,  cap:250  },
   { Icon:Share2,      action:"Refer User",    pts:200, cap:2000 },
-  { Icon:Sword,       action:"Quest",         pts:100, cap:500  },
   { Icon:Sprout,      action:"Grow Campaign", pts:30,  cap:150  },
   { Icon:Zap,         action:"Promote",       pts:50,  cap:500  },
   { Icon:Gift,        action:"Gift received", pts:"varies" as unknown as number, cap:500 },
@@ -2164,7 +2172,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
     if (filter === "all") return true;
     if (filter === "social") return ["Cast","Recast","Like","Follow"].includes(r.action);
     if (filter === "market") return ["Buy FID","List FID"].includes(r.action);
-    if (filter === "referral") return ["Refer User","Quest","Grow Campaign","Promote"].includes(r.action);
+    if (filter === "referral") return ["Refer User","Grow Campaign","Promote"].includes(r.action);
     return true;
   });
 
@@ -2381,7 +2389,6 @@ function RewardsTab({ fid }: { fid: number }) {
           {[
             { icon:"⚡", label:"Cast on FidCaster", desc:"Earn 10 pts per cast (up to 50/day)", href:"https://fidcaster.xyz" },
             { icon:"🛒", label:"Trade FIDs", desc:"100 pts per buy, 50 pts per listing", href:"https://fidcaster.xyz/market" },
-            { icon:"🚀", label:"Complete Quests", desc:"100 pts per quest action", href:"https://fidcaster.xyz" },
           ].map((row, i, arr) => (
             <div key={row.label}>
               <a href={row.href} target="_blank" rel="noopener noreferrer"
@@ -2782,7 +2789,8 @@ function MenuButton({ onNav }: { onNav: (t: AppTab) => void }) {
   const ref = useOutsideClose<HTMLDivElement>(open, close);
 
   const items: { label: string; Icon: React.ElementType; onClick?: () => void; href?: string }[] = [
-    { label:"Docs", Icon:LayoutList, href:"https://fidcaster.xyz/docs" },
+    { label:"Open FidCaster", Icon:Globe, href:"https://fidcaster.xyz" },
+    { label:"Docs", Icon:LayoutList, href:"https://docs.fidcaster.xyz" },
   ];
 
   return (
@@ -2919,6 +2927,14 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
   // tapping the Home "Daily Allowance" card should land directly on the
   // Allowance sub-view, not the quest list.
   const [earnView,     setEarnView]    = useState<"actions"|"allowance">("actions");
+  // The scrollable content area (below) is one persistent DOM node across
+  // every tab - only its children swap via AnimatePresence - so its
+  // scrollTop was never reset on tab switch. Scrolling down on a tall tab
+  // (e.g. Profile) then switching to a shorter one landed you partway down
+  // the new tab's content instead of at its top, which read as the whole
+  // app "opening scrolled to the middle."
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { contentRef.current?.scrollTo({ top: 0 }); }, [tab]);
 
   const username = ctx?.user?.username ?? `fid${fid}`;
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
@@ -2936,14 +2952,41 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
     });
   }, [fid]);
 
-  useEffect(() => {
+  // Server-side crediting is near-instant (tryInstantVerify, the webhook
+  // handlers, etc.) but none of that matters if the client only ever fetches
+  // once on mount, which this used to do - a cast/like/follow done in the
+  // full client, a gift/promotion cast, a friend joining via referral, all
+  // land in the DB right away but stayed invisible here until the user
+  // force-reloaded the whole mini app. refetchAll below is now called on
+  // mount, whenever the mini app regains visibility (the common real case:
+  // it was backgrounded while the user cast something in the full Farcaster
+  // client and is now being looked at again), and on a light interval while
+  // visible so points/allowance/leaderboard catch up on their own.
+  const refetchAll = useCallback(() => {
     setBoardLoad(true);
     setStatsLoad(true);
+    setAllowLoad(true);
     refetchPts();
     apiMiniBoard(50).then(b => { setBoard(b); setBoardLoad(false); });
     apiStats(fid).then(s => { setStats(s); setStatsLoad(false); });
     apiAllowance(fid).then(a => { setAllowance(a); setAllowLoad(false); });
   }, [fid, refetchPts]);
+
+  useEffect(() => {
+    refetchAll();
+
+    const onVisible = () => { if (document.visibilityState === "visible") refetchAll(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refetchAll();
+    }, 20_000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
+    };
+  }, [refetchAll]);
 
   // NFT holder check: automatic exactly once ever (first time this fid opens
   // the app), guarded by a per-fid localStorage flag. After that, only the
@@ -3006,7 +3049,7 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
       </AnimatePresence>
 
       {/* Content */}
-      <div style={{ flex:1, padding:"14px 16px 90px", overflowY:"auto", position:"relative", zIndex:1 }}>
+      <div ref={contentRef} style={{ flex:1, padding:"14px 16px 90px", overflowY:"auto", position:"relative", zIndex:1 }}>
         <AnimatePresence mode="wait">
           {tab === "home" && (
             <HomeTab key="home" fid={fid} ctx={ctx} pts={pts} stats={stats} rank={rank} board={board}
@@ -3107,8 +3150,16 @@ export function MiniAppPage() {
       },
       body: JSON.stringify({ code: ref, fid }),
     })
+      // Only remember "claimed" once the server actually responded - success
+      // or a definitive rejection (already referred, self-referral, etc.)
+      // both mean there's nothing left to retry. A network failure (this
+      // branch never runs; see .catch below) used to get marked claimed
+      // anyway, which meant a transient blip on the very first load - before
+      // qaToken or the session was even ready - silently killed the referral
+      // forever with no error surfaced anywhere and no way to retry, since
+      // every future mount would see the "claimed" flag and skip it.
       .then(() => localStorage.setItem(claimedKey, "1"))
-      .catch(() => {});
+      .catch(() => { /* network-level failure - leave unclaimed so the next mount retries */ });
   }, [ready, fid, qaToken]);
 
   if (!ready) return <LoadingScreen />;
