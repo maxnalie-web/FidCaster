@@ -16,7 +16,8 @@ import { upsertNotificationToken, sendFarcasterNotification } from "./db/notific
 import { achievementUnlockedNotif } from "./notification-templates.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 import { getTrustedFid } from "./auth.js";
-import { logUserAction, logUserActionIfNew } from "./db/ledger.js";
+import { logUserAction, logUserActionIfNew, touchUser } from "./db/ledger.js";
+import { scheduleWebhookSync } from "./push-routes.js";
 
 // Neynar's neynar_user_score is a 0-1 float (not a 0-100 scale).
 const SCORE_THRESHOLD = 0.3;
@@ -290,6 +291,13 @@ export function registerMiniRoutes(app: Express): void {
   app.get("/api/mini/stats", readLimiter, async (req: Request, res: Response) => {
     const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
     if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
+
+    // Register this FID as an app user so the Neynar webhook sync includes
+    // them in author_fids immediately — without this, a brand-new user who
+    // opens the app and tries to gift/promote before the next periodic sync
+    // (was 10 min, now 2 min) would have their casts silently ignored.
+    // touchUser + scheduleWebhookSync is idempotent and debounced (5s timer).
+    void touchUser(fid).then(() => scheduleWebhookSync()).catch(() => {});
 
     if (!isDbConfigured()) {
       // Return sensible defaults when DB isn't configured

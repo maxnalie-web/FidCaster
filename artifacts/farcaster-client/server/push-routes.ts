@@ -26,6 +26,15 @@ const isValidFid = (v: unknown): v is number =>
 // ── Keep the Neynar webhook's fid filters in sync with our token store ───────
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Neynar returns the webhook's signing secret in the PUT update response.
+// We cache it here so signature verification uses the live, authoritative
+// value — even when NEYNAR_WEBHOOK_SECRET in the environment is stale
+// (e.g. the webhook was recreated/rotated after the env var was last set).
+// On every server boot, the first sync (kicked off by startWebhookTargetSync)
+// populates this within 5 seconds, so all subsequent webhook deliveries
+// pass verification correctly.
+let runtimeWebhookSecret: string | null = null;
+
 /** Return all FIDs that have ever opened the app (from the ledger users table). */
 async function getAllAppFids(): Promise<number[]> {
   try {
@@ -91,6 +100,22 @@ async function syncNeynarWebhookTargets(): Promise<void> {
       const t = await r.text().catch(() => "");
       console.warn(`[push] Neynar webhook sync failed: ${r.status} ${t.slice(0, 200)}`);
     } else {
+      // Parse the response and capture the live webhook secret.
+      // Neynar returns { webhook: { secret: "...", ... } } on PUT.
+      // This self-heals the common "signature mismatch" failure mode where
+      // NEYNAR_WEBHOOK_SECRET in the environment is stale (set when the
+      // webhook was first created but never updated after a rotation/recreate).
+      try {
+        const body = await r.json() as { webhook?: { secret?: string } };
+        const freshSecret = body.webhook?.secret;
+        if (freshSecret && typeof freshSecret === "string") {
+          if (freshSecret !== runtimeWebhookSecret) {
+            runtimeWebhookSecret = freshSecret;
+            console.log("[push] webhook secret refreshed from Neynar API response");
+          }
+        }
+      } catch { /* non-critical — keep going */ }
+
       console.log(
         `[push] Neynar webhook synced — ${pushFids.length} push fid(s), ` +
         `${mentionFids.length} mention fid(s), ${authorFids.length} author fid(s)`,
@@ -101,7 +126,7 @@ async function syncNeynarWebhookTargets(): Promise<void> {
   }
 }
 
-function scheduleWebhookSync(): void {
+export function scheduleWebhookSync(): void {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => { syncNeynarWebhookTargets(); }, 5_000);
 }
@@ -113,7 +138,7 @@ function scheduleWebhookSync(): void {
 // added after the last sync/restart — silently never had their cast.created
 // events delivered at all: the gift/promote cast could post successfully and
 // still never get detected, allowance never debited, no points, nothing.
-const PERIODIC_WEBHOOK_SYNC_MS = 10 * 60_000; // every 10 min
+const PERIODIC_WEBHOOK_SYNC_MS = 2 * 60_000; // every 2 min (was 10) — keeps new users in author_fids quickly
 let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startWebhookTargetSync(): void {
@@ -150,7 +175,11 @@ function logWebhookEvent(entry: WebhookLogEntry): void {
 // 401 and there was no trace of it anywhere - impossible to tell apart from
 // "Neynar never sent anything" without shell access to check env vars.
 function verifyNeynarSignature(req: Request): { ok: true } | { ok: false; reason: string } {
-  const secret = process.env.NEYNAR_WEBHOOK_SECRET;
+  // Prefer the live secret refreshed from the Neynar PUT response (populated
+  // within 5s of server boot by startWebhookTargetSync). Fall back to the
+  // environment variable so cold-start events still verify if the env var
+  // is correct, or as a bootstrap value before the first sync completes.
+  const secret = runtimeWebhookSecret ?? process.env.NEYNAR_WEBHOOK_SECRET;
   if (!secret) return { ok: false, reason: "NEYNAR_WEBHOOK_SECRET not set" };
   const sig = req.header("X-Neynar-Signature");
   if (!sig) return { ok: false, reason: "missing X-Neynar-Signature header" };

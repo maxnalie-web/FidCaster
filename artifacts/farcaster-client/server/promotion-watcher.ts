@@ -68,16 +68,21 @@ async function resolveUsernameToFid(username: string): Promise<number | null> {
 let cachedAppUsername: string | null | undefined; // undefined = not yet fetched
 
 async function getAppUsername(appFid: number): Promise<string | null> {
-  if (cachedAppUsername !== undefined) return cachedAppUsername;
+  // Only use the cache for successful lookups — do NOT permanently cache null.
+  // Previously a single Neynar 429 / timeout on first call set cachedAppUsername = null
+  // and all subsequent calls returned null immediately, permanently disabling the
+  // text-based mention fallback for the rest of the server's lifetime.
+  if (cachedAppUsername != null) return cachedAppUsername;
   try {
     const res = await neynarFetch(`${NEYNAR_BASE}/user/bulk?fids=${appFid}`);
-    if (!res.ok) { cachedAppUsername = null; return null; }
+    if (!res.ok) return null; // transient failure — do not cache, retry next time
     const data = await res.json() as { users?: { username?: string }[] };
-    cachedAppUsername = data.users?.[0]?.username ?? null;
+    const username = data.users?.[0]?.username ?? null;
+    if (username) cachedAppUsername = username; // only cache a real value
+    return username;
   } catch {
-    cachedAppUsername = null;
+    return null; // transient failure — do not cache
   }
-  return cachedAppUsername;
 }
 
 // User-facing feedback for a fire-and-forget system: the user has no other way to

@@ -160,9 +160,16 @@ export function createNftPassRouter(): Router {
     if (!fid || typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0)
       return res.status(400).json({ error: "fid required" });
 
+    // Auth is optional — the on-chain balanceOf check below is the real
+    // security gate (you can't fake owning the NFT). If a valid auth token
+    // IS present we still verify it matches the claimed fid to prevent one
+    // fid from attributing another's mint to themselves. But blocking
+    // unauthenticated calls silently leaves nft_pass_mint_log empty when
+    // qaToken hasn't loaded yet (self-heal paths, cold-start races), which
+    // makes hasMintedPass() return false and suppresses all points display.
     const trusted = await getTrustedFid(req);
-    if (trusted.fid === null || trusted.fid !== fid)
-      return res.status(401).json({ error: "Valid auth token required and must match fid" });
+    if (trusted.fid !== null && trusted.fid !== fid)
+      return res.status(401).json({ error: "Auth token fid does not match claimed fid" });
 
     const cfg = loadConfig();
     const abi = loadAbi();
