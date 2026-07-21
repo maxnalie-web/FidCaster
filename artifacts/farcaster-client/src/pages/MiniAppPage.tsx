@@ -309,6 +309,29 @@ async function apiHistory(fid: number): Promise<HistoryRow[] | null> {
     return Array.isArray(d.history) ? d.history : [];
   } catch { return null; }
 }
+// Submits a referral code stashed by the ?ref= effect above, but only once
+// this fid has actually minted the NFT Pass - see that effect's comment for
+// why. Safe to call speculatively (e.g. on every mint-confirmed path): it's
+// a no-op if there's no pending code or it's already been claimed.
+function claimPendingReferral(fid: number, qaToken?: string | null): void {
+  if (typeof window === "undefined") return;
+  const pendingKey = `fc_ref_pending_${fid}`;
+  const claimedKey = `fc_ref_claimed_${fid}`;
+  const ref = localStorage.getItem(pendingKey);
+  if (!ref || localStorage.getItem(claimedKey) === "1") return;
+  fetch("/api/referral/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(qaToken ? { Authorization: `Bearer ${qaToken}` } : {}) },
+    body: JSON.stringify({ code: ref, fid }),
+  })
+    // Only remember "claimed" once the server actually responded - success
+    // or a definitive rejection (already referred, self-referral, etc.) both
+    // mean there's nothing left to retry. A network failure leaves it
+    // pending so the next successful mint-path call retries.
+    .then(() => localStorage.setItem(claimedKey, "1"))
+    .catch(() => { /* network-level failure - stays pending, retried on next call */ });
+}
+
 async function apiReferralList(fid: number): Promise<ReferralListData> {
   try {
     const r = await fetch(`/api/referral/list?fid=${fid}`);
@@ -910,7 +933,7 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
               headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
               body: JSON.stringify({ fid, address: ethAddress }),
             }).catch(() => {});
-            setS("done"); onMinted?.();
+            setS("done"); onMinted?.(); claimPendingReferral(fid, qaToken);
           } else setS("idle");
         })
         .catch(() => { if (!dead) setS("idle"); });
@@ -923,7 +946,7 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
       .then(r => r.json())
       .then(d => {
         if (dead) return;
-        if (d.hasMinted) { setAddr(d.address ?? ""); setS("done"); onMinted?.(); }
+        if (d.hasMinted) { setAddr(d.address ?? ""); setS("done"); onMinted?.(); claimPendingReferral(fid, qaToken); }
         else setS("idle");
       })
       .catch(() => { if (!dead) setS("idle"); });
@@ -992,7 +1015,7 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
             headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
             body: JSON.stringify({ fid, address, txHash: hash }),
           }).catch(() => {});
-          setS("done"); onMinted?.(); return;
+          setS("done"); onMinted?.(); claimPendingReferral(fid, qaToken); return;
         }
       }
       // Still not confirmed after a minute — leave the explorer link up
@@ -1029,7 +1052,7 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
         headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
         body: JSON.stringify({ fid, address: addr }),
       }).catch(() => {});
-      setS("done"); onMinted?.(); return;
+      setS("done"); onMinted?.(); claimPendingReferral(fid, qaToken); return;
     }
     doMint(addr);
   }
@@ -2051,7 +2074,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
     { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
     { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points, so they won't count even if they briefly showed up." },
     { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
-    { t:"Referrals pay out immediately but are capped", d:"You and anyone you refer both get points right away. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
+    { t:"Referrals pay out after your friend mints, and are capped", d:"You and your friend both get points once they mint the NFT Pass, not just from opening the link. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
     { t:"If something looks like fraud, it gets excluded (not silently kept)", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
     { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that, so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
   ];
@@ -2501,7 +2524,7 @@ function RewardsTab({ fid }: { fid: number }) {
               <div>
                 <p style={{ color:C.text1, fontWeight:700, fontSize:15 }}>Refer Friends</p>
                 <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
-                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> instantly per friend who joins
+                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> per friend who joins and mints the Pass
                 </p>
               </div>
               {!refLoad && refData.referrals.filter(r=>r.activated).length > 0 && (
@@ -3313,38 +3336,23 @@ export function MiniAppPage() {
     setOnboarded(true);
   }
 
-  // Claim a referral code from ?ref= if present. The referral link people
-  // share is https://fidcaster.xyz/?ref=CODE - this was generated correctly
-  // but nothing ever POSTed it to the server, so referrals silently never
-  // registered. claimReferral() is idempotent server-side (unique constraint
-  // on referred_fid), but guard with a local flag too so we don't spam the
-  // endpoint on every mount.
+  // Referral codes from ?ref= are no longer claimed the instant someone
+  // opens the link - that made it too easy to farm (open link, get points,
+  // never actually use the app). Instead the code is just remembered here,
+  // and claimPendingReferral() (below) actually submits it once this fid
+  // has minted the NFT Pass - a real economic/gas cost, so it's a much
+  // stronger signal that this is a genuine user, not a throwaway account
+  // opened purely to harvest a referral bonus.
   useEffect(() => {
-    if (!ready || !fid || typeof window === "undefined") return;
+    if (!fid || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
     if (!ref) return;
+    const pendingKey = `fc_ref_pending_${fid}`;
     const claimedKey = `fc_ref_claimed_${fid}`;
     if (localStorage.getItem(claimedKey) === "1") return;
-    fetch("/api/referral/claim", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(qaToken ? { Authorization: `Bearer ${qaToken}` } : {}),
-      },
-      body: JSON.stringify({ code: ref, fid }),
-    })
-      // Only remember "claimed" once the server actually responded - success
-      // or a definitive rejection (already referred, self-referral, etc.)
-      // both mean there's nothing left to retry. A network failure (this
-      // branch never runs; see .catch below) used to get marked claimed
-      // anyway, which meant a transient blip on the very first load - before
-      // qaToken or the session was even ready - silently killed the referral
-      // forever with no error surfaced anywhere and no way to retry, since
-      // every future mount would see the "claimed" flag and skip it.
-      .then(() => localStorage.setItem(claimedKey, "1"))
-      .catch(() => { /* network-level failure - leave unclaimed so the next mount retries */ });
-  }, [ready, fid, qaToken]);
+    if (!localStorage.getItem(pendingKey)) localStorage.setItem(pendingKey, ref);
+  }, [fid]);
 
   if (!ready) return <LoadingScreen />;
   if (!fid)  return <BrowserScreen />;
