@@ -16,12 +16,13 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-export function giftReceivedNotif(amount: number): { title: string; body: string } {
+export function giftReceivedNotif(amount: number, fromUsername?: string | null): { title: string; body: string } {
+  const from = fromUsername ? `@${fromUsername}` : "another user";
   return pick([
-    { title: "You got a gift!", body: `+${amount} FidCaster points just landed in your account.` },
-    { title: "Gift received", body: `Someone sent you ${amount} points on FidCaster. Nice.` },
-    { title: `+${amount} points, just for you`, body: "A fellow FidCaster user sent you a gift. Go check your total." },
-    { title: "Points incoming", body: `You received a ${amount}-point gift from another user.` },
+    { title: "You got a gift!", body: `+${amount} FidCaster points from ${from} just landed in your account.` },
+    { title: "Gift received", body: `${from} sent you ${amount} points on FidCaster. Nice.` },
+    { title: `+${amount} points, just for you`, body: `${from} sent you a gift. Go check your total.` },
+    { title: "Points incoming", body: `You received a ${amount}-point gift from ${from}.` },
   ]);
 }
 

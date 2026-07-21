@@ -16,6 +16,7 @@ import { fidToCode, claimReferral, getReferralList } from "./db/referrals.js";
 import { getHealthReport } from "./watcher.js";
 import { isLedgerConfigured, touchUser } from "./db/ledger.js";
 import { getAllowance, claimAndLogPending } from "./db/allowance.js";
+import { fetchNeynarUsers } from "./mini-routes.js";
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -135,7 +136,15 @@ export function registerPointsRoutes(app: Express): void {
     const limit = Math.min(Number(req.query.limit ?? 50), 100);
     try {
       const rows = await getPointsHistory(fid, limit);
-      res.json({ fid, history: rows });
+      // Enrich gift_received rows with the sender's username - "Gift received"
+      // alone in the activity feed didn't say who sent it.
+      const senderFids = [...new Set(rows.map(r => r.fromFid).filter((f): f is number => !!f))];
+      const senderMap = senderFids.length ? await fetchNeynarUsers(senderFids) : new Map();
+      const history = rows.map(r => ({
+        ...r,
+        ...(r.fromFid ? { fromUsername: senderMap.get(r.fromFid)?.username ?? null } : {}),
+      }));
+      res.json({ fid, history });
     } catch (e) {
       console.error("[points] history error:", e);
       res.status(500).json({ error: "Failed to fetch history" });
@@ -149,7 +158,14 @@ export function registerPointsRoutes(app: Express): void {
     if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
     try {
       const data = await getReferralList(fid);
-      res.json({ fid, ...data });
+      // Enrich with real Farcaster usernames/avatars - the raw list only has
+      // fids, which rendered as an unhelpful "FID 123456" in the Rewards tab.
+      const userMap = await fetchNeynarUsers(data.referrals.map(r => r.fid));
+      const referrals = data.referrals.map(r => {
+        const u = userMap.get(r.fid);
+        return { ...r, username: u?.username ?? null, pfpUrl: u?.pfpUrl ?? null };
+      });
+      res.json({ fid, referredBy: data.referredBy, referrals });
     } catch (e) {
       console.error("[referral] list error:", e);
       res.status(500).json({ error: "Failed to fetch referral list" });

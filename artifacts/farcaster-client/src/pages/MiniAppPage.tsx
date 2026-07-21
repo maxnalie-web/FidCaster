@@ -96,6 +96,16 @@ interface MiniCtx {
     verifiedAddresses?: { eth_addresses?: string[] };
   };
   client?: { added?: boolean };
+  // Present when the host launched this app from a tapped cast embed. Per
+  // the Farcaster Mini Apps spec, launch_miniapp's action.url IS supposed to
+  // be honored verbatim (including our ?ref= query param) - but real clients
+  // have been observed collapsing back to the manifest's bare homeUrl on
+  // this launch path, silently dropping the ref before our own ?ref= reader
+  // (window.location.search) ever sees it. The cast object here is the one
+  // exception: it's the actual cast that was tapped, untouched by that
+  // collapse, so its embeds[] still contains our full referral URL - a
+  // fallback source of truth the URL-based capture can't lose.
+  location?: { type?: string; cast?: { embeds?: string[]; text?: string } };
 }
 interface LBRow {
   fid: number; total_points: number; rank: number;
@@ -105,13 +115,14 @@ interface FidPts {
   fid: number; total_points: number; pendingClaimed?: number;
   breakdown: { action_type: string; total_actions: number; points_earned: number }[];
 }
-interface HistoryRow { id: number; action_type: string; pts: number; created_at: string; }
-interface ReferralRow { fid: number; activated: boolean; activated_at: string | null; created_at: string; }
+interface HistoryRow { id: number; action_type: string; pts: number; created_at: string; fromUsername?: string | null; }
+interface ReferralRow { fid: number; activated: boolean; activated_at: string | null; created_at: string; username: string | null; pfpUrl: string | null; }
 interface ReferralListData { referredBy: number | null; referrals: ReferralRow[]; }
 interface EligibilityData { eligible: boolean; score: number; threshold: number; reason?: string; }
 interface AllowanceData {
   total: number; used: number; remaining: number; resetsAt: string;
   promoUsed: number; promoRemaining: number; giftUsed: number; giftRemaining: number;
+  giftReceiveCap: number; giftReceivedToday: number; giftReceiveRemaining: number;
 }
 interface MissionItem { id: string; action: string; label: string; target: number; pts: number; count: number; done: boolean; }
 interface Achievement {
@@ -1546,33 +1557,8 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </motion.div>
         </div>
 
-        {/* Total Points + Global Rank, merged into one slim card. A gold
-            "comet" travels continuously around the actual border path - an
-            SVG rounded-rect stroked with a short dash, animating
-            strokeDashoffset by exactly the dasharray's total length so the
-            loop is seamless. This traces the real rendered box exactly
-            (no viewBox, so 1 SVG unit = 1 real pixel), unlike a rotating
-            conic-gradient behind the card, which distorts and can vanish for
-            part of the cycle on a box this much wider than it is tall.
-            A single animated attribute, no canvas - negligible cost. */}
+        {/* Total Points + Global Rank, merged into one slim card. */}
         <div style={{ position:"absolute", top:0, left:14, right:14 }}>
-          <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:5, overflow:"visible" }}>
-            <defs>
-              <linearGradient id="goldCometGrad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="rgba(251,191,36,0)" />
-                <stop offset="50%" stopColor="rgba(255,224,140,1)" />
-                <stop offset="100%" stopColor="rgba(251,191,36,0)" />
-              </linearGradient>
-            </defs>
-            <motion.rect
-              x="1" y="1" width="99%" height="97%" rx="22" ry="22"
-              fill="none" stroke="url(#goldCometGrad)" strokeWidth="2.5" strokeLinecap="round"
-              strokeDasharray="110 890"
-              style={{ filter:"drop-shadow(0 0 5px rgba(251,191,36,.9))" }}
-              animate={{ strokeDashoffset: [0, -1000] }}
-              transition={{ duration:6, repeat:Infinity, ease:"linear" }}
-            />
-          </svg>
           <GlassStatCard style={{ position:"relative", padding:"12px 14px 11px" }}>
             <div style={{ position:"absolute", top:-30, left:-20, width:90, height:90, borderRadius:"50%",
               background:"radial-gradient(circle, rgba(139,92,246,0.3), transparent 70%)", pointerEvents:"none" }} />
@@ -1620,6 +1606,32 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </GlassStatCard>
         </div>
       </div>
+
+      {/* ── Daily Allowance, as a thin bar right under Total Points/Rank -
+          it's a quick-glance budget indicator, not its own destination, so
+          it doesn't need a full card with an icon tile and a progress ring
+          the way it used to. Tap still opens the full Allowance view. ── */}
+      {allowance && !allowanceLoading && (() => {
+        const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
+        const barColor = pct > 30
+          ? `linear-gradient(90deg,${C.accent},#A855F7)`
+          : pct > 10
+          ? `linear-gradient(90deg,${C.amber},#F97316)`
+          : `linear-gradient(90deg,${C.rose},#FB7185)`;
+        return (
+          <button onClick={onOpenAllowance} style={{ display:"flex", alignItems:"center", gap:8,
+            width:"100%", background:"none", border:"none", padding:"2px 2px 0", cursor:"pointer", fontFamily:"inherit" }}>
+            <Zap size={11} color={C.accentHi} style={{ flexShrink:0 }} />
+            <span style={{ color:C.text3, fontSize:10.5, fontWeight:700, flexShrink:0, whiteSpace:"nowrap" }}>
+              {allowance.remaining.toLocaleString()}/{allowance.total.toLocaleString()} allowance
+            </span>
+            <div style={{ flex:1, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
+              <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
+                style={{ height:"100%", borderRadius:2, background:barColor }} />
+            </div>
+          </button>
+        );
+      })()}
 
       {/* ── Stats row ── */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
@@ -1726,53 +1738,6 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
       )}
 
-      {/* ── Daily Allowance — kept above Daily Missions: it's the budget
-          that gates Promote/Gift, so it's the more time-sensitive of the
-          two to see first (missions reset daily too, but nothing about
-          them is spendable/expiring the way unused allowance is). ── */}
-      <div>
-        <SectionLabel>Daily Allowance</SectionLabel>
-        {allowanceLoading
-          ? <Card style={{ padding:"14px 16px" }}><Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} /></Card>
-          : allowance
-            ? (() => {
-                const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
-                const barColor = pct > 30
-                  ? `linear-gradient(90deg,${C.accent},#A855F7)`
-                  : pct > 10
-                  ? `linear-gradient(90deg,${C.amber},#F97316)`
-                  : `linear-gradient(90deg,${C.rose},#FB7185)`;
-                const ringColor = pct > 30 ? C.accentHi : pct > 10 ? C.amber : C.rose;
-                return (
-                  <Card glow onClick={onOpenAllowance}
-                    style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
-                    <div style={{ width:44, height:44, borderRadius:14, flexShrink:0,
-                      background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.3))",
-                      border:"1.5px solid rgba(168,85,247,0.6)",
-                      display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <Zap size={20} color={C.accentHi} />
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Daily Allowance</p>
-                      <p style={{ color:C.text1, fontSize:20, fontWeight:900, marginTop:2 }}>
-                        {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
-                      </p>
-                      <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
-                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} spent today` : "Ready to spend on Promote & Gift"}
-                      </p>
-                    </div>
-                    <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
-                      <ProgressRing pct={pct} size={56} stroke={6} color={ringColor} />
-                      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                        <span style={{ color:ringColor, fontSize:12, fontWeight:800 }}>{Math.round(pct)}%</span>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })()
-            : null
-        }
-      </div>
 
       {/* ── Daily Missions ── */}
       {missions.length > 0 && (
@@ -1961,7 +1926,7 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
               </div>
           }
           <div style={{ flex:1 }}>
-            <p style={{ color:C.accentHi, fontSize:13, fontWeight:700 }}>@{myRow.username} (you)</p>
+            <p style={{ color:C.accentHi, fontSize:13, fontWeight:700 }}>{myRow.username} (you)</p>
             <p style={{ color:C.text3, fontSize:11 }}>{myRow.total_points.toLocaleString()} pts</p>
           </div>
         </div>
@@ -1990,7 +1955,7 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
                   }
                   <span style={{ flex:1, color:isMe?C.accentHi:C.text1, fontWeight:isMe?700:400,
                     fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                    @{row.username || `fid${row.fid}`}{isMe?" (you)":""}
+                    {row.username || `fid${row.fid}`}{isMe?" (you)":""}
                   </span>
                   <span style={{ color:isMe?C.accentHi:C.text2, fontSize:13,
                     fontVariantNumeric:"tabular-nums", fontWeight:isMe?700:400 }}>
@@ -2028,7 +1993,11 @@ const SCORING_ROWS = [
   { Icon:Tag,         action:"List FID",      key:"market_list",           pts:50,  cap:250  },
   { Icon:Share2,      action:"Refer User",    key:"referral",               pts:200, cap:2000 },
   { Icon:Sprout,      action:"Grow Campaign", key:"grow_campaign_complete", pts:30,  cap:150  },
-  { Icon:Zap,         action:"Promote",       key:"promotion",             pts:50,  cap:500  },
+  // Promote has no fixed daily point cap of its own - the only real limit is
+  // the promoter's daily allowance (see AllowanceBarV2/scalePromoPointsClient).
+  // pts/cap are display-only placeholders here; the row below special-cases
+  // key==="promotion" to skip the "up to N/day" text and progress bar.
+  { Icon:Zap,         action:"Promote",       key:"promotion",             pts:"50-500" as unknown as number, cap:0    },
   { Icon:Gift,        action:"Gift received", key:"gift_received",         pts:"varies" as unknown as number, cap:500 },
 ];
 
@@ -2444,6 +2413,24 @@ function AllowanceBarV2({ fid }: { fid: number }) {
             )}
           </button>
         </div>
+        {/* Receiving is a separate cap from sending above - scaled by THIS
+            user's own account strength, not the sender's. */}
+        <div style={{ borderTop:`1px solid ${C.border}`, padding:"10px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+            <span style={{ color:C.text2, fontSize:11.5, fontWeight:600 }}>Gift receiving limit</span>
+            <span style={{ color:C.text3, fontSize:11 }}>
+              {data.giftReceivedToday.toLocaleString()} / {data.giftReceiveCap.toLocaleString()} today
+            </span>
+          </div>
+          <div style={{ height:4, background:C.border, borderRadius:2 }}>
+            <div style={{ height:"100%", borderRadius:2,
+              width:`${data.giftReceiveCap > 0 ? Math.min(100, (data.giftReceivedToday/data.giftReceiveCap)*100) : 0}%`,
+              background:`linear-gradient(90deg,${C.green},#34D399)` }} />
+          </div>
+          <p style={{ color:C.text3, fontSize:10, marginTop:4 }}>
+            {data.giftReceiveRemaining.toLocaleString()} pts left you can receive today, scaled by your own account.
+          </p>
+        </div>
       </Card>
       <AnimatePresence>
         {modal === "gift" && <GiftModal remaining={Math.min(data.remaining, data.giftRemaining)} onClose={() => setModal("none")} />}
@@ -2533,10 +2520,12 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
                           beside them and without adding a full extra row. */}
                       <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2, flexShrink:0 }}>
                         <Chip>+{row.pts} pts</Chip>
-                        <span style={{ color:C.text3, fontSize:9.5, whiteSpace:"nowrap" }}>each, up to {row.cap}/day</span>
+                        <span style={{ color:C.text3, fontSize:9.5, whiteSpace:"nowrap" }}>
+                          {row.cap > 0 ? `each, up to ${row.cap}/day` : "limited by your daily allowance"}
+                        </span>
                       </div>
                     </div>
-                    {!loading && earned > 0 && (
+                    {!loading && earned > 0 && row.cap > 0 && (
                       <div style={{ height:3, background:C.border, borderRadius:2, marginTop:8 }}>
                         <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }}
                           transition={{ duration:0.6, delay:i*0.04 }}
@@ -2660,14 +2649,17 @@ function RewardsTab({ fid }: { fid: number }) {
                 {refData.referrals.map((r, i) => (
                   <div key={r.fid}>
                     <div style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 0" }}>
-                      <div style={{ width:28, height:28, borderRadius:"50%",
-                        background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        fontSize:11, fontWeight:800, color:"#fff" }}>
-                        {r.fid.toString().slice(-2)}
-                      </div>
+                      {r.pfpUrl
+                        ? <img src={r.pfpUrl} alt="" style={{ width:28, height:28, borderRadius:"50%", flexShrink:0 }} />
+                        : <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
+                            background:`linear-gradient(135deg,${C.accent},#A855F7)`,
+                            display:"flex", alignItems:"center", justifyContent:"center",
+                            fontSize:11, fontWeight:800, color:"#fff" }}>
+                            {(r.username || r.fid.toString()).slice(0,2).toUpperCase()}
+                          </div>
+                      }
                       <div style={{ flex:1 }}>
-                        <p style={{ color:C.text1, fontSize:13 }}>FID {r.fid}</p>
+                        <p style={{ color:C.text1, fontSize:13 }}>{r.username ?? `fid${r.fid}`}</p>
                         <p style={{ color:C.text3, fontSize:11 }}>{timeAgo(r.created_at)}</p>
                       </div>
                       <span style={{ fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6,
@@ -3069,7 +3061,9 @@ function NotifBell({ fid }: { fid: number }) {
                     <meta.Icon size={13} color={C.accentHi} />
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ color:C.text1, fontSize:12.5 }}>{meta.label} <span style={{ color:C.green, fontWeight:700 }}>+{h.pts}</span></p>
+                    <p style={{ color:C.text1, fontSize:12.5 }}>
+                      {meta.label}{h.fromUsername ? ` from ${h.fromUsername}` : ""} <span style={{ color:C.green, fontWeight:700 }}>+{h.pts}</span>
+                    </p>
                     <p style={{ color:C.text3, fontSize:10.5 }}>{timeAgo(h.created_at)}</p>
                   </div>
                 </div>
@@ -3430,14 +3424,24 @@ export function MiniAppPage() {
   // opened purely to harvest a referral bonus.
   useEffect(() => {
     if (!fid || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get("ref");
+    let ref = new URLSearchParams(window.location.search).get("ref");
+    // Fallback: pull it out of the tapped cast's own embeds instead, in case
+    // this host collapsed the launch URL back to the bare homeUrl (see the
+    // MiniCtx.location comment above for why this can happen).
+    if (!ref && ctx?.location?.cast?.embeds) {
+      for (const url of ctx.location.cast.embeds) {
+        try {
+          const m = new URL(url).searchParams.get("ref");
+          if (m) { ref = m; break; }
+        } catch { /* not a valid URL, skip */ }
+      }
+    }
     if (!ref) return;
     const pendingKey = `fc_ref_pending_${fid}`;
     const claimedKey = `fc_ref_claimed_${fid}`;
     if (localStorage.getItem(claimedKey) === "1") return;
     if (!localStorage.getItem(pendingKey)) localStorage.setItem(pendingKey, ref);
-  }, [fid]);
+  }, [fid, ctx]);
 
   if (!ready) return <LoadingScreen />;
   if (!fid)  return <BrowserScreen />;

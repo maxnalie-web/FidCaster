@@ -26,6 +26,33 @@ function calculateTotal(followerCount: number, neynarScore: number): number {
   return Math.min(MAX_ALLOWANCE, Math.round((BASE_ALLOWANCE + followerBonus) * qualityMultiplier));
 }
 
+// A promote's cost AND point award both scale with the promoter's own daily
+// allowance (a proxy for account quality/reach already computed in
+// calculateTotal) - a brand-new account spends 50 allowance to earn 50
+// points, a big account with the max 5000/day allowance spends up to 500 to
+// earn up to 500 (the daily cap for this action type - one big promote CAN
+// exhaust the category cap, that's intentional, it's meant to feel
+// proportionate to their reach). Cost and reward use the same formula on
+// purpose so the badge always reads "costs N, earns N" for any account size.
+//
+// The same formula is reused as each fid's daily GIFT-RECEIVING cap (see
+// giftReceiveCap below) - a bigger account can absorb more gifted points in
+// a day too, not the same flat ceiling for everyone.
+export const MIN_PROMO_PTS = 50;
+export const MAX_PROMO_PTS = 500;
+
+export function scalePromoPoints(dailyAllowanceTotal: number): number {
+  const t = Math.max(0, Math.min(1, (dailyAllowanceTotal - MIN_ALLOWANCE) / (MAX_ALLOWANCE - MIN_ALLOWANCE)));
+  return Math.round(MIN_PROMO_PTS + (MAX_PROMO_PTS - MIN_PROMO_PTS) * t);
+}
+
+// A fid's daily cap on points RECEIVED via gift - reuses the exact same
+// scale as promotion cost/reward, keyed on the RECIPIENT's own allowance
+// (their account strength), not the sender's.
+export function giftReceiveCap(recipientDailyAllowanceTotal: number): number {
+  return scalePromoPoints(recipientDailyAllowanceTotal);
+}
+
 function todayUtc(): string {
   return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 }
@@ -90,17 +117,43 @@ export interface AllowanceData {
   promoRemaining: number;
   giftUsed: number;
   giftRemaining: number;
+  // How much this fid can RECEIVE via gift today, scaled by their own
+  // account strength (giftReceiveCap) - separate from giftUsed/giftRemaining
+  // above, which track allowance this fid has SPENT sending gifts to others.
+  giftReceiveCap: number;
+  giftReceivedToday: number;
+  giftReceiveRemaining: number;
 }
 
 function categoryRemaining(total: number, categoryUsed: number): number {
   return Math.max(0, Math.round(total * CATEGORY_CAP_FRACTION) - categoryUsed);
 }
 
-function toAllowanceData(total: number, used: number, promoUsed: number, giftUsed: number, resetsAt: string): AllowanceData {
+/** Sum of gift_received payload.amount for this fid, today (UTC). */
+export async function getGiftReceivedToday(fid: number): Promise<number> {
+  const pool = getPool();
+  if (!pool) return 0;
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM((payload->>'amount')::integer), 0) AS total
+     FROM user_actions
+     WHERE fid = $1 AND action_type = 'gift_received' AND verified = true AND excluded = false
+       AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date`,
+    [fid],
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
+async function toAllowanceData(
+  fid: number, total: number, used: number, promoUsed: number, giftUsed: number, resetsAt: string,
+): Promise<AllowanceData> {
+  const receiveCap = giftReceiveCap(total);
+  const receivedToday = await getGiftReceivedToday(fid);
   return {
     total, used, remaining: Math.max(0, total - used), resetsAt,
     promoUsed, promoRemaining: categoryRemaining(total, promoUsed),
     giftUsed,  giftRemaining:  categoryRemaining(total, giftUsed),
+    giftReceiveCap: receiveCap, giftReceivedToday: receivedToday,
+    giftReceiveRemaining: Math.max(0, receiveCap - receivedToday),
   };
 }
 
@@ -113,7 +166,7 @@ export async function getAllowance(fid: number): Promise<AllowanceData> {
   const resetsAt = tomorrowMidnightUtc();
 
   if (!pool) {
-    return toAllowanceData(BASE_ALLOWANCE, 0, 0, 0, resetsAt);
+    return toAllowanceData(fid, BASE_ALLOWANCE, 0, 0, 0, resetsAt);
   }
 
   // Fast path: row already exists for today
@@ -141,14 +194,14 @@ export async function getAllowance(fid: number): Promise<AllowanceData> {
         );
         if (healed.length > 0) {
           return toAllowanceData(
-            Number(healed[0].base_amount), Number(healed[0].used),
+            fid, Number(healed[0].base_amount), Number(healed[0].used),
             Number(healed[0].promo_used), Number(healed[0].gift_used), resetsAt,
           );
         }
       }
     }
     return toAllowanceData(
-      Number(rows[0].base_amount), Number(rows[0].used),
+      fid, Number(rows[0].base_amount), Number(rows[0].used),
       Number(rows[0].promo_used), Number(rows[0].gift_used), resetsAt,
     );
   }
@@ -171,12 +224,12 @@ export async function getAllowance(fid: number): Promise<AllowanceData> {
   );
   if (rows2.length > 0) {
     return toAllowanceData(
-      Number(rows2[0].base_amount), Number(rows2[0].used),
+      fid, Number(rows2[0].base_amount), Number(rows2[0].used),
       Number(rows2[0].promo_used), Number(rows2[0].gift_used), resetsAt,
     );
   }
 
-  return toAllowanceData(total, 0, 0, 0, resetsAt);
+  return toAllowanceData(fid, total, 0, 0, 0, resetsAt);
 }
 
 /**
@@ -310,22 +363,6 @@ export async function queuePendingPoints(params: {
 }
 
 // ── Transactional helpers for promotion/gift ───────────────────────────────────
-
-// A promote's cost AND point award both scale with the promoter's own daily
-// allowance (a proxy for account quality/reach already computed in
-// calculateTotal) - a brand-new account spends 50 allowance to earn 50
-// points, a big account with the max 5000/day allowance spends up to 500 to
-// earn up to 500 (the daily cap for this action type - one big promote CAN
-// exhaust the category cap, that's intentional, it's meant to feel
-// proportionate to their reach). Cost and reward use the same formula on
-// purpose so the badge always reads "costs N, earns N" for any account size.
-const MIN_PROMO_PTS = 50;
-const MAX_PROMO_PTS = 500;
-
-function scalePromoPoints(dailyAllowanceTotal: number): number {
-  const t = Math.max(0, Math.min(1, (dailyAllowanceTotal - MIN_ALLOWANCE) / (MAX_ALLOWANCE - MIN_ALLOWANCE)));
-  return Math.round(MIN_PROMO_PTS + (MAX_PROMO_PTS - MIN_PROMO_PTS) * t);
-}
 
 // Neither promotion nor gifting can consume more than this fraction of a
 // day's total allowance on its own - each is capped independently, on top
@@ -466,7 +503,26 @@ export async function processGiftAtomic(params: {
       return { ok: false, reason: "already_processed" };
     }
 
-    // 2. Atomic allowance debit — bounded by both the overall remaining
+    // 2. Recipient's own daily gift-RECEIVING cap, scaled by their account
+    //    strength (giftReceiveCap) - checked before touching the sender's
+    //    allowance so a maxed-out recipient doesn't cost the sender anything.
+    //    Only enforced for already-registered recipients; an unregistered
+    //    recipient has no allowance row to size a cap from yet.
+    if (params.recipientIsRegistered) {
+      const { rows: recipientRow } = await client.query(
+        `SELECT base_amount FROM daily_allowance WHERE fid = $1 AND date = $2`,
+        [params.recipientFid, today],
+      );
+      const recipientBase = recipientRow.length > 0 ? Number(recipientRow[0].base_amount) : MIN_ALLOWANCE;
+      const cap = giftReceiveCap(recipientBase);
+      const receivedToday = await getGiftReceivedToday(params.recipientFid);
+      if (receivedToday + params.amount > cap) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "recipient_gift_cap_reached" };
+      }
+    }
+
+    // 3. Atomic allowance debit — bounded by both the overall remaining
     //    allowance and the gift category's own cap.
     const { rowCount: debited } = await client.query(
       `UPDATE daily_allowance
@@ -488,7 +544,7 @@ export async function processGiftAtomic(params: {
       return { ok: false, reason };
     }
 
-    // 3. Upsert sender user row + insert gift audit record
+    // 4. Upsert sender user row + insert gift audit record
     await client.query(
       `INSERT INTO users (fid) VALUES ($1) ON CONFLICT (fid) DO UPDATE SET last_seen = now()`,
       [params.authorFid],
@@ -503,7 +559,7 @@ export async function processGiftAtomic(params: {
       ],
     );
 
-    // 4. Credit recipient inside the same transaction
+    // 5. Credit recipient inside the same transaction
     if (params.recipientIsRegistered) {
       // Direct credit — throws on error, rolls back everything
       await client.query(
