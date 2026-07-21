@@ -126,6 +126,32 @@ export function registerActionsRoutes(app: Express): void {
     if (payload !== undefined && (typeof payload !== "object" || payload === null || Array.isArray(payload)))
       { res.status(400).json({ error: "payload must be a plain object" }); return; }
 
+    // For like/recast/follow, the submitted proof is the hash of a FRESH
+    // signed protocol message every single time - Farcaster reaction/link
+    // messages embed a timestamp, so re-liking (or re-recasting, or
+    // re-following) the exact same target produces a brand new hash each
+    // time. Using that raw hash as the ledger's dedup key meant liking the
+    // same cast, unliking, and re-liking it repeatedly earned points every
+    // time instead of once - a real user hit this by accident when a UI
+    // refresh bug made an already-liked cast look unliked again. The
+    // submitted hash is still required to pass the hex-format check above
+    // (so a real signed message must have existed), but the row's actual
+    // dedup key is this relationship's stable identity instead, so this
+    // fid can only ever earn the like/recast/follow bonus once per
+    // specific cast or target, no matter how many times the underlying
+    // action is repeated.
+    const p = payload as Record<string, unknown> | undefined;
+    let effectiveProof = proof.startsWith("0x") ? proof.slice(2) : proof;
+    if (actionType === "like" || actionType === "recast") {
+      if (typeof p?.castHash === "string" && p.castHash) {
+        effectiveProof = `${actionType}:${fid}:${p.castHash.replace(/^0x/, "")}`;
+      }
+    } else if (actionType === "follow") {
+      if (typeof p?.targetFid === "number" && Number.isFinite(p.targetFid)) {
+        effectiveProof = `follow:${fid}:${p.targetFid}`;
+      }
+    }
+
     // L0: if a verified token was sent, it must agree with the claimed fid.
     const trusted = await getTrustedFid(req);
     if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid)) {
@@ -148,7 +174,7 @@ export function registerActionsRoutes(app: Express): void {
           // but this gives instant feedback in the ledger.
           ...(eligible ? {} : { _ineligible: true }),
         },
-        proof: proof.startsWith("0x") ? proof.slice(2) : proof,
+        proof: effectiveProof,
         verified: false, // background verification job confirms later
         // Ineligible actions are excluded at write time — no points ever.
         ...(eligible ? {} : { _excludeNow: true }),
@@ -160,11 +186,10 @@ export function registerActionsRoutes(app: Express): void {
       if (!eligible) {
         const pool = getPool();
         if (pool) {
-          const cleanProof = proof.startsWith("0x") ? proof.slice(2) : proof;
           await pool.query(
             `UPDATE user_actions SET excluded = true, excluded_reason = 'ineligible_fid'
              WHERE proof = $1 AND action_type = $2 AND excluded = false`,
-            [cleanProof, actionType],
+            [effectiveProof, actionType],
           );
         }
       }
@@ -176,8 +201,7 @@ export function registerActionsRoutes(app: Express): void {
       // inside FidCaster show up quickly. Only for eligible fids - an
       // ineligible one was already excluded above, nothing to verify.
       if (eligible) {
-        const cleanProof = proof.startsWith("0x") ? proof.slice(2) : proof;
-        tryInstantVerify(fid, actionType as ActionType, cleanProof, (payload as Record<string, unknown> | undefined) ?? {})
+        tryInstantVerify(fid, actionType as ActionType, effectiveProof, (payload as Record<string, unknown> | undefined) ?? {})
           .catch(() => {});
       }
     } catch (e) {
