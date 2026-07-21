@@ -25,6 +25,19 @@ import {
 // for copy, the server is still the only source of truth for the award.
 const POINTS_NFT_HOLDER_BONUS = 750;
 
+// A promotion always COSTS a flat 50 allowance, but the points it EARNS scale
+// from 50 to 500 with the promoter's own daily allowance total (a proxy for
+// their account reach). This mirrors server/db/allowance.ts's scalePromoPoints
+// EXACTLY so the Promote card can show this user's real per-cast reward for
+// their account ("their page") instead of a generic 50–500 range. Display
+// only — the server stays the source of truth for the actual award.
+const PROMO_ALLOWANCE_COST = 50;
+function scalePromoPointsClient(allowanceTotal: number): number {
+  const MIN_ALLOWANCE = 150, MAX_ALLOWANCE = 5000, MIN_PTS = 50, MAX_PTS = 500;
+  const t = Math.max(0, Math.min(1, (allowanceTotal - MIN_ALLOWANCE) / (MAX_ALLOWANCE - MIN_ALLOWANCE)));
+  return Math.round(MIN_PTS + (MAX_PTS - MIN_PTS) * t);
+}
+
 // The mini app's own URL, attached as a cast embed on the pre-filled
 // Promote/Gift/referral casts so Farcaster renders FidCaster's mini app
 // preview card right in the cast (a tappable launch button for anyone
@@ -2394,11 +2407,11 @@ function AllowanceBarV2({ fid }: { fid: number }) {
                 <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
               </div>
               <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-                Post about FidCaster and <strong style={{ color:C.accentHi }}>earn 50–500 points</strong> back
+                Post about FidCaster and <strong style={{ color:C.accentHi }}>earn {scalePromoPointsClient(data.total).toLocaleString()} points</strong> back
               </p>
               <span style={{ color:C.amber, fontSize:10.5, fontWeight:700, background:`${C.amber}18`,
                 border:`1px solid ${C.amber}44`, borderRadius:999, padding:"2px 8px", alignSelf:"flex-start" }}>
-                Costs 50 allowance
+                Costs {PROMO_ALLOWANCE_COST} allowance
               </span>
             </a>
           ) : (
