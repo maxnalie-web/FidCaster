@@ -369,21 +369,32 @@ function Counter({ to, className, style }: { to: number; className?: string; sty
 }
 
 // ── Background orbs ───────────────────────────────────────────────────────────
+// Mounted once at MainApp's root (outside the tab switcher) so it animates
+// for the entire session regardless of which tab is active. Animating a
+// transform on an element that also has a CSS blur() filter is a known trap:
+// many mobile GPUs (especially older ones) can't cheaply re-composite a
+// filtered layer, so it repaints on the CPU every frame — for as long as the
+// mini app is open, on every screen, not just wherever this renders.
+// will-change hints the browser to promote each orb to its own layer and
+// rasterize the blur once, so only the transform needs to update per frame.
 function BgOrbs() {
   return (
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
       <motion.div animate={{ x: [0,40,-20,0], y: [0,-30,20,0] }}
         transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
         style={{ position:"absolute", top:"-8%", left:"-5%", width:360, height:360, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)", filter:"blur(50px)" }} />
+          background:"radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)", filter:"blur(50px)",
+          willChange:"transform" }} />
       <motion.div animate={{ x: [0,-30,15,0], y: [0,25,-15,0] }}
         transition={{ duration: 25, repeat: Infinity, ease: "easeInOut", delay: 5 }}
         style={{ position:"absolute", bottom:"5%", right:"-10%", width:300, height:300, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)", filter:"blur(55px)" }} />
+          background:"radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)", filter:"blur(55px)",
+          willChange:"transform" }} />
       <motion.div animate={{ x: [0,20,-10,0], y: [0,-20,30,0] }}
         transition={{ duration: 28, repeat: Infinity, ease: "easeInOut", delay: 10 }}
         style={{ position:"absolute", top:"45%", left:"25%", width:220, height:220, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(168,85,247,0.14) 0%, transparent 70%)", filter:"blur(65px)" }} />
+          background:"radial-gradient(circle, rgba(168,85,247,0.14) 0%, transparent 70%)", filter:"blur(65px)",
+          willChange:"transform" }} />
     </div>
   );
 }
@@ -865,7 +876,20 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
       setAddr(ethAddress);
       fetch(`/api/nft-pass/check/${ethAddress}`)
         .then(r => r.json())
-        .then(d => { if (dead) return; if (d.hasMinted) { setS("done"); onMinted?.(); } else setS("idle"); })
+        .then(d => {
+          if (dead) return;
+          if (d.hasMinted) {
+            // Self-heal a mint whose log entry never landed (see doMint's
+            // comment) — rediscovering it via the verified address here is
+            // the natural moment to backfill it for check-fid's benefit.
+            fetch("/api/nft-pass/record-mint", {
+              method: "POST",
+              headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+              body: JSON.stringify({ fid, address: ethAddress }),
+            }).catch(() => {});
+            setS("done"); onMinted?.();
+          } else setS("idle");
+        })
         .catch(() => { if (!dead) setS("idle"); });
       return () => { dead = true; };
     }
@@ -927,23 +951,26 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
       setTx(hash);
       setS("confirming");
 
-      // Report the mint for our own logs (leaderboard/admin visibility) —
-      // best-effort only. The server independently re-checks balanceOf
-      // on-chain before recording anything, so a forged call here can't
-      // fake a mint that didn't really happen.
-      fetch("/api/nft-pass/record-mint", {
-        method: "POST",
-        headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
-        body: JSON.stringify({ fid, address, txHash: hash }),
-      }).catch(() => {});
-
       // Poll balanceOf until the tx confirms (Base blocks are ~2s; give it
       // up to a minute) instead of declaring success the instant the wallet
-      // returns a hash, which only means "submitted", not "mined".
+      // returns a hash, which only means "submitted", not "mined". Only
+      // report the mint to our own log (leaderboard/admin visibility, and
+      // the source check-fid relies on to skip onboarding on a new device)
+      // AFTER confirming — record-mint independently re-checks balanceOf
+      // itself and 409s on an unconfirmed tx, so calling it right after
+      // eth_sendTransaction (before any block has even landed) would almost
+      // always fail silently and leave the mint unlogged despite succeeding.
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const check = await fetch(`/api/nft-pass/check/${address}`).then(r => r.json()).catch(() => null);
-        if (check?.hasMinted) { setS("done"); onMinted?.(); return; }
+        if (check?.hasMinted) {
+          fetch("/api/nft-pass/record-mint", {
+            method: "POST",
+            headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+            body: JSON.stringify({ fid, address, txHash: hash }),
+          }).catch(() => {});
+          setS("done"); onMinted?.(); return;
+        }
       }
       // Still not confirmed after a minute — leave the explorer link up
       // rather than silently claiming success on an unconfirmed tx.
@@ -967,7 +994,20 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
     }
     setAddr(addr);
     const check = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => ({}));
-    if (check.hasMinted) { setS("done"); onMinted?.(); return; }
+    if (check.hasMinted) {
+      // Self-heal: a mint from before record-mint's confirmation fix (or
+      // any other reason the log write never landed) leaves check-fid blind
+      // to a real mint. Rediscovering it here via a direct address check is
+      // the natural moment to backfill the log entry, so the next device
+      // that can't detect this wallet (and falls back to check-fid) stops
+      // seeing onboarding re-triggered for an account that already minted.
+      fetch("/api/nft-pass/record-mint", {
+        method: "POST",
+        headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+        body: JSON.stringify({ fid, address: addr }),
+      }).catch(() => {});
+      setS("done"); onMinted?.(); return;
+    }
     doMint(addr);
   }
 
