@@ -1534,65 +1534,79 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </motion.div>
         </div>
 
-        {/* Total Points + Global Rank — was two separate cards, merged into one
-            per feedback (felt like clutter split apart). A small mascot peeks
-            out of the top corner for personality; it's a single emoji with a
-            transform-only idle animation (translate/rotate, GPU-composited,
-            no canvas), the same cheap pattern already used for the floating
-            logo above, so it costs nothing extra on older phones. */}
-        <GlassStatCard style={{ position:"absolute", top:0, left:2, right:2 }}>
-          <motion.div
-            animate={{ y:[-4, 3, -4], rotate:[-6, 6, -6] }}
-            transition={{ duration:3.4, repeat:Infinity, ease:"easeInOut" }}
-            style={{ position:"absolute", top:-16, right:10, fontSize:26, zIndex:5,
-              filter:"drop-shadow(0 4px 10px rgba(0,0,0,.45))", pointerEvents:"none" }}
-          >
-            👾
-          </motion.div>
-          <div style={{ position:"absolute", top:-30, left:-20, width:90, height:90, borderRadius:"50%",
-            background:"radial-gradient(circle, rgba(139,92,246,0.3), transparent 70%)", pointerEvents:"none" }} />
-          <div style={{ position:"relative", display:"flex", alignItems:"stretch", gap:0 }}>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
-                <div style={{ width:32, height:32, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
-                  background:"linear-gradient(145deg, rgba(139,92,246,0.4), rgba(88,28,135,0.3))",
-                  border:"1px solid rgba(168,85,247,0.55)", boxShadow:"0 0 14px rgba(139,92,246,0.4)" }}>
-                  <Zap size={15} color={C.accentHi} />
-                </div>
-                <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Total Points</p>
-              </div>
-              {ptsLoading
-                ? <Loader2 size={22} className="animate-spin" style={{ color:C.accentHi }} />
-                : <div style={{ fontSize:28, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:8,
-                    color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
-                    <Counter to={totalPoints} />
+        {/* Total Points + Global Rank, merged into one slim card. A gold
+            "comet" travels continuously around the actual border path - an
+            SVG rounded-rect stroked with a short dash, animating
+            strokeDashoffset by exactly the dasharray's total length so the
+            loop is seamless. This traces the real rendered box exactly
+            (no viewBox, so 1 SVG unit = 1 real pixel), unlike a rotating
+            conic-gradient behind the card, which distorts and can vanish for
+            part of the cycle on a box this much wider than it is tall.
+            A single animated attribute, no canvas - negligible cost. */}
+        <div style={{ position:"absolute", top:0, left:14, right:14 }}>
+          <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:5, overflow:"visible" }}>
+            <defs>
+              <linearGradient id="goldCometGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="rgba(251,191,36,0)" />
+                <stop offset="50%" stopColor="rgba(255,224,140,1)" />
+                <stop offset="100%" stopColor="rgba(251,191,36,0)" />
+              </linearGradient>
+            </defs>
+            <motion.rect
+              x="1" y="1" width="99%" height="97%" rx="22" ry="22"
+              fill="none" stroke="url(#goldCometGrad)" strokeWidth="2.5" strokeLinecap="round"
+              strokeDasharray="110 890"
+              style={{ filter:"drop-shadow(0 0 5px rgba(251,191,36,.9))" }}
+              animate={{ strokeDashoffset: [0, -1000] }}
+              transition={{ duration:6, repeat:Infinity, ease:"linear" }}
+            />
+          </svg>
+          <GlassStatCard style={{ position:"relative", padding:"12px 14px 11px" }}>
+            <div style={{ position:"absolute", top:-30, left:-20, width:90, height:90, borderRadius:"50%",
+              background:"radial-gradient(circle, rgba(139,92,246,0.3), transparent 70%)", pointerEvents:"none" }} />
+            <div style={{ position:"relative", display:"flex", alignItems:"stretch", gap:0 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:7 }}>
+                  <div style={{ width:26, height:26, borderRadius:9, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+                    background:"linear-gradient(145deg, rgba(139,92,246,0.4), rgba(88,28,135,0.3))",
+                    border:"1px solid rgba(168,85,247,0.55)", boxShadow:"0 0 14px rgba(139,92,246,0.4)" }}>
+                    <Zap size={13} color={C.accentHi} />
                   </div>
-              }
-              {todayPts > 0 && (
-                <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:11.5, fontWeight:700, color:C.green,
-                  background:"rgba(34,197,94,0.14)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:999, padding:"3px 9px" }}>
-                  <ArrowUp size={11} />+{todayPts} today
-                </span>
-              )}
-            </div>
-
-            <div style={{ width:1, alignSelf:"stretch", background:"rgba(255,255,255,0.14)", margin:"2px 16px" }} />
-
-            <div style={{ flexShrink:0, textAlign:"center" }}>
-              <div style={{ width:32, height:32, borderRadius:11, margin:"0 auto 8px",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                background:"linear-gradient(145deg, rgba(251,191,36,0.35), rgba(180,83,9,0.25))",
-                border:"1px solid rgba(251,191,36,0.5)", boxShadow:"0 0 14px rgba(251,191,36,0.35)" }}>
-                <Trophy size={16} color={C.amber} />
+                  <p style={{ color:"#C9BEEA", fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Total Points</p>
+                </div>
+                {ptsLoading
+                  ? <Loader2 size={18} className="animate-spin" style={{ color:C.accentHi }} />
+                  : <div style={{ fontSize:23, fontWeight:800, letterSpacing:"-0.5px", lineHeight:1, marginBottom:6,
+                      color:C.text1, textShadow:"0 0 24px rgba(168,85,247,0.5)" }}>
+                      <Counter to={totalPoints} />
+                    </div>
+                }
+                {todayPts > 0 && (
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10.5, fontWeight:700, color:C.green,
+                    background:"rgba(34,197,94,0.14)", border:"1px solid rgba(34,197,94,0.3)", borderRadius:999, padding:"2px 8px" }}>
+                    <ArrowUp size={10} />+{todayPts} today
+                  </span>
+                )}
               </div>
-              <p style={{ color:"#C9BEEA", fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6, whiteSpace:"nowrap" }}>Global Rank</p>
-              <div style={{ fontSize:26, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
-                textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
-                {rank ? `#${rank}` : "N/A"}
+
+              <div style={{ width:1, alignSelf:"stretch", background:"rgba(255,255,255,0.14)", margin:"2px 14px" }} />
+
+              <div style={{ flexShrink:0, textAlign:"center" }}>
+                <div style={{ width:26, height:26, borderRadius:9, margin:"0 auto 6px",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  background:"linear-gradient(145deg, rgba(251,191,36,0.35), rgba(180,83,9,0.25))",
+                  border:"1px solid rgba(251,191,36,0.5)", boxShadow:"0 0 14px rgba(251,191,36,0.35)" }}>
+                  <Trophy size={14} color={C.amber} />
+                </div>
+                <p style={{ color:"#C9BEEA", fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:5, whiteSpace:"nowrap" }}>Global Rank</p>
+                <div style={{ fontSize:21, fontWeight:800, letterSpacing:"-0.5px", color:C.text1,
+                  textShadow:"0 0 24px rgba(251,191,36,0.35)" }}>
+                  {rank ? `#${rank}` : "N/A"}
+                </div>
               </div>
             </div>
-          </div>
-        </GlassStatCard>
+          </GlassStatCard>
+        </div>
       </div>
 
       {/* ── Stats row ── */}
