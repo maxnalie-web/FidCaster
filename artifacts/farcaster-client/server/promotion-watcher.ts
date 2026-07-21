@@ -17,6 +17,11 @@ import { getAllowance, processPromotionAtomic, processGiftAtomic } from "./db/al
 import { getPool } from "./db/pool.js";
 import { getPushTokensForFid, pruneInvalidTokens } from "./push-token-store.js";
 import { sendPushToTokens } from "./fcm.js";
+import { sendFarcasterNotification } from "./db/notifications.js";
+import {
+  giftReceivedNotif, giftSentNotif, giftFailedNotif, giftInsufficientAllowanceNotif,
+  promotionOkNotif, promotionFailedNotif,
+} from "./notification-templates.js";
 import { neynarThrottle, penalize429 } from "./neynar-limit.js";
 
 // ── Text-based mention fallback ──────────────────────────────────────────────
@@ -78,15 +83,30 @@ async function getAppUsername(appFid: number): Promise<string | null> {
 // User-facing feedback for a fire-and-forget system: the user has no other way to
 // learn whether their promotion/gift cast actually earned points or silently failed
 // (e.g. ran out of allowance), since detection happens async via webhook.
+//
+// Fires on BOTH channels: the FCM/web push path (needs the user to have granted
+// browser push permission) AND Farcaster's own native mini-app notification
+// (delivered to everyone who tapped "Add App", no extra permission needed).
+// Previously only the FCM path existed here, so anyone who hadn't separately
+// opted into web push got nothing at all for gift/promotion events.
 async function notifyFid(targetFid: number, payload: { title: string; body: string; data: Record<string, string> }): Promise<void> {
-  try {
-    const tokens = await getPushTokensForFid(targetFid);
-    if (tokens.length === 0) return;
-    const { invalidTokens } = await sendPushToTokens(tokens, payload);
-    await pruneInvalidTokens(invalidTokens);
-  } catch (e) {
-    console.warn("[promotion-watcher] push notify failed:", (e as Error).message);
-  }
+  await Promise.allSettled([
+    (async () => {
+      const tokens = await getPushTokensForFid(targetFid);
+      if (tokens.length === 0) return;
+      const { invalidTokens } = await sendPushToTokens(tokens, payload);
+      await pruneInvalidTokens(invalidTokens);
+    })(),
+    sendFarcasterNotification({
+      title: payload.title,
+      body: payload.body,
+      targetFids: [targetFid],
+      targetUrl: "https://fidcaster.xyz/mini",
+    }),
+  ]).then(([pushResult, nativeResult]) => {
+    if (pushResult.status === "rejected") console.warn("[promotion-watcher] push notify failed:", pushResult.reason);
+    if (nativeResult.status === "rejected") console.warn("[promotion-watcher] native notify failed:", nativeResult.reason);
+  });
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -158,13 +178,8 @@ export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise
     if (!result.ok) {
       console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: ${result.reason}`);
       if (result.reason === "insufficient_allowance" || result.reason === "promo_category_cap_reached") {
-        await notifyFid(authorFid, {
-          title: "Promotion not counted",
-          body:  result.reason === "promo_category_cap_reached"
-            ? "Your promotion cast didn't earn points, you've hit today's promote limit."
-            : "Your promotion cast didn't earn points, you're out of daily allowance.",
-          data:  { type: "promotion_failed", castHash: cast.hash },
-        });
+        const tmpl = promotionFailedNotif(result.reason === "promo_category_cap_reached" ? "cap" : "allowance");
+        await notifyFid(authorFid, { ...tmpl, data: { type: "promotion_failed", castHash: cast.hash } });
       }
       return result.reason === "already_processed"; // true = was already handled, not an error
     }
@@ -172,9 +187,8 @@ export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise
     const promoPoints = result.promoPoints ?? 50;
     console.log(`[promotion] fid ${authorFid} cast ${cast.hash}: +${promoPoints} pts, allowance debited`);
     await notifyFid(authorFid, {
-      title: `Promotion counted! +${promoPoints} pts`,
-      body:  `Your FidCaster promotion cast just earned you ${promoPoints} points.`,
-      data:  { type: "promotion_ok", castHash: cast.hash },
+      ...promotionOkNotif(promoPoints),
+      data: { type: "promotion_ok", castHash: cast.hash },
     });
     return true;
   } catch (e) {
@@ -209,11 +223,7 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
     // mentioned account doesn't exist. Without this the cast just silently
     // never earns anything, contradicting the in-app promise that a
     // promotion/gift attempt always gets a notification either way.
-    await notifyFid(authorFid, {
-      title: "Gift not sent",
-      body:  "Your gift cast didn't tag a valid recipient, so no points moved.",
-      data:  { type: "gift_failed", castHash: cast.hash },
-    });
+    await notifyFid(authorFid, { ...giftFailedNotif(), data: { type: "gift_failed", castHash: cast.hash } });
     return false;
   }
 
@@ -236,11 +246,7 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
         `[gift] fid ${authorFid} → fid ${recipientFid} (${amount} pts): ${result.reason}`,
       );
       if (result.reason === "insufficient_allowance") {
-        await notifyFid(authorFid, {
-          title: "Gift not sent",
-          body:  `You didn't have enough daily allowance to gift ${amount} pts.`,
-          data:  { type: "gift_failed", castHash: cast.hash },
-        });
+        await notifyFid(authorFid, { ...giftInsufficientAllowanceNotif(amount), data: { type: "gift_failed", castHash: cast.hash } });
       }
       return result.reason === "already_processed";
     }
@@ -249,17 +255,9 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
       `[gift] fid ${authorFid} → fid ${recipientFid}: ${amount} pts ` +
       (recipientIsRegistered ? "credited directly" : "queued (unregistered)"),
     );
-    await notifyFid(authorFid, {
-      title: "Gift sent!",
-      body:  `Your gift of ${amount} pts was delivered.`,
-      data:  { type: "gift_ok", castHash: cast.hash },
-    });
+    await notifyFid(authorFid, { ...giftSentNotif(amount), data: { type: "gift_ok", castHash: cast.hash } });
     if (recipientIsRegistered) {
-      await notifyFid(recipientFid, {
-        title: "You received a gift!",
-        body:  `+${amount} FidCaster points from a fellow user.`,
-        data:  { type: "gift_received", castHash: cast.hash },
-      });
+      await notifyFid(recipientFid, { ...giftReceivedNotif(amount), data: { type: "gift_received", castHash: cast.hash } });
     }
     return true;
   } catch (e) {

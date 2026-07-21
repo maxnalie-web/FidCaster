@@ -12,7 +12,8 @@ import rateLimit from "express-rate-limit";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getPool, isDbConfigured } from "./db/pool.js";
 import { POINTS, getFidPoints, getFidTodayPoints } from "./db/points.js";
-import { upsertNotificationToken } from "./db/notifications.js";
+import { upsertNotificationToken, sendFarcasterNotification } from "./db/notifications.js";
+import { achievementUnlockedNotif } from "./notification-templates.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
 import { getTrustedFid } from "./auth.js";
 import { logUserAction, logUserActionIfNew } from "./db/ledger.js";
@@ -405,6 +406,11 @@ export function registerMiniRoutes(app: Express): void {
             payload: { id: a.id, amount: a.pts },
             proof: `achievement:${a.id}:${fid}`,
             verified: true,
+          });
+          void sendFarcasterNotification({
+            ...achievementUnlockedNotif(a.label, a.pts),
+            targetFids: [fid],
+            targetUrl: "https://fidcaster.xyz/mini",
           });
         }
         return {
