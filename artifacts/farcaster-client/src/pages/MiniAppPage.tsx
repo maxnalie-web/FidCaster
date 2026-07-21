@@ -3125,7 +3125,7 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
     { id:"home",        label:"Home",       Icon:Home      },
     { id:"leaderboard", label:"Rankings",   Icon:Trophy    },
     { id:"earn",        label:"Earn",       Icon:Zap       },
-    { id:"rewards",     label:"Rewards",    Icon:Gift      },
+    { id:"rewards",     label:"Invite & Earn", Icon:Gift   },
     { id:"profile",     label:"Profile",    Icon:Users     },
   ];
 
@@ -3179,7 +3179,7 @@ function BottomNav({ tab, onTab }: { tab: AppTab; onTab: (t: AppTab) => void }) 
               )}
               <t.Icon size={20} color={isActive ? C.accentHi : C.text3} style={{ position:"relative" }} />
             </div>
-            <span style={{ color:isActive?C.accentHi:C.text3, fontSize:10, fontWeight:isActive?700:500,
+            <span style={{ color:isActive?C.accentHi:C.text3, fontSize: t.label.length > 8 ? 8.5 : 10, fontWeight:isActive?700:500,
               overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", width:"100%", textAlign:"center" }}>
               {t.label}
             </span>
