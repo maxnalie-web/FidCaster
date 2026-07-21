@@ -1534,20 +1534,30 @@ const FARCASTER_MANIFEST = {
 
 // fc:miniapp embed metadata for the /mini home URL
 // imageUrl must be 3:2 (1200×800), min 600×400 — see Farcaster Mini App spec
-const MINI_EMBED = JSON.stringify({
-  version: "1",
-  imageUrl: "https://fidcaster.xyz/og-mini.png",
-  button: {
-    title: "Open FidCaster",
-    action: {
-      type: "launch_miniapp",
-      url: "https://fidcaster.xyz/mini",
-      name: "FidCaster",
-      splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
-      splashBackgroundColor: "#1D0070",
+//
+// launchUrl is parameterised on purpose: when a referral link
+// (fidcaster.xyz/mini?ref=CODE) is embedded in a cast, Farcaster reads THIS
+// embed's action.url to decide what to open when someone taps the launch
+// button. If it's the bare /mini, the ?ref= code is dropped and the referral
+// never registers - which is exactly why referrals silently never paid out.
+// So the /mini handler builds the embed per-request with the incoming ref
+// carried into the launch URL.
+function buildMiniEmbed(launchUrl: string): string {
+  return JSON.stringify({
+    version: "1",
+    imageUrl: "https://fidcaster.xyz/og-mini.png",
+    button: {
+      title: "Open FidCaster",
+      action: {
+        type: "launch_miniapp",
+        url: launchUrl,
+        name: "FidCaster",
+        splashImageUrl: "https://fidcaster.xyz/icons/splash-200-transparent.png",
+        splashBackgroundColor: "#1D0070",
+      },
     },
-  },
-});
+  });
+}
 app.get("/.well-known/farcaster.json", (_req: express.Request, res: express.Response) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
@@ -1610,14 +1620,24 @@ if (process.env.NODE_ENV === "production") {
 
     // /mini: inject fc:miniapp + fc:frame embed meta tags so Farcaster crawlers
     // see them, while the SPA still boots normally for real users.
-    app.get("/mini", (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    app.get("/mini", (req: express.Request, res: express.Response, next: express.NextFunction) => {
       const indexPath = resolve(distPath, "index.html");
       if (!existsSync(indexPath)) { next(); return; }
       try {
         const html = readFileSync(indexPath, "utf-8");
+        // Carry a referral code (or any other query param) into the launch
+        // URL so tapping the embed opens the mini app WITH ?ref=, not the bare
+        // /mini. Only a small allowlist of params is forwarded (ref) to avoid
+        // reflecting arbitrary attacker-controlled junk into the meta tag.
+        const ref = typeof req.query.ref === "string" ? req.query.ref.slice(0, 40) : "";
+        const safeRef = /^[A-Za-z0-9_-]+$/.test(ref) ? ref : "";
+        const launchUrl = safeRef
+          ? `https://fidcaster.xyz/mini?ref=${encodeURIComponent(safeRef)}`
+          : "https://fidcaster.xyz/mini";
+        const embed = buildMiniEmbed(launchUrl);
         const metaTags = [
-          `<meta name="fc:miniapp" content='${MINI_EMBED}' />`,
-          `<meta name="fc:frame" content='${MINI_EMBED}' />`,
+          `<meta name="fc:miniapp" content='${embed}' />`,
+          `<meta name="fc:frame" content='${embed}' />`,
           `<meta property="og:image" content="https://fidcaster.xyz/og-mini.png" />`,
           `<meta property="og:title" content="FidCaster Points" />`,
           `<meta property="og:description" content="Earn points. Get the airdrop." />`,
