@@ -1968,17 +1968,26 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
 // ─────────────────────────────────────────────────────────────────────────────
 // EARN TAB (Quests + Allowance)
 // ─────────────────────────────────────────────────────────────────────────────
+// `key` is the real action_type from server/db/points.ts (what pts.breakdown
+// is actually keyed on) - it used to be derived from `action` by lowercasing
+// and swapping spaces for underscores, which happened to match for half
+// these rows (cast/recast/like/follow/gift received) and silently broke for
+// the other half: "Buy FID" -> "buy_fid" vs the real "market_buy", "List
+// FID" -> "list_fid" vs "market_list", "Refer User" -> "refer_user" vs
+// "referral", "Grow Campaign" -> "grow_campaign" vs "grow_campaign_complete",
+// "Promote" -> "promote" vs "promotion". Every one of those five progress
+// bars always read 0 earned regardless of how many real points had landed.
 const SCORING_ROWS = [
-  { Icon:Edit3,       action:"Cast",          pts:10,  cap:50   },
-  { Icon:RefreshCw,   action:"Recast",        pts:3,   cap:30   },
-  { Icon:Heart,       action:"Like",          pts:1,   cap:50   },
-  { Icon:Users,       action:"Follow",        pts:2,   cap:50   },
-  { Icon:ShoppingBag, action:"Buy FID",       pts:100, cap:300  },
-  { Icon:Tag,         action:"List FID",      pts:50,  cap:250  },
-  { Icon:Share2,      action:"Refer User",    pts:200, cap:2000 },
-  { Icon:Sprout,      action:"Grow Campaign", pts:30,  cap:150  },
-  { Icon:Zap,         action:"Promote",       pts:50,  cap:500  },
-  { Icon:Gift,        action:"Gift received", pts:"varies" as unknown as number, cap:500 },
+  { Icon:Edit3,       action:"Cast",          key:"cast",                   pts:10,  cap:50   },
+  { Icon:RefreshCw,   action:"Recast",        key:"recast",                 pts:3,   cap:30   },
+  { Icon:Heart,       action:"Like",          key:"like",                   pts:1,   cap:50   },
+  { Icon:Users,       action:"Follow",        key:"follow",                 pts:2,   cap:50   },
+  { Icon:ShoppingBag, action:"Buy FID",       key:"market_buy",             pts:100, cap:300  },
+  { Icon:Tag,         action:"List FID",      key:"market_list",           pts:50,  cap:250  },
+  { Icon:Share2,      action:"Refer User",    key:"referral",               pts:200, cap:2000 },
+  { Icon:Sprout,      action:"Grow Campaign", key:"grow_campaign_complete", pts:30,  cap:150  },
+  { Icon:Zap,         action:"Promote",       key:"promotion",             pts:50,  cap:500  },
+  { Icon:Gift,        action:"Gift received", key:"gift_received",         pts:"varies" as unknown as number, cap:500 },
 ];
 
 function AllowanceModalShell({ onClose, icon, title, children }: {
@@ -2445,7 +2454,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
 
           <Card>
             {filtered.map((row, i) => {
-              const earnedRow = pts?.breakdown.find(b => b.action_type === row.action.toLowerCase().replace(/ /g,"_"));
+              const earnedRow = pts?.breakdown.find(b => b.action_type === row.key);
               const earned = earnedRow?.points_earned ?? 0;
               const pct = row.cap > 0 ? Math.min((earned / row.cap) * 100, 100) : 0;
               return (
