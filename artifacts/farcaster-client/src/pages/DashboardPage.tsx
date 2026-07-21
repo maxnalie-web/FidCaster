@@ -1172,7 +1172,7 @@ export function DashboardPage() {
             elsewhere in the app - previously this generic bar and that richer
             header were two different-looking headers for the same profile. */}
         {mainTab !== "profile" && (
-        <header className="md:hidden sticky top-0 z-30 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <header className="md:hidden sticky top-0 z-30 bg-background border-b border-border" style={{ paddingTop: "env(safe-area-inset-top)" , transform: "translateZ(0)", WebkitTransform: "translateZ(0)" }}>
           <div className="h-[53px] flex items-center justify-between px-4">
             {/* Avatar with signer dot */}
             <button onClick={() => setShowDrawer(true)} className="relative shrink-0">

@@ -2248,7 +2248,19 @@ function AllowanceBarV2({ fid }: { fid: number }) {
     });
   }, [fid]);
 
-  useEffect(() => { load(); }, [load]);
+  // Promote/Gift both send the user out to Warpcast to actually post the
+  // cast, then back to this tab, mount-only fetch left the allowance number
+  // stuck showing what it was BEFORE spending until they navigated away and
+  // back (remounting this component). Refetch (quietly, no spinner) whenever
+  // the tab regains visibility so the debit actually shows up on return.
+  useEffect(() => {
+    load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") apiAllowance(fid).then(d => { if (d) setData(d); });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load, fid]);
 
   if (loading) return <Card style={{ padding:"14px 16px" }}><Loader2 size={15} className="animate-spin" style={{ color:C.text3 }} /></Card>;
   if (failed || !data) return (
