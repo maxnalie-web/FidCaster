@@ -37,7 +37,7 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   // One-time bonus for holding a FasterTask Pass NFT (ERC-1155 on Base),
   // detected server-side via the user's Farcaster custody address — see
   // server/nft-holder-job.ts. Awarded once per fid, like referral_welcome.
-  nft_holder_bonus:        { pts: 300, dailyCap: 300  },
+  nft_holder_bonus:        { pts: 750, dailyCap: 750  },
   // ── Allowance-gated actions ────────────────────────────────────────────────
   // promotion's award scales with the promoter's own daily allowance (see
   // db/allowance.ts processPromotionAtomic) - a bigger allowance (higher
