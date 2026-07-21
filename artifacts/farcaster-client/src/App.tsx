@@ -29,7 +29,6 @@ import { SignerSetupPopup } from "@/components/SignerSetupPopup";
 import { WalletConnectRequestModal } from "@/components/wallet/WalletConnectRequestModal";
 import { MinimizedMiniAppBar } from "@/components/MinimizedMiniAppBar";
 import { MiniAppIframeModal } from "@/components/MiniAppIframeModal";
-import { BatchProgressPill } from "@/components/BatchProgressPill";
 import { isInstalledApp } from "@/lib/miniapp-native";
 
 // docs.fidcaster.xyz is DNS/edge-routed to this same app (see server/index.ts),
@@ -177,7 +176,10 @@ function App() {
             <Router />
           </ErrorBoundary>
         </WouterRouter>
-        <BatchProgressPill />
+        {/* Batch progress pills are rendered by BatchProgressStack inside
+            BatchOperationProvider — mounting this second, independent pill
+            here too made every running follow/unfollow op show up twice
+            (one bottom-center from the provider, one bottom-right from here). */}
         <SignerSetupPopup />
         <WalletConnectRequestModal />
         {false && <MinimizedMiniAppBar />}
