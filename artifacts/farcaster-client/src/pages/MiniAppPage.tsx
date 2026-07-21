@@ -25,6 +25,16 @@ import {
 // for copy, the server is still the only source of truth for the award.
 const POINTS_NFT_HOLDER_BONUS = 750;
 
+// The mini app's own URL, attached as a cast embed on the pre-filled
+// Promote/Gift/referral casts so Farcaster renders FidCaster's mini app
+// preview card right in the cast (a tappable launch button for anyone
+// who sees it), instead of the cast being plain text.
+const MINI_APP_EMBED_URL = "https://fidcaster.xyz/mini";
+function composeUrl(text: string): string {
+  return `https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`
+    + `&embeds[]=${encodeURIComponent(MINI_APP_EMBED_URL)}`;
+}
+
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   bg:        "#0B0910",
@@ -111,19 +121,6 @@ interface StatsData {
   nextStreakBonusPts: number; streakBonusAwarded: boolean;
   seasonEnd: string;
 }
-
-// Friendly labels for every action type that can appear in todayCounts.
-// Types worth 0 points on their own (unlike/unrecast/unfollow/app_open/
-// market_cancel/grow_campaign_start) are omitted - nothing to report about
-// an undo action or a page-open ping.
-const ACTIVITY_LABELS: Record<string, string> = {
-  cast: "Casts", like: "Likes", recast: "Recasts", follow: "Follows",
-  market_list: "Market listings", market_buy: "Market buys",
-  grow_campaign_complete: "Grow campaigns", referral: "Referrals",
-  referral_welcome: "Referral bonus", quest: "Quests completed",
-  streak_bonus: "Streak bonus", nft_holder_bonus: "NFT holder bonus",
-  promotion: "Promotions", gift: "Gifts sent", gift_received: "Gifts received",
-};
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
 function useSDK() {
@@ -2023,7 +2020,7 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
     // anyone real.
     const handle = username.trim().replace(/^@/, "").toLowerCase();
     const text = `${amountNum} FidCaster points @${handle}`;
-    window.open(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    window.open(composeUrl(text), "_blank", "noopener,noreferrer");
     onClose();
   }
 
@@ -2325,7 +2322,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
           {data.promoRemaining >= 50 ? (
-            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(promoText)}`}
+            <a href={composeUrl(promoText)}
               target="_blank" rel="noopener noreferrer"
               style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
@@ -2440,21 +2437,24 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
               return (
                 <div key={row.action}>
                   <div style={{ padding:"11px 14px" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
                         <div style={{ width:32, height:32, borderRadius:10, background:"rgba(139,92,246,0.12)",
-                          border:`1px solid rgba(139,92,246,0.2)`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                          border:`1px solid rgba(139,92,246,0.2)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                           <row.Icon size={14} color={C.accentHi} />
                         </div>
                         <span style={{ color:C.text1, fontSize:13 }}>{row.action}</span>
                       </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      {/* chip + cap text as a tight right-aligned stack, so the
+                          "up to N/day" reads under the points without wrapping
+                          beside them and without adding a full extra row. */}
+                      <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2, flexShrink:0 }}>
                         <Chip>+{row.pts} pts</Chip>
-                        <span style={{ color:C.text3, fontSize:10 }}>each, up to {row.cap}/day</span>
+                        <span style={{ color:C.text3, fontSize:9.5, whiteSpace:"nowrap" }}>each, up to {row.cap}/day</span>
                       </div>
                     </div>
                     {!loading && earned > 0 && (
-                      <div style={{ height:3, background:C.border, borderRadius:2 }}>
+                      <div style={{ height:3, background:C.border, borderRadius:2, marginTop:8 }}>
                         <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }}
                           transition={{ duration:0.6, delay:i*0.04 }}
                           style={{ height:"100%", borderRadius:2, background:`linear-gradient(90deg,${C.accent},#A855F7)` }} />
@@ -2557,8 +2557,8 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                `Join me on FidCaster, earn points and get in on the airdrop.\n\n${refUrl}`,
-              )}`}
+                "Join me on FidCaster, earn points and get in on the airdrop.",
+              )}&embeds[]=${encodeURIComponent(refUrl)}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
                 padding:"10px 14px", background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.3)",
@@ -2845,31 +2845,6 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
           </Card>
         </div>
       )}
-
-      {/* Today's Activity — every action type counted today, not just the
-          fixed-target Daily Missions on Home (those track progress toward a
-          goal; this is a plain tally of everything that happened today). */}
-      {(() => {
-        const todayCounts = stats?.todayCounts ?? {};
-        const entries = Object.entries(todayCounts).filter(([type, cnt]) => cnt > 0 && ACTIVITY_LABELS[type]);
-        if (entries.length === 0) return null;
-        return (
-          <div>
-            <SectionLabel>Today's Activity</SectionLabel>
-            <Card>
-              {entries.map(([type, cnt], i) => (
-                <div key={type}>
-                  <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                    <span style={{ color:C.text2, fontSize:13 }}>{ACTIVITY_LABELS[type]}</span>
-                    <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>{cnt}</span>
-                  </div>
-                  {i < entries.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
-                </div>
-              ))}
-            </Card>
-          </div>
-        );
-      })()}
 
       {/* How points & anti-fraud work */}
       <button onClick={() => setShowHowItWorks(true)}

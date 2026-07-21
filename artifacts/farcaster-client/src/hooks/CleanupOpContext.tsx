@@ -20,6 +20,7 @@ import { loadSignerPrivKey } from "@/lib/account-store";
 import type { NeynarCast } from "@/lib/neynar";
 import type { CleanupKind } from "@/lib/cast-cleanup";
 import { bustProfileCache } from "@/pages/ProfilePage";
+import { reportGrowHistory, type GrowHistoryKind } from "@/lib/grow-report";
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 const CLEANUP_KEY_PREFIX = "fc_cleanup_v1_";
@@ -199,6 +200,12 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
       }, ...filtered];
     });
 
+    // Durable Activity-tab history: mark this cleanup live now.
+    reportGrowHistory({
+      fid: myFid, campaignId: opId, kind: kind as GrowHistoryKind, status: "live",
+      label, accountLabel, total, succeeded: done, failed: errors, skipped,
+    });
+
     const persist = () =>
       saveCleanup(myFid, kind, { kind, pending, myFid, accountLabel, label, total, done, skipped, errors, hidden: hiddenRefs.current.get(key) ?? false });
 
@@ -273,6 +280,13 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
         ? { ...o, done, skipped, errors, phase: cancelRef.current ? "cancelled" : "done", waitMsg: undefined }
         : o
     ));
+
+    // Durable Activity-tab history: flip to final state with final counts.
+    reportGrowHistory({
+      fid: myFid, campaignId: opId, kind: kind as GrowHistoryKind,
+      status: cancelRef.current ? "cancelled" : "completed",
+      label, accountLabel, total, succeeded: done, failed: errors, skipped,
+    });
   }, []);
 
   const startOp = useCallback((params: StartCleanupParams) => {

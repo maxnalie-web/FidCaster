@@ -11,7 +11,7 @@ import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getPool, isDbConfigured } from "./db/pool.js";
-import { POINTS, getFidPoints, getFidTodayPoints } from "./db/points.js";
+import { POINTS, getFidPoints, getFidTodayPoints, getLeaderboard } from "./db/points.js";
 import { upsertNotificationToken, sendFarcasterNotification } from "./db/notifications.js";
 import { achievementUnlockedNotif } from "./notification-templates.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
@@ -447,34 +447,15 @@ export function registerMiniRoutes(app: Express): void {
 
     const limit = Math.min(Number(req.query.limit ?? 50), 100);
     try {
-      // Build leaderboard SQL inline
-      const caseExpr = Object.entries(POINTS)
-        .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received")
-        .map(([type, { pts, dailyCap }]) =>
-          `WHEN '${type}' THEN LEAST(cnt * ${pts}, ${dailyCap})`)
-        .join("\n");
-      const giftCase = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
-
-      const { rows } = await pool.query<{ fid: string; total_points: string; rank: string }>(
-        `WITH counted AS (
-           SELECT fid, action_type, (created_at AT TIME ZONE 'UTC')::date AS d,
-                  COUNT(*) AS cnt,
-                  SUM(CASE WHEN action_type='gift_received' THEN COALESCE((payload->>'amount')::int,0) ELSE 0 END) AS gift_sum
-           FROM user_actions WHERE verified=true AND excluded=false
-           GROUP BY fid, action_type, d
-         ),
-         scored AS (
-           SELECT fid, CASE action_type ${giftCase} ${caseExpr} ELSE 0 END AS day_pts FROM counted
-         ),
-         totals AS (
-           SELECT fid, SUM(day_pts) AS total_points FROM scored GROUP BY fid HAVING SUM(day_pts) > 0
-         )
-         SELECT fid, total_points, RANK() OVER (ORDER BY total_points DESC) AS rank
-         FROM totals ORDER BY total_points DESC LIMIT $1`,
-        [limit],
-      );
-
-      const fids = rows.map(r => Number(r.fid));
+      // Was a hand-rolled duplicate of db/points.ts's leaderboard SQL that had
+      // drifted the exact same way mini/stats's totalPoints once had: it
+      // completely omitted achievement points (so anyone who'd earned any
+      // showed correctly in their own total/profile but never had it counted
+      // here) and scored promotion at a flat cnt*50 instead of each cast's
+      // real variable payload amount. Reusing getLeaderboard() means there's
+      // only one leaderboard SQL to keep correct, not two.
+      const rows = await getLeaderboard(limit);
+      const fids = rows.map(r => r.fid);
       const userMap = await fetchNeynarUsers(fids);
 
       const leaderboard = rows.map(r => {

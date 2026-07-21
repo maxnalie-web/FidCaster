@@ -50,8 +50,6 @@ const VERIFY_INTERVAL_MS    = 5 * 60_000;  // every 5 min
 const BATCH_SIZE            = 30;
 const CAST_MAX_AGE_DAYS     = 7;           // exclude cast after 7 days unverified
 const HUB_TRUST_WINDOW_H    = 24;          // like/recast → auto-verify after 24h
-const GROW_TRUST_WINDOW_H   = 2;           // grow_complete → verified or excluded within 2h
-const MIN_GROW_REAL_FOLLOWS = 5;           // minimum real new follows for grow points
 
 const NEYNAR_BASE = "https://api.neynar.com/v2/farcaster";
 
@@ -139,40 +137,6 @@ export async function verifyReaction(castHash: string, userFid: number, type: "l
     if (!vc) return null;
     return (type === "like" ? vc.liked : vc.recasted) === true;
   } catch { return null; }
-}
-
-/** For a grow campaign: count how many of targetFids are actually followed by userFid.
- *  Uses batched Neynar bulk requests (max 100 fids each). */
-async function countRealFollows(userFid: number, targetFids: number[]): Promise<number> {
-  const BATCH = 100;
-  let realCount = 0;
-
-  for (let i = 0; i < targetFids.length && i < 500; i += BATCH) {
-    const chunk = targetFids.slice(i, i + BATCH);
-    try {
-      const res = await neynarFetch(
-        `${NEYNAR_BASE}/user/bulk?fids=${chunk.join(",")}&viewer_fid=${userFid}`,
-        10_000,
-      );
-      if (!res.ok) break;
-      const data = await res.json() as { users?: Array<{ viewer_context?: { following?: boolean } }> };
-      realCount += (data?.users ?? []).filter(u => u.viewer_context?.following).length;
-    } catch { break; }
-  }
-
-  return realCount;
-}
-
-/** Record verified grow targets for 14-day cooldown tracking. */
-async function recordGrowTargets(fid: number, targetFids: number[]): Promise<void> {
-  const pool = getPool();
-  if (!pool || targetFids.length === 0) return;
-  // Bulk insert with ON CONFLICT DO NOTHING
-  const values = targetFids.map((_, i) => `($1, $${i + 2})`).join(", ");
-  await pool.query(
-    `INSERT INTO grow_targets (fid, target_fid) VALUES ${values} ON CONFLICT DO NOTHING`,
-    [fid, ...targetFids],
-  ).catch(() => {}); // non-fatal
 }
 
 // ── Main runner ───────────────────────────────────────────────────────────────
@@ -347,92 +311,19 @@ async function runVerificationBatch(): Promise<void> {
   );
   verificationStats.verifiedCount += unfollowFallback ?? 0;
 
-  // ── 5. Grow campaign verification (server-side Neynar check) ──
-  const { rows: growRows } = await pool.query(
-    `SELECT uc.id   AS complete_id,
-            uc.fid,
-            uc.payload AS complete_payload,
-            us.payload AS start_payload
-     FROM user_actions uc
-     LEFT JOIN user_actions us
-       ON us.fid = uc.fid
-      AND us.action_type = 'grow_campaign_start'
-      AND us.payload->>'campaignId' = uc.payload->>'campaignId'
-     WHERE uc.action_type = 'grow_campaign_complete'
-       AND uc.verified = false AND uc.excluded = false
-       AND uc.created_at < now() - ($1 || ' hours')::interval
-     ORDER BY uc.created_at ASC
-     LIMIT 20`,
-    [GROW_TRUST_WINDOW_H],
+  // ── 5. Grow campaign completions ──
+  // Grow points are now credited instantly on the campaign-complete endpoint
+  // (verified=true on insert), just like every other action — no trust window,
+  // no Neynar follow-graph sampling, no minimum-real-follows gate, no 14-day
+  // per-target cooldown. This sweep only trusts any legacy rows that were
+  // written verified=false by the old flow before that change, so they don't
+  // sit unverified forever.
+  const { rowCount: growLegacyCount } = await pool.query(
+    `UPDATE user_actions SET verified = true, verified_at = now()
+     WHERE action_type = 'grow_campaign_complete'
+       AND verified = false AND excluded = false`,
   );
-
-  for (const row of growRows) {
-    const fid = Number(row.fid);
-    const startPayload  = (row.start_payload  ?? {}) as Record<string, unknown>;
-    const targetFidsSample = (startPayload.targetFidsSample as number[] | undefined) ?? [];
-
-    if (targetFidsSample.length === 0) {
-      // No start record found → can't verify, trust it
-      await pool.query(
-        "UPDATE user_actions SET verified = true, verified_at = now() WHERE id = $1",
-        [row.complete_id],
-      );
-      verificationStats.verifiedCount++;
-      continue;
-    }
-
-    // --- 14-day target cooldown: remove already-used targets ---
-    const { rows: usedRows } = await pool.query(
-      `SELECT target_fid FROM grow_targets
-       WHERE fid = $1 AND used_at > now() - INTERVAL '14 days'`,
-      [fid],
-    );
-    const usedSet = new Set(usedRows.map((r: { target_fid: number }) => Number(r.target_fid)));
-    const freshTargets = targetFidsSample.filter(t => !usedSet.has(t));
-
-    if (freshTargets.length < MIN_GROW_REAL_FOLLOWS) {
-      // All targets were recently used → gaming → exclude
-      await pool.query(
-        "UPDATE user_actions SET excluded = true WHERE id = $1",
-        [row.complete_id],
-      );
-      verificationStats.excludedCount++;
-      continue;
-    }
-
-    // countRealFollows reports how many of freshTargets `fid` is CURRENTLY
-    // following. That's the right number for a follow campaign, but it's
-    // backwards for an unfollow/purge campaign — a genuinely successful
-    // purge means that count goes DOWN, so using it directly here excluded
-    // every real, successful unfollow campaign as if it were fraud (the
-    // more thoroughly someone actually purged their following list, the
-    // more certain they were to fail this check and never get credited).
-    // For unfollow mode, the real completion count is the inverse: how many
-    // targets are now confirmed NOT followed.
-    const isUnfollow = startPayload.mode === "unfollow";
-    const stillFollowing = await countRealFollows(fid, freshTargets);
-    const realCompleted = isUnfollow ? (freshTargets.length - stillFollowing) : stillFollowing;
-
-    if (realCompleted < MIN_GROW_REAL_FOLLOWS) {
-      // Didn't actually follow/unfollow enough real accounts → exclude
-      await pool.query(
-        "UPDATE user_actions SET excluded = true WHERE id = $1",
-        [row.complete_id],
-      );
-      verificationStats.excludedCount++;
-    } else {
-      // Verified: user genuinely followed (or unfollowed) new people
-      await pool.query(
-        `UPDATE user_actions SET verified = true, verified_at = now(),
-          payload = payload || $2::jsonb
-         WHERE id = $1`,
-        [row.complete_id, JSON.stringify({ realCompleted })],
-      );
-      verificationStats.verifiedCount++;
-      // Record targets in grow_targets for future cooldown checks
-      await recordGrowTargets(fid, freshTargets.slice(0, 200));
-    }
-  }
+  verificationStats.verifiedCount += growLegacyCount ?? 0;
 
   // ── 6. Grow start trust-window ──
   const { rowCount: growStartCount } = await pool.query(

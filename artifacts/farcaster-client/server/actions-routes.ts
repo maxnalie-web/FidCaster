@@ -31,6 +31,7 @@ import { isFidEligible } from "./db/eligibility.js";
 import { getPool } from "./db/pool.js";
 import { getTrustedFid } from "./auth.js";
 import { verifyCastHash, verifyReaction, verifyFollow } from "./verification-job.js";
+import { upsertGrowHistory, getGrowHistory, type GrowKind, type GrowStatus } from "./db/grow-history.js";
 
 function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
 
@@ -80,6 +81,10 @@ const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v > 0 && v <= FID_MAX;
 }
+function fidFromQuery(q: unknown): number | null {
+  const n = Number(q);
+  return validFid(n) ? n : null;
+}
 
 // Farcaster message hashes are Blake3/BLAKE2b 20-byte values = 40 hex chars.
 // We accept 40-64 hex chars to cover any future hash length changes.
@@ -126,6 +131,32 @@ export function registerActionsRoutes(app: Express): void {
     if (payload !== undefined && (typeof payload !== "object" || payload === null || Array.isArray(payload)))
       { res.status(400).json({ error: "payload must be a plain object" }); return; }
 
+    // For like/recast/follow, the submitted proof is the hash of a FRESH
+    // signed protocol message every single time - Farcaster reaction/link
+    // messages embed a timestamp, so re-liking (or re-recasting, or
+    // re-following) the exact same target produces a brand new hash each
+    // time. Using that raw hash as the ledger's dedup key meant liking the
+    // same cast, unliking, and re-liking it repeatedly earned points every
+    // time instead of once - a real user hit this by accident when a UI
+    // refresh bug made an already-liked cast look unliked again. The
+    // submitted hash is still required to pass the hex-format check above
+    // (so a real signed message must have existed), but the row's actual
+    // dedup key is this relationship's stable identity instead, so this
+    // fid can only ever earn the like/recast/follow bonus once per
+    // specific cast or target, no matter how many times the underlying
+    // action is repeated.
+    const p = payload as Record<string, unknown> | undefined;
+    let effectiveProof = proof.startsWith("0x") ? proof.slice(2) : proof;
+    if (actionType === "like" || actionType === "recast") {
+      if (typeof p?.castHash === "string" && p.castHash) {
+        effectiveProof = `${actionType}:${fid}:${p.castHash.replace(/^0x/, "")}`;
+      }
+    } else if (actionType === "follow") {
+      if (typeof p?.targetFid === "number" && Number.isFinite(p.targetFid)) {
+        effectiveProof = `follow:${fid}:${p.targetFid}`;
+      }
+    }
+
     // L0: if a verified token was sent, it must agree with the claimed fid.
     const trusted = await getTrustedFid(req);
     if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid)) {
@@ -148,7 +179,7 @@ export function registerActionsRoutes(app: Express): void {
           // but this gives instant feedback in the ledger.
           ...(eligible ? {} : { _ineligible: true }),
         },
-        proof: proof.startsWith("0x") ? proof.slice(2) : proof,
+        proof: effectiveProof,
         verified: false, // background verification job confirms later
         // Ineligible actions are excluded at write time — no points ever.
         ...(eligible ? {} : { _excludeNow: true }),
@@ -160,11 +191,10 @@ export function registerActionsRoutes(app: Express): void {
       if (!eligible) {
         const pool = getPool();
         if (pool) {
-          const cleanProof = proof.startsWith("0x") ? proof.slice(2) : proof;
           await pool.query(
             `UPDATE user_actions SET excluded = true, excluded_reason = 'ineligible_fid'
              WHERE proof = $1 AND action_type = $2 AND excluded = false`,
-            [cleanProof, actionType],
+            [effectiveProof, actionType],
           );
         }
       }
@@ -176,8 +206,7 @@ export function registerActionsRoutes(app: Express): void {
       // inside FidCaster show up quickly. Only for eligible fids - an
       // ineligible one was already excluded above, nothing to verify.
       if (eligible) {
-        const cleanProof = proof.startsWith("0x") ? proof.slice(2) : proof;
-        tryInstantVerify(fid, actionType as ActionType, cleanProof, (payload as Record<string, unknown> | undefined) ?? {})
+        tryInstantVerify(fid, actionType as ActionType, effectiveProof, (payload as Record<string, unknown> | undefined) ?? {})
           .catch(() => {});
       }
     } catch (e) {
@@ -240,8 +269,8 @@ export function registerActionsRoutes(app: Express): void {
   app.post("/api/grow/campaign-complete", growLimiter, async (req: Request, res: Response) => {
     if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
 
-    const { fid, campaignId, succeeded, failed, startedAt } = req.body as {
-      fid?: unknown; campaignId?: unknown; succeeded?: unknown; failed?: unknown; startedAt?: unknown;
+    const { fid, campaignId, succeeded, failed, total, startedAt } = req.body as {
+      fid?: unknown; campaignId?: unknown; succeeded?: unknown; failed?: unknown; total?: unknown; startedAt?: unknown;
     };
 
     if (!validFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
@@ -255,27 +284,82 @@ export function registerActionsRoutes(app: Express): void {
       res.status(401).json({ error: "Token does not match claimed fid" }); return;
     }
 
-    // Client-reported `succeeded` is NOT trusted for points calculation.
-    // The verification job will call Neynar to count real new follows from
-    // the targetFidsSample stored at campaign-start, and set verified=true
-    // only if ≥ 5 real new follows are confirmed (or exclude if fewer).
+    // The client only ever POSTs this when a campaign ran all the way to the
+    // end without being cancelled (see BatchOperationContext) — a run stopped
+    // early never reaches here. So a completed campaign earns its point right
+    // away, exactly like every other action in the app: verified on insert,
+    // no 2-hour trust window, no Neynar follow-graph sampling, no minimum-real-
+    // follows gate, no 14-day per-target cooldown. The only remaining guard is
+    // grow_campaign_complete's own daily cap (150 = 5 campaigns/day) in
+    // db/points.ts. A campaign that genuinely did nothing (0 real actions) is
+    // still not worth a point, so require at least one success.
+    if (succeeded < 1) {
+      res.json({ ok: true, credited: false, reason: "no_successful_actions" });
+      return;
+    }
     try {
       await logUserAction({
         fid,
         actionType: "grow_campaign_complete",
         payload: {
           campaignId,
-          clientReportedSucceeded: succeeded, // stored for audit but not used for points
+          succeeded,
           failed,
+          total: typeof total === "number" ? total : null,
           durationMs: typeof startedAt === "number" ? Date.now() - startedAt : null,
         },
         proof: `grow:${fid}:${campaignId}:complete`,
-        verified: false, // background job verifies via Neynar following check
+        verified: true, // instant, like every other action — no background gate
       });
-      res.json({ ok: true });
+      res.json({ ok: true, credited: true });
     } catch (e) {
       console.error("[actions] grow campaign-complete error:", e);
       res.status(500).json({ error: "Failed to log campaign complete" });
     }
+  });
+
+  // ── Grow history: durable per-fid campaign log for the Activity tab ─────────
+  const VALID_KINDS   = new Set<GrowKind>(["follow", "unfollow", "purge", "casts", "replies", "unlike", "unrecast"]);
+  const VALID_STATUS  = new Set<GrowStatus>(["live", "completed", "cancelled"]);
+
+  app.post("/api/grow/history", growLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.json({ ok: false, reason: "ledger_not_configured" }); return; }
+    const b = req.body as Record<string, unknown>;
+    const fid = b.fid;
+    if (!validFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
+    if (typeof b.campaignId !== "string" || b.campaignId.length < 4 || b.campaignId.length > 160)
+      { res.status(400).json({ error: "Invalid campaignId" }); return; }
+    if (typeof b.kind !== "string" || !VALID_KINDS.has(b.kind as GrowKind))
+      { res.status(400).json({ error: "Invalid kind" }); return; }
+    if (typeof b.status !== "string" || !VALID_STATUS.has(b.status as GrowStatus))
+      { res.status(400).json({ error: "Invalid status" }); return; }
+
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid)) {
+      res.status(401).json({ error: "Token does not match claimed fid" }); return;
+    }
+
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    await upsertGrowHistory({
+      fid,
+      campaignId:   b.campaignId,
+      kind:         b.kind as GrowKind,
+      status:       b.status as GrowStatus,
+      label:        typeof b.label === "string" ? b.label.slice(0, 200) : undefined,
+      accountLabel: typeof b.accountLabel === "string" ? b.accountLabel.slice(0, 120) : undefined,
+      total:        num(b.total),
+      succeeded:    num(b.succeeded),
+      failed:       num(b.failed),
+      skipped:      num(b.skipped),
+    });
+    res.json({ ok: true });
+  });
+
+  app.get("/api/grow/history", logLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.json({ history: [] }); return; }
+    const fid = fidFromQuery(req.query.fid);
+    if (!fid) { res.status(400).json({ error: "?fid= must be a valid FID" }); return; }
+    const history = await getGrowHistory(fid, 100);
+    res.json({ history });
   });
 }

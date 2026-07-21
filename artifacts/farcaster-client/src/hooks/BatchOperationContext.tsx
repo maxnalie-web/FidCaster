@@ -5,7 +5,7 @@ import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, 
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
-import { reportGrowCampaignStart, reportGrowCampaignComplete } from "@/lib/grow-report";
+import { reportGrowCampaignStart, reportGrowCampaignComplete, reportGrowHistory } from "@/lib/grow-report";
 import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
@@ -243,6 +243,12 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     // reported on their original start.
     if (isNewCampaign) {
       reportGrowCampaignStart({ fid: myFid, campaignId, mode, targetFids: fids });
+      // Durable Activity-tab history: mark it live now so it shows under the
+      // Live sub-tab (and survives a reload / shows on other devices).
+      reportGrowHistory({
+        fid: myFid, campaignId, kind: mode, status: "live",
+        label, accountLabel, total, succeeded: 0, failed: 0, skipped: 0,
+      });
     }
 
     const attempt = (targetFid: number) =>
@@ -346,10 +352,6 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         await new Promise(r => setTimeout(r, concurrency > 1 ? FOUNDER_CHUNK_DELAY_MS : DELAY_MS));
     }
 
-    if (isNewCampaign) {
-      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, startedAt: campaignStartedAt });
-    }
-
     clearBatch(myFid, mode);
     bustProfileCache();
     upsertOp(key, prev =>
@@ -358,12 +360,27 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
         : null
     );
 
-    // Only report completion when this run also reported the start — a resumed
-    // batch (initialDone > 0, after a page reload) generates a fresh campaignId
-    // that has no matching campaign-start row, so reporting it here would leave
-    // an orphaned "complete" event the verification job can never match.
-    if (initialDone === 0) {
-      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, startedAt: campaignStartedAt });
+    // Report completion for the grow points ONCE, and ONLY when the campaign
+    // ran all the way through on its own instead of being cancelled early.
+    // Stopping at 99 of 100 (cancelRef flipped) must NOT earn the campaign
+    // point — a "completed" campaign is the whole batch finishing. Also gated
+    // on isNewCampaign (initialDone === 0): a resumed batch generates a fresh
+    // campaignId with no matching start row, so it can't be credited anyway.
+    // (This used to fire twice — once here, once above — relying on the
+    // server's proof dedup to swallow the duplicate.)
+    if (isNewCampaign && !cancelRef.current) {
+      reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, total, startedAt: campaignStartedAt });
+    }
+
+    // Durable Activity-tab history: flip this campaign to its final state
+    // (completed if it ran to the end, cancelled if the user stopped it) with
+    // the final counts, so it moves out of the Live sub-tab into the right one.
+    if (isNewCampaign) {
+      reportGrowHistory({
+        fid: myFid, campaignId, kind: mode,
+        status: cancelRef.current ? "cancelled" : "completed",
+        label, accountLabel, total, succeeded: done, failed: errors, skipped,
+      });
     }
   }, [upsertOp]);
 
