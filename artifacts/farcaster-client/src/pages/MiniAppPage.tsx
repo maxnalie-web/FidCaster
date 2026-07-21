@@ -88,14 +88,38 @@ interface AllowanceData {
   promoUsed: number; promoRemaining: number; giftUsed: number; giftRemaining: number;
 }
 interface MissionItem { id: string; action: string; label: string; target: number; pts: number; count: number; done: boolean; }
-interface Achievement { id: string; label: string; icon: string; unlocked: boolean; }
+interface Achievement {
+  id: string; label: string; icon: string; unlocked: boolean;
+  tier: "bronze" | "silver" | "gold" | "platinum"; requirement: string;
+  target: number; progress: number; pts: number;
+}
+const TIER_STYLE: Record<Achievement["tier"], { label: string; color: string; bg: string; border: string }> = {
+  bronze:   { label: "Bronze",   color: "#D89B6A", bg: "rgba(216,155,106,0.14)", border: "rgba(216,155,106,0.4)" },
+  silver:   { label: "Silver",   color: "#C7CEDA", bg: "rgba(199,206,218,0.14)", border: "rgba(199,206,218,0.4)" },
+  gold:     { label: "Gold",     color: "#F5C542", bg: "rgba(245,197,66,0.14)",  border: "rgba(245,197,66,0.45)" },
+  platinum: { label: "Platinum", color: "#B9F2FF", bg: "rgba(185,242,255,0.14)", border: "rgba(185,242,255,0.45)" },
+};
 interface StatsData {
   streak: number; level: number; xp: number; xpToNext: number;
   totalPoints: number; todayPoints: number;
   missions: MissionItem[]; achievements: Achievement[];
+  todayCounts: Record<string, number>;
   nextStreakBonusPts: number; streakBonusAwarded: boolean;
   seasonEnd: string;
 }
+
+// Friendly labels for every action type that can appear in todayCounts.
+// Types worth 0 points on their own (unlike/unrecast/unfollow/app_open/
+// market_cancel/grow_campaign_start) are omitted - nothing to report about
+// an undo action or a page-open ping.
+const ACTIVITY_LABELS: Record<string, string> = {
+  cast: "Casts", like: "Likes", recast: "Recasts", follow: "Follows",
+  market_list: "Market listings", market_buy: "Market buys",
+  grow_campaign_complete: "Grow campaigns", referral: "Referrals",
+  referral_welcome: "Referral bonus", quest: "Quests completed",
+  streak_bonus: "Streak bonus", nft_holder_bonus: "NFT holder bonus",
+  promotion: "Promotions", gift: "Gifts sent", gift_received: "Gifts received",
+};
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
 function useSDK() {
@@ -345,21 +369,32 @@ function Counter({ to, className, style }: { to: number; className?: string; sty
 }
 
 // ── Background orbs ───────────────────────────────────────────────────────────
+// Mounted once at MainApp's root (outside the tab switcher) so it animates
+// for the entire session regardless of which tab is active. Animating a
+// transform on an element that also has a CSS blur() filter is a known trap:
+// many mobile GPUs (especially older ones) can't cheaply re-composite a
+// filtered layer, so it repaints on the CPU every frame — for as long as the
+// mini app is open, on every screen, not just wherever this renders.
+// will-change hints the browser to promote each orb to its own layer and
+// rasterize the blur once, so only the transform needs to update per frame.
 function BgOrbs() {
   return (
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
       <motion.div animate={{ x: [0,40,-20,0], y: [0,-30,20,0] }}
         transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
         style={{ position:"absolute", top:"-8%", left:"-5%", width:360, height:360, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)", filter:"blur(50px)" }} />
+          background:"radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%)", filter:"blur(50px)",
+          willChange:"transform" }} />
       <motion.div animate={{ x: [0,-30,15,0], y: [0,25,-15,0] }}
         transition={{ duration: 25, repeat: Infinity, ease: "easeInOut", delay: 5 }}
         style={{ position:"absolute", bottom:"5%", right:"-10%", width:300, height:300, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)", filter:"blur(55px)" }} />
+          background:"radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)", filter:"blur(55px)",
+          willChange:"transform" }} />
       <motion.div animate={{ x: [0,20,-10,0], y: [0,-20,30,0] }}
         transition={{ duration: 28, repeat: Infinity, ease: "easeInOut", delay: 10 }}
         style={{ position:"absolute", top:"45%", left:"25%", width:220, height:220, borderRadius:"50%",
-          background:"radial-gradient(circle, rgba(168,85,247,0.14) 0%, transparent 70%)", filter:"blur(65px)" }} />
+          background:"radial-gradient(circle, rgba(168,85,247,0.14) 0%, transparent 70%)", filter:"blur(65px)",
+          willChange:"transform" }} />
     </div>
   );
 }
@@ -520,12 +555,24 @@ function CampfireCanvas({ width = 168, height = 190, active = true }: {
       dx: (i - 3) * 5.7, w: rand(11, 20), h: rand(38, 66) - Math.abs(i - 3) * 8.9, ph: rand(0, 7), sp: rand(2.4, 4),
     }));
 
-    let ft = 0;
+    // Capped at 30fps: this scene is pure ambient decoration and draws ~35
+    // shadowBlur calls per frame (a known Canvas2D hotspot, especially on
+    // weaker/older GPUs) - halving the frame rate roughly halves that cost
+    // with no visible difference for slow, continuous motion like this.
+    // Real elapsed time (not a fixed per-callback increment) keeps the
+    // animation's actual speed the same regardless of the throttle.
     let raf = 0;
-    function frame() {
-      ft += 1 / 60;
+    let lastFrameMs = 0;
+    let dtStep = 1; // multiplier applied to per-frame position deltas, ~1 at 60fps
+    const FRAME_INTERVAL_MS = 1000 / 30;
+    function frame(nowMs: number) {
+      raf = requestAnimationFrame(frame);
+      if (nowMs - lastFrameMs < FRAME_INTERVAL_MS) return;
+      dtStep = lastFrameMs ? ((nowMs - lastFrameMs) / 1000) * 60 : 1;
+      lastFrameMs = nowMs;
+      const ft = nowMs / 1000;
       ctx!.clearRect(0, 0, width, height);
-      if (!activeRef.current) { raf = requestAnimationFrame(frame); return; }
+      if (!activeRef.current) return;
 
       // rocks
       ctx!.fillStyle = "#241626";
@@ -565,7 +612,7 @@ function CampfireCanvas({ width = 168, height = 190, active = true }: {
 
       // embers
       embers.forEach(e => {
-        e.y -= e.v; e.x += Math.sin(ft * 2 + e.ph) * 0.35;
+        e.y -= e.v * dtStep; e.x += Math.sin(ft * 2 + e.ph) * 0.35;
         if (e.y < 13) { e.y = by - rand(0, 25); e.x = bx + rand(-20, 20); }
         const al = Math.max(0, Math.min(1, (e.y - 13) / 114));
         ctx!.fillStyle = `rgba(253,186,116,${0.8 * al})`;
@@ -573,8 +620,6 @@ function CampfireCanvas({ width = 168, height = 190, active = true }: {
         ctx!.beginPath(); ctx!.arc(e.x, e.y, e.s * al + 0.4, 0, Math.PI * 2); ctx!.fill();
       });
       ctx!.restore();
-
-      raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
@@ -694,15 +739,24 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.restore();
     }
 
-    let heroT = 0, raf = 0;
-    function frame() {
-      heroT += 1 / 60;
-      const t = heroT, cx = HW / 2;
+    // Capped at 30fps — same rationale as CampfireCanvas: this scene is pure
+    // ambient decoration built almost entirely out of shadowBlur draws (a
+    // known Canvas2D hotspot), and halves that cost with no visible
+    // difference for slow, continuous motion. All motion here is a function
+    // of elapsed wall-clock time, not a per-callback step, so throttling the
+    // callback rate doesn't change how fast anything visually moves.
+    let raf = 0;
+    let lastFrameMs = 0;
+    const FRAME_INTERVAL_MS = 1000 / 30;
+    function frame(nowMs: number) {
+      raf = requestAnimationFrame(frame);
+      if (nowMs - lastFrameMs < FRAME_INTERVAL_MS) return;
+      lastFrameMs = nowMs;
+      const t = nowMs / 1000, cx = HW / 2;
       ctx!.clearRect(0, 0, HW, HH);
       drawNebulaCloud(cx, RING_Y - 4, t);
       drawPedestalRing(cx, RING_Y, t);
       crystals.forEach(c => drawCrystal(cx + c[0], logoY + c[1], c[2], c[3], t * c[5], c[6], c[4]));
-      raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
 
@@ -794,8 +848,16 @@ function BrowserScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 // NFT PASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
+// mint(address to) → tokenId — the only function the client ever calls directly.
+const MINT_ABI = [{
+  name: "mint", type: "function", stateMutability: "nonpayable",
+  inputs: [{ name: "to", type: "address" }],
+  outputs: [{ name: "", type: "uint256" }],
+}] as const;
+const BASE_CHAIN_ID_HEX = "0x2105"; // 8453
+
 function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethAddress?: string; qaToken?: string | null; onMinted?: () => void }) {
-  const [s, setS]             = useState<"checking"|"idle"|"connecting"|"minting"|"done"|"error">("checking");
+  const [s, setS]             = useState<"checking"|"idle"|"connecting"|"minting"|"confirming"|"done"|"error">("checking");
   const [activeAddr, setAddr]  = useState(ethAddress ?? "");
   const [txHash, setTx]        = useState("");
   const [err, setErr]          = useState("");
@@ -814,7 +876,20 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
       setAddr(ethAddress);
       fetch(`/api/nft-pass/check/${ethAddress}`)
         .then(r => r.json())
-        .then(d => { if (dead) return; if (d.hasMinted) { setS("done"); onMinted?.(); } else setS("idle"); })
+        .then(d => {
+          if (dead) return;
+          if (d.hasMinted) {
+            // Self-heal a mint whose log entry never landed (see doMint's
+            // comment) — rediscovering it via the verified address here is
+            // the natural moment to backfill it for check-fid's benefit.
+            fetch("/api/nft-pass/record-mint", {
+              method: "POST",
+              headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+              body: JSON.stringify({ fid, address: ethAddress }),
+            }).catch(() => {});
+            setS("done"); onMinted?.();
+          } else setS("idle");
+        })
         .catch(() => { if (!dead) setS("idle"); });
       return () => { dead = true; };
     }
@@ -834,11 +909,13 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
 
   const short = (a: string) => `${a.slice(0,6)}…${a.slice(-4)}`;
 
-  // The mint itself is gasless — the server signs and submits it, the user
-  // never signs anything. All we need is a destination address, which the
-  // Farcaster host's wallet provider gives us directly (no manual input,
-  // no window.ethereum — that's not how a mini app's connected wallet, e.g.
-  // the in-client Farcaster wallet, is exposed to the page).
+  // The connected wallet signs and pays gas for its own mint transaction
+  // directly on-chain — mint(address) has no access restriction (any wallet
+  // can call it), so there's no server relay to trust or spoof. All we need
+  // is the wallet's own address, which the Farcaster host's wallet provider
+  // gives us directly (no manual input, no window.ethereum — that's not how
+  // a mini app's connected wallet, e.g. the in-client Farcaster wallet, is
+  // exposed to the page).
   async function detectAddress(): Promise<string | null> {
     try {
       const provider = await sdk.wallet.getEthereumProvider();
@@ -852,15 +929,58 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
     setAddr(address);
     setS("minting");
     try {
-      const r = await fetch("/api/nft-pass/mint", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
-        body: JSON.stringify({ fid, address }),
-      });
-      const d = await r.json();
-      if (d.alreadyMinted || r.ok) { setTx(d.txHash ?? ""); setS("done"); onMinted?.(); }
-      else throw new Error(d.error ?? "Mint failed");
-    } catch (e) { setErr(String(e)); setS("error"); }
+      const statusRes = await fetch("/api/nft-pass/status").then(r => r.json());
+      if (!statusRes?.deployed || !statusRes?.contractAddress) throw new Error("Minting isn't available yet");
+
+      const provider = await sdk.wallet.getEthereumProvider();
+      if (!provider) throw new Error("No wallet connected");
+
+      // No-op (no prompt) if the wallet's already on Base; some hosts reject
+      // an unsupported chainId outright, so this is best-effort, not fatal.
+      try {
+        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BASE_CHAIN_ID_HEX }] });
+      } catch { /* already on Base, or the host doesn't support switching */ }
+
+      const { encodeFunctionData } = await import("viem");
+      const data = encodeFunctionData({ abi: MINT_ABI, functionName: "mint", args: [address as `0x${string}`] });
+      const hash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: statusRes.contractAddress, data }],
+      }) as string;
+
+      setTx(hash);
+      setS("confirming");
+
+      // Poll balanceOf until the tx confirms (Base blocks are ~2s; give it
+      // up to a minute) instead of declaring success the instant the wallet
+      // returns a hash, which only means "submitted", not "mined". Only
+      // report the mint to our own log (leaderboard/admin visibility, and
+      // the source check-fid relies on to skip onboarding on a new device)
+      // AFTER confirming — record-mint independently re-checks balanceOf
+      // itself and 409s on an unconfirmed tx, so calling it right after
+      // eth_sendTransaction (before any block has even landed) would almost
+      // always fail silently and leave the mint unlogged despite succeeding.
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const check = await fetch(`/api/nft-pass/check/${address}`).then(r => r.json()).catch(() => null);
+        if (check?.hasMinted) {
+          fetch("/api/nft-pass/record-mint", {
+            method: "POST",
+            headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+            body: JSON.stringify({ fid, address, txHash: hash }),
+          }).catch(() => {});
+          setS("done"); onMinted?.(); return;
+        }
+      }
+      // Still not confirmed after a minute — leave the explorer link up
+      // rather than silently claiming success on an unconfirmed tx.
+      setErr("Transaction submitted but hasn't confirmed yet. Check the explorer link, or try again in a minute.");
+      setS("error");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.includes("User rejected") || msg.includes("rejected") ? "Signature request was rejected." : msg);
+      setS("error");
+    }
   }
 
   async function handleMintClick() {
@@ -874,7 +994,20 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
     }
     setAddr(addr);
     const check = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => ({}));
-    if (check.hasMinted) { setS("done"); onMinted?.(); return; }
+    if (check.hasMinted) {
+      // Self-heal: a mint from before record-mint's confirmation fix (or
+      // any other reason the log write never landed) leaves check-fid blind
+      // to a real mint. Rediscovering it here via a direct address check is
+      // the natural moment to backfill the log entry, so the next device
+      // that can't detect this wallet (and falls back to check-fid) stops
+      // seeing onboarding re-triggered for an account that already minted.
+      fetch("/api/nft-pass/record-mint", {
+        method: "POST",
+        headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+        body: JSON.stringify({ fid, address: addr }),
+      }).catch(() => {});
+      setS("done"); onMinted?.(); return;
+    }
     doMint(addr);
   }
 
@@ -927,19 +1060,33 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
             Mint free
           </button>
         )}
-        {(s === "minting" || s === "connecting") && (
+        {(s === "minting" || s === "connecting" || s === "confirming") && (
           <span style={{ color:C.accentHi, fontSize:13, display:"flex", alignItems:"center", gap:5 }}>
             <Loader2 size={14} className="animate-spin" />
-            {s === "connecting" ? "Connecting…" : "Minting…"}
+            {s === "connecting" ? "Connecting…" : s === "confirming" ? "Confirming…" : "Sign in your wallet…"}
           </span>
         )}
       </div>
+      {s === "confirming" && txHash && (
+        <div style={{ padding:"0 16px 12px" }}>
+          <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+            style={{ color:C.text3, fontSize:11, display:"inline-flex", alignItems:"center", gap:4 }}>
+            View on BaseScan <ExternalLink size={11} />
+          </a>
+        </div>
+      )}
       <AnimatePresence>
         {s === "error" && (
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
             style={{ padding:"10px 16px", borderTop:`1px solid ${C.border}` }}>
             <p style={{ color:C.rose, fontSize:12 }}>{err}</p>
-            <button onClick={() => setS("idle")} style={{ background:"none", border:"none", color:C.text3, fontSize:12, cursor:"pointer", marginTop:4 }}>
+            {txHash && (
+              <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+                style={{ color:C.text3, fontSize:11, display:"inline-flex", alignItems:"center", gap:4, marginTop:4 }}>
+                View on BaseScan <ExternalLink size={11} />
+              </a>
+            )}
+            <button onClick={() => setS("idle")} style={{ background:"none", border:"none", color:C.text3, fontSize:12, cursor:"pointer", marginTop:4, display:"block" }}>
               Try again
             </button>
           </motion.div>
@@ -1023,8 +1170,8 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
             <p style={{ color:C.rose, fontWeight:700, fontSize:16 }}>Score Too Low</p>
           </div>
           <p style={{ color:C.text2, fontSize:13, lineHeight:1.7 }}>
-            Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? Math.round(eligData.score * 100) : "unknown"}</strong>.
-            You need at least <strong style={{ color:C.text1 }}>{Math.round(eligData.threshold * 100)}</strong> to use FidCaster.
+            Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? eligData.score.toFixed(2) : "unknown"}</strong>.
+            You need at least <strong style={{ color:C.text1 }}>{eligData.threshold.toFixed(2)}</strong> to use FidCaster.
           </p>
           <button onClick={() => setEligData(null)} style={{ marginTop:12, background:"rgba(244,63,94,0.14)",
             border:"1px solid rgba(244,63,94,0.3)", color:C.rose, fontSize:12.5, fontWeight:700,
@@ -1041,7 +1188,7 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
             <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px",
               background:"rgba(16,185,129,0.07)", border:"1px solid rgba(16,185,129,0.18)", borderRadius:10 }}>
               <Check size={13} color={C.green} />
-              <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{Math.round(eligData.score * 100)}</strong>, eligible ✓</p>
+              <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{eligData.score.toFixed(2)}</strong>, eligible ✓</p>
             </div>
           )}
           <NFTPassCard fid={fid} ethAddress={ethAddr} qaToken={qaToken} onMinted={() => setMinted(true)} />
@@ -1492,7 +1639,9 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             <SectionLabel>Daily Missions</SectionLabel>
             <span style={{ color:C.text3, fontSize:11 }}>Resets {resetCountdown}</span>
           </div>
-          <Card>
+          {/* Scrollable — the mission list now covers every earnable action
+              type, not just 5, so it no longer reliably fits without a cap. */}
+          <Card style={{ maxHeight:340, overflowY:"auto" }}>
             {missions.map((m, i) => {
               const pct = m.target > 0 ? Math.min((m.count / m.target) * 100, 100) : 0;
               return (
@@ -1870,6 +2019,29 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function HowItWorksModal({ onClose }: { onClose: () => void }) {
+  const sections = [
+    { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points — but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
+    { t:"Farcaster activity itself doesn't earn points", d:"Posting, liking, or following directly on Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead — via Promote and Gift casts." },
+    { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
+    { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points — they won't count even if they briefly showed up." },
+    { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
+    { t:"Referrals pay out immediately but are capped", d:"You and anyone you refer both get points right away. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
+    { t:"If something looks like fraud, it gets excluded — not silently kept", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
+    { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that — so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
+  ];
+  return (
+    <AllowanceModalShell onClose={onClose} icon={<Shield size={16} color={C.accentHi} />} title="How Points & Anti-Fraud Work">
+      {sections.map((s) => (
+        <div key={s.t} style={{ marginBottom:14 }}>
+          <p style={{ color:C.text1, fontWeight:700, fontSize:13, marginBottom:4 }}>{s.t}</p>
+          <p style={{ color:C.text2, fontSize:12.5, lineHeight:1.6 }}>{s.d}</p>
+        </div>
+      ))}
+    </AllowanceModalShell>
+  );
+}
+
 function AllowanceBarV2({ fid }: { fid: number }) {
   const [data,    setData]    = useState<AllowanceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1928,7 +2100,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
           {data.promoRemaining >= 50 ? (
-            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
+            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points toward the airdrop 🚀 @fidcaster")}`}
               target="_blank" rel="noopener noreferrer"
               style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
@@ -2156,7 +2328,7 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                `Join me on FidCaster — earn points for every Farcaster action and get in on the airdrop.\n\n${refUrl}`,
+                `Join me on FidCaster — earn points and get in on the airdrop.\n\n${refUrl}`,
               )}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
@@ -2239,6 +2411,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
   onNftRecheck: () => void; qaToken: string | null;
 }) {
   const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder" | "error">("idle");
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
@@ -2377,7 +2550,9 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
         )}
       </Card>
 
-      {/* Achievements */}
+      {/* Achievements — tiered like a real competitive game: every entry
+          states exactly how it's earned, its difficulty tier, and how far
+          along the current run toward it is, not just a locked icon. */}
       {achievements.length > 0 && (
         <div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
@@ -2386,34 +2561,83 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
               {achievements.filter(a=>a.unlocked).length} / {achievements.length}
             </span>
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
-            {achievements.map((a, i) => (
-              <motion.div key={a.id}
-                initial={{ opacity:0, scale:0.85 }} animate={{ opacity:1, scale:1 }}
-                transition={{ delay:i*0.06 }}
-                style={{
-                  background: a.unlocked ? "rgba(139,92,246,0.15)" : C.card,
-                  border: `1px solid ${a.unlocked ? "rgba(139,92,246,0.4)" : C.border}`,
-                  borderRadius:14, padding:"14px 8px", textAlign:"center",
-                  opacity: a.unlocked ? 1 : 0.45,
-                  boxShadow: a.unlocked ? `0 0 16px rgba(139,92,246,0.2)` : "none",
-                }}>
-                <div style={{ fontSize:24, marginBottom:6, filter: a.unlocked?"none":"grayscale(1)", display:"flex", justifyContent:"center" }}>
-                  {a.unlocked ? a.icon : <Lock size={20} color={C.text3} />}
-                </div>
-                <p style={{ color: a.unlocked ? C.text1 : C.text3, fontSize:11, fontWeight:600, lineHeight:1.3 }}>
-                  {a.label}
-                </p>
-                {a.unlocked && (
-                  <div style={{ marginTop:4, display:"flex", justifyContent:"center" }}>
-                    <Check size={10} color={C.green} />
+          <Card style={{ maxHeight:420, overflowY:"auto" }}>
+            {achievements.map((a, i) => {
+              const t = TIER_STYLE[a.tier];
+              const pct = a.target > 0 ? Math.min((a.progress / a.target) * 100, 100) : 0;
+              return (
+                <div key={a.id}>
+                  <div style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start",
+                    opacity: a.unlocked ? 1 : 0.7 }}>
+                    <div style={{ width:34, height:34, borderRadius:10, flexShrink:0, fontSize:17,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      background: a.unlocked ? t.bg : "rgba(255,255,255,0.04)",
+                      border:`1px solid ${a.unlocked ? t.border : C.border}`,
+                      filter: a.unlocked ? "none" : "grayscale(1)" }}>
+                      {a.unlocked ? a.icon : <Lock size={15} color={C.text3} />}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:2 }}>
+                        <span style={{ color: a.unlocked ? C.text1 : C.text2, fontSize:13, fontWeight:700 }}>{a.label}</span>
+                        <span style={{ color:t.color, background:t.bg, border:`1px solid ${t.border}`,
+                          fontSize:9.5, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.05em",
+                          borderRadius:999, padding:"1.5px 7px" }}>{t.label}</span>
+                        {a.pts > 0 && <Chip>+{a.pts} pts</Chip>}
+                        {a.unlocked && <Check size={12} color={C.green} />}
+                      </div>
+                      <p style={{ color:C.text3, fontSize:11.5, marginBottom:6 }}>{a.requirement}</p>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ flex:1, height:4, background:C.border, borderRadius:2 }}>
+                          <div style={{ width:`${pct}%`, height:"100%", borderRadius:2,
+                            background: a.unlocked ? `linear-gradient(90deg,${C.green},#34D399)` : `linear-gradient(90deg,${C.accent},#A855F7)` }} />
+                        </div>
+                        <span style={{ color:C.text3, fontSize:10.5, flexShrink:0 }}>{a.progress.toLocaleString()}/{a.target.toLocaleString()}</span>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
+                  {i < achievements.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </div>
+              );
+            })}
+          </Card>
         </div>
       )}
+
+      {/* Today's Activity — every action type counted today, not just the
+          fixed-target Daily Missions on Home (those track progress toward a
+          goal; this is a plain tally of everything that happened today). */}
+      {(() => {
+        const todayCounts = stats?.todayCounts ?? {};
+        const entries = Object.entries(todayCounts).filter(([type, cnt]) => cnt > 0 && ACTIVITY_LABELS[type]);
+        if (entries.length === 0) return null;
+        return (
+          <div>
+            <SectionLabel>Today's Activity</SectionLabel>
+            <Card>
+              {entries.map(([type, cnt], i) => (
+                <div key={type}>
+                  <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <span style={{ color:C.text2, fontSize:13 }}>{ACTIVITY_LABELS[type]}</span>
+                    <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>{cnt}</span>
+                  </div>
+                  {i < entries.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </div>
+              ))}
+            </Card>
+          </div>
+        );
+      })()}
+
+      {/* How points & anti-fraud work */}
+      <button onClick={() => setShowHowItWorks(true)}
+        style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
+          background:C.card, border:`1px solid ${C.border}`, borderRadius:16, cursor:"pointer",
+          fontFamily:"inherit", textAlign:"left" }}>
+        <Info size={16} color={C.accentHi} />
+        <span style={{ color:C.text1, fontSize:13, fontWeight:700, flex:1 }}>How Points & Anti-Fraud Work</span>
+        <ChevronRight size={16} color={C.text3} />
+      </button>
+      {showHowItWorks && <HowItWorksModal onClose={() => setShowHowItWorks(false)} />}
 
       {/* Wallet addresses */}
       {ethAddrs.length > 0 && (
@@ -2833,14 +3057,28 @@ export function MiniAppPage() {
     if (localStorage.getItem(key) === "1") { setOnboarded(true); setOnboardChecked(true); return; }
     // Not locally flagged (fresh install, cleared cache, new device) — if
     // this fid already minted the pass server-side, treat onboarding as
-    // already done instead of forcing the wizard again.
-    const addr = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
-    if (!addr) { setOnboardChecked(true); return; }
-    fetch(`/api/nft-pass/check/${addr}`)
+    // already done instead of forcing the wizard again. Minting now happens
+    // by signing directly from whatever wallet the mini app host connects
+    // (NFTPassCard's handleMintClick), which is very often NOT one of the
+    // fid's Farcaster-verified addresses — so checking only the verified
+    // address here (as this used to) missed real mints and re-showed the
+    // onboarding wizard on any second device with no local flag. check-fid
+    // is keyed by fid against the actual mint log, so it's the authoritative
+    // source; the verified-address check is only a secondary fallback.
+    let dead = false;
+    fetch(`/api/nft-pass/check-fid/${fid}`)
       .then(r => r.json())
-      .then(d => { if (d.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); } })
-      .catch(() => {})
-      .finally(() => setOnboardChecked(true));
+      .then(async (d) => {
+        if (dead) return;
+        if (d.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); setOnboardChecked(true); return; }
+        const addr = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
+        if (!addr) { setOnboardChecked(true); return; }
+        const addrCheck = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => null);
+        if (!dead && addrCheck?.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); }
+        if (!dead) setOnboardChecked(true);
+      })
+      .catch(() => { if (!dead) setOnboardChecked(true); });
+    return () => { dead = true; };
   }, [ready, fid, ctx]);
 
   function completeOnboarding() {

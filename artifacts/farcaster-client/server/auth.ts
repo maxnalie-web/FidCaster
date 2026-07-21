@@ -63,7 +63,7 @@ export function generateAuthNonce(fid: number): string {
 }
 
 // ── Key Registry (Optimism) — confirms a pubkey is really registered to a fid
-const KEY_REGISTRY_ADDRESS = "0x00000000Fc1237824fb747aBDE0FF18990E59b7" as const;
+const KEY_REGISTRY_ADDRESS = "0x00000000Fc1237824fb747aBDE0FF18990E59b7e" as const;
 const optimismClient = createPublicClient({
   chain: optimism,
   transport: fallback(

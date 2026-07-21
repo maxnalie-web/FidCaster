@@ -7,20 +7,21 @@
  * SECURITY:
  *   - Self-referral: blocked (referrer === referred FID)
  *   - Circular referral: blocked (A→B and B→A cannot both exist)
- *   - Bot referrals: referrer earns 200 pts ONLY after referred user
- *     accumulates ≥ ACTIVATION_THRESHOLD pts from organic non-referral
- *     actions.  Until then the referral row sits with activated=false and
- *     the referral action row in user_actions has verified=false (0 pts).
  *   - Max eligible referrals: LIFETIME_MAX per referrer (stored referrals
- *     beyond this limit are recorded but the activation check bails early).
+ *     beyond this limit are recorded but don't pay out).
  *
  * Flow:
- *   1. Referred user calls /api/referral/claim  → claimReferral() stores the
- *      row (activated=false) and gives referred user 50 welcome pts immediately
- *      (they're a real user signing up, so welcome bonus is unconditional).
- *   2. Verification job calls activatePendingReferrals() every 5 min.
- *      For each unactivated referral, it checks if the referred user has
- *      ≥ ACTIVATION_THRESHOLD pts.  If yes → activate, award 200 pts to referrer.
+ *   1. Referred user calls /api/referral/claim → claimReferral() stores the
+ *      row and awards BOTH sides immediately: 50 welcome pts to the new
+ *      user, 200 pts to the referrer (subject to the lifetime cap). This
+ *      used to defer the referrer's payout until the referred user earned
+ *      ≥100 organic pts (anti-bot-farming), but that made a normal referral
+ *      look broken to the referrer for hours/days with no feedback — traded
+ *      deliberately for instant, unconditional payouts on both sides.
+ *   2. activatePendingReferrals() (still run by the verification job every
+ *      5 min) is now only a backward-compat sweep for any referral rows
+ *      that were inserted before this change and are still sitting
+ *      activated=false from the old deferred-activation flow.
  */
 
 import { getPool } from "./pool.js";
@@ -52,8 +53,9 @@ export function codeToFid(code: string): number | null {
 
 /** Returns null if already referred or referrer === referred.
  *
- *  Points for REFERRER are deferred until referred user hits 100 pts.
- *  Welcome bonus (50 pts) for NEW USER is immediate. */
+ *  Both sides are paid immediately: the new user gets a 50pt welcome bonus,
+ *  and the referrer gets 200pts right away too, as long as they're still
+ *  under their lifetime referral cap. */
 export async function claimReferral(
   code: string,
   newFid: number,
@@ -74,7 +76,7 @@ export async function claimReferral(
     return { ok: false, reason: "Circular referral not allowed" };
   }
 
-  // Idempotent insert — activated=false, points deferred
+  // Idempotent insert — activated=false until the payout below (if any) flips it
   const { rowCount } = await pool.query(
     `INSERT INTO referrals (referrer_fid, referred_fid, code, activated)
      VALUES ($1, $2, $3, false)
@@ -93,12 +95,32 @@ export async function claimReferral(
     verified: true,
   });
 
-  // Referrer's 200 pts are NOT awarded here — deferred to activatePendingReferrals()
+  // Referrer's bonus — immediate too, still subject to the lifetime cap so a
+  // single account can't be re-used indefinitely to farm 200pts a pop.
+  const { rows: countRows } = await pool.query(
+    `SELECT COUNT(*) AS n FROM referrals WHERE referrer_fid = $1 AND activated = true`,
+    [referrerFid],
+  );
+  if (Number(countRows[0]?.n ?? 0) < LIFETIME_MAX) {
+    await pool.query(
+      `UPDATE referrals SET activated = true, activated_at = now() WHERE referrer_fid = $1 AND referred_fid = $2`,
+      [referrerFid, newFid],
+    );
+    await logUserAction({
+      fid: referrerFid,
+      actionType: "referral",
+      payload: { referred_fid: newFid },
+      proof: `referral:${referrerFid}:${newFid}`,
+      verified: true,
+    });
+  }
+
   return { ok: true, referrerFid };
 }
 
-/** Called by the verification job every 5 min.
- *  Activates referrals where the referred user has earned ≥ ACTIVATION_THRESHOLD pts. */
+/** Called by the verification job every 5 min. Legacy backward-compat sweep:
+ *  claimReferral() now pays the referrer immediately, so this only matters
+ *  for rows inserted before that change that are still activated=false. */
 export async function activatePendingReferrals(): Promise<number> {
   const pool = getPool();
   if (!pool) return 0;

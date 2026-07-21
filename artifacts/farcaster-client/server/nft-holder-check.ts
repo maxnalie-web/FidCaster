@@ -84,16 +84,29 @@ async function addressHoldsNft(address: Address): Promise<boolean> {
   return balances.some((b) => b > 0n);
 }
 
+/**
+ * Every Ethereum address actually provable as belonging to this fid: its
+ * on-chain custody address (Farcaster ID Registry, Optimism) plus every
+ * address Farcaster has verified for it (via Neynar). Used both for the
+ * NFT holder-bonus check and to sanity-check a client-supplied mint
+ * destination address before spending real gas on it.
+ */
+export async function getFarcasterOwnedAddresses(fid: number): Promise<Address[]> {
+  const addresses: Address[] = [];
+
+  const custody = await optimismClient.readContract({
+    address: ID_REGISTRY_ADDRESS, abi: custodyOfAbi, functionName: "custodyOf", args: [BigInt(fid)],
+  }) as string;
+  if (custody && custody.toLowerCase() !== ZERO_ADDRESS) addresses.push(custody as Address);
+
+  addresses.push(...await getVerifiedEthAddresses(fid));
+
+  return addresses;
+}
+
 export async function checkFidHoldsFasterTaskNft(fid: number): Promise<boolean> {
   try {
-    const addresses: Address[] = [];
-
-    const custody = await optimismClient.readContract({
-      address: ID_REGISTRY_ADDRESS, abi: custodyOfAbi, functionName: "custodyOf", args: [BigInt(fid)],
-    }) as string;
-    if (custody && custody.toLowerCase() !== ZERO_ADDRESS) addresses.push(custody as Address);
-
-    addresses.push(...await getVerifiedEthAddresses(fid));
+    const addresses = await getFarcasterOwnedAddresses(fid);
 
     if (addresses.length === 0) return false;
 

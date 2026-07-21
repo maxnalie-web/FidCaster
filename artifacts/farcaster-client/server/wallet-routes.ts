@@ -56,7 +56,7 @@ export function registerWalletRoutes(app: Express): void {
     // Without this, anyone could register or OVERWRITE another fid's airdrop
     // payout address with no proof of ownership at all - a bare POST with a
     // victim's fid and an attacker's address would silently redirect their
-    // airdrop allocation. Same trusted-fid pattern as nft-pass/mint.
+    // airdrop allocation. Same trusted-fid pattern as nft-pass/record-mint.
     const trusted = await getTrustedFid(req);
     if (trusted.invalidToken || trusted.fid === null || trusted.fid !== fid) {
       res.status(401).json({ error: "Valid auth token required and must match fid" });

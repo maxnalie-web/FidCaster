@@ -1,29 +1,29 @@
 /**
  * NFT Pass routes — FidCaster Pass ERC-721 on Base Mainnet
  *
+ * mint(address) has no access restriction on-chain, so the connected wallet
+ * signs and pays its own gas to mint directly — the server never holds a
+ * minting key or submits the transaction itself. It only ever independently
+ * re-verifies balanceOf() before recording a mint in the log, so nothing
+ * here can be spoofed by a client claiming a mint that didn't happen.
+ *
  * GET  /api/nft-pass/status              — contract deployment info
  * GET  /api/nft-pass/metadata/:tokenId   — ERC-721 token metadata (OpenSea standard)
  * GET  /api/nft-pass/contract-metadata   — collection-level metadata for OpenSea
  * GET  /api/nft-pass/check/:address      — { hasMinted, balance }
- * POST /api/nft-pass/mint                — { fid, address } → { txHash, tokenId }
+ * POST /api/nft-pass/record-mint         — { fid, address, txHash } → logs a confirmed mint
  */
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { createWalletClient, createPublicClient, http, isAddress } from "viem";
+import { createPublicClient, http, isAddress } from "viem";
 import { base } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool } from "./db/pool.js";
 import { getTrustedFid } from "./auth.js";
 
-// Real gas is spent from a server-held wallet on every mint attempt, and the
-// only per-call anti-repeat check (on-chain balanceOf) is keyed on the
-// caller-supplied address, which costs nothing to regenerate. So this route
-// needs its own tight limits, independent of the generic app-wide limiter.
-const mintLimiter = rateLimit({ windowMs: 10 * 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
-const MAX_MINT_ATTEMPTS_PER_FID_24H = 3;
+const recordLimiter = rateLimit({ windowMs: 10 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -145,23 +145,21 @@ export function createNftPassRouter(): Router {
     res.json({ hasMinted: true, address: rows[0].address });
   });
 
-  // ── POST /api/nft-pass/mint ───────────────────────────────────────────────
-  router.post("/mint", mintLimiter, async (req, res) => {
-    const { fid, address } = req.body as { fid?: number; address?: string };
+  // ── POST /api/nft-pass/record-mint ────────────────────────────────────────
+  // Called by the client after its own wallet has already signed and
+  // submitted a mint(address) transaction directly to the contract. This
+  // endpoint spends no gas and holds no key — it only logs the mint for our
+  // own visibility (leaderboard/admin), and only after independently
+  // confirming on-chain that the address really does hold a token. A client
+  // claiming a mint that never happened (wrong/fake txHash, reverted tx)
+  // simply gets rejected by the balanceOf check below.
+  router.post("/record-mint", recordLimiter, async (req, res) => {
+    const { fid, address } = req.body as { fid?: number; address?: string; txHash?: string };
     if (!address || !isAddress(address))
       return res.status(400).json({ error: "invalid address" });
     if (!fid || typeof fid !== "number" || !Number.isInteger(fid) || fid <= 0)
       return res.status(400).json({ error: "fid required" });
 
-    // Hard-required (not the "soft, fail-open if absent" pattern used elsewhere):
-    // this route spends real gas from the server wallet immediately, with no
-    // downstream verification pass that could later catch and reverse a
-    // forged fid the way /api/actions/log's background job does. The
-    // per-fid attempt cap is meaningless against an attacker who can freely
-    // choose which fid to claim, so a missing or mismatched token is rejected
-    // outright. NFTPassCard (the only caller) only ever runs inside the mini
-    // app, where a Quick Auth token is always obtainable, so this can't
-    // break the real flow.
     const trusted = await getTrustedFid(req);
     if (trusted.fid === null || trusted.fid !== fid)
       return res.status(401).json({ error: "Valid auth token required and must match fid" });
@@ -171,52 +169,8 @@ export function createNftPassRouter(): Router {
     if (!cfg || !abi)
       return res.status(503).json({ error: "NFT contract not deployed yet" });
 
-    // Per-fid attempt cap — a legitimate user mints once; this only exists to
-    // stop a script from cycling fresh throwaway addresses to drain the
-    // server-funded mint wallet (balanceOf alone can't catch that, since it's
-    // keyed on the address, not the fid).
-    //
-    // The count-check and the log-insert below must be atomic per fid, or
-    // concurrent requests for the same fid can all pass the same stale count
-    // before any of their inserts commit — an advisory lock keyed on the fid
-    // serializes exactly (and only) concurrent attempts for that one fid,
-    // without blocking unrelated fids.
-    const pool = getPool();
-    let lockClient: Awaited<ReturnType<NonNullable<typeof pool>["connect"]>> | null = null;
-    if (pool) {
-      lockClient = await pool.connect();
-      await lockClient.query("BEGIN");
-      await lockClient.query("SELECT pg_advisory_xact_lock($1)", [fid]);
-      const { rows } = await lockClient.query(
-        `SELECT COUNT(*) AS n FROM nft_pass_mint_log WHERE fid = $1 AND created_at > now() - INTERVAL '24 hours'`,
-        [fid],
-      );
-      if (Number(rows[0]?.n ?? 0) >= MAX_MINT_ATTEMPTS_PER_FID_24H) {
-        await lockClient.query("ROLLBACK");
-        lockClient.release();
-        return res.status(429).json({ error: "Too many mint attempts for this FID today. Try again later." });
-      }
-    }
-
-    const rawKey = process.env.NFT_MINT_PRIVATE_KYES;
-    if (!rawKey) return res.status(503).json({ error: "mint key not configured" });
-    const privateKey = (
-      rawKey.startsWith("0x") ? rawKey : `0x${rawKey}`
-    ) as `0x${string}`;
-
     try {
-      const minterAccount = privateKeyToAccount(privateKey);
-      const walletClient  = createWalletClient({
-        account:   minterAccount,
-        chain:     base,
-        transport: http("https://mainnet.base.org"),
-      });
-      const publicClient  = createPublicClient({
-        chain:     base,
-        transport: http("https://mainnet.base.org"),
-      });
-
-      // One pass per address
+      const publicClient = createPublicClient({ chain: base, transport: http("https://mainnet.base.org") });
       const balance = await publicClient.readContract({
         address:      cfg.contractAddress as `0x${string}`,
         abi,
@@ -224,52 +178,22 @@ export function createNftPassRouter(): Router {
         args:         [address as `0x${string}`],
       }) as bigint;
 
-      if (balance > 0n) {
-        if (lockClient) { await lockClient.query("ROLLBACK"); lockClient.release(); lockClient = null; }
-        return res.json({ alreadyMinted: true, balance: Number(balance) });
+      if (balance === 0n) {
+        return res.status(409).json({ error: "not_minted_yet", detail: "This address doesn't hold a token yet — the transaction may still be confirming." });
       }
 
-      // Record the attempt against this fid's 24h cap before spending any gas,
-      // inside the same transaction/lock as the count-check above so the two
-      // are atomic - then release immediately, since the actual on-chain
-      // mint below can take a while and shouldn't hold the DB connection
-      // (or block other fids, though the advisory lock never did that
-      // anyway - it only ever serializes attempts for this one fid).
-      if (lockClient) {
-        await lockClient.query(
-          `INSERT INTO nft_pass_mint_log (fid, address) VALUES ($1, $2)`,
-          [fid, address],
-        ).catch(() => {}); // non-fatal — never block a mint on a logging failure
-        await lockClient.query("COMMIT");
-        lockClient.release();
-        lockClient = null;
+      const pool = getPool();
+      if (pool) {
+        await pool.query(
+          `INSERT INTO nft_pass_mint_log (fid, address, tx_hash) VALUES ($1, $2, $3)`,
+          [fid, address, req.body.txHash ?? null],
+        ).catch(() => {}); // best-effort log — never fail the response over it
       }
 
-      // Simulate first (catches reverts cheaply)
-      await publicClient.simulateContract({
-        address:      cfg.contractAddress as `0x${string}`,
-        abi,
-        functionName: "mint",
-        args:         [address as `0x${string}`],
-        account:      minterAccount,
-      });
-
-      const hash = await walletClient.writeContract({
-        address:      cfg.contractAddress as `0x${string}`,
-        abi,
-        functionName: "mint",
-        args:         [address as `0x${string}`],
-      });
-
-      console.log(`[nft-pass] minted → ${address} (fid ${fid}) tx=${hash}`);
-      res.json({
-        success:     true,
-        txHash:      hash,
-        explorerUrl: `https://basescan.org/tx/${hash}`,
-      });
+      res.json({ ok: true, balance: Number(balance) });
     } catch (e) {
-      console.error("[nft-pass] mint error:", e);
-      res.status(500).json({ error: "mint failed", detail: String(e) });
+      console.error("[nft-pass] record-mint error:", e);
+      res.status(500).json({ error: "verification failed", detail: String(e) });
     }
   });
 
