@@ -31,6 +31,7 @@ import { isFidEligible } from "./db/eligibility.js";
 import { getPool } from "./db/pool.js";
 import { getTrustedFid } from "./auth.js";
 import { verifyCastHash, verifyReaction, verifyFollow } from "./verification-job.js";
+import { upsertGrowHistory, getGrowHistory, type GrowKind, type GrowStatus } from "./db/grow-history.js";
 
 function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
 
@@ -79,6 +80,10 @@ async function tryInstantVerify(
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v > 0 && v <= FID_MAX;
+}
+function fidFromQuery(q: unknown): number | null {
+  const n = Number(q);
+  return validFid(n) ? n : null;
 }
 
 // Farcaster message hashes are Blake3/BLAKE2b 20-byte values = 40 hex chars.
@@ -311,5 +316,50 @@ export function registerActionsRoutes(app: Express): void {
       console.error("[actions] grow campaign-complete error:", e);
       res.status(500).json({ error: "Failed to log campaign complete" });
     }
+  });
+
+  // ── Grow history: durable per-fid campaign log for the Activity tab ─────────
+  const VALID_KINDS   = new Set<GrowKind>(["follow", "unfollow", "purge", "casts", "replies", "unlike", "unrecast"]);
+  const VALID_STATUS  = new Set<GrowStatus>(["live", "completed", "cancelled"]);
+
+  app.post("/api/grow/history", growLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.json({ ok: false, reason: "ledger_not_configured" }); return; }
+    const b = req.body as Record<string, unknown>;
+    const fid = b.fid;
+    if (!validFid(fid)) { res.status(400).json({ error: "Invalid fid" }); return; }
+    if (typeof b.campaignId !== "string" || b.campaignId.length < 4 || b.campaignId.length > 160)
+      { res.status(400).json({ error: "Invalid campaignId" }); return; }
+    if (typeof b.kind !== "string" || !VALID_KINDS.has(b.kind as GrowKind))
+      { res.status(400).json({ error: "Invalid kind" }); return; }
+    if (typeof b.status !== "string" || !VALID_STATUS.has(b.status as GrowStatus))
+      { res.status(400).json({ error: "Invalid status" }); return; }
+
+    const trusted = await getTrustedFid(req);
+    if (trusted.invalidToken || (trusted.fid !== null && trusted.fid !== fid)) {
+      res.status(401).json({ error: "Token does not match claimed fid" }); return;
+    }
+
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    await upsertGrowHistory({
+      fid,
+      campaignId:   b.campaignId,
+      kind:         b.kind as GrowKind,
+      status:       b.status as GrowStatus,
+      label:        typeof b.label === "string" ? b.label.slice(0, 200) : undefined,
+      accountLabel: typeof b.accountLabel === "string" ? b.accountLabel.slice(0, 120) : undefined,
+      total:        num(b.total),
+      succeeded:    num(b.succeeded),
+      failed:       num(b.failed),
+      skipped:      num(b.skipped),
+    });
+    res.json({ ok: true });
+  });
+
+  app.get("/api/grow/history", logLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.json({ history: [] }); return; }
+    const fid = fidFromQuery(req.query.fid);
+    if (!fid) { res.status(400).json({ error: "?fid= must be a valid FID" }); return; }
+    const history = await getGrowHistory(fid, 100);
+    res.json({ history });
   });
 }

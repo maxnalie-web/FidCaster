@@ -25,6 +25,16 @@ import {
 // for copy, the server is still the only source of truth for the award.
 const POINTS_NFT_HOLDER_BONUS = 750;
 
+// The mini app's own URL, attached as a cast embed on the pre-filled
+// Promote/Gift/referral casts so Farcaster renders FidCaster's mini app
+// preview card right in the cast (a tappable launch button for anyone
+// who sees it), instead of the cast being plain text.
+const MINI_APP_EMBED_URL = "https://fidcaster.xyz/mini";
+function composeUrl(text: string): string {
+  return `https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`
+    + `&embeds[]=${encodeURIComponent(MINI_APP_EMBED_URL)}`;
+}
+
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   bg:        "#0B0910",
@@ -2010,7 +2020,7 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
     // anyone real.
     const handle = username.trim().replace(/^@/, "").toLowerCase();
     const text = `${amountNum} FidCaster points @${handle}`;
-    window.open(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    window.open(composeUrl(text), "_blank", "noopener,noreferrer");
     onClose();
   }
 
@@ -2312,7 +2322,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
           {data.promoRemaining >= 50 ? (
-            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(promoText)}`}
+            <a href={composeUrl(promoText)}
               target="_blank" rel="noopener noreferrer"
               style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
@@ -2547,8 +2557,8 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                `Join me on FidCaster, earn points and get in on the airdrop.\n\n${refUrl}`,
-              )}`}
+                "Join me on FidCaster, earn points and get in on the airdrop.",
+              )}&embeds[]=${encodeURIComponent(refUrl)}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
                 padding:"10px 14px", background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.3)",

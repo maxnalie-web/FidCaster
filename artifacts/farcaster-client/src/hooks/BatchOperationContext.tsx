@@ -5,7 +5,7 @@ import { UserPlus, UserMinus, CheckCircle2, XCircle, X, ChevronDown, ChevronUp, 
 import { cn } from "@/lib/utils";
 import { hubFollow } from "@/lib/hub-submit";
 import { checkFollowStatusBulk, type NeynarUser } from "@/lib/neynar";
-import { reportGrowCampaignStart, reportGrowCampaignComplete } from "@/lib/grow-report";
+import { reportGrowCampaignStart, reportGrowCampaignComplete, reportGrowHistory } from "@/lib/grow-report";
 import { bumpFollowingCount } from "@/lib/recent-profile-cache";
 import { AVG_ACTION_SECS } from "@/lib/batch-follow-utils";
 import { signerFromPrivateKeyHex, type LocalSigner } from "@/lib/wallet";
@@ -243,6 +243,12 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     // reported on their original start.
     if (isNewCampaign) {
       reportGrowCampaignStart({ fid: myFid, campaignId, mode, targetFids: fids });
+      // Durable Activity-tab history: mark it live now so it shows under the
+      // Live sub-tab (and survives a reload / shows on other devices).
+      reportGrowHistory({
+        fid: myFid, campaignId, kind: mode, status: "live",
+        label, accountLabel, total, succeeded: 0, failed: 0, skipped: 0,
+      });
     }
 
     const attempt = (targetFid: number) =>
@@ -364,6 +370,17 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     // server's proof dedup to swallow the duplicate.)
     if (isNewCampaign && !cancelRef.current) {
       reportGrowCampaignComplete({ fid: myFid, campaignId, succeeded: done, failed: errors, total, startedAt: campaignStartedAt });
+    }
+
+    // Durable Activity-tab history: flip this campaign to its final state
+    // (completed if it ran to the end, cancelled if the user stopped it) with
+    // the final counts, so it moves out of the Live sub-tab into the right one.
+    if (isNewCampaign) {
+      reportGrowHistory({
+        fid: myFid, campaignId, kind: mode,
+        status: cancelRef.current ? "cancelled" : "completed",
+        label, accountLabel, total, succeeded: done, failed: errors, skipped,
+      });
     }
   }, [upsertOp]);
 
