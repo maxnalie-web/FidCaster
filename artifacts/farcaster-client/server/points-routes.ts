@@ -125,7 +125,7 @@ export function registerPointsRoutes(app: Express): void {
     const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
     if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
     const code = fidToCode(fid);
-    res.json({ fid, code, url: `https://fidcaster.xyz/?ref=${code}` });
+    res.json({ fid, code, url: `https://fidcaster.xyz/mini?ref=${code}` });
   });
 
   // ── Points history ──────────────────────────────────────────────────────────
