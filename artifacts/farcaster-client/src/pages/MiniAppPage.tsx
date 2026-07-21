@@ -544,12 +544,24 @@ function CampfireCanvas({ width = 168, height = 190, active = true }: {
       dx: (i - 3) * 5.7, w: rand(11, 20), h: rand(38, 66) - Math.abs(i - 3) * 8.9, ph: rand(0, 7), sp: rand(2.4, 4),
     }));
 
-    let ft = 0;
+    // Capped at 30fps: this scene is pure ambient decoration and draws ~35
+    // shadowBlur calls per frame (a known Canvas2D hotspot, especially on
+    // weaker/older GPUs) - halving the frame rate roughly halves that cost
+    // with no visible difference for slow, continuous motion like this.
+    // Real elapsed time (not a fixed per-callback increment) keeps the
+    // animation's actual speed the same regardless of the throttle.
     let raf = 0;
-    function frame() {
-      ft += 1 / 60;
+    let lastFrameMs = 0;
+    let dtStep = 1; // multiplier applied to per-frame position deltas, ~1 at 60fps
+    const FRAME_INTERVAL_MS = 1000 / 30;
+    function frame(nowMs: number) {
+      raf = requestAnimationFrame(frame);
+      if (nowMs - lastFrameMs < FRAME_INTERVAL_MS) return;
+      dtStep = lastFrameMs ? ((nowMs - lastFrameMs) / 1000) * 60 : 1;
+      lastFrameMs = nowMs;
+      const ft = nowMs / 1000;
       ctx!.clearRect(0, 0, width, height);
-      if (!activeRef.current) { raf = requestAnimationFrame(frame); return; }
+      if (!activeRef.current) return;
 
       // rocks
       ctx!.fillStyle = "#241626";
@@ -589,7 +601,7 @@ function CampfireCanvas({ width = 168, height = 190, active = true }: {
 
       // embers
       embers.forEach(e => {
-        e.y -= e.v; e.x += Math.sin(ft * 2 + e.ph) * 0.35;
+        e.y -= e.v * dtStep; e.x += Math.sin(ft * 2 + e.ph) * 0.35;
         if (e.y < 13) { e.y = by - rand(0, 25); e.x = bx + rand(-20, 20); }
         const al = Math.max(0, Math.min(1, (e.y - 13) / 114));
         ctx!.fillStyle = `rgba(253,186,116,${0.8 * al})`;
@@ -597,8 +609,6 @@ function CampfireCanvas({ width = 168, height = 190, active = true }: {
         ctx!.beginPath(); ctx!.arc(e.x, e.y, e.s * al + 0.4, 0, Math.PI * 2); ctx!.fill();
       });
       ctx!.restore();
-
-      raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
@@ -718,15 +728,24 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.restore();
     }
 
-    let heroT = 0, raf = 0;
-    function frame() {
-      heroT += 1 / 60;
-      const t = heroT, cx = HW / 2;
+    // Capped at 30fps — same rationale as CampfireCanvas: this scene is pure
+    // ambient decoration built almost entirely out of shadowBlur draws (a
+    // known Canvas2D hotspot), and halves that cost with no visible
+    // difference for slow, continuous motion. All motion here is a function
+    // of elapsed wall-clock time, not a per-callback step, so throttling the
+    // callback rate doesn't change how fast anything visually moves.
+    let raf = 0;
+    let lastFrameMs = 0;
+    const FRAME_INTERVAL_MS = 1000 / 30;
+    function frame(nowMs: number) {
+      raf = requestAnimationFrame(frame);
+      if (nowMs - lastFrameMs < FRAME_INTERVAL_MS) return;
+      lastFrameMs = nowMs;
+      const t = nowMs / 1000, cx = HW / 2;
       ctx!.clearRect(0, 0, HW, HH);
       drawNebulaCloud(cx, RING_Y - 4, t);
       drawPedestalRing(cx, RING_Y, t);
       crystals.forEach(c => drawCrystal(cx + c[0], logoY + c[1], c[2], c[3], t * c[5], c[6], c[4]));
-      raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
 
@@ -2997,14 +3016,28 @@ export function MiniAppPage() {
     if (localStorage.getItem(key) === "1") { setOnboarded(true); setOnboardChecked(true); return; }
     // Not locally flagged (fresh install, cleared cache, new device) — if
     // this fid already minted the pass server-side, treat onboarding as
-    // already done instead of forcing the wizard again.
-    const addr = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
-    if (!addr) { setOnboardChecked(true); return; }
-    fetch(`/api/nft-pass/check/${addr}`)
+    // already done instead of forcing the wizard again. Minting now happens
+    // by signing directly from whatever wallet the mini app host connects
+    // (NFTPassCard's handleMintClick), which is very often NOT one of the
+    // fid's Farcaster-verified addresses — so checking only the verified
+    // address here (as this used to) missed real mints and re-showed the
+    // onboarding wizard on any second device with no local flag. check-fid
+    // is keyed by fid against the actual mint log, so it's the authoritative
+    // source; the verified-address check is only a secondary fallback.
+    let dead = false;
+    fetch(`/api/nft-pass/check-fid/${fid}`)
       .then(r => r.json())
-      .then(d => { if (d.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); } })
-      .catch(() => {})
-      .finally(() => setOnboardChecked(true));
+      .then(async (d) => {
+        if (dead) return;
+        if (d.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); setOnboardChecked(true); return; }
+        const addr = ctx?.user?.verifiedAddresses?.eth_addresses?.[0];
+        if (!addr) { setOnboardChecked(true); return; }
+        const addrCheck = await fetch(`/api/nft-pass/check/${addr}`).then(r => r.json()).catch(() => null);
+        if (!dead && addrCheck?.hasMinted) { localStorage.setItem(key, "1"); setOnboarded(true); }
+        if (!dead) setOnboardChecked(true);
+      })
+      .catch(() => { if (!dead) setOnboardChecked(true); });
+    return () => { dead = true; };
   }, [ready, fid, ctx]);
 
   function completeOnboarding() {
