@@ -360,7 +360,7 @@ export function registerMiniRoutes(app: Express): void {
 
       res.json({
         streak, level, xp, xpToNext, totalPoints, todayPoints,
-        missions, achievements,
+        missions, achievements, todayCounts,
         nextStreakBonusPts: POINTS.streak_bonus.pts,
         streakBonusAwarded,
         seasonEnd: "2025-12-31",

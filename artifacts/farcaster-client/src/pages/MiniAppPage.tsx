@@ -93,9 +93,23 @@ interface StatsData {
   streak: number; level: number; xp: number; xpToNext: number;
   totalPoints: number; todayPoints: number;
   missions: MissionItem[]; achievements: Achievement[];
+  todayCounts: Record<string, number>;
   nextStreakBonusPts: number; streakBonusAwarded: boolean;
   seasonEnd: string;
 }
+
+// Friendly labels for every action type that can appear in todayCounts.
+// Types worth 0 points on their own (unlike/unrecast/unfollow/app_open/
+// market_cancel/grow_campaign_start) are omitted - nothing to report about
+// an undo action or a page-open ping.
+const ACTIVITY_LABELS: Record<string, string> = {
+  cast: "Casts", like: "Likes", recast: "Recasts", follow: "Follows",
+  market_list: "Market listings", market_buy: "Market buys",
+  grow_campaign_complete: "Grow campaigns", referral: "Referrals",
+  referral_welcome: "Referral bonus", quest: "Quests completed",
+  streak_bonus: "Streak bonus", nft_holder_bonus: "NFT holder bonus",
+  promotion: "Promotions", gift: "Gifts sent", gift_received: "Gifts received",
+};
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
 function useSDK() {
@@ -1023,8 +1037,8 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
             <p style={{ color:C.rose, fontWeight:700, fontSize:16 }}>Score Too Low</p>
           </div>
           <p style={{ color:C.text2, fontSize:13, lineHeight:1.7 }}>
-            Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? Math.round(eligData.score * 100) : "unknown"}</strong>.
-            You need at least <strong style={{ color:C.text1 }}>{Math.round(eligData.threshold * 100)}</strong> to use FidCaster.
+            Your Neynar score is <strong style={{ color:C.rose }}>{eligData.score >= 0 ? eligData.score.toFixed(2) : "unknown"}</strong>.
+            You need at least <strong style={{ color:C.text1 }}>{eligData.threshold.toFixed(2)}</strong> to use FidCaster.
           </p>
           <button onClick={() => setEligData(null)} style={{ marginTop:12, background:"rgba(244,63,94,0.14)",
             border:"1px solid rgba(244,63,94,0.3)", color:C.rose, fontSize:12.5, fontWeight:700,
@@ -1041,7 +1055,7 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
             <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px",
               background:"rgba(16,185,129,0.07)", border:"1px solid rgba(16,185,129,0.18)", borderRadius:10 }}>
               <Check size={13} color={C.green} />
-              <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{Math.round(eligData.score * 100)}</strong>, eligible ✓</p>
+              <p style={{ color:C.green, fontSize:12 }}>Neynar score: <strong>{eligData.score.toFixed(2)}</strong>, eligible ✓</p>
             </div>
           )}
           <NFTPassCard fid={fid} ethAddress={ethAddr} qaToken={qaToken} onMinted={() => setMinted(true)} />
@@ -1529,6 +1543,31 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </Card>
         </div>
       )}
+
+      {/* ── Today's Activity — every action type counted today, not just the
+          5 fixed-target missions above (those track progress toward a goal;
+          this is a plain tally of everything that happened today). ── */}
+      {(() => {
+        const todayCounts = stats?.todayCounts ?? {};
+        const entries = Object.entries(todayCounts).filter(([type, cnt]) => cnt > 0 && ACTIVITY_LABELS[type]);
+        if (entries.length === 0) return null;
+        return (
+          <div>
+            <SectionLabel>Today's Activity</SectionLabel>
+            <Card>
+              {entries.map(([type, cnt], i) => (
+                <div key={type}>
+                  <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <span style={{ color:C.text2, fontSize:13 }}>{ACTIVITY_LABELS[type]}</span>
+                    <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>{cnt}</span>
+                  </div>
+                  {i < entries.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </div>
+              ))}
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* ── Daily Allowance ── */}
       <div>

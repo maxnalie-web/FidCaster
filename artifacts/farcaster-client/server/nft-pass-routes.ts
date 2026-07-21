@@ -17,6 +17,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool } from "./db/pool.js";
 import { getTrustedFid } from "./auth.js";
+import { getFarcasterOwnedAddresses } from "./nft-holder-check.js";
 
 // Real gas is spent from a server-held wallet on every mint attempt, and the
 // only per-call anti-repeat check (on-chain balanceOf) is keyed on the
@@ -165,6 +166,29 @@ export function createNftPassRouter(): Router {
     const trusted = await getTrustedFid(req);
     if (trusted.fid === null || trusted.fid !== fid)
       return res.status(401).json({ error: "Valid auth token required and must match fid" });
+
+    // The destination address comes from the client (sdk.wallet.getEthereumProvider()
+    // inside the mini app host) — a connected-wallet address that's scoped to the
+    // browser/webview session, NOT cryptographically tied to whichever fid the
+    // Quick Auth token proves. A stale or shared wallet connection (e.g. testing
+    // multiple Farcaster accounts in the same client without fully disconnecting
+    // the wallet) can silently hand back a DIFFERENT fid's address, which would
+    // otherwise mint (or report "already minted") against a stranger's wallet
+    // while telling the real caller they succeeded. Reject unless the address is
+    // actually provable as belonging to this fid — its on-chain custody address
+    // or one of its Farcaster-verified addresses.
+    try {
+      const owned = await getFarcasterOwnedAddresses(fid);
+      if (owned.length > 0 && !owned.some((a) => a.toLowerCase() === address.toLowerCase())) {
+        return res.status(403).json({
+          error: "address_not_owned_by_fid",
+          detail: "That wallet address isn't linked to your Farcaster account. Reconnect your own wallet and try again.",
+        });
+      }
+    } catch (e) {
+      console.warn(`[nft-pass] address-ownership check failed for fid ${fid}:`, (e as Error).message);
+      return res.status(503).json({ error: "Couldn't verify wallet ownership right now — try again." });
+    }
 
     const cfg = loadConfig();
     const abi = loadAbi();
