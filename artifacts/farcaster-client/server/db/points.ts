@@ -43,10 +43,10 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   // db/allowance.ts processPromotionAtomic) - a bigger allowance (higher
   // follower count / account quality) earns more per promote, not the same
   // flat amount as a brand-new account. The actual amount lives in
-  // payload.amount per row, same pattern as gift_received below; `pts` here
-  // is unused for scoring (kept only as a display default), dailyCap 500
-  // is enforced in SQL via PROMO_CASE.
-  promotion:               { pts: 50,  dailyCap: 500  },
+  // payload.amount per row, same pattern as gift_received below; `pts` and
+  // `dailyCap` here are unused for scoring (kept only as display defaults) -
+  // the real per-day limit is the allowance category cap, see PROMO_CASE.
+  promotion:               { pts: 50,  dailyCap: 5000 },
   gift:                    { pts: 0,   dailyCap: 0    }, // sender: 0 pts (allowance debited)
   // gift_received uses payload.amount (variable); dailyCap 500 enforced in SQL
   gift_received:           { pts: 0,   dailyCap: 0    }, // handled via GIFT_CASE below
@@ -74,7 +74,13 @@ const CASE_EXPR = Object.entries(POINTS)
 // We sum those amounts per (fid, day) and cap at 500.
 const GIFT_CASE = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
 // promotion: same pattern — payload->>'amount' holds the actual scaled award.
-const PROMO_CASE = `WHEN 'promotion' THEN LEAST(COALESCE(promo_sum, 0), 500)`;
+// No separate 500/day points cap here on purpose — processPromotionAtomic
+// already bounds how much can be earned per day via the promo category's
+// 70%-of-allowance debit cap (server/db/allowance.ts), so a second, lower
+// fixed cap here would just clip strong accounts below what their allowance
+// already limits them to. 5000 is a defensive ceiling only (the real max
+// achievable in a day is 70% of MAX_ALLOWANCE = 3500), never meant to bind.
+const PROMO_CASE = `WHEN 'promotion' THEN LEAST(COALESCE(promo_sum, 0), 5000)`;
 // achievement: same pattern — each row is a one-time unlock worth payload->>'amount'.
 const ACHIEVEMENT_CASE = `WHEN 'achievement' THEN LEAST(COALESCE(achievement_sum, 0), 6000)`;
 
@@ -318,6 +324,7 @@ export interface HistoryRow {
   action_type: string;
   pts: number;
   created_at: string; // ISO string
+  fromFid?: number; // gift_received only - the sender's fid, for username enrichment
 }
 
 /**
@@ -353,6 +360,8 @@ export async function getPointsHistory(fid: number, limit = 50): Promise<History
       ? Number(r.payload?.amount ?? 0)
       : (POINTS[r.action_type]?.pts ?? 0),
     created_at:  r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    ...(r.action_type === "gift_received" && r.payload?.fromFid
+      ? { fromFid: Number(r.payload.fromFid) } : {}),
   }));
 }
 

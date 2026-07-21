@@ -245,6 +245,9 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
     await getAllowance(authorFid);
 
     const recipientIsRegistered = await isFidRegistered(recipientFid);
+    // Also ensure the recipient's own row exists (sizes their gift-receiving
+    // cap) - a no-op if they've already been seen today.
+    if (recipientIsRegistered) await getAllowance(recipientFid);
 
     const result = await processGiftAtomic({
       authorFid,
@@ -260,6 +263,13 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
       );
       if (result.reason === "insufficient_allowance") {
         await notifyFid(authorFid, { ...giftInsufficientAllowanceNotif(amount), data: { type: "gift_failed", castHash: cast.hash } });
+      } else if (result.reason === "recipient_gift_cap_reached") {
+        const recipientHandle = cast.mentioned_profiles?.find(p => p.fid === recipientFid)?.username;
+        await notifyFid(authorFid, {
+          title: "Gift not delivered",
+          body: `@${recipientHandle ?? "That user"} already hit their gift-receiving limit for today.`,
+          data: { type: "gift_failed", castHash: cast.hash },
+        });
       }
       return result.reason === "already_processed";
     }
@@ -270,7 +280,10 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
     );
     await notifyFid(authorFid, { ...giftSentNotif(amount), data: { type: "gift_ok", castHash: cast.hash } });
     if (recipientIsRegistered) {
-      await notifyFid(recipientFid, { ...giftReceivedNotif(amount), data: { type: "gift_received", castHash: cast.hash } });
+      await notifyFid(recipientFid, {
+        ...giftReceivedNotif(amount, cast.author?.username),
+        data: { type: "gift_received", castHash: cast.hash, fromFid: authorFid, fromUsername: cast.author?.username ?? null },
+      });
     }
     return true;
   } catch (e) {
@@ -283,7 +296,7 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
 // The webhook is the primary detection path for promotions and gifts, but it
 // misses casts when: the server was down at delivery time, the Neynar filter
 // hadn't been synced yet (new user not in author_fids), or the HMAC secret was
-// stale. Polling via Neynar cast search every 5 minutes catches those gaps.
+// stale. Polling via Neynar cast search roughly every 100s catches those gaps.
 // The proof column in the DB makes this fully idempotent — already-processed
 // casts are silently skipped at the transaction level.
 

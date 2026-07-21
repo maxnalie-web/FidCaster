@@ -181,7 +181,7 @@ function achievementProgress(a: AchievementDef, totalCounts: Record<string, numb
 }
 
 // ── Neynar bulk fetch helper ──────────────────────────────────────────────────
-async function fetchNeynarUsers(fids: number[]): Promise<Map<number, { username: string; pfpUrl: string; displayName: string }>> {
+export async function fetchNeynarUsers(fids: number[]): Promise<Map<number, { username: string; pfpUrl: string; displayName: string }>> {
   const map = new Map<number, { username: string; pfpUrl: string; displayName: string }>();
   if (!hasAnyNeynarKey() || !fids.length) return map;
   try {
