@@ -2440,7 +2440,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
               return (
                 <div key={row.action}>
                   <div style={{ padding:"11px 14px" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                         <div style={{ width:32, height:32, borderRadius:10, background:"rgba(139,92,246,0.12)",
                           border:`1px solid rgba(139,92,246,0.2)`, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -2448,10 +2448,10 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
                         </div>
                         <span style={{ color:C.text1, fontSize:13 }}>{row.action}</span>
                       </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <Chip>+{row.pts} pts</Chip>
-                        <span style={{ color:C.text3, fontSize:10 }}>each, up to {row.cap}/day</span>
-                      </div>
+                      <Chip>+{row.pts} pts</Chip>
+                    </div>
+                    <div style={{ textAlign:"right", marginBottom:2 }}>
+                      <span style={{ color:C.text3, fontSize:10 }}>each, up to {row.cap}/day</span>
                     </div>
                     {!loading && earned > 0 && (
                       <div style={{ height:3, background:C.border, borderRadius:2 }}>
