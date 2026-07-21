@@ -20,7 +20,7 @@ import { loadSignerPrivKey } from "@/lib/account-store";
 import type { NeynarCast } from "@/lib/neynar";
 import type { CleanupKind } from "@/lib/cast-cleanup";
 import { bustProfileCache } from "@/pages/ProfilePage";
-import { reportGrowHistory, type GrowHistoryKind } from "@/lib/grow-report";
+import { reportGrowHistory, reportGrowCampaignComplete, type GrowHistoryKind } from "@/lib/grow-report";
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 const CLEANUP_KEY_PREFIX = "fc_cleanup_v1_";
@@ -172,6 +172,11 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
   }: RunCleanupParams) => {
     const key = opKey(myFid, kind);
     const opId = `${key}-${Date.now()}`;
+    const campaignStartedAt = Date.now();
+    // Only a fresh run (not one resumed after a reload) earns the Grow
+    // Campaign point - a resumed run's "done" count already includes
+    // whatever the original run did before the reload.
+    const isNewCampaign = initialDone === 0;
 
     if (!cancelRefs.current.has(key)) cancelRefs.current.set(key, { current: false });
     const cancelRef = cancelRefs.current.get(key)!;
@@ -287,6 +292,17 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
       status: cancelRef.current ? "cancelled" : "completed",
       label, accountLabel, total, succeeded: done, failed: errors, skipped,
     });
+
+    // Grow Campaign points: Purge/Clean Up never reported this at all before -
+    // only the follow/unfollow batch runner did, even though the Grow section
+    // presents Follow, Clean Up, and Purge as the same "Grow Campaign" bonus.
+    // Same rule as follow/unfollow: only a run that finished on its own (not
+    // cancelled early) and did at least one real thing earns the point.
+    if (isNewCampaign && !cancelRef.current) {
+      reportGrowCampaignComplete({
+        fid: myFid, campaignId: opId, succeeded: done, failed: errors, total, startedAt: campaignStartedAt,
+      });
+    }
   }, []);
 
   const startOp = useCallback((params: StartCleanupParams) => {
