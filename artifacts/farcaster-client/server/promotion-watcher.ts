@@ -17,6 +17,63 @@ import { getAllowance, processPromotionAtomic, processGiftAtomic } from "./db/al
 import { getPool } from "./db/pool.js";
 import { getPushTokensForFid, pruneInvalidTokens } from "./push-token-store.js";
 import { sendPushToTokens } from "./fcm.js";
+import { neynarThrottle, penalize429 } from "./neynar-limit.js";
+
+// ── Text-based mention fallback ──────────────────────────────────────────────
+// The pre-filled compose text (both Promote and Gift) embeds "@handle" as
+// plain characters via a warpcast.com/~/compose?text= URL, not through
+// Warpcast's own @mention-autocomplete UI - it is NOT confirmed that every
+// Farcaster client reliably upgrades that into a real structured mention
+// (with a resolved fid) on submit versus posting it as inert text. If it
+// doesn't, cast.mentioned_profiles arrives empty and both features silently
+// never detect anything, no matter how correct the rest of this file is.
+// These resolve a plain "@handle" straight from the cast text via Neynar as
+// a fallback whenever the structured mention isn't there, so detection
+// doesn't depend on that client behavior at all.
+const NEYNAR_BASE = "https://api.neynar.com/v2/farcaster";
+
+async function neynarFetch(url: string): Promise<Response> {
+  let key: string;
+  try { key = await neynarThrottle(); }
+  catch { key = process.env.NEYNAR_API_KEY ?? ""; }
+  const res = await fetch(url, { headers: { api_key: key }, signal: AbortSignal.timeout(8_000) });
+  if (res.status === 429) {
+    penalize429(key);
+    let retryKey: string;
+    try { retryKey = await neynarThrottle(); } catch { retryKey = key; }
+    return fetch(url, { headers: { api_key: retryKey }, signal: AbortSignal.timeout(8_000) });
+  }
+  return res;
+}
+
+async function resolveUsernameToFid(username: string): Promise<number | null> {
+  try {
+    const res = await neynarFetch(`${NEYNAR_BASE}/user/by_username?username=${encodeURIComponent(username)}`);
+    if (!res.ok) return null;
+    const data = await res.json() as { user?: { fid?: number } };
+    return typeof data.user?.fid === "number" ? data.user.fid : null;
+  } catch {
+    return null;
+  }
+}
+
+// APP_FID's own username, resolved once and cached — used to text-match
+// "@<appUsername>" in a promotion cast when mentioned_profiles doesn't
+// already include appFid.
+let cachedAppUsername: string | null | undefined; // undefined = not yet fetched
+
+async function getAppUsername(appFid: number): Promise<string | null> {
+  if (cachedAppUsername !== undefined) return cachedAppUsername;
+  try {
+    const res = await neynarFetch(`${NEYNAR_BASE}/user/bulk?fids=${appFid}`);
+    if (!res.ok) { cachedAppUsername = null; return null; }
+    const data = await res.json() as { users?: { username?: string }[] };
+    cachedAppUsername = data.users?.[0]?.username ?? null;
+  } catch {
+    cachedAppUsername = null;
+  }
+  return cachedAppUsername;
+}
 
 // User-facing feedback for a fire-and-forget system: the user has no other way to
 // learn whether their promotion/gift cast actually earned points or silently failed
@@ -83,7 +140,13 @@ export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise
   if (!authorFid) return false;
 
   if (!PROMO_REGEX.test(text)) return false;
-  const mentionsApp = (cast.mentioned_profiles ?? []).some(p => p.fid === appFid);
+  let mentionsApp = (cast.mentioned_profiles ?? []).some(p => p.fid === appFid);
+  if (!mentionsApp) {
+    // Structured mention missing (see the fallback block's comment above) -
+    // fall back to a plain text match against the app's own username.
+    const appUsername = await getAppUsername(appFid);
+    if (appUsername) mentionsApp = new RegExp(`@${appUsername}\\b`, "i").test(text);
+  }
   if (!mentionsApp) return false;
 
   try {
@@ -98,8 +161,8 @@ export async function handlePromotionCast(cast: NeynarCastForPromotion): Promise
         await notifyFid(authorFid, {
           title: "Promotion not counted",
           body:  result.reason === "promo_category_cap_reached"
-            ? "Your promotion cast didn't earn points — you've hit today's promote limit."
-            : "Your promotion cast didn't earn points — you're out of daily allowance.",
+            ? "Your promotion cast didn't earn points, you've hit today's promote limit."
+            : "Your promotion cast didn't earn points, you're out of daily allowance.",
           data:  { type: "promotion_failed", castHash: cast.hash },
         });
       }
@@ -133,9 +196,15 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
   const amount = parseInt(match[1], 10);
   if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_GIFT_PTS) return false;
 
-  const recipients = (cast.mentioned_profiles ?? []).filter(p => p.fid !== authorFid);
-  if (recipients.length === 0) {
-    // Text matched the gift pattern but no real mention resolved — e.g. the
+  let recipientFid = (cast.mentioned_profiles ?? []).find(p => p.fid !== authorFid)?.fid ?? null;
+  if (!recipientFid) {
+    // Structured mention missing (see the fallback block's comment above) -
+    // fall back to resolving the "@handle" straight out of the cast text.
+    const handleMatch = /^\d+\s+fidcaster\s+points\s+@([a-z0-9_.-]+)/i.exec(text);
+    if (handleMatch) recipientFid = await resolveUsernameToFid(handleMatch[1]);
+  }
+  if (!recipientFid || recipientFid === authorFid) {
+    // Text matched the gift pattern but no real recipient resolved — e.g. the
     // user edited the pre-filled Warpcast text, mistyped the handle, or the
     // mentioned account doesn't exist. Without this the cast just silently
     // never earns anything, contradicting the in-app promise that a
@@ -147,7 +216,6 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
     });
     return false;
   }
-  const recipientFid = recipients[0].fid;
 
   try {
     // Ensure today's allowance row exists before entering the transaction

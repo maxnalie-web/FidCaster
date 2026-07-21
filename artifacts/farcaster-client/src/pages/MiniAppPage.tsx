@@ -2029,14 +2029,14 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
 
 function HowItWorksModal({ onClose }: { onClose: () => void }) {
   const sections = [
-    { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points — but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
-    { t:"Farcaster activity itself doesn't earn points", d:"Posting, liking, or following directly on Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead — via Promote and Gift casts." },
+    { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points, but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
+    { t:"Farcaster activity itself doesn't earn points", d:"Posting, liking, or following directly on Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead, via Promote and Gift casts." },
     { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
-    { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points — they won't count even if they briefly showed up." },
+    { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points, so they won't count even if they briefly showed up." },
     { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
     { t:"Referrals pay out immediately but are capped", d:"You and anyone you refer both get points right away. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
-    { t:"If something looks like fraud, it gets excluded — not silently kept", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
-    { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that — so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
+    { t:"If something looks like fraud, it gets excluded (not silently kept)", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
+    { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that, so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
   ];
   return (
     <AllowanceModalShell onClose={onClose} icon={<Shield size={16} color={C.accentHi} />} title="How Points & Anti-Fraud Work">
@@ -2336,7 +2336,7 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                `Join me on FidCaster — earn points and get in on the airdrop.\n\n${refUrl}`,
+                `Join me on FidCaster, earn points and get in on the airdrop.\n\n${refUrl}`,
               )}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
@@ -2540,7 +2540,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
               <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>FasterTask NFT Bonus</p>
               <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
                 {nftCheck === "not_holder" ? "No FasterTask Pass NFT found yet."
-                  : nftCheck === "error" ? "Couldn't check right now — try again."
+                  : nftCheck === "error" ? "Couldn't check right now, try again."
                   : "One-time check, hold the FasterTask Pass to unlock it."}
               </p>
             </div>

@@ -179,7 +179,7 @@ export function createNftPassRouter(): Router {
       }) as bigint;
 
       if (balance === 0n) {
-        return res.status(409).json({ error: "not_minted_yet", detail: "This address doesn't hold a token yet — the transaction may still be confirming." });
+        return res.status(409).json({ error: "not_minted_yet", detail: "This address doesn't hold a token yet, the transaction may still be confirming." });
       }
 
       const pool = getPool();

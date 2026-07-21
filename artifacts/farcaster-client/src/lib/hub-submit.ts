@@ -31,6 +31,7 @@ import {
 } from "@farcaster/core";
 import type { LocalSigner } from "./wallet";
 import { getSessionToken } from "./session";
+import { directNeynarGet } from "./neynar";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ type FarcasterAction =
   | { type: "unrecast";         castHash: string; castAuthorFid: number }
   | { type: "follow";           targetFid: number }
   | { type: "unfollow";         targetFid: number }
-  | { type: "cast";             text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string }
+  | { type: "cast";             text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string; mentions?: number[]; mentionsPositions?: number[] }
   | { type: "delete-cast";      castHash: string }
   | { type: "update-user-data"; dataType: "pfp" | "display" | "bio" | "banner"; value: string };
 
@@ -62,6 +63,55 @@ function hexToBytes(hex: string): Uint8Array {
   const b = new Uint8Array(h.length / 2);
   for (let i = 0; i < b.length; i++) b[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
   return b;
+}
+
+const MENTION_TOKEN_RE = /@([a-zA-Z0-9_][a-zA-Z0-9_.-]*)/g;
+
+/**
+ * Resolve "@handle" tokens in raw composer text into real Farcaster protocol
+ * mentions (fid + UTF-8 byte offset into the stripped text), so casts posted
+ * from FidCaster actually carry a structured mention instead of inert text.
+ * Unresolvable handles are left as plain text in the output.
+ */
+async function resolveMentionsInText(
+  text: string,
+): Promise<{ text: string; mentions: number[]; mentionsPositions: number[] }> {
+  const matches = Array.from(text.matchAll(MENTION_TOKEN_RE));
+  if (matches.length === 0) return { text, mentions: [], mentionsPositions: [] };
+
+  const resolved = await Promise.all(
+    matches.map(async (m) => {
+      const username = m[1];
+      try {
+        const data = await directNeynarGet<{ user?: { fid?: number } }>(
+          `/farcaster/user/by_username?username=${encodeURIComponent(username)}`,
+        );
+        const fid = data.user?.fid;
+        return typeof fid === "number" ? fid : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  let outText = "";
+  let lastIndex = 0;
+  const mentions: number[] = [];
+  const mentionsPositions: number[] = [];
+  const encoder = new TextEncoder();
+
+  matches.forEach((m, i) => {
+    const fid = resolved[i];
+    const matchIndex = m.index ?? 0;
+    if (fid === null) return; // leave untouched: preserved via the next slice
+    outText += text.slice(lastIndex, matchIndex);
+    mentions.push(fid);
+    mentionsPositions.push(encoder.encode(outText).length);
+    lastIndex = matchIndex + m[0].length;
+  });
+  outText += text.slice(lastIndex);
+
+  return { text: outText, mentions, mentionsPositions };
 }
 
 /**
@@ -112,12 +162,12 @@ async function buildAndSignLocal(
     };
     result = await makeUserDataAdd({ type: typeMap[action.dataType], value: action.value }, opts, signer);
   } else {
-    const cast = action as { type: "cast"; text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string };
+    const cast = action as { type: "cast"; text: string; embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string; mentions?: number[]; mentionsPositions?: number[] };
     result = await makeCastAdd({
       type: CastType.CAST,
       text: cast.text,
       embeds: (cast.embeds ?? []).map((url) => ({ url })),
-      embedsDeprecated: [], mentions: [], mentionsPositions: [],
+      embedsDeprecated: [], mentions: cast.mentions ?? [], mentionsPositions: cast.mentionsPositions ?? [],
       ...(cast.parentHash && cast.parentFid
         ? { parentCastId: { fid: cast.parentFid, hash: hexToBytes(cast.parentHash) } }
         : cast.parentUrl ? { parentUrl: cast.parentUrl } : {}),
@@ -391,9 +441,11 @@ export async function hubPublishCast(
   opts?: { embeds?: string[]; parentHash?: string; parentFid?: number; parentUrl?: string; neynarKey?: string },
 ): Promise<void> {
   const fidNum = normFid(fid);
+  const { text: resolvedText, mentions, mentionsPositions } = await resolveMentionsInText(text);
   const action: FarcasterAction = {
     type: "cast",
-    text,
+    text: resolvedText,
+    ...(mentions.length > 0 ? { mentions, mentionsPositions } : {}),
     ...(opts?.embeds && opts.embeds.length > 0 ? { embeds: opts.embeds } : {}),
     ...(opts?.parentHash && opts.parentFid
       ? { parentHash: opts.parentHash, parentFid: opts.parentFid }
