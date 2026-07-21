@@ -668,6 +668,12 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
     const cloudTwinkles = Array.from({ length: 11 }, () => ({
       dx: rand(-70, 70), dy: rand(-56, 56), s: rand(0.7, 1.7), sp: rand(0.5, 1.3), ph: rand(0, 7),
     }));
+    // Sparse background stars spread across the whole scene (not just the
+    // cloud cluster) so the hero reads as a fuller starfield rather than one
+    // glowing patch. Cheap: a handful of small dots, no shadowBlur.
+    const farStars = Array.from({ length: 16 }, () => ({
+      dx: rand(-180, 180), dy: rand(-130, 90), s: rand(0.5, 1.2), sp: rand(0.4, 1.1), ph: rand(0, 7),
+    }));
 
     function drawCrystal(x: number, y: number, s: number, tilt: number, t: number, ph: number, blur: number) {
       ctx!.save();
@@ -706,10 +712,27 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.restore();
     }
 
+    function drawFarStars(cx: number, cy: number, t: number) {
+      ctx!.save(); ctx!.globalCompositeOperation = "lighter";
+      farStars.forEach(s => {
+        const al = 0.15 + 0.4 * Math.abs(Math.sin(t * s.sp + s.ph));
+        ctx!.fillStyle = `rgba(216,180,254,${al})`;
+        ctx!.beginPath(); ctx!.arc(cx + s.dx, cy + s.dy, s.s, 0, Math.PI * 2); ctx!.fill();
+      });
+      ctx!.restore();
+    }
+
     function drawPedestalRing(cx: number, cy: number, t: number) {
       ctx!.save(); ctx!.translate(cx, cy);
       const pulse = 1 + Math.sin(t * 1.4) * 0.035;
       const rx = 138 * pulse, ry = 34 * pulse;
+      // Slow counter-rotating outer halo for depth behind the main ring —
+      // a single cheap stroke, no shadowBlur, so it costs almost nothing.
+      const haloA = -t * 0.035;
+      ctx!.save(); ctx!.rotate(haloA);
+      ctx!.strokeStyle = "rgba(192,132,252,.14)"; ctx!.lineWidth = 1;
+      ctx!.beginPath(); ctx!.ellipse(0, 0, rx * 1.22, ry * 1.22, 0, 0, Math.PI * 2); ctx!.stroke();
+      ctx!.restore();
       ctx!.save(); ctx!.globalCompositeOperation = "lighter";
       const g = ctx!.createRadialGradient(0, 6, 0, 0, 6, 168);
       g.addColorStop(0, "rgba(147,51,234,.26)"); g.addColorStop(0.5, "rgba(109,40,217,.10)"); g.addColorStop(1, "transparent");
@@ -760,6 +783,7 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       lastFrameMs = nowMs;
       const t = nowMs / 1000, cx = HW / 2;
       ctx!.clearRect(0, 0, HW, HH);
+      drawFarStars(cx, logoY, t);
       drawNebulaCloud(cx, RING_Y - 4, t);
       drawPedestalRing(cx, RING_Y, t);
       crystals.forEach(c => drawCrystal(cx + c[0], logoY + c[1], c[2], c[3], t * c[5], c[6], c[4]));
