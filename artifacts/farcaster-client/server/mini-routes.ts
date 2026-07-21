@@ -370,8 +370,6 @@ export function registerMiniRoutes(app: Express): void {
       const totalCounts: Record<string, number> = {};
       for (const r of totalActionRows) totalCounts[r.action_type] = Number(r.cnt);
 
-      const { level, xp, xpToNext } = calcLevel(totalPoints);
-
       const missions = MISSIONS.map(m => ({
         ...m,
         count: Math.min(todayCounts[m.action] ?? 0, m.target),
@@ -392,14 +390,26 @@ export function registerMiniRoutes(app: Express): void {
       );
       const awardedIds = new Set(awardedRows.map(r => r.id));
 
+      // runningTotal tracks points awarded by THIS call as achievements unlock,
+      // so the response (level/xp/totalPoints) reflects its own awards instead
+      // of the pre-award snapshot read above. Without this, a request that
+      // unlocks an achievement would return level/xp/totalPoints exactly as if
+      // it hadn't - correct only on the NEXT fetch - and since the mini app no
+      // longer polls every 20s (only on visibility change), that staleness was
+      // very visible (e.g. "+150 achievement just now" but the total up top
+      // still reads what it was before). Also lets a "points" tier achievement
+      // cascade-unlock within the same request if this round's awards cross
+      // its threshold, instead of waiting one more round trip.
+      let runningTotal = totalPoints;
+      let awardedThisCall = 0;
+
       const achievements = ACHIEVEMENTS.map(a => {
-        const progress = achievementProgress(a, totalCounts, totalPoints, streak);
+        const progress = achievementProgress(a, totalCounts, runningTotal, streak);
         const unlocked = progress >= a.target || awardedIds.has(a.id);
-        // Fire-and-forget: logUserAction is idempotent on (action_type, proof)
-        // and never throws, so it's safe to call on every stats fetch once an
-        // achievement is unlocked — it only actually inserts (and awards
-        // a.pts) the first time. Not awaited: this endpoint shouldn't wait on
-        // a DB write for a response that already has everything it needs.
+        // Fire-and-forget the actual DB write (idempotent on (action_type, proof),
+        // so calling it every stats fetch after the first unlock is harmless) -
+        // but runningTotal/awardedThisCall update synchronously so this response
+        // is correct even though the insert itself hasn't landed yet.
         if (unlocked && a.pts > 0 && !awardedIds.has(a.id)) {
           void logUserAction({
             fid, actionType: "achievement",
@@ -412,6 +422,8 @@ export function registerMiniRoutes(app: Express): void {
             targetFids: [fid],
             targetUrl: "https://fidcaster.xyz/mini",
           });
+          runningTotal += a.pts;
+          awardedThisCall += a.pts;
         }
         return {
           id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
@@ -422,8 +434,12 @@ export function registerMiniRoutes(app: Express): void {
         };
       });
 
+      const finalTotalPoints = runningTotal;
+      const finalTodayPoints = todayPoints + awardedThisCall;
+      const { level, xp, xpToNext } = calcLevel(finalTotalPoints);
+
       res.json({
-        streak, level, xp, xpToNext, totalPoints, todayPoints,
+        streak, level, xp, xpToNext, totalPoints: finalTotalPoints, todayPoints: finalTodayPoints,
         missions, achievements, todayCounts,
         nextStreakBonusPts: POINTS.streak_bonus.pts,
         streakBonusAwarded,

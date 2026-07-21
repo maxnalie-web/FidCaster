@@ -1413,7 +1413,12 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
-  const totalPoints = pts?.total_points ?? 0;
+  // Prefer stats.totalPoints over pts.total_points: /api/mini/stats computes
+  // any achievement it awards synchronously into its own response, but
+  // /api/points/my reads the ledger directly and can race the (fire-and-
+  // forget) DB insert for that same award, showing a total that's stale by
+  // exactly the just-unlocked achievement's points until the next refetch.
+  const totalPoints = stats?.totalPoints ?? pts?.total_points ?? 0;
   const todayPts    = stats?.todayPoints ?? 0;
   const streak      = stats?.streak ?? 0;
   const level       = stats?.level ?? 0;
@@ -2051,19 +2056,28 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
 }
 
 function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
-  const sections = [
+  const sections: { t: string; d: string; badge?: string }[] = [
     { t:"What it is", d:"A daily budget of points you can spend, not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
     { t:"How much you get", d:"Based on your account: 300 base points plus up to 3,000 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x), capped at 5,000/day. Higher-quality, higher-follower accounts get meaningfully more." },
     { t:"Promote and Gift each have their own cap", d:"Neither can use more than 70% of a single day's allowance on its own, so you can't spend it all in one place." },
-    { t:"Promote (−50 allowance)", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
-    { t:"Send Gift (−N allowance)", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
+    { t:"Promote", badge:"−50 allowance", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
+    { t:"Send Gift", badge:"−N allowance", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
     { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
   ];
   return (
     <AllowanceModalShell onClose={onClose} icon={<Info size={16} color={C.accentHi} />} title="How Daily Allowance Works">
       {sections.map((s) => (
         <div key={s.t} style={{ marginBottom:14 }}>
-          <p style={{ color:C.text1, fontWeight:700, fontSize:13, marginBottom:4 }}>{s.t}</p>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4 }}>
+            <p style={{ color:C.text1, fontWeight:700, fontSize:13 }}>{s.t}</p>
+            {s.badge && (
+              <span style={{ color:C.rose, fontSize:10.5, fontWeight:800, padding:"2px 8px",
+                borderRadius:999, border:`1px solid ${C.rose}55`, background:`${C.rose}18`,
+                letterSpacing:"0.01em" }}>
+                {s.badge}
+              </span>
+            )}
+          </div>
           <p style={{ color:C.text2, fontSize:12.5, lineHeight:1.6 }}>{s.d}</p>
         </div>
       ))}
@@ -2644,7 +2658,12 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
   const ethAddrs    = ctx?.user?.verifiedAddresses?.eth_addresses ?? [];
-  const totalPoints = pts?.total_points ?? 0;
+  // Prefer stats.totalPoints over pts.total_points: /api/mini/stats computes
+  // any achievement it awards synchronously into its own response, but
+  // /api/points/my reads the ledger directly and can race the (fire-and-
+  // forget) DB insert for that same award, showing a total that's stale by
+  // exactly the just-unlocked achievement's points until the next refetch.
+  const totalPoints = stats?.totalPoints ?? pts?.total_points ?? 0;
   const level       = stats?.level ?? 0;
   const xp          = stats?.xp ?? 0;
   const xpToNext    = stats?.xpToNext ?? 500;
