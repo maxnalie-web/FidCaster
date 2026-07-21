@@ -141,7 +141,40 @@ export function scheduleWebhookSync(): void {
 const PERIODIC_WEBHOOK_SYNC_MS = 2 * 60_000; // every 2 min (was 10) — keeps new users in author_fids quickly
 let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * Fetch the live webhook secret from Neynar on startup via GET — in addition to
+ * the PUT response path. This populates runtimeWebhookSecret before any
+ * webhook delivery can arrive, so even casts delivered within the first few
+ * seconds of server boot pass HMAC verification without relying on the env var.
+ */
+async function fetchWebhookSecretOnStartup(): Promise<void> {
+  const apiKey    = process.env.NEYNAR_API_KEY;
+  const webhookId = process.env.NEYNAR_WEBHOOK_ID;
+  if (!apiKey || !webhookId) return;
+  try {
+    const r = await fetch(`https://api.neynar.com/v2/farcaster/webhook/${webhookId}`, {
+      headers: { "x-api-key": apiKey },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!r.ok) {
+      console.warn(`[push] startup webhook secret GET: ${r.status} — will retry via PUT sync`);
+      return;
+    }
+    const body = await r.json() as { webhook?: { secret?: string } };
+    const secret = body.webhook?.secret;
+    if (secret && typeof secret === "string") {
+      runtimeWebhookSecret = secret;
+      console.log("[push] webhook secret loaded from Neynar GET on startup");
+    }
+  } catch (e) {
+    console.warn("[push] startup webhook secret fetch failed:", (e as Error).message);
+  }
+}
+
 export function startWebhookTargetSync(): void {
+  // Fetch the live secret immediately via GET so HMAC verification is ready
+  // before the first webhook delivery, not only after the first PUT response.
+  void fetchWebhookSecretOnStartup();
   scheduleWebhookSync(); // pick up everyone immediately on boot, not just on the next push-token event
   if (periodicSyncTimer) return;
   periodicSyncTimer = setInterval(() => { syncNeynarWebhookTargets(); }, PERIODIC_WEBHOOK_SYNC_MS);

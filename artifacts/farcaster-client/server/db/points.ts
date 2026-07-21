@@ -266,6 +266,33 @@ export async function getFidTodayPoints(fid: number): Promise<number> {
   return Number(rows[0]?.today_points ?? 0);
 }
 
+/**
+ * Same as getFidPoints but WITHOUT the hasMintedPass gate.
+ * Used when a user views their OWN stats in the mini app — every point they
+ * legitimately earned should be visible regardless of NFT mint status.
+ * The gate protects the public leaderboard / airdrop snapshot only, not the
+ * user's personal view of their own points.
+ */
+export async function getFidPointsNoGate(fid: number): Promise<FidPoints> {
+  const pool = getPool();
+  if (!pool) return { fid, total_points: 0, breakdown: [] };
+  const { rows } = await pool.query(SINGLE_FID_SQL, [fid]);
+  const breakdown = rows.map(r => ({
+    action_type:   r.action_type,
+    total_actions: Number(r.total_actions),
+    points_earned: Number(r.points_earned),
+  }));
+  const total_points = breakdown.reduce((s, r) => s + r.points_earned, 0);
+  return { fid, total_points, breakdown };
+}
+
+export async function getFidTodayPointsNoGate(fid: number): Promise<number> {
+  const pool = getPool();
+  if (!pool) return 0;
+  const { rows } = await pool.query(TODAY_POINTS_SQL, [fid]);
+  return Number(rows[0]?.today_points ?? 0);
+}
+
 /** Full snapshot for Clanker airdrop input. Returns ALL eligible fids. */
 export async function getFullSnapshot(): Promise<LeaderboardRow[]> {
   const pool = getPool();

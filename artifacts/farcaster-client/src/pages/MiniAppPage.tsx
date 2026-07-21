@@ -2085,8 +2085,8 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
     { t:"What it is", d:"A daily budget of points you can spend, not earn directly. It resets every day at midnight UTC and unused allowance doesn't roll over." },
     { t:"How much you get", d:"Based on your account: 300 base points plus up to 3,000 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x), capped at 5,000/day. Higher-quality, higher-follower accounts get meaningfully more." },
     { t:"Promote and Gift each have their own cap", d:"Neither can use more than 70% of a single day's allowance on its own, so you can't spend it all in one place." },
-    { t:"Promote", badge:"−50 allowance", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
-    { t:"Send Gift", badge:"−N allowance", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
+    { t:"Promote", badge:"50 allowance", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
+    { t:"Send Gift", badge:"1–500 allowance", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
     { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
   ];
   return (
@@ -2372,7 +2372,11 @@ function AllowanceBarV2({ fid }: { fid: number }) {
               <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
                 Earn <strong style={{ color:C.accentHi }}>50-500 pts</strong> per cast
               </p>
-              <span style={{ color:C.amber, fontSize:11 }}>−50 allowance</span>
+              <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10.5, fontWeight:700,
+                padding:"2px 8px", borderRadius:999, background:"rgba(251,113,133,0.18)",
+                border:"1px solid rgba(251,113,133,0.35)", color:"#fb7185" }}>
+                50 allowance used
+              </span>
             </a>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
@@ -2397,7 +2401,11 @@ function AllowanceBarV2({ fid }: { fid: number }) {
             <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
               {data.giftRemaining > 0 ? "Send points to another user" : "Daily gift limit reached"}
             </p>
-            <span style={{ color:C.amber, fontSize:11 }}>−N allowance</span>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10.5, fontWeight:700,
+              padding:"2px 8px", borderRadius:999, background:"rgba(251,113,133,0.18)",
+              border:"1px solid rgba(251,113,133,0.35)", color:"#fb7185" }}>
+              1–500 allowance used
+            </span>
           </button>
         </div>
       </Card>

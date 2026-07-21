@@ -271,6 +271,50 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
   }
 }
 
+// ── Polling fallback ────────────────────────────────────────────────────────────
+// The webhook is the primary detection path for promotions and gifts, but it
+// misses casts when: the server was down at delivery time, the Neynar filter
+// hadn't been synced yet (new user not in author_fids), or the HMAC secret was
+// stale. Polling via Neynar cast search every 5 minutes catches those gaps.
+// The proof column in the DB makes this fully idempotent — already-processed
+// casts are silently skipped at the transaction level.
+
+let lastPollAt = 0;
+
+export async function pollForMissedCasts(): Promise<void> {
+  // Hard debounce: never run more than once per 90s regardless of call frequency.
+  const now = Date.now();
+  if (now - lastPollAt < 90_000) return;
+  lastPollAt = now;
+
+  try {
+    // A single search for "fidcaster" catches both promotion casts
+    // ("… FidCaster … @fidcaster") and gift casts ("N FidCaster points @user").
+    const res = await neynarFetch(
+      `${NEYNAR_BASE}/cast/search?q=fidcaster&limit=50&priority_mode=false`,
+    );
+    if (!res.ok) {
+      console.warn(`[promotion-watcher] poll search failed: ${res.status}`);
+      return;
+    }
+    const data = await res.json() as { result?: { casts?: NeynarCastForPromotion[] } };
+    const casts = data.result?.casts ?? [];
+    if (casts.length === 0) return;
+
+    let processed = 0;
+    for (const cast of casts) {
+      if (!cast.hash || !cast.author?.fid) continue;
+      await processCastForAllowance(cast).catch(() => { /* idempotent — skip errors */ });
+      processed++;
+    }
+    if (processed > 0) {
+      console.log(`[promotion-watcher] poll scanned ${processed}/${casts.length} casts`);
+    }
+  } catch (e) {
+    console.warn("[promotion-watcher] poll error:", (e as Error).message);
+  }
+}
+
 // ── Unified entry point ────────────────────────────────────────────────────────
 
 export async function processCastForAllowance(cast: NeynarCastForPromotion): Promise<void> {

@@ -17,7 +17,7 @@ import { bustProfileCache } from "@/pages/ProfilePage";
 const ADMIN_FID = 16333;
 
 // ─── Timing knobs ─────────────────────────────────────────────────────────────
-const DELAY_MS = 1500;
+const DELAY_MS = 900; // reduced from 1500ms for faster follow/unfollow throughput
 const SIGNER_RETRY_WAIT_MS = 90_000;
 const MAX_SIGNER_RETRIES = 3;
 const CONSECUTIVE_ERR_LIMIT = 10;
@@ -521,7 +521,19 @@ export function BatchOperationProvider({ children }: { children: React.ReactNode
     // find the still-there snapshot and resume it right back up. This
     // tombstone tells the resume scan to ignore this (fid, mode) regardless.
     markStopped(myFid, mode);
-  }, []);
+    // Immediately report cancelled to the server so the History tab reflects it
+    // even if the loop's own reportGrowHistory call fails (network/retry window).
+    // Fire-and-forget from the loop itself was the root cause of "Stopped" ops
+    // staying stuck with a "Live" tag in the History tab.
+    const op = opsMap.get(key);
+    if (op) {
+      reportGrowHistory({
+        fid: myFid, campaignId: op.id, kind: op.mode, status: "cancelled",
+        label: op.label, accountLabel: op.accountLabel,
+        total: op.total, succeeded: op.done, failed: op.errors, skipped: op.skipped,
+      });
+    }
+  }, [opsMap]);
 
   const clearOp = useCallback((myFid: number, mode: "follow" | "unfollow") => {
     clearBatch(myFid, mode);

@@ -11,7 +11,7 @@ import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { neynarThrottle, penalize429, hasAnyNeynarKey } from "./neynar-limit.js";
 import { getPool, isDbConfigured } from "./db/pool.js";
-import { POINTS, getFidPoints, getFidTodayPoints, getLeaderboard } from "./db/points.js";
+import { POINTS, getFidPoints, getFidTodayPoints, getFidPointsNoGate, getFidTodayPointsNoGate, getLeaderboard } from "./db/points.js";
 import { upsertNotificationToken, sendFarcasterNotification } from "./db/notifications.js";
 import { achievementUnlockedNotif } from "./notification-templates.js";
 import { checkAndAwardNftHolderBonus } from "./nft-holder-check.js";
@@ -352,8 +352,11 @@ export function registerMiniRoutes(app: Express): void {
       // exist and had drifted to omit the promotion/achievement branches
       // entirely, silently under-scoring level/XP and the points-tier
       // achievements for anyone who'd earned either.
-      const { total_points: totalPoints } = await getFidPoints(fid);
-      const todayPoints = await getFidTodayPoints(fid);
+      // Use the no-gate versions for a user's own stats: every point they earned
+      // should be visible to them regardless of NFT mint status. The gate exists
+      // for the public leaderboard/airdrop snapshot, not the personal dashboard.
+      const { total_points: totalPoints } = await getFidPointsNoGate(fid);
+      const todayPoints = await getFidTodayPointsNoGate(fid);
 
       // Today's action counts per type (for missions)
       const { rows: todayActionRows } = await pool.query<{ action_type: string; cnt: string }>(

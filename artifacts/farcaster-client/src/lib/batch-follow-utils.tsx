@@ -221,7 +221,7 @@ export function applyFilters(
 // Measured average wall-clock time per follow/unfollow action end-to-end
 // (sign + relay + inter-action delay) · used everywhere an ETA is shown so the
 // pre-start estimate and the live progress-pill estimate always agree.
-export const AVG_ACTION_SECS = 2.3;
+export const AVG_ACTION_SECS = 1.4;
 
 export function etaStr(count: number): string {
   const secs = count * AVG_ACTION_SECS;

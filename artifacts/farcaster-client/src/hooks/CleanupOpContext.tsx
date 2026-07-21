@@ -327,7 +327,17 @@ export function CleanupOpProvider({ children }: { children: React.ReactNode }) {
     if (ref) ref.current = true;
     clearCleanup(myFid, kind);
     markStopped(myFid, kind);
-  }, []);
+    // Immediately report cancelled to the server so the History tab reflects it
+    // even if the loop's own fire-and-forget reportGrowHistory call fails.
+    const op = ops.find(o => o.id.startsWith(key + "-") && o.phase === "running");
+    if (op) {
+      reportGrowHistory({
+        fid: myFid, campaignId: op.id, kind: kind as GrowHistoryKind, status: "cancelled",
+        label: op.label, accountLabel: op.accountLabel,
+        total: op.total, succeeded: op.done, failed: op.errors, skipped: op.skipped,
+      });
+    }
+  }, [ops]);
 
   const clearOp = useCallback((myFid: number, kind: CleanupKind) => {
     const key = opKey(myFid, kind);

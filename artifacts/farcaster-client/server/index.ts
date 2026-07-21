@@ -1686,6 +1686,11 @@ const server = app.listen(PORT, host, () => {
       startSybilDetector();     // background: hourly fraud exclusion rules
       startWatchers();          // background: data-gap monitors + /api/watchers/health
       startWebhookTargetSync(); // background: keep the Neynar cast/reaction webhook's fid filters current
+      // Polling fallback: catch any promo/gift casts the webhook missed (new user
+      // not yet in author_fids, stale secret on a cold boot, etc.). Fully idempotent.
+      const { pollForMissedCasts } = await import("./promotion-watcher.js");
+      void pollForMissedCasts(); // run once immediately on boot
+      setInterval(() => { void pollForMissedCasts(); }, 5 * 60_000); // then every 5 min
     })
     .catch((e) => console.error("[ledger] init failed:", e));
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
