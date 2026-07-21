@@ -102,11 +102,17 @@ function computeStreak(dates: string[]): number {
 
 // ── Daily missions definition ─────────────────────────────────────────────────
 const MISSIONS = [
-  { id: "cast_5",    action: "cast",    label: "Cast 5 times",       target: 5,  pts: 50  },
-  { id: "like_10",   action: "like",    label: "Like 10 posts",       target: 10, pts: 10  },
-  { id: "recast_3",  action: "recast",  label: "Recast 3 posts",      target: 3,  pts: 9   },
-  { id: "follow_3",  action: "follow",  label: "Follow 3 users",      target: 3,  pts: 6   },
-  { id: "quest_1",   action: "quest",   label: "Complete a quest",    target: 1,  pts: 100 },
+  { id: "cast_5",     action: "cast",         label: "Cast 5 times",           target: 5,  pts: 50  },
+  { id: "like_10",    action: "like",         label: "Like 10 posts",          target: 10, pts: 10  },
+  { id: "recast_3",   action: "recast",       label: "Recast 3 posts",         target: 3,  pts: 9   },
+  { id: "follow_3",   action: "follow",       label: "Follow 3 users",         target: 3,  pts: 6   },
+  { id: "quest_1",    action: "quest",        label: "Complete a quest",       target: 1,  pts: 100 },
+  { id: "promo_1",    action: "promotion",    label: "Promote FidCaster",      target: 1,  pts: 20  },
+  { id: "gift_1",     action: "gift",         label: "Send a gift",            target: 1,  pts: 15  },
+  { id: "market_1",   action: "market_list",  label: "List on FID Market",     target: 1,  pts: 20  },
+  { id: "market_buy_1", action: "market_buy", label: "Buy on FID Market",      target: 1,  pts: 30  },
+  { id: "grow_1",     action: "grow_campaign_complete", label: "Complete a Grow campaign", target: 1, pts: 15 },
+  { id: "referral_1", action: "referral",     label: "Refer a friend",         target: 1,  pts: 40  },
 ];
 
 // ── Achievements definition ────────────────────────────────────────────────────

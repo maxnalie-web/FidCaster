@@ -1506,7 +1506,9 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
             <SectionLabel>Daily Missions</SectionLabel>
             <span style={{ color:C.text3, fontSize:11 }}>Resets {resetCountdown}</span>
           </div>
-          <Card>
+          {/* Scrollable — the mission list now covers every earnable action
+              type, not just 5, so it no longer reliably fits without a cap. */}
+          <Card style={{ maxHeight:340, overflowY:"auto" }}>
             {missions.map((m, i) => {
               const pct = m.target > 0 ? Math.min((m.count / m.target) * 100, 100) : 0;
               return (
@@ -1543,31 +1545,6 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
           </Card>
         </div>
       )}
-
-      {/* ── Today's Activity — every action type counted today, not just the
-          5 fixed-target missions above (those track progress toward a goal;
-          this is a plain tally of everything that happened today). ── */}
-      {(() => {
-        const todayCounts = stats?.todayCounts ?? {};
-        const entries = Object.entries(todayCounts).filter(([type, cnt]) => cnt > 0 && ACTIVITY_LABELS[type]);
-        if (entries.length === 0) return null;
-        return (
-          <div>
-            <SectionLabel>Today's Activity</SectionLabel>
-            <Card>
-              {entries.map(([type, cnt], i) => (
-                <div key={type}>
-                  <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                    <span style={{ color:C.text2, fontSize:13 }}>{ACTIVITY_LABELS[type]}</span>
-                    <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>{cnt}</span>
-                  </div>
-                  {i < entries.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
-                </div>
-              ))}
-            </Card>
-          </div>
-        );
-      })()}
 
       {/* ── Daily Allowance ── */}
       <div>
@@ -1909,6 +1886,29 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function HowItWorksModal({ onClose }: { onClose: () => void }) {
+  const sections = [
+    { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points — but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
+    { t:"Farcaster/Warpcast activity itself doesn't earn points", d:"Posting, liking, or following directly in Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead — via Promote and Gift casts." },
+    { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
+    { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points — they won't count even if they briefly showed up." },
+    { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
+    { t:"Referrals pay out immediately but are capped", d:"You and anyone you refer both get points right away. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
+    { t:"If something looks like fraud, it gets excluded — not silently kept", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
+    { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that — so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
+  ];
+  return (
+    <AllowanceModalShell onClose={onClose} icon={<Shield size={16} color={C.accentHi} />} title="How Points & Anti-Fraud Work">
+      {sections.map((s) => (
+        <div key={s.t} style={{ marginBottom:14 }}>
+          <p style={{ color:C.text1, fontWeight:700, fontSize:13, marginBottom:4 }}>{s.t}</p>
+          <p style={{ color:C.text2, fontSize:12.5, lineHeight:1.6 }}>{s.d}</p>
+        </div>
+      ))}
+    </AllowanceModalShell>
+  );
+}
+
 function AllowanceBarV2({ fid }: { fid: number }) {
   const [data,    setData]    = useState<AllowanceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1967,7 +1967,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
         </div>
         <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
           {data.promoRemaining >= 50 ? (
-            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points for every Farcaster action 🚀 @fidcaster")}`}
+            <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent("I'm using FidCaster to earn points toward the airdrop 🚀 @fidcaster")}`}
               target="_blank" rel="noopener noreferrer"
               style={{ display:"flex", flexDirection:"column", gap:4, padding:"12px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
@@ -2195,7 +2195,7 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                `Join me on FidCaster — earn points for every Farcaster action and get in on the airdrop.\n\n${refUrl}`,
+                `Join me on FidCaster — earn points and get in on the airdrop.\n\n${refUrl}`,
               )}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
@@ -2278,6 +2278,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
   onNftRecheck: () => void; qaToken: string | null;
 }) {
   const [nftCheck, setNftCheck] = useState<"idle" | "checking" | "not_holder" | "error">("idle");
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const username    = ctx?.user?.username ?? `fid${fid}`;
   const displayName = ctx?.user?.displayName ?? username;
   const pfpUrl      = ctx?.user?.pfpUrl ?? null;
@@ -2453,6 +2454,42 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
           </div>
         </div>
       )}
+
+      {/* Today's Activity — every action type counted today, not just the
+          fixed-target Daily Missions on Home (those track progress toward a
+          goal; this is a plain tally of everything that happened today). */}
+      {(() => {
+        const todayCounts = stats?.todayCounts ?? {};
+        const entries = Object.entries(todayCounts).filter(([type, cnt]) => cnt > 0 && ACTIVITY_LABELS[type]);
+        if (entries.length === 0) return null;
+        return (
+          <div>
+            <SectionLabel>Today's Activity</SectionLabel>
+            <Card>
+              {entries.map(([type, cnt], i) => (
+                <div key={type}>
+                  <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <span style={{ color:C.text2, fontSize:13 }}>{ACTIVITY_LABELS[type]}</span>
+                    <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>{cnt}</span>
+                  </div>
+                  {i < entries.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </div>
+              ))}
+            </Card>
+          </div>
+        );
+      })()}
+
+      {/* How points & anti-fraud work */}
+      <button onClick={() => setShowHowItWorks(true)}
+        style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
+          background:C.card, border:`1px solid ${C.border}`, borderRadius:16, cursor:"pointer",
+          fontFamily:"inherit", textAlign:"left" }}>
+        <Info size={16} color={C.accentHi} />
+        <span style={{ color:C.text1, fontSize:13, fontWeight:700, flex:1 }}>How Points & Anti-Fraud Work</span>
+        <ChevronRight size={16} color={C.text3} />
+      </button>
+      {showHowItWorks && <HowItWorksModal onClose={() => setShowHowItWorks(false)} />}
 
       {/* Wallet addresses */}
       {ethAddrs.length > 0 && (
