@@ -116,17 +116,68 @@ const MISSIONS = [
 ];
 
 // ── Achievements definition ────────────────────────────────────────────────────
-const ACHIEVEMENTS = [
-  { id: "first_cast",    label: "First Cast",     icon: "🎙️", check: (b: Record<string,number>) => (b.cast ?? 0) >= 1 },
-  { id: "cast_50",       label: "Cast Master",    icon: "⚡", check: (b: Record<string,number>) => (b.cast ?? 0) >= 50 },
-  { id: "social",        label: "Social Butterfly",icon: "🦋", check: (b: Record<string,number>) => (b.follow ?? 0) >= 10 },
-  { id: "pts_1k",        label: "1K Points",      icon: "🏅", check: (_: Record<string,number>, pts: number) => pts >= 1000 },
-  { id: "pts_10k",       label: "10K Points",     icon: "💎", check: (_: Record<string,number>, pts: number) => pts >= 10000 },
-  { id: "referral",      label: "Recruiter",      icon: "👥", check: (b: Record<string,number>) => (b.referral ?? 0) >= 1 },
-  { id: "market_maker",  label: "Market Maker",   icon: "📊", check: (b: Record<string,number>) => ((b.market_buy ?? 0) + (b.market_list ?? 0)) >= 1 },
-  { id: "promoter",      label: "Promoter",       icon: "📣", check: (b: Record<string,number>) => (b.promotion ?? 0) >= 1 },
-  { id: "gift_giver",    label: "Gift Giver",     icon: "🎁", check: (b: Record<string,number>) => (b.gift ?? 0) >= 1 },
+// Tiered like a real competitive app: every achievement states exactly how
+// it's earned (requirement) and how far along the user is (progress/target),
+// not just a locked/unlocked icon. `metric` picks what `progress` counts
+// against — a lifetime action-type count, total points, or current streak.
+type AchievementMetric = "cast" | "like" | "recast" | "follow" | "points" | "referral" | "market" | "promotion" | "gift" | "streak" | "nft";
+interface AchievementDef {
+  id: string; label: string; icon: string; tier: "bronze" | "silver" | "gold" | "platinum";
+  metric: AchievementMetric; target: number; requirement: string;
+}
+const ACHIEVEMENTS: AchievementDef[] = [
+  // Casts
+  { id: "first_cast",  label: "First Cast",      icon: "🎙️", tier: "bronze", metric: "cast",   target: 1,   requirement: "Cast 1 time" },
+  { id: "cast_10",     label: "Getting Vocal",    icon: "🗣️", tier: "bronze", metric: "cast",   target: 10,  requirement: "Cast 10 times" },
+  { id: "cast_50",     label: "Cast Master",      icon: "⚡", tier: "silver", metric: "cast",   target: 50,  requirement: "Cast 50 times" },
+  { id: "cast_200",    label: "Broadcast Legend", icon: "📡", tier: "gold",   metric: "cast",   target: 200, requirement: "Cast 200 times" },
+  // Likes
+  { id: "like_25",     label: "Appreciator",      icon: "❤️", tier: "bronze", metric: "like",   target: 25,  requirement: "Like 25 posts" },
+  { id: "like_100",    label: "Serial Liker",     icon: "💯", tier: "silver", metric: "like",   target: 100, requirement: "Like 100 posts" },
+  // Recasts
+  { id: "recast_10",   label: "Amplifier",        icon: "🔁", tier: "bronze", metric: "recast", target: 10,  requirement: "Recast 10 posts" },
+  { id: "recast_50",   label: "Signal Booster",   icon: "📶", tier: "silver", metric: "recast", target: 50,  requirement: "Recast 50 posts" },
+  // Follows
+  { id: "social",      label: "Social Butterfly", icon: "🦋", tier: "bronze", metric: "follow", target: 10,  requirement: "Follow 10 users" },
+  { id: "social_50",   label: "Networker",        icon: "🌐", tier: "silver", metric: "follow", target: 50,  requirement: "Follow 50 users" },
+  // Points
+  { id: "pts_1k",      label: "1K Points",        icon: "🏅", tier: "bronze", metric: "points", target: 1_000,  requirement: "Reach 1,000 total points" },
+  { id: "pts_10k",     label: "10K Points",       icon: "💎", tier: "silver", metric: "points", target: 10_000, requirement: "Reach 10,000 total points" },
+  { id: "pts_50k",     label: "Points Legend",    icon: "👑", tier: "gold",   metric: "points", target: 50_000, requirement: "Reach 50,000 total points" },
+  // Referrals
+  { id: "referral",    label: "Recruiter",        icon: "👥", tier: "bronze", metric: "referral", target: 1,  requirement: "Refer 1 friend" },
+  { id: "referral_5",  label: "Talent Scout",     icon: "🧲", tier: "silver", metric: "referral", target: 5,  requirement: "Refer 5 friends" },
+  { id: "referral_20", label: "Community Builder",icon: "🏛️", tier: "gold",   metric: "referral", target: 20, requirement: "Refer 20 friends (lifetime cap)" },
+  // Market
+  { id: "market_maker",label: "Market Maker",     icon: "📊", tier: "bronze", metric: "market",   target: 1,  requirement: "Complete 1 FID Market trade" },
+  { id: "market_pro",  label: "Market Pro",       icon: "📈", tier: "silver", metric: "market",   target: 10, requirement: "Complete 10 FID Market trades" },
+  // Promotion / Gift (Allowance-funded)
+  { id: "promoter",    label: "Promoter",         icon: "📣", tier: "bronze", metric: "promotion",target: 1,  requirement: "Post 1 Promote cast" },
+  { id: "promoter_10", label: "Growth Hacker",    icon: "🚀", tier: "silver", metric: "promotion",target: 10, requirement: "Post 10 Promote casts" },
+  { id: "gift_giver",  label: "Gift Giver",       icon: "🎁", tier: "bronze", metric: "gift",     target: 1,  requirement: "Send 1 gift" },
+  { id: "gift_giver_10",label: "Generous Soul",   icon: "🎀", tier: "silver", metric: "gift",     target: 10, requirement: "Send 10 gifts" },
+  // Streak
+  { id: "streak_7",    label: "Week Warrior",     icon: "🔥", tier: "silver", metric: "streak",   target: 7,  requirement: "Reach a 7-day streak" },
+  { id: "streak_30",   label: "Unstoppable",      icon: "🌋", tier: "gold",   metric: "streak",   target: 30, requirement: "Reach a 30-day streak" },
+  // Special
+  { id: "nft_holder",  label: "Pass Holder",      icon: "🛡️", tier: "platinum", metric: "nft",    target: 1,  requirement: "Hold a FasterTask Pass NFT" },
 ];
+
+function achievementProgress(a: AchievementDef, totalCounts: Record<string, number>, totalPoints: number, streak: number): number {
+  switch (a.metric) {
+    case "cast": return totalCounts.cast ?? 0;
+    case "like": return totalCounts.like ?? 0;
+    case "recast": return totalCounts.recast ?? 0;
+    case "follow": return totalCounts.follow ?? 0;
+    case "points": return totalPoints;
+    case "referral": return totalCounts.referral ?? 0;
+    case "market": return (totalCounts.market_buy ?? 0) + (totalCounts.market_list ?? 0);
+    case "promotion": return totalCounts.promotion ?? 0;
+    case "gift": return totalCounts.gift ?? 0;
+    case "streak": return streak;
+    case "nft": return (totalCounts.nft_holder_bonus ?? 0) >= 1 ? 1 : 0;
+  }
+}
 
 // ── Neynar bulk fetch helper ──────────────────────────────────────────────────
 async function fetchNeynarUsers(fids: number[]): Promise<Map<number, { username: string; pfpUrl: string; displayName: string }>> {
@@ -245,7 +296,10 @@ export function registerMiniRoutes(app: Express): void {
       res.json({
         streak: 0, level: 0, xp: 0, xpToNext: 500,
         totalPoints: 0, todayPoints: 0, missions: MISSIONS.map(m => ({ ...m, count: 0 })),
-        achievements: ACHIEVEMENTS.map(a => ({ id: a.id, label: a.label, icon: a.icon, unlocked: false })),
+        achievements: ACHIEVEMENTS.map(a => ({
+          id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
+          target: a.target, progress: 0, unlocked: false,
+        })),
         nextStreakBonusPts: POINTS.streak_bonus.pts,
         streakBonusAwarded: false,
         seasonEnd: "2025-12-31",
@@ -359,10 +413,14 @@ export function registerMiniRoutes(app: Express): void {
         done: (todayCounts[m.action] ?? 0) >= m.target,
       }));
 
-      const achievements = ACHIEVEMENTS.map(a => ({
-        id: a.id, label: a.label, icon: a.icon,
-        unlocked: a.check(totalCounts, totalPoints),
-      }));
+      const achievements = ACHIEVEMENTS.map(a => {
+        const progress = achievementProgress(a, totalCounts, totalPoints, streak);
+        return {
+          id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
+          target: a.target, progress: Math.min(progress, a.target),
+          unlocked: progress >= a.target,
+        };
+      });
 
       res.json({
         streak, level, xp, xpToNext, totalPoints, todayPoints,

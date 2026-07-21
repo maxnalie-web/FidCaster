@@ -88,7 +88,17 @@ interface AllowanceData {
   promoUsed: number; promoRemaining: number; giftUsed: number; giftRemaining: number;
 }
 interface MissionItem { id: string; action: string; label: string; target: number; pts: number; count: number; done: boolean; }
-interface Achievement { id: string; label: string; icon: string; unlocked: boolean; }
+interface Achievement {
+  id: string; label: string; icon: string; unlocked: boolean;
+  tier: "bronze" | "silver" | "gold" | "platinum"; requirement: string;
+  target: number; progress: number;
+}
+const TIER_STYLE: Record<Achievement["tier"], { label: string; color: string; bg: string; border: string }> = {
+  bronze:   { label: "Bronze",   color: "#D89B6A", bg: "rgba(216,155,106,0.14)", border: "rgba(216,155,106,0.4)" },
+  silver:   { label: "Silver",   color: "#C7CEDA", bg: "rgba(199,206,218,0.14)", border: "rgba(199,206,218,0.4)" },
+  gold:     { label: "Gold",     color: "#F5C542", bg: "rgba(245,197,66,0.14)",  border: "rgba(245,197,66,0.45)" },
+  platinum: { label: "Platinum", color: "#B9F2FF", bg: "rgba(185,242,255,0.14)", border: "rgba(185,242,255,0.45)" },
+};
 interface StatsData {
   streak: number; level: number; xp: number; xpToNext: number;
   totalPoints: number; todayPoints: number;
@@ -808,8 +818,16 @@ function BrowserScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 // NFT PASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
+// mint(address to) → tokenId — the only function the client ever calls directly.
+const MINT_ABI = [{
+  name: "mint", type: "function", stateMutability: "nonpayable",
+  inputs: [{ name: "to", type: "address" }],
+  outputs: [{ name: "", type: "uint256" }],
+}] as const;
+const BASE_CHAIN_ID_HEX = "0x2105"; // 8453
+
 function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethAddress?: string; qaToken?: string | null; onMinted?: () => void }) {
-  const [s, setS]             = useState<"checking"|"idle"|"connecting"|"minting"|"done"|"error">("checking");
+  const [s, setS]             = useState<"checking"|"idle"|"connecting"|"minting"|"confirming"|"done"|"error">("checking");
   const [activeAddr, setAddr]  = useState(ethAddress ?? "");
   const [txHash, setTx]        = useState("");
   const [err, setErr]          = useState("");
@@ -848,11 +866,13 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
 
   const short = (a: string) => `${a.slice(0,6)}…${a.slice(-4)}`;
 
-  // The mint itself is gasless — the server signs and submits it, the user
-  // never signs anything. All we need is a destination address, which the
-  // Farcaster host's wallet provider gives us directly (no manual input,
-  // no window.ethereum — that's not how a mini app's connected wallet, e.g.
-  // the in-client Farcaster wallet, is exposed to the page).
+  // The connected wallet signs and pays gas for its own mint transaction
+  // directly on-chain — mint(address) has no access restriction (any wallet
+  // can call it), so there's no server relay to trust or spoof. All we need
+  // is the wallet's own address, which the Farcaster host's wallet provider
+  // gives us directly (no manual input, no window.ethereum — that's not how
+  // a mini app's connected wallet, e.g. the in-client Farcaster wallet, is
+  // exposed to the page).
   async function detectAddress(): Promise<string | null> {
     try {
       const provider = await sdk.wallet.getEthereumProvider();
@@ -866,15 +886,55 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
     setAddr(address);
     setS("minting");
     try {
-      const r = await fetch("/api/nft-pass/mint", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
-        body: JSON.stringify({ fid, address }),
-      });
-      const d = await r.json();
-      if (d.alreadyMinted || r.ok) { setTx(d.txHash ?? ""); setS("done"); onMinted?.(); }
-      else throw new Error(d.error ?? "Mint failed");
-    } catch (e) { setErr(String(e)); setS("error"); }
+      const statusRes = await fetch("/api/nft-pass/status").then(r => r.json());
+      if (!statusRes?.deployed || !statusRes?.contractAddress) throw new Error("Minting isn't available yet");
+
+      const provider = await sdk.wallet.getEthereumProvider();
+      if (!provider) throw new Error("No wallet connected");
+
+      // No-op (no prompt) if the wallet's already on Base; some hosts reject
+      // an unsupported chainId outright, so this is best-effort, not fatal.
+      try {
+        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BASE_CHAIN_ID_HEX }] });
+      } catch { /* already on Base, or the host doesn't support switching */ }
+
+      const { encodeFunctionData } = await import("viem");
+      const data = encodeFunctionData({ abi: MINT_ABI, functionName: "mint", args: [address as `0x${string}`] });
+      const hash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: statusRes.contractAddress, data }],
+      }) as string;
+
+      setTx(hash);
+      setS("confirming");
+
+      // Report the mint for our own logs (leaderboard/admin visibility) —
+      // best-effort only. The server independently re-checks balanceOf
+      // on-chain before recording anything, so a forged call here can't
+      // fake a mint that didn't really happen.
+      fetch("/api/nft-pass/record-mint", {
+        method: "POST",
+        headers: { "Content-Type":"application/json", ...(qaToken ? { Authorization:`Bearer ${qaToken}` } : {}) },
+        body: JSON.stringify({ fid, address, txHash: hash }),
+      }).catch(() => {});
+
+      // Poll balanceOf until the tx confirms (Base blocks are ~2s; give it
+      // up to a minute) instead of declaring success the instant the wallet
+      // returns a hash, which only means "submitted", not "mined".
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const check = await fetch(`/api/nft-pass/check/${address}`).then(r => r.json()).catch(() => null);
+        if (check?.hasMinted) { setS("done"); onMinted?.(); return; }
+      }
+      // Still not confirmed after a minute — leave the explorer link up
+      // rather than silently claiming success on an unconfirmed tx.
+      setErr("Transaction submitted but hasn't confirmed yet. Check the explorer link, or try again in a minute.");
+      setS("error");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.includes("User rejected") || msg.includes("rejected") ? "Signature request was rejected." : msg);
+      setS("error");
+    }
   }
 
   async function handleMintClick() {
@@ -941,19 +1001,33 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
             Mint free
           </button>
         )}
-        {(s === "minting" || s === "connecting") && (
+        {(s === "minting" || s === "connecting" || s === "confirming") && (
           <span style={{ color:C.accentHi, fontSize:13, display:"flex", alignItems:"center", gap:5 }}>
             <Loader2 size={14} className="animate-spin" />
-            {s === "connecting" ? "Connecting…" : "Minting…"}
+            {s === "connecting" ? "Connecting…" : s === "confirming" ? "Confirming…" : "Sign in your wallet…"}
           </span>
         )}
       </div>
+      {s === "confirming" && txHash && (
+        <div style={{ padding:"0 16px 12px" }}>
+          <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+            style={{ color:C.text3, fontSize:11, display:"inline-flex", alignItems:"center", gap:4 }}>
+            View on BaseScan <ExternalLink size={11} />
+          </a>
+        </div>
+      )}
       <AnimatePresence>
         {s === "error" && (
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
             style={{ padding:"10px 16px", borderTop:`1px solid ${C.border}` }}>
             <p style={{ color:C.rose, fontSize:12 }}>{err}</p>
-            <button onClick={() => setS("idle")} style={{ background:"none", border:"none", color:C.text3, fontSize:12, cursor:"pointer", marginTop:4 }}>
+            {txHash && (
+              <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+                style={{ color:C.text3, fontSize:11, display:"inline-flex", alignItems:"center", gap:4, marginTop:4 }}>
+                View on BaseScan <ExternalLink size={11} />
+              </a>
+            )}
+            <button onClick={() => setS("idle")} style={{ background:"none", border:"none", color:C.text3, fontSize:12, cursor:"pointer", marginTop:4, display:"block" }}>
               Try again
             </button>
           </motion.div>
@@ -1889,7 +1963,7 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
 function HowItWorksModal({ onClose }: { onClose: () => void }) {
   const sections = [
     { t:"Points only come from real, verified actions", d:"Casting, liking, recasting, and following through FidCaster's own UI earns points — but nothing is credited until it's independently confirmed against the real Farcaster network. That confirmation is usually instant, sometimes takes a few minutes." },
-    { t:"Farcaster/Warpcast activity itself doesn't earn points", d:"Posting, liking, or following directly in Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead — via Promote and Gift casts." },
+    { t:"Farcaster activity itself doesn't earn points", d:"Posting, liking, or following directly on Farcaster (outside FidCaster) doesn't earn points. Your Daily Allowance is what lets you spend points there instead — via Promote and Gift casts." },
     { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
     { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points — they won't count even if they briefly showed up." },
     { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
@@ -2417,7 +2491,9 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
         )}
       </Card>
 
-      {/* Achievements */}
+      {/* Achievements — tiered like a real competitive game: every entry
+          states exactly how it's earned, its difficulty tier, and how far
+          along the current run toward it is, not just a locked icon. */}
       {achievements.length > 0 && (
         <div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
@@ -2426,32 +2502,44 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
               {achievements.filter(a=>a.unlocked).length} / {achievements.length}
             </span>
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
-            {achievements.map((a, i) => (
-              <motion.div key={a.id}
-                initial={{ opacity:0, scale:0.85 }} animate={{ opacity:1, scale:1 }}
-                transition={{ delay:i*0.06 }}
-                style={{
-                  background: a.unlocked ? "rgba(139,92,246,0.15)" : C.card,
-                  border: `1px solid ${a.unlocked ? "rgba(139,92,246,0.4)" : C.border}`,
-                  borderRadius:14, padding:"14px 8px", textAlign:"center",
-                  opacity: a.unlocked ? 1 : 0.45,
-                  boxShadow: a.unlocked ? `0 0 16px rgba(139,92,246,0.2)` : "none",
-                }}>
-                <div style={{ fontSize:24, marginBottom:6, filter: a.unlocked?"none":"grayscale(1)", display:"flex", justifyContent:"center" }}>
-                  {a.unlocked ? a.icon : <Lock size={20} color={C.text3} />}
-                </div>
-                <p style={{ color: a.unlocked ? C.text1 : C.text3, fontSize:11, fontWeight:600, lineHeight:1.3 }}>
-                  {a.label}
-                </p>
-                {a.unlocked && (
-                  <div style={{ marginTop:4, display:"flex", justifyContent:"center" }}>
-                    <Check size={10} color={C.green} />
+          <Card style={{ maxHeight:420, overflowY:"auto" }}>
+            {achievements.map((a, i) => {
+              const t = TIER_STYLE[a.tier];
+              const pct = a.target > 0 ? Math.min((a.progress / a.target) * 100, 100) : 0;
+              return (
+                <div key={a.id}>
+                  <div style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start",
+                    opacity: a.unlocked ? 1 : 0.7 }}>
+                    <div style={{ width:34, height:34, borderRadius:10, flexShrink:0, fontSize:17,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      background: a.unlocked ? t.bg : "rgba(255,255,255,0.04)",
+                      border:`1px solid ${a.unlocked ? t.border : C.border}`,
+                      filter: a.unlocked ? "none" : "grayscale(1)" }}>
+                      {a.unlocked ? a.icon : <Lock size={15} color={C.text3} />}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:2 }}>
+                        <span style={{ color: a.unlocked ? C.text1 : C.text2, fontSize:13, fontWeight:700 }}>{a.label}</span>
+                        <span style={{ color:t.color, background:t.bg, border:`1px solid ${t.border}`,
+                          fontSize:9.5, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.05em",
+                          borderRadius:999, padding:"1.5px 7px" }}>{t.label}</span>
+                        {a.unlocked && <Check size={12} color={C.green} />}
+                      </div>
+                      <p style={{ color:C.text3, fontSize:11.5, marginBottom:6 }}>{a.requirement}</p>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ flex:1, height:4, background:C.border, borderRadius:2 }}>
+                          <div style={{ width:`${pct}%`, height:"100%", borderRadius:2,
+                            background: a.unlocked ? `linear-gradient(90deg,${C.green},#34D399)` : `linear-gradient(90deg,${C.accent},#A855F7)` }} />
+                        </div>
+                        <span style={{ color:C.text3, fontSize:10.5, flexShrink:0 }}>{a.progress.toLocaleString()}/{a.target.toLocaleString()}</span>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
+                  {i < achievements.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </div>
+              );
+            })}
+          </Card>
         </div>
       )}
 
