@@ -2743,8 +2743,8 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
       <NFTPassCard fid={fid} ethAddress={ethAddrs[0]} qaToken={qaToken} />
 
       {/* FasterTask NFT holder bonus — a separate, one-time-only check.
-          Minting itself happens on FasterTask's own site (faster-tasks.com/nft),
-          not inside FidCaster: their mint assigns rarity/legendary slots from
+          Minting itself happens on FasterTask's own mini app, not inside
+          FidCaster: their mint assigns rarity/legendary slots from
           their own live database state, which FidCaster has no access to and
           shouldn't try to replicate — a duplicated/guessed version of that
           logic could double-mint or hand out the wrong rarity. FidCaster's
@@ -2773,7 +2773,7 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
           </div>
           {!isNftHolder && (
             <div style={{ display:"flex", flexDirection:"column", gap:6, flexShrink:0 }}>
-              <a href="https://faster-tasks.com/nft" target="_blank" rel="noopener noreferrer"
+              <a href="https://farcaster.xyz/miniapps/gYgrdrGpSYem/fastertasks" target="_blank" rel="noopener noreferrer"
                 style={{ background:"transparent", border:`1px solid ${C.border}`,
                   color:C.text2, fontSize:11, fontWeight:600, borderRadius:999, padding:"6px 11px",
                   textDecoration:"none", textAlign:"center" }}>
