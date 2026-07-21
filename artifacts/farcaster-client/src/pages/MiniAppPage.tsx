@@ -1733,10 +1733,13 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
       {/* ── Daily Missions ── */}
       {missions.length > 0 && (
         <div>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
             <SectionLabel>Daily Missions</SectionLabel>
             <span style={{ color:C.text3, fontSize:11 }}>Resets {resetCountdown}</span>
           </div>
+          <p style={{ color:C.text3, fontSize:11, marginBottom:8, marginTop:-2 }}>
+            One-time bonus for the first time each action happens today, on top of that action's own per-use points (see the Earn tab for those rates).
+          </p>
           {/* Scrollable — the mission list now covers every earnable action
               type, not just 5, so it no longer reliably fits without a cap. */}
           <Card style={{ maxHeight:340, overflowY:"auto" }}>
@@ -2447,7 +2450,7 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                         <Chip>+{row.pts} pts</Chip>
-                        <span style={{ color:C.text3, fontSize:10 }}>/{row.cap}</span>
+                        <span style={{ color:C.text3, fontSize:10 }}>each, up to {row.cap}/day</span>
                       </div>
                     </div>
                     {!loading && earned > 0 && (
