@@ -726,13 +726,6 @@ function HeroCanvas({ height = 280, logoY }: { height?: number; logoY: number })
       ctx!.save(); ctx!.translate(cx, cy);
       const pulse = 1 + Math.sin(t * 1.4) * 0.035;
       const rx = 138 * pulse, ry = 34 * pulse;
-      // Slow counter-rotating outer halo for depth behind the main ring —
-      // a single cheap stroke, no shadowBlur, so it costs almost nothing.
-      const haloA = -t * 0.035;
-      ctx!.save(); ctx!.rotate(haloA);
-      ctx!.strokeStyle = "rgba(192,132,252,.14)"; ctx!.lineWidth = 1;
-      ctx!.beginPath(); ctx!.ellipse(0, 0, rx * 1.22, ry * 1.22, 0, 0, Math.PI * 2); ctx!.stroke();
-      ctx!.restore();
       ctx!.save(); ctx!.globalCompositeOperation = "lighter";
       const g = ctx!.createRadialGradient(0, 6, 0, 0, 6, 168);
       g.addColorStop(0, "rgba(147,51,234,.26)"); g.addColorStop(0.5, "rgba(109,40,217,.10)"); g.addColorStop(1, "transparent");
@@ -2456,7 +2449,11 @@ function RewardsTab({ fid }: { fid: number }) {
   const [copied, setCopied] = useState(false);
   const [refData, setRefData] = useState<ReferralListData>({ referredBy: null, referrals: [] });
   const [refLoad, setRefLoad] = useState(true);
-  const refUrl = `https://fidcaster.xyz/?ref=FC-${fid.toString(36).toUpperCase()}`;
+  // Must point at /mini, not the bare domain - the auto-claim effect that
+  // reads ?ref= only exists inside MiniAppPage. The root "/" route renders
+  // the full client's login/welcome page, which never looks at ?ref= at
+  // all, so a referral link to the bare domain silently never claimed.
+  const refUrl = `https://fidcaster.xyz/mini?ref=FC-${fid.toString(36).toUpperCase()}`;
 
   useEffect(() => {
     apiReferralList(fid).then(d => { setRefData(d); setRefLoad(false); });
@@ -3151,11 +3148,13 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
   // once on mount, which this used to do - a cast/like/follow done in the
   // full client, a gift/promotion cast, a friend joining via referral, all
   // land in the DB right away but stayed invisible here until the user
-  // force-reloaded the whole mini app. refetchAll below is now called on
-  // mount, whenever the mini app regains visibility (the common real case:
-  // it was backgrounded while the user cast something in the full Farcaster
-  // client and is now being looked at again), and on a light interval while
-  // visible so points/allowance/leaderboard catch up on their own.
+  // force-reloaded the whole mini app. refetchAll below is called on mount
+  // and whenever the mini app regains visibility - the real moment new
+  // points can exist, since the mini app itself never performs any
+  // point-earning actions (those all happen in the full Farcaster client or
+  // via Promote/Gift casts elsewhere) - so "visible again" is the only
+  // signal that matters. A blind interval on top of that just refetched
+  // (and flashed loading state) every 20s even while nothing had changed.
   const refetchAll = useCallback(() => {
     setBoardLoad(true);
     setStatsLoad(true);
@@ -3168,18 +3167,9 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
 
   useEffect(() => {
     refetchAll();
-
     const onVisible = () => { if (document.visibilityState === "visible") refetchAll(); };
     document.addEventListener("visibilitychange", onVisible);
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") refetchAll();
-    }, 20_000);
-
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      clearInterval(interval);
-    };
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refetchAll]);
 
   // NFT holder check: automatic exactly once ever (first time this fid opens
