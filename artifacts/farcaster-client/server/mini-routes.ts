@@ -413,15 +413,29 @@ export function registerMiniRoutes(app: Express): void {
         done: (todayCounts[m.action] ?? 0) >= m.target,
       }));
 
+      // Achievements are permanent once earned. Progress can DROP after an
+      // unlock — a streak breaks (streak_7's progress is the CURRENT streak),
+      // totalPoints shrinks when fraud detection excludes rows — and deriving
+      // unlocked from live progress alone would visually re-lock an
+      // achievement whose one-time points were already (correctly, and
+      // permanently) awarded. The awarded ledger rows are the durable record
+      // of "earned", so anything with a row stays unlocked forever.
+      const { rows: awardedRows } = await pool.query<{ id: string }>(
+        `SELECT payload->>'id' AS id FROM user_actions
+         WHERE fid=$1 AND action_type='achievement'`,
+        [fid],
+      );
+      const awardedIds = new Set(awardedRows.map(r => r.id));
+
       const achievements = ACHIEVEMENTS.map(a => {
         const progress = achievementProgress(a, totalCounts, totalPoints, streak);
-        const unlocked = progress >= a.target;
+        const unlocked = progress >= a.target || awardedIds.has(a.id);
         // Fire-and-forget: logUserAction is idempotent on (action_type, proof)
         // and never throws, so it's safe to call on every stats fetch once an
         // achievement is unlocked — it only actually inserts (and awards
         // a.pts) the first time. Not awaited: this endpoint shouldn't wait on
         // a DB write for a response that already has everything it needs.
-        if (unlocked && a.pts > 0) {
+        if (unlocked && a.pts > 0 && !awardedIds.has(a.id)) {
           void logUserAction({
             fid, actionType: "achievement",
             payload: { id: a.id, amount: a.pts },
@@ -431,7 +445,9 @@ export function registerMiniRoutes(app: Express): void {
         }
         return {
           id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
-          target: a.target, progress: Math.min(progress, a.target),
+          // An unlocked achievement is done — show it full even if the live
+          // metric has since dipped back under the target.
+          target: a.target, progress: unlocked ? a.target : Math.min(progress, a.target),
           unlocked, pts: a.pts,
         };
       });

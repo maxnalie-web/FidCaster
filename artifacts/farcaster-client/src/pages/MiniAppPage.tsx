@@ -1681,7 +1681,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
 
       {/* ── Daily Allowance ── */}
       <div>
-        <SectionLabel>Daily Cap</SectionLabel>
+        <SectionLabel>Daily Allowance</SectionLabel>
         {allowanceLoading
           ? <Card style={{ padding:"14px 16px" }}><Loader2 size={14} className="animate-spin" style={{ color:C.text3 }} /></Card>
           : allowance
@@ -1708,7 +1708,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
                         {allowance.remaining.toLocaleString()} <span style={{ fontSize:12, fontWeight:600, color:C.text3 }}>/ {allowance.total.toLocaleString()}</span>
                       </p>
                       <p style={{ color:C.text3, fontSize:11, marginTop:2 }}>
-                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Available to earn today"}
+                        {allowance.used > 0 ? `${allowance.used.toLocaleString()} pts used today` : "Ready to spend on Promote & Gift"}
                       </p>
                     </div>
                     <div style={{ position:"relative", width:56, height:56, flexShrink:0 }}>
@@ -2302,7 +2302,7 @@ function RewardsTab({ fid }: { fid: number }) {
               <div>
                 <p style={{ color:C.text1, fontWeight:700, fontSize:15 }}>Refer Friends</p>
                 <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
-                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> per activated referral
+                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> instantly per friend who joins
                 </p>
               </div>
               {!refLoad && refData.referrals.filter(r=>r.activated).length > 0 && (
