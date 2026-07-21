@@ -37,32 +37,46 @@ function tomorrowMidnightUtc(): string {
   return d.toISOString();
 }
 
-async function fetchAllowanceInputs(fid: number): Promise<{ followerCount: number; neynarScore: number }> {
-  if (!hasAnyNeynarKey()) return { followerCount: 0, neynarScore: 0 };
-  try {
-    const apiKey = await neynarThrottle();
-    const r = await fetch(
-      `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`,
-      {
-        headers: { accept: "application/json", api_key: apiKey },
-        signal: AbortSignal.timeout(8_000),
-      },
-    );
-    if (!r.ok) {
-      if (r.status === 429) penalize429(apiKey);
-      return { followerCount: 0, neynarScore: 0 };
-    }
-    const data = await r.json() as {
-      users?: { follower_count?: number; experimental?: { neynar_user_score?: number } }[];
-    };
-    const user = data.users?.[0];
-    return {
-      followerCount: user?.follower_count ?? 0,
-      neynarScore:   typeof user?.experimental?.neynar_user_score === "number" ? user.experimental.neynar_user_score : 0,
-    };
-  } catch {
-    return { followerCount: 0, neynarScore: 0 };
+// A failed lookup (missing key, rate limit, timeout, network blip) used to
+// silently return zeros indistinguishable from a real brand-new account -
+// and since the resulting base_amount is cached for the rest of the UTC day
+// on first access, one unlucky moment permanently floored a real, strong
+// account's whole day at MIN_ALLOWANCE (150) - which then also flattened
+// scalePromoPoints (driven by the same base_amount) to the 50pt minimum
+// regardless of actual reach. `ok` lets the caller tell "genuinely 0
+// followers/unscored" apart from "we don't actually know" and retry/self-
+// heal instead of trusting a fallback forever.
+async function fetchAllowanceInputs(
+  fid: number,
+): Promise<{ followerCount: number; neynarScore: number; ok: boolean }> {
+  if (!hasAnyNeynarKey()) return { followerCount: 0, neynarScore: 0, ok: false };
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const apiKey = await neynarThrottle();
+      const r = await fetch(
+        `https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`,
+        {
+          headers: { accept: "application/json", api_key: apiKey },
+          signal: AbortSignal.timeout(8_000),
+        },
+      );
+      if (!r.ok) {
+        if (r.status === 429) penalize429(apiKey);
+        continue; // try again with the next key in the pool
+      }
+      const data = await r.json() as {
+        users?: { follower_count?: number; experimental?: { neynar_user_score?: number } }[];
+      };
+      const user = data.users?.[0];
+      return {
+        followerCount: user?.follower_count ?? 0,
+        neynarScore:   typeof user?.experimental?.neynar_user_score === "number" ? user.experimental.neynar_user_score : 0,
+        ok: true,
+      };
+    } catch { /* try again */ }
   }
+  return { followerCount: 0, neynarScore: 0, ok: false };
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
@@ -104,11 +118,35 @@ export async function getAllowance(fid: number): Promise<AllowanceData> {
 
   // Fast path: row already exists for today
   const { rows } = await pool.query(
-    `SELECT base_amount, used, promo_used, gift_used FROM daily_allowance WHERE fid = $1 AND date = $2`,
+    `SELECT base_amount, used, promo_used, gift_used, inputs_ok FROM daily_allowance WHERE fid = $1 AND date = $2`,
     [fid, today],
   );
 
   if (rows.length > 0) {
+    // Self-heal: this row was created from a fallback (Neynar lookup failed
+    // at the time), so base_amount may be sitting well below what this fid
+    // actually qualifies for. Retry now; if it succeeds, raise base_amount
+    // to the real value (never lower it — they may have already spent
+    // against the current number) and stop retrying for the rest of the day.
+    if (rows[0].inputs_ok === false) {
+      const retry = await fetchAllowanceInputs(fid);
+      if (retry.ok) {
+        const realTotal = calculateTotal(retry.followerCount, retry.neynarScore);
+        const { rows: healed } = await pool.query(
+          `UPDATE daily_allowance
+           SET base_amount = GREATEST(base_amount, $3), inputs_ok = true, refreshed_at = now()
+           WHERE fid = $1 AND date = $2
+           RETURNING base_amount, used, promo_used, gift_used`,
+          [fid, today, realTotal],
+        );
+        if (healed.length > 0) {
+          return toAllowanceData(
+            Number(healed[0].base_amount), Number(healed[0].used),
+            Number(healed[0].promo_used), Number(healed[0].gift_used), resetsAt,
+          );
+        }
+      }
+    }
     return toAllowanceData(
       Number(rows[0].base_amount), Number(rows[0].used),
       Number(rows[0].promo_used), Number(rows[0].gift_used), resetsAt,
@@ -116,14 +154,14 @@ export async function getAllowance(fid: number): Promise<AllowanceData> {
   }
 
   // First access today — fetch follower count + quality score and create row
-  const { followerCount, neynarScore } = await fetchAllowanceInputs(fid);
+  const { followerCount, neynarScore, ok } = await fetchAllowanceInputs(fid);
   const total = calculateTotal(followerCount, neynarScore);
 
   await pool.query(
-    `INSERT INTO daily_allowance (fid, date, base_amount, used, promo_used, gift_used, refreshed_at)
-     VALUES ($1, $2, $3, 0, 0, 0, now())
+    `INSERT INTO daily_allowance (fid, date, base_amount, used, promo_used, gift_used, refreshed_at, inputs_ok)
+     VALUES ($1, $2, $3, 0, 0, 0, now(), $4)
      ON CONFLICT (fid, date) DO NOTHING`,
-    [fid, today, total],
+    [fid, today, total, ok],
   );
 
   // Re-read in case a concurrent request just inserted

@@ -117,6 +117,16 @@ CREATE INDEX IF NOT EXISTS idx_da_fid_date ON daily_allowance (fid, date DESC);
 ALTER TABLE daily_allowance ADD COLUMN IF NOT EXISTS promo_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE daily_allowance ADD COLUMN IF NOT EXISTS gift_used  INTEGER NOT NULL DEFAULT 0;
 
+-- inputs_ok: whether base_amount was computed from a real Neynar lookup
+-- (follower count + quality score) or a fallback after that lookup failed.
+-- A failed lookup used to be cached as if it were a real "0 followers, 0
+-- score" account for the rest of the day, which could floor a real, strong
+-- account's whole day at the minimum allowance. false rows get retried and
+-- self-healed (raised, never lowered) on the next getAllowance() call - see
+-- db/allowance.ts. Existing rows default true since we can't know in
+-- hindsight, so nothing already-computed gets unnecessarily re-fetched.
+ALTER TABLE daily_allowance ADD COLUMN IF NOT EXISTS inputs_ok BOOLEAN NOT NULL DEFAULT true;
+
 -- ── Pending points ────────────────────────────────────────────────────────────
 -- Holds gifted points for recipients not yet registered in FidCaster.
 -- Points are credited to the ledger and marked claimed on first mini-app open.
