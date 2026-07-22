@@ -122,7 +122,7 @@ interface EligibilityData { eligible: boolean; score: number; threshold: number;
 interface AllowanceData {
   total: number; used: number; remaining: number; resetsAt: string;
   promoUsed: number; promoRemaining: number; giftUsed: number; giftRemaining: number;
-  giftReceiveCap: number; giftReceivedToday: number; giftReceiveRemaining: number;
+  giftReceiveCap: number; giftReceivedTodayTotal: number;
 }
 interface MissionItem { id: string; action: string; label: string; target: number; pts: number; count: number; done: boolean; }
 interface Achievement {
@@ -373,6 +373,17 @@ async function apiAllowance(fid: number): Promise<AllowanceData | null> {
   try {
     const r = await fetch(`/api/allowance?fid=${fid}`);
     return r.ok ? r.json() : null;
+  } catch { return null; }
+}
+interface GiftLookup {
+  recipientFid: number; username: string; pfpUrl: string | null;
+  capPerSender: number; receivedFromSenderToday: number; remainingFromSender: number;
+}
+async function apiGiftLookup(senderFid: number, username: string): Promise<GiftLookup | { error: string } | null> {
+  try {
+    const r = await fetch(`/api/gift/lookup?senderFid=${senderFid}&username=${encodeURIComponent(username)}`);
+    const d = await r.json();
+    return r.ok ? d : { error: d.error ?? "Not found" };
   } catch { return null; }
 }
 async function apiStats(fid: number): Promise<StatsData | null> {
@@ -2030,12 +2041,36 @@ function AllowanceModalShell({ onClose, icon, title, children }: {
   );
 }
 
-function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => void }) {
+function GiftModal({ fid, remaining, onClose }: { fid: number; remaining: number; onClose: () => void }) {
   const [username, setUsername] = useState("");
   const [amount,   setAmount]   = useState("");
-  const cap = Math.min(remaining, 500);
+  const [lookup,   setLookup]   = useState<GiftLookup | null>(null);
+  const [lookupErr, setLookupErr] = useState<string | null>(null);
+  const [looking,  setLooking]  = useState(false);
+
+  // Debounced username -> recipient lookup, so the max amount reflects how
+  // much room THIS sender specifically still has with THIS recipient today
+  // (each sender gets their own independent room up to the recipient's cap -
+  // see processGiftAtomic in db/allowance.ts), not a flat 500 for everyone.
+  useEffect(() => {
+    const handle = username.trim().replace(/^@/, "").toLowerCase();
+    setLookup(null); setLookupErr(null);
+    if (handle.length < 2) return;
+    setLooking(true);
+    const t = setTimeout(() => {
+      apiGiftLookup(fid, handle).then(r => {
+        setLooking(false);
+        if (!r) { setLookupErr("Couldn't look that up right now."); return; }
+        if ("error" in r) { setLookupErr(r.error); return; }
+        setLookup(r);
+      });
+    }, 450);
+    return () => { clearTimeout(t); setLooking(false); };
+  }, [username, fid]);
+
+  const cap = Math.min(remaining, lookup?.remainingFromSender ?? 500);
   const amountNum = parseInt(amount, 10) || 0;
-  const valid = username.trim().length > 0 && amountNum > 0 && amountNum <= cap;
+  const valid = username.trim().length > 0 && !!lookup && amountNum > 0 && amountNum <= cap;
 
   function send() {
     if (!valid) return;
@@ -2051,6 +2086,7 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
     // the detector still reads it as the gift target, @fidcaster last.
     const text = `${amountNum} FidCaster points @${handle} via @fidcaster`;
     window.open(composeUrl(text), "_blank", "noopener,noreferrer");
+    window.dispatchEvent(new Event("fc:gift-or-promo-sent"));
     onClose();
   }
 
@@ -2059,12 +2095,23 @@ function GiftModal({ remaining, onClose }: { remaining: number; onClose: () => v
       <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Recipient username</label>
       <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. dwr.eth"
         autoCapitalize="none" autoCorrect="off" spellCheck={false}
-        style={{ width:"100%", marginTop:6, marginBottom:14, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
-          background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
-      <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Amount (max {cap.toLocaleString()})</label>
-      <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="50" inputMode="numeric"
         style={{ width:"100%", marginTop:6, marginBottom:6, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
           background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none" }} />
+      {looking && <p style={{ color:C.text3, fontSize:11, marginBottom:10 }}>Checking their limit…</p>}
+      {lookupErr && <p style={{ color:C.rose, fontSize:11, marginBottom:10 }}>{lookupErr}</p>}
+      {lookup && (
+        <p style={{ color: lookup.remainingFromSender > 0 ? C.text2 : C.rose, fontSize:11.5, marginBottom:10, lineHeight:1.5 }}>
+          {lookup.remainingFromSender > 0
+            ? <>You can still send <strong style={{ color:C.accentHi }}>{lookup.remainingFromSender.toLocaleString()}</strong> pts to @{lookup.username} today (their limit from you is {lookup.capPerSender.toLocaleString()}/day).</>
+            : <>You've already sent @{lookup.username} their full limit ({lookup.capPerSender.toLocaleString()}) from you today. Someone else can still gift them - just not you, until tomorrow.</>}
+        </p>
+      )}
+      <label style={{ color:C.text3, fontSize:12, fontWeight:600 }}>Amount{lookup ? ` (max ${cap.toLocaleString()})` : ""}</label>
+      <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} placeholder="50" inputMode="numeric"
+        disabled={!lookup || lookup.remainingFromSender <= 0}
+        style={{ width:"100%", marginTop:6, marginBottom:6, padding:"11px 12px", borderRadius:12, boxSizing:"border-box",
+          background:C.card, border:`1px solid ${C.border}`, color:C.text1, fontSize:14, outline:"none",
+          opacity: (!lookup || lookup.remainingFromSender <= 0) ? 0.5 : 1 }} />
       {remaining <= 0 && <p style={{ color:C.rose, fontSize:11.5, marginBottom:6 }}>You're out of allowance for today.</p>}
       <p style={{ color:C.text3, fontSize:11, marginBottom:16, lineHeight:1.6 }}>
         This opens Farcaster with a pre-filled cast. Posting it debits your allowance and credits the
@@ -2086,7 +2133,7 @@ function AllowanceInfoModal({ onClose }: { onClose: () => void }) {
     { t:"How much you get", d:"Based on your account: 300 base points plus up to 3,000 from your follower count, then scaled by your Farcaster quality score (0.5x-1.5x), capped at 5,000/day. Higher-quality, higher-follower accounts get meaningfully more." },
     { t:"Promote and Gift each have their own cap", d:"Neither can use more than 70% of a single day's allowance on its own, so you can't spend it all in one place." },
     { t:"Promote", badge:"50 allowance", d:"Tap Promote, post the pre-filled cast on Farcaster. Once it's confirmed live, you earn points (50 up to 500, scaled by your daily allowance) and 50 allowance is deducted." },
-    { t:"Send Gift", badge:"1–500 allowance", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed." },
+    { t:"Send Gift", badge:"1–500 allowance", d:"Pick a recipient and an amount, then post the pre-filled cast. N points move from your allowance to the recipient's balance once the cast is confirmed. Each recipient has a daily limit on how much they can receive FROM YOU specifically (scaled by their account) - other senders each get their own separate limit with them too." },
     { t:"Why it might not count", d:"If your allowance runs out before a promotion/gift cast is confirmed, it won't earn or transfer points. You'll get a notification either way, so it's never silent." },
   ];
   return (
@@ -2368,6 +2415,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
           {data.promoRemaining >= scalePromoPointsClient(data.total) ? (
             <a href={composeUrl(promoText)}
               target="_blank" rel="noopener noreferrer"
+              onClick={() => window.dispatchEvent(new Event("fc:gift-or-promo-sent"))}
               style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px",
                 textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -2414,26 +2462,27 @@ function AllowanceBarV2({ fid }: { fid: number }) {
           </button>
         </div>
         {/* Receiving is a separate cap from sending above - scaled by THIS
-            user's own account strength, not the sender's. */}
+            user's own account strength, and applies PER SENDER, not as one
+            shared pool. No progress bar here on purpose: "received today"
+            can legitimately be several multiples of the cap once more than
+            one sender has each given up to their own limit, so a bar
+            implying a single pool getting "used up" would be misleading. */}
         <div style={{ borderTop:`1px solid ${C.border}`, padding:"10px 14px" }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
             <span style={{ color:C.text2, fontSize:11.5, fontWeight:600 }}>Gift receiving limit</span>
-            <span style={{ color:C.text3, fontSize:11 }}>
-              {data.giftReceivedToday.toLocaleString()} / {data.giftReceiveCap.toLocaleString()} today
+            <span style={{ color:C.accentHi, fontSize:11, fontWeight:700 }}>
+              {data.giftReceiveCap.toLocaleString()} per sender / day
             </span>
           </div>
-          <div style={{ height:4, background:C.border, borderRadius:2 }}>
-            <div style={{ height:"100%", borderRadius:2,
-              width:`${data.giftReceiveCap > 0 ? Math.min(100, (data.giftReceivedToday/data.giftReceiveCap)*100) : 0}%`,
-              background:`linear-gradient(90deg,${C.green},#34D399)` }} />
-          </div>
-          <p style={{ color:C.text3, fontSize:10, marginTop:4 }}>
-            {data.giftReceiveRemaining.toLocaleString()} pts left you can receive today, scaled by your own account.
+          <p style={{ color:C.text3, fontSize:10, marginTop:2 }}>
+            Each person can gift you up to {data.giftReceiveCap.toLocaleString()} pts today, scaled by your
+            own account. Once someone hits that with you, they're done for today - but anyone else can still
+            gift you up to the same limit. Received from everyone today: {data.giftReceivedTodayTotal.toLocaleString()} pts.
           </p>
         </div>
       </Card>
       <AnimatePresence>
-        {modal === "gift" && <GiftModal remaining={Math.min(data.remaining, data.giftRemaining)} onClose={() => setModal("none")} />}
+        {modal === "gift" && <GiftModal fid={fid} remaining={Math.min(data.remaining, data.giftRemaining)} onClose={() => setModal("none")} />}
         {modal === "info" && <AllowanceInfoModal onClose={() => setModal("none")} />}
       </AnimatePresence>
     </>
@@ -3273,6 +3322,39 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refetchAll]);
+
+  // Burst-refetch after Promote/Gift: visibilitychange alone isn't a
+  // guaranteed signal here - Promote/Gift open the compose window via
+  // window.open(url, "_blank"), and some mini app hosts don't reliably fire
+  // a visibilitychange on the original tab when that happens, which was the
+  // most likely reason gift/promotion points looked like they "never
+  // counted" (they'd landed server-side, this tab just never re-asked).
+  // AllowanceBarV2/GiftModal dispatch this event right when the user
+  // actually commits to sending a promote/gift cast. Quiet (no spinner) so
+  // it doesn't flash loading state on every poll tick.
+  useEffect(() => {
+    let ticks = 0;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const quietRefetch = () => {
+      refetchPts();
+      apiStats(fid).then(s => setStats(s));
+      apiAllowance(fid).then(a => setAllowance(a));
+    };
+    const onSent = () => {
+      if (timer) clearInterval(timer);
+      ticks = 0;
+      timer = setInterval(() => {
+        quietRefetch();
+        ticks++;
+        if (ticks >= 10 && timer) { clearInterval(timer); timer = null; } // ~90s total
+      }, 9000);
+    };
+    window.addEventListener("fc:gift-or-promo-sent", onSent);
+    return () => {
+      window.removeEventListener("fc:gift-or-promo-sent", onSent);
+      if (timer) clearInterval(timer);
+    };
+  }, [fid, refetchPts]);
 
   // NFT holder check: automatic exactly once ever (first time this fid opens
   // the app), guarded by a per-fid localStorage flag. After that, only the
