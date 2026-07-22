@@ -143,6 +143,11 @@ interface StatsData {
   todayCounts: Record<string, number>;
   nextStreakBonusPts: number; streakBonusAwarded: boolean;
   seasonEnd: string;
+  // Same ungated per-action breakdown /api/points/my's `pts` prop has, but
+  // never zeroed out for a fid that hasn't minted the Pass yet - see the
+  // comment on HomeTab's `referrals`/`completed` below for why this one
+  // (not `pts?.breakdown`) is the source those two use.
+  breakdown: { action_type: string; total_actions: number; points_earned: number }[];
 }
 
 // ── SDK hook ──────────────────────────────────────────────────────────────────
@@ -1459,8 +1464,12 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
   const xp          = stats?.xp ?? 0;
   const xpToNext    = stats?.xpToNext ?? 500;
   const missions    = stats?.missions ?? [];
-  const referrals   = pts?.breakdown.find(b => b.action_type === "referral")?.total_actions ?? 0;
-  const completed   = pts?.breakdown.reduce((s,b) => s + b.total_actions, 0) ?? 0;
+  // Reads stats.breakdown (ungated), not pts?.breakdown (gated, empty until
+  // the fid mints the Pass) - otherwise a non-minter's Total Points up top
+  // could show their real total including referral/gift, while these two
+  // tiles sat stuck at 0, looking like referral/gift points weren't counted.
+  const referrals   = stats?.breakdown.find(b => b.action_type === "referral")?.total_actions ?? 0;
+  const completed   = stats?.breakdown.reduce((s,b) => s + b.total_actions, 0) ?? 0;
   const achievements= stats?.achievements ?? [];
   const unlockedCount = achievements.filter(a => a.unlocked).length;
 
@@ -2509,7 +2518,7 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   );
 }
 
-function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; pts: FidPts | null; loading: boolean; initialView?: "actions"|"allowance" }) {
+function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: number; pts: FidPts | null; stats: StatsData | null; loading: boolean; initialView?: "actions"|"allowance" }) {
   const [view, setView] = useState<"actions"|"allowance">(initialView);
   useEffect(() => { setView(initialView); }, [initialView]);
 
@@ -2570,7 +2579,11 @@ function EarnTab({ fid, pts, loading, initialView = "actions" }: { fid: number; 
 
           <Card>
             {filtered.map((row, i) => {
-              const earnedRow = pts?.breakdown.find(b => b.action_type === row.key);
+              // stats.breakdown (ungated), not pts?.breakdown - see StatsData's
+              // comment for why: pts is gated on NFT-mint status and reads 0
+              // for every row until then, even though the ledger has real
+              // earned amounts (referral, gift, promotion included).
+              const earnedRow = stats?.breakdown.find(b => b.action_type === row.key);
               const earned = earnedRow?.points_earned ?? 0;
               const pct = row.cap > 0 ? Math.min((earned / row.cap) * 100, 100) : 0;
               return (
@@ -2799,8 +2812,8 @@ function ProfileTab({ fid, ctx, pts, stats, rank, loading, onNftRecheck, qaToken
   const xpToNext    = stats?.xpToNext ?? 500;
   const xpPct       = xpToNext > 0 ? Math.min((xp / xpToNext) * 100, 100) : 100;
   const achievements = stats?.achievements ?? [];
-  const referrals   = pts?.breakdown.find(b=>b.action_type==="referral")?.total_actions ?? 0;
-  const isNftHolder = !!pts?.breakdown.find(b=>b.action_type==="nft_holder_bonus");
+  const referrals   = stats?.breakdown.find(b=>b.action_type==="referral")?.total_actions ?? 0;
+  const isNftHolder = !!stats?.breakdown.find(b=>b.action_type==="nft_holder_bonus");
 
   async function checkNft() {
     setNftCheck("checking");
@@ -3352,14 +3365,15 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
   // AllowanceBarV2/GiftModal dispatch this event right when the user
   // actually commits to sending a promote/gift cast. Quiet (no spinner) so
   // it doesn't flash loading state on every poll tick.
+  const quietRefetch = useCallback(() => {
+    refetchPts();
+    apiStats(fid).then(s => setStats(s));
+    apiAllowance(fid).then(a => setAllowance(a));
+  }, [fid, refetchPts]);
+
   useEffect(() => {
     let ticks = 0;
     let timer: ReturnType<typeof setInterval> | null = null;
-    const quietRefetch = () => {
-      refetchPts();
-      apiStats(fid).then(s => setStats(s));
-      apiAllowance(fid).then(a => setAllowance(a));
-    };
     const onSent = () => {
       if (timer) clearInterval(timer);
       ticks = 0;
@@ -3374,7 +3388,23 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
       window.removeEventListener("fc:gift-or-promo-sent", onSent);
       if (timer) clearInterval(timer);
     };
-  }, [fid, refetchPts]);
+  }, [quietRefetch]);
+
+  // Slow always-on quiet poll while the tab is visible: catches points that
+  // land from something OTHER than this session's own Promote/Gift taps -
+  // a friend's referral finishing, someone ELSE gifting points to this fid
+  // while the app is sitting open in the foreground, an achievement the
+  // server awarded async. None of those have a client-side event to hook,
+  // so without this the Level/XP bar, Total Points, and everything derived
+  // from them could sit stale (looking like it "doesn't match" real
+  // gift/referral earnings) until the user backgrounds and reopens the tab.
+  // Quiet (no loading state), so unlike the old 20s poll this never flickers.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") quietRefetch();
+    }, 45_000);
+    return () => clearInterval(timer);
+  }, [quietRefetch]);
 
   // NFT holder check: automatic exactly once ever (first time this fid opens
   // the app), guarded by a per-fid localStorage flag. After that, only the
@@ -3449,7 +3479,7 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
             <LeaderboardTab key="lb" fid={fid} board={board} loading={boardLoad} />
           )}
           {tab === "earn" && (
-            <EarnTab key="earn" fid={fid} pts={pts} loading={ptsLoad} initialView={earnView} />
+            <EarnTab key="earn" fid={fid} pts={pts} stats={stats} loading={ptsLoad} initialView={earnView} />
           )}
           {tab === "rewards" && (
             <RewardsTab key="rewards" fid={fid} />

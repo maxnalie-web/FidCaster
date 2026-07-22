@@ -355,7 +355,13 @@ export function registerMiniRoutes(app: Express): void {
       // Use the no-gate versions for a user's own stats: every point they earned
       // should be visible to them regardless of NFT mint status. The gate exists
       // for the public leaderboard/airdrop snapshot, not the personal dashboard.
-      const { total_points: totalPoints } = await getFidPointsNoGate(fid);
+      // breakdown is included in the response below - the Home tab derives
+      // per-type tiles (Referrals, Completed) from it, and used to read the
+      // GATED /api/points/my breakdown instead, which returns empty for any
+      // fid that hasn't minted the Pass yet - so a non-minter's Total Points
+      // could show their real (ungated) total while Referrals/Completed sat
+      // stuck at 0, looking like referral/gift points "didn't count".
+      const { total_points: totalPoints, breakdown } = await getFidPointsNoGate(fid);
       const todayPoints = await getFidTodayPointsNoGate(fid);
 
       // Today's action counts per type (for missions)
@@ -451,7 +457,7 @@ export function registerMiniRoutes(app: Express): void {
 
       res.json({
         streak, level, xp, xpToNext, totalPoints: finalTotalPoints, todayPoints: finalTodayPoints,
-        missions, achievements, todayCounts,
+        missions, achievements, todayCounts, breakdown,
         nextStreakBonusPts: POINTS.streak_bonus.pts,
         streakBonusAwarded,
         seasonEnd: "2025-12-31",
