@@ -2428,104 +2428,98 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   );
 
   const pct = data.total > 0 ? Math.max(0, (data.remaining / data.total) * 100) : 0;
+  const promoCost = scalePromoPointsClient(data.total);
+  const promoAvailable = data.promoRemaining >= promoCost;
 
   return (
     <>
       <Card glow>
-        <div style={{ padding:"14px 16px 10px" }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:3 }}>
-            <p style={{ color:C.text1, fontWeight:700, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
-              <Zap size={14} color={C.accentHi} /> Daily Allowance
+        {/* Header: title + reset countdown, one clean line */}
+        <div style={{ padding:"16px 16px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+              <Zap size={15} color={C.accentHi} />
+              <span style={{ color:C.text1, fontWeight:700, fontSize:14.5 }}>Daily Allowance</span>
               <button onClick={() => setModal("info")} aria-label="How allowance works"
                 style={{ background:"none", border:"none", cursor:"pointer", padding:0, display:"flex", alignItems:"center" }}>
-                <Info size={13} color={C.text3} />
+                <Info size={14} color={C.text3} />
               </button>
-            </p>
-            <span style={{ color:C.text3, fontSize:12 }}>Resets {countdown}</span>
+            </div>
+            <span style={{ color:C.text3, fontSize:11.5, fontVariantNumeric:"tabular-nums" }}>{countdown}</span>
           </div>
-          {/* Plain-language explanation up top: the #1 confusion is allowance
-              vs points. Allowance is a spend budget, NOT points you keep. */}
-          <p style={{ color:C.text3, fontSize:11, lineHeight:1.5, marginBottom:9 }}>
-            A daily budget you <strong style={{ color:C.text2 }}>spend</strong> (not points you keep) to Promote FidCaster or Gift points to friends. Resets every day.
-          </p>
-          <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:8 }}>
-            <span style={{ color:C.accentHi, fontWeight:900, fontSize:22 }}>{data.remaining.toLocaleString()}</span>
-            <span style={{ color:C.text3, fontSize:13 }}>of {data.total.toLocaleString()} left today</span>
+
+          <div style={{ display:"flex", alignItems:"baseline", gap:6, marginBottom:10 }}>
+            <span style={{ color:C.text1, fontWeight:900, fontSize:28, letterSpacing:"-0.5px" }}>{data.remaining.toLocaleString()}</span>
+            <span style={{ color:C.text3, fontSize:13.5 }}>/ {data.total.toLocaleString()}</span>
           </div>
-          <div style={{ height:6, background:C.border, borderRadius:3 }}>
+          <div style={{ height:7, background:"rgba(255,255,255,0.08)", borderRadius:4 }}>
             <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
-              style={{ height:"100%", borderRadius:3,
+              style={{ height:"100%", borderRadius:4,
                 background: pct > 30 ? `linear-gradient(90deg,${C.accent},#A855F7)` : pct > 10 ? `linear-gradient(90deg,${C.amber},#F97316)` : `linear-gradient(90deg,${C.rose},#FB7185)` }} />
           </div>
-          <p style={{ color:C.text3, fontSize:11, marginTop:5 }}>{data.used > 0 ? `${data.used.toLocaleString()} spent today` : "Nothing spent yet today"}</p>
+          <p style={{ color:C.text3, fontSize:11.5, marginTop:7 }}>
+            {data.used > 0 ? `${data.used.toLocaleString()} spent today` : "Nothing spent today"} · a spend budget, not points you keep
+          </p>
         </div>
-        <div style={{ borderTop:`1px solid ${C.border}`, display:"grid", gridTemplateColumns:"1fr 1fr" }}>
-          {data.promoRemaining >= scalePromoPointsClient(data.total) ? (
-            <a href={composeUrl(promoText)}
-              target="_blank" rel="noopener noreferrer"
-              onClick={() => window.dispatchEvent(new Event("fc:gift-or-promo-sent"))}
-              style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px",
-                textDecoration:"none", borderRight:`1px solid ${C.border}` }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <Zap size={14} color={C.accentHi} />
-                <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
-              </div>
-              <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-                Post about FidCaster and <strong style={{ color:C.accentHi }}>earn {scalePromoPointsClient(data.total).toLocaleString()} points</strong> back
-              </p>
-              <span style={{ color:C.amber, fontSize:10.5, fontWeight:700, background:`${C.amber}18`,
-                border:`1px solid ${C.amber}44`, borderRadius:999, padding:"2px 8px", alignSelf:"flex-start" }}>
-                Costs {scalePromoPointsClient(data.total).toLocaleString()} allowance
-              </span>
-            </a>
-          ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px",
-              borderRight:`1px solid ${C.border}`, opacity:0.45 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <Zap size={14} color={C.text3} />
-                <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Promote</span>
-              </div>
-              <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-                You've hit today's promote limit. Comes back tomorrow.
+
+        {/* Promote / Gift, as two clean stacked rows instead of a cramped 2-col grid */}
+        <div style={{ borderTop:`1px solid ${C.border}` }}>
+          <a href={promoAvailable ? composeUrl(promoText) : undefined}
+            target="_blank" rel="noopener noreferrer"
+            onClick={promoAvailable ? () => window.dispatchEvent(new Event("fc:gift-or-promo-sent")) : (e) => e.preventDefault()}
+            style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 16px", textDecoration:"none",
+              borderBottom:`1px solid ${C.border}`, cursor: promoAvailable ? "pointer" : "default",
+              opacity: promoAvailable ? 1 : 0.5 }}>
+            <div style={{ width:36, height:36, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+              background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.25))", border:"1px solid rgba(168,85,247,0.4)" }}>
+              <Zap size={16} color={C.accentHi} />
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ color:C.text1, fontSize:13.5, fontWeight:700 }}>Promote</p>
+              <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
+                {promoAvailable ? "Post about FidCaster on Farcaster" : "Today's promote limit reached - resets tomorrow"}
               </p>
             </div>
-          )}
+            {promoAvailable && (
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                <p style={{ color:C.green, fontSize:13, fontWeight:800 }}>+{promoCost.toLocaleString()}</p>
+                <p style={{ color:C.text3, fontSize:10 }}>costs {promoCost.toLocaleString()}</p>
+              </div>
+            )}
+          </a>
           <button onClick={() => setModal("gift")} disabled={data.giftRemaining <= 0}
-            style={{ display:"flex", flexDirection:"column", gap:5, padding:"13px 14px", textAlign:"left",
-              background:"none", border:"none", cursor: data.giftRemaining > 0 ? "pointer" : "default",
-              fontFamily:"inherit", opacity: data.giftRemaining > 0 ? 1 : 0.45 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <Gift size={14} color={C.green} />
-              <span style={{ color:C.text1, fontSize:13, fontWeight:700 }}>Gift Points</span>
+            style={{ display:"flex", alignItems:"center", gap:12, width:"100%", padding:"14px 16px", textAlign:"left",
+              background:"none", border:"none", fontFamily:"inherit",
+              cursor: data.giftRemaining > 0 ? "pointer" : "default", opacity: data.giftRemaining > 0 ? 1 : 0.5 }}>
+            <div style={{ width:36, height:36, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+              background:"linear-gradient(145deg,rgba(52,211,153,0.3),rgba(6,95,70,0.25))", border:"1px solid rgba(52,211,153,0.4)" }}>
+              <Gift size={16} color={C.green} />
             </div>
-            <p style={{ color:C.text3, fontSize:11, lineHeight:1.5 }}>
-              {data.giftRemaining > 0 ? "Send points to a friend as a gift" : "You've hit today's gift limit"}
-            </p>
+            <div style={{ flex:1, minWidth:0 }}>
+              <p style={{ color:C.text1, fontSize:13.5, fontWeight:700 }}>Gift Points</p>
+              <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
+                {data.giftRemaining > 0 ? "Send points to a friend" : "Today's gift limit reached - resets tomorrow"}
+              </p>
+            </div>
             {data.giftRemaining > 0 && (
-              <span style={{ color:C.amber, fontSize:10.5, fontWeight:700, background:`${C.amber}18`,
-                border:`1px solid ${C.amber}44`, borderRadius:999, padding:"2px 8px", alignSelf:"flex-start" }}>
-                Costs the amount you send
-              </span>
+              <p style={{ color:C.text3, fontSize:10, flexShrink:0 }}>costs what you send</p>
             )}
           </button>
         </div>
+
         {/* Receiving is a separate cap from sending above - scaled by THIS
             user's own account strength, and applies PER SENDER, not as one
-            shared pool. No progress bar here on purpose: "received today"
-            can legitimately be several multiples of the cap once more than
-            one sender has each given up to their own limit, so a bar
-            implying a single pool getting "used up" would be misleading. */}
-        <div style={{ borderTop:`1px solid ${C.border}`, padding:"10px 14px" }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
-            <span style={{ color:C.text2, fontSize:11.5, fontWeight:600 }}>Gift receiving limit</span>
-            <span style={{ color:C.accentHi, fontSize:11, fontWeight:700 }}>
-              {data.giftReceiveCap.toLocaleString()} per sender / day
+            shared pool. */}
+        <div style={{ borderTop:`1px solid ${C.border}`, padding:"12px 16px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <span style={{ color:C.text2, fontSize:12.5, fontWeight:600 }}>Gift receiving limit</span>
+            <span style={{ color:C.text1, fontSize:13, fontWeight:800 }}>
+              {data.giftReceiveCap.toLocaleString()} <span style={{ color:C.text3, fontWeight:500, fontSize:11 }}>per sender/day</span>
             </span>
           </div>
-          <p style={{ color:C.text3, fontSize:10, marginTop:2 }}>
-            Each person can gift you up to {data.giftReceiveCap.toLocaleString()} pts today, scaled by your
-            own account. Once someone hits that with you, they're done for today - but anyone else can still
-            gift you up to the same limit. Received from everyone today: {data.giftReceivedTodayTotal.toLocaleString()} pts.
+          <p style={{ color:C.text3, fontSize:10.5, marginTop:5, lineHeight:1.5 }}>
+            Each sender can gift up to this, then they're done with you for today - others can still gift you the
+            same amount. Received today: {data.giftReceivedTodayTotal.toLocaleString()} pts.
           </p>
         </div>
       </Card>
