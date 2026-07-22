@@ -97,7 +97,7 @@ export async function claimReferral(
     verified: true,
   });
   void sendFarcasterNotification({
-    ...referralWelcomeNotif(),
+    ...referralWelcomeNotif(POINTS.referral_welcome.pts),
     targetFids: [newFid],
     targetUrl: "https://fidcaster.xyz/mini",
   });

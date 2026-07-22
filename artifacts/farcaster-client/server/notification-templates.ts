@@ -77,10 +77,10 @@ export function achievementUnlockedNotif(label: string, pts: number): { title: s
   ]);
 }
 
-export function referralWelcomeNotif(): { title: string; body: string } {
+export function referralWelcomeNotif(pts: number): { title: string; body: string } {
   return pick([
-    { title: "Welcome to FidCaster!", body: "You joined via a referral, points are already in your account." },
-    { title: "You're in!", body: "Thanks for joining FidCaster through a referral. Start earning points." },
+    { title: `Welcome to FidCaster! +${pts} pts`, body: `You joined via a referral - ${pts} points are already in your account.` },
+    { title: "You're in!", body: `Thanks for joining FidCaster through a referral. +${pts} points, already credited.` },
   ]);
 }
 

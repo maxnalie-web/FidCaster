@@ -1710,10 +1710,10 @@ const server = app.listen(PORT, host, () => {
       // not yet in author_fids, stale secret on a cold boot, etc.). Fully idempotent.
       const { pollForMissedCasts } = await import("./promotion-watcher.js");
       void pollForMissedCasts(); // run once immediately on boot
-      // 100s, just above pollForMissedCasts' own 90s debounce floor - this is
+      // 15s, just above pollForMissedCasts' own 12s debounce floor - this is
       // the fallback path (webhook is primary and should be near-instant), so
-      // worst case for a webhook miss is ~100s instead of the old 5 minutes.
-      setInterval(() => { void pollForMissedCasts(); }, 100_000);
+      // worst case for a webhook miss is now ~15s instead of the old 5 minutes.
+      setInterval(() => { void pollForMissedCasts(); }, 15_000);
     })
     .catch((e) => console.error("[ledger] init failed:", e));
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
