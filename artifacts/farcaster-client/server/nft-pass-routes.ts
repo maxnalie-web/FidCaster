@@ -22,8 +22,6 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool } from "./db/pool.js";
 import { getTrustedFid } from "./auth.js";
-import { logUserAction } from "./db/ledger.js";
-import { isExcludedFromBonuses } from "./bonus-exclusions.js";
 
 const recordLimiter = rateLimit({ windowMs: 10 * 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
 
@@ -197,17 +195,6 @@ export function createNftPassRouter(): Router {
           `INSERT INTO nft_pass_mint_log (fid, address, tx_hash) VALUES ($1, $2, $3)`,
           [fid, address, req.body.txHash ?? null],
         ).catch(() => {}); // best-effort log — never fail the response over it
-      }
-
-      // One-time mint bonus - idempotent on proof, so repeated record-mint
-      // calls for the same fid (retries, re-checks) are harmless. Team/test
-      // accounts are excluded (see bonus-exclusions.ts) - they still mint
-      // and unlock the app normally, just never collect the points.
-      if (!(await isExcludedFromBonuses(fid))) {
-        await logUserAction({
-          fid, actionType: "pass_mint_bonus",
-          payload: { address }, proof: `pass_mint_bonus:${fid}`, verified: true,
-        }).catch(() => {}); // best-effort — never fail the mint response over it
       }
 
       res.json({ ok: true, balance: Number(balance) });

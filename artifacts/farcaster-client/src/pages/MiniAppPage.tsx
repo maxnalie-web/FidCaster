@@ -24,9 +24,6 @@ import {
 // Must match server/db/points.ts's nft_holder_bonus.pts - shown here purely
 // for copy, the server is still the only source of truth for the award.
 const POINTS_NFT_HOLDER_BONUS = 10000;
-// Must match server/db/points.ts's pass_mint_bonus.pts - shown here purely
-// for copy, the server is still the only source of truth for the award.
-const POINTS_PASS_MINT_BONUS = 10000;
 
 // A promotion's cost AND its point reward both scale together, from 50 to
 // 500, with the promoter's own daily allowance total (a proxy for their
@@ -1138,7 +1135,7 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
           <p style={{ color:C.text1, fontWeight:700, fontSize:14 }}>FidCaster Pass</p>
           <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
             {activeAddr ? <>Base NFT · <span style={{ fontFamily:"monospace", color:C.accentHi }}>{short(activeAddr)}</span></>
-              : <>Free NFT on Base · earn <strong style={{ color:C.amber }}>+{POINTS_PASS_MINT_BONUS.toLocaleString()} pts</strong></>}
+              : "Free NFT on Base"}
           </p>
         </div>
         {s === "idle" && (
