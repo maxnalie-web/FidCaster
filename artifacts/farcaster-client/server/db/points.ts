@@ -27,9 +27,10 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   grow_campaign_start:     { pts: 0,   dailyCap: 0    },
   referral:                { pts: 200, dailyCap: 2000 },
   // One-time bonus for a newly-referred user (db/referrals.ts claimReferral).
-  // Was previously mislabeled as a 100pt "quest" — this is its own type so
-  // it scores independently of both.
-  referral_welcome:        { pts: 50,  dailyCap: 50   },
+  // Matches the referrer's own 200pt payout above on purpose - both sides of
+  // a referral earn the same amount, so the joining friend can be told
+  // exactly what they're getting up front.
+  referral_welcome:        { pts: 200, dailyCap: 200  },
   quest:                   { pts: 100, dailyCap: 500  },
   app_open:                { pts: 0,   dailyCap: 0    },
   // Awarded once per 7-day streak milestone reached (see mini-routes.ts).

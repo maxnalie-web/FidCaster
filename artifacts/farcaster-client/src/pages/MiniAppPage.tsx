@@ -18,7 +18,7 @@ import {
   Sword, Sprout, Heart, RefreshCw, Edit3,
   Wallet, Shield, Globe, Star, Gift,
   Home, LayoutList, Award, Bell,
-  ChevronRight, Lock, Info, Send,
+  ChevronRight, Lock, Info, Send, TrendingUp,
 } from "lucide-react";
 
 // Must match server/db/points.ts's nft_holder_bonus.pts - shown here purely
@@ -1836,7 +1836,6 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
 // LEADERBOARD TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; loading: boolean }) {
-  const [tab, setTab] = useState<"global"|"nearby">("global");
   const seasonCountdown = "TBA";
 
   if (loading) return (
@@ -1856,97 +1855,111 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
   const myRow = board.find(r => r.fid === fid);
 
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean); // 2nd, 1st, 3rd
-  const podiumHeights = [90, 120, 72];
+  const podiumHeights = [96, 132, 78];
   const podiumRanks   = [2, 1, 3];
   const CROWN_COLOR   = ["#C0C0C0", "#FFD700", "#CD7F32"];
 
   return (
     <motion.div key="lb-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
 
-      {/* Season countdown */}
+      {/* Season countdown, with a slow-pulsing trophy glow */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-        padding:"10px 14px", background:C.card, borderRadius:14, border:`1px solid ${C.border}` }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <Award size={16} color={C.amber} />
-          <span style={{ color:C.text2, fontSize:13, fontWeight:600 }}>Season ends</span>
+        padding:"12px 16px", borderRadius:16, position:"relative", overflow:"hidden",
+        background:"linear-gradient(135deg, rgba(245,158,11,0.14), rgba(124,58,237,0.08))",
+        border:`1px solid rgba(245,158,11,0.3)` }}>
+        <div style={{ position:"absolute", top:-20, right:-10, width:90, height:90, borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(245,158,11,0.25), transparent 70%)", pointerEvents:"none" }} />
+        <div style={{ display:"flex", alignItems:"center", gap:8, position:"relative" }}>
+          <motion.div animate={{ rotate:[-6,6,-6] }} transition={{ duration:2.4, repeat:Infinity, ease:"easeInOut" }}>
+            <Award size={17} color={C.amber} style={{ filter:"drop-shadow(0 0 6px rgba(245,158,11,.7))" }} />
+          </motion.div>
+          <span style={{ color:C.text2, fontSize:13, fontWeight:700 }}>Season ends</span>
         </div>
-        <span style={{ color:C.amber, fontWeight:700, fontSize:13 }}>
-          {seasonCountdown}
-        </span>
-      </div>
-
-      {/* Global / Nearby tabs */}
-      <div style={{ display:"flex", background:C.card, borderRadius:12, padding:3, border:`1px solid ${C.border}` }}>
-        {(["global","nearby"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ flex:1, padding:"8px", borderRadius:10, border:"none", cursor:"pointer",
-              background: tab===t ? `linear-gradient(135deg,${C.accent},#A855F7)` : "transparent",
-              color: tab===t ? "#fff" : C.text3,
-              fontSize:13, fontWeight:700, transition:"all 0.2s",
-              boxShadow: tab===t ? `0 4px 12px rgba(139,92,246,0.4)` : "none" }}>
-            {t === "global" ? "🌍 Global" : "👥 Nearby"}
-          </button>
-        ))}
+        <span style={{ color:C.amber, fontWeight:800, fontSize:13.5, position:"relative" }}>{seasonCountdown}</span>
       </div>
 
       {/* Top 3 Podium */}
-      <Card style={{ padding:"20px 16px 16px" }}>
-        <p style={{ color:C.text3, fontSize:10, fontWeight:800, letterSpacing:"0.12em",
-          textTransform:"uppercase", marginBottom:16, textAlign:"center" }}>Top Earners</p>
-        <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"center", gap:12 }}>
+      <Card glow style={{ padding:"22px 14px 18px", position:"relative", overflow:"hidden" }}>
+        {/* Ambient glow field behind the podium - amber near the top, purple lower down */}
+        <div style={{ position:"absolute", top:-40, left:"50%", transform:"translateX(-50%)", width:220, height:180,
+          background:"radial-gradient(ellipse, rgba(255,215,0,0.22), transparent 65%)", pointerEvents:"none" }} />
+        <p style={{ color:C.text3, fontSize:10, fontWeight:800, letterSpacing:"0.14em",
+          textTransform:"uppercase", marginBottom:18, textAlign:"center", position:"relative" }}>🏆 Top Earners</p>
+        <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"center", gap:10, position:"relative" }}>
           {podiumOrder.map((row, podiumIdx) => {
-            if (!row) return <div key={podiumIdx} style={{ width:90 }} />;
+            if (!row) return <div key={podiumIdx} style={{ width:92 }} />;
             const rank   = podiumRanks[podiumIdx];
             const height = podiumHeights[podiumIdx];
             const isMe   = row.fid === fid;
             const isFirst = rank === 1;
+            const avatarSize = isFirst ? 60 : 48;
             return (
               <motion.div key={row.fid}
-                initial={{ opacity:0, y:30 }} animate={{ opacity:1, y:0 }}
-                transition={{ delay: podiumIdx * 0.12, duration:0.4 }}
-                style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
-                {/* Crown for #1 */}
-                {isFirst && <div style={{ fontSize:22 }}>👑</div>}
-                {/* Avatar */}
+                initial={{ opacity:0, y:36, scale:0.85 }} animate={{ opacity:1, y:0, scale:1 }}
+                transition={{ delay: podiumIdx * 0.14, duration:0.45, type:"spring", stiffness:200, damping:18 }}
+                style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:6, width:92 }}>
+                {/* Crown for #1, gently bobbing */}
+                {isFirst && (
+                  <motion.div animate={{ y:[0,-4,0], rotate:[-4,4,-4] }}
+                    transition={{ duration:2.2, repeat:Infinity, ease:"easeInOut" }}
+                    style={{ fontSize:24, filter:"drop-shadow(0 0 10px rgba(255,215,0,.8))" }}>👑</motion.div>
+                )}
+                {/* Avatar with pulsing rank-colored ring */}
                 <div style={{ position:"relative" }}>
-                  {row.pfpUrl
-                    ? <img src={row.pfpUrl} alt="" style={{ width:isFirst?52:44, height:isFirst?52:44,
-                        borderRadius:"50%", border:`2.5px solid ${isFirst?C.amber:isMe?C.accentHi:C.border}`,
-                        boxShadow: isFirst ? `0 0 20px rgba(255,215,0,0.5)` : isMe ? `0 0 14px rgba(139,92,246,0.5)` : "none" }} />
-                    : <div style={{ width:isFirst?52:44, height:isFirst?52:44, borderRadius:"50%",
-                        background:`linear-gradient(135deg,${C.accent},#A855F7)`,
-                        border:`2.5px solid ${isFirst?C.amber:isMe?C.accentHi:C.border}`,
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        fontSize:isFirst?18:14, fontWeight:900, color:"#fff",
-                        boxShadow: isFirst ? `0 0 20px rgba(255,215,0,0.5)` : "none" }}>
-                        {(row.username||"").slice(0,2).toUpperCase() || "??"}
-                      </div>
-                  }
+                  <motion.div
+                    animate={isFirst ? { boxShadow: [
+                      "0 0 14px rgba(255,215,0,.5), 0 0 0 0 rgba(255,215,0,.4)",
+                      "0 0 26px rgba(255,215,0,.85), 0 0 0 6px rgba(255,215,0,0)",
+                      "0 0 14px rgba(255,215,0,.5), 0 0 0 0 rgba(255,215,0,.4)",
+                    ] } : {}}
+                    transition={{ duration:2, repeat:Infinity, ease:"easeInOut" }}
+                    style={{ borderRadius:"50%" }}>
+                    {row.pfpUrl
+                      ? <img src={row.pfpUrl} alt="" style={{ width:avatarSize, height:avatarSize,
+                          borderRadius:"50%", border:`2.5px solid ${isFirst?C.amber:isMe?C.accentHi:C.border}`,
+                          boxShadow: isMe && !isFirst ? `0 0 14px rgba(139,92,246,0.5)` : "none" }} />
+                      : <div style={{ width:avatarSize, height:avatarSize, borderRadius:"50%",
+                          background:`linear-gradient(135deg,${C.accent},#A855F7)`,
+                          border:`2.5px solid ${isFirst?C.amber:isMe?C.accentHi:C.border}`,
+                          display:"flex", alignItems:"center", justifyContent:"center",
+                          fontSize:isFirst?19:15, fontWeight:900, color:"#fff",
+                          boxShadow: isMe && !isFirst ? `0 0 14px rgba(139,92,246,0.5)` : "none" }}>
+                          {(row.username||"").slice(0,2).toUpperCase() || "??"}
+                        </div>
+                    }
+                  </motion.div>
                   {/* Rank badge */}
                   <div style={{ position:"absolute", bottom:-4, left:"50%", transform:"translateX(-50%)",
                     background:`linear-gradient(135deg,${CROWN_COLOR[rank-1]},${rank===1?"#FFA500":"rgba(0,0,0,0.5)"})`,
-                    borderRadius:999, padding:"1px 7px", fontSize:10, fontWeight:800, color: rank===1?"#000":"#fff",
-                    border:`1px solid ${C.bg}`, whiteSpace:"nowrap" }}>
+                    borderRadius:999, padding:"1.5px 8px", fontSize:10.5, fontWeight:800, color: rank===1?"#000":"#fff",
+                    border:`1.5px solid ${C.bg}`, whiteSpace:"nowrap", boxShadow:"0 2px 6px rgba(0,0,0,0.4)" }}>
                     #{rank}
                   </div>
                 </div>
-                {/* Podium block */}
-                <div style={{ width:80, height, borderRadius:"10px 10px 0 0",
+                {/* Podium block with a shine sweep */}
+                <motion.div initial={{ height:0 }} animate={{ height }}
+                  transition={{ delay: podiumIdx*0.14 + 0.15, duration:0.5, ease:"easeOut" }}
+                  style={{ width:88, borderRadius:"12px 12px 0 0", position:"relative", overflow:"hidden",
                   background: isFirst
-                    ? "linear-gradient(180deg,rgba(255,215,0,0.25),rgba(255,165,0,0.1))"
+                    ? "linear-gradient(180deg,rgba(255,215,0,0.3),rgba(255,165,0,0.12))"
                     : rank===2
-                    ? "linear-gradient(180deg,rgba(192,192,192,0.2),rgba(150,150,150,0.08))"
-                    : "linear-gradient(180deg,rgba(205,127,50,0.18),rgba(160,100,40,0.07))",
-                  border: `1px solid ${isFirst?"rgba(255,215,0,0.3)":rank===2?"rgba(192,192,192,0.25)":"rgba(205,127,50,0.2)"}`,
-                  display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", padding:"0 0 8px" }}>
-                  <p style={{ color:C.text1, fontSize:11, fontWeight:700, textAlign:"center",
-                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", width:72 }}>
+                    ? "linear-gradient(180deg,rgba(192,192,192,0.24),rgba(150,150,150,0.09))"
+                    : "linear-gradient(180deg,rgba(205,127,50,0.22),rgba(160,100,40,0.08))",
+                  border: `1px solid ${isFirst?"rgba(255,215,0,0.35)":rank===2?"rgba(192,192,192,0.3)":"rgba(205,127,50,0.25)"}`,
+                  display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", padding:"0 4px 8px" }}>
+                  <motion.div animate={{ backgroundPositionX: ["150%", "-50%"] }}
+                    transition={{ duration:3, repeat:Infinity, ease:"easeInOut", delay: podiumIdx*0.4 }}
+                    style={{ position:"absolute", inset:0,
+                      background:"linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)",
+                      backgroundSize:"200% 100%" }} />
+                  <p style={{ color:C.text1, fontSize:11, fontWeight:700, textAlign:"center", position:"relative",
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", width:78 }}>
                     {row.username || `fid${row.fid}`}
                   </p>
-                  <p style={{ color: isFirst?C.amber:C.text3, fontSize:10, fontWeight:800 }}>
-                    {row.total_points.toLocaleString()}
+                  <p style={{ color: isFirst?C.amber:C.text3, fontSize:10.5, fontWeight:800, position:"relative" }}>
+                    <Counter to={row.total_points} />
                   </p>
-                </div>
+                </motion.div>
               </motion.div>
             );
           })}
@@ -1955,21 +1968,24 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
 
       {/* My rank highlight */}
       {myRow && myRow.rank > 3 && (
-        <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px",
-          background:"rgba(139,92,246,0.12)", border:"1px solid rgba(139,92,246,0.3)", borderRadius:14 }}>
-          <span style={{ color:C.accentHi, fontWeight:800, fontSize:14, minWidth:28 }}>#{myRow.rank}</span>
+        <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }}
+          style={{ display:"flex", alignItems:"center", gap:12, padding:"13px 15px", borderRadius:16, position:"relative", overflow:"hidden",
+            background:"linear-gradient(135deg, rgba(139,92,246,0.16), rgba(88,28,135,0.08))",
+            border:"1px solid rgba(168,85,247,0.4)", boxShadow:"0 4px 18px rgba(139,92,246,0.18)" }}>
+          <span style={{ color:C.accentHi, fontWeight:900, fontSize:15, minWidth:30 }}>#{myRow.rank}</span>
           {myRow.pfpUrl
-            ? <img src={myRow.pfpUrl} alt="" style={{ width:32, height:32, borderRadius:"50%" }} />
-            : <div style={{ width:32, height:32, borderRadius:"50%", background:`linear-gradient(135deg,${C.accent},#A855F7)`,
+            ? <img src={myRow.pfpUrl} alt="" style={{ width:34, height:34, borderRadius:"50%", border:`2px solid ${C.accentHi}` }} />
+            : <div style={{ width:34, height:34, borderRadius:"50%", background:`linear-gradient(135deg,${C.accent},#A855F7)`,
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800, color:"#fff" }}>
                 {(myRow.username||"").slice(0,2).toUpperCase()||"??"}
               </div>
           }
           <div style={{ flex:1 }}>
-            <p style={{ color:C.accentHi, fontSize:13, fontWeight:700 }}>{myRow.username} (you)</p>
-            <p style={{ color:C.text3, fontSize:11 }}>{myRow.total_points.toLocaleString()} pts</p>
+            <p style={{ color:C.accentHi, fontSize:13.5, fontWeight:700 }}>{myRow.username} (you)</p>
+            <p style={{ color:C.text3, fontSize:11 }}><Counter to={myRow.total_points} /> pts</p>
           </div>
-        </div>
+          <TrendingUp size={16} color={C.accentHi} />
+        </motion.div>
       )}
 
       {/* Ranked list */}
@@ -1977,18 +1993,25 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
         <Card>
           {rest.map((row, i) => {
             const isMe = row.fid === fid;
+            const medalColor = row.rank <= 10 ? C.amber : C.text3;
             return (
               <div key={row.fid}>
-                <motion.div initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }}
-                  transition={{ delay:i*0.02 }}
-                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-                    background: isMe ? "rgba(139,92,246,0.10)" : "transparent" }}>
-                  <span style={{ width:28, color:C.text3, fontSize:12, textAlign:"right",
+                <motion.div initial={{ opacity:0, x:-14 }} animate={{ opacity:1, x:0 }}
+                  whileTap={{ scale:0.98 }}
+                  transition={{ delay: Math.min(i*0.025, 0.4) }}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px", position:"relative",
+                    background: isMe ? "rgba(139,92,246,0.12)" : "transparent" }}>
+                  {isMe && <div style={{ position:"absolute", left:0, top:0, bottom:0, width:3,
+                    background:`linear-gradient(180deg,${C.accent},#A855F7)` }} />}
+                  <span style={{ width:28, color: row.rank <= 10 ? medalColor : C.text3, fontSize:12,
+                    fontWeight: row.rank <= 10 ? 800 : 500, textAlign:"right",
                     fontVariantNumeric:"tabular-nums", flexShrink:0 }}>{row.rank}</span>
                   {row.pfpUrl
-                    ? <img src={row.pfpUrl} alt="" style={{ width:30, height:30, borderRadius:"50%", flexShrink:0 }} />
-                    : <div style={{ width:30, height:30, borderRadius:"50%", flexShrink:0,
+                    ? <img src={row.pfpUrl} alt="" style={{ width:32, height:32, borderRadius:"50%", flexShrink:0,
+                        border: isMe ? `2px solid ${C.accentHi}` : "none" }} />
+                    : <div style={{ width:32, height:32, borderRadius:"50%", flexShrink:0,
                         background:`linear-gradient(135deg,rgba(139,92,246,0.3),rgba(168,85,247,0.2))`,
+                        border: isMe ? `2px solid ${C.accentHi}` : "none",
                         display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:C.accentHi }}>
                         {(row.username||"").slice(0,2).toUpperCase()||"??"}
                       </div>
@@ -1998,7 +2021,7 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
                     {row.username || `fid${row.fid}`}{isMe?" (you)":""}
                   </span>
                   <span style={{ color:isMe?C.accentHi:C.text2, fontSize:13,
-                    fontVariantNumeric:"tabular-nums", fontWeight:isMe?700:400 }}>
+                    fontVariantNumeric:"tabular-nums", fontWeight:isMe?700:600 }}>
                     {row.total_points.toLocaleString()}
                   </span>
                 </motion.div>
@@ -2111,9 +2134,10 @@ function GiftModal({ fid, remaining, onClose }: { fid: number; remaining: number
     // Mentions @fidcaster on purpose: the gift detector's webhook only reliably
     // fires for casts that mention the app account (mentioned_fids=[APP_FID]),
     // which never overflows Neynar's filter-size cap the way a per-sender
-    // author_fids list does. Recipient stays first (right after "points") so
-    // the detector still reads it as the gift target, @fidcaster last.
-    const text = `${amountNum} FidCaster points @${handle} via @fidcaster`;
+    // author_fids list does. Recipient right after "to" so the detector still
+    // reads it as the gift target, @fidcaster last. Wording must stay in
+    // lockstep with GIFT_REGEX in server/promotion-watcher.ts.
+    const text = `Gifted ${amountNum} FidCaster points to @${handle} 🎁 via @fidcaster`;
     window.open(composeUrl(text), "_blank", "noopener,noreferrer");
     window.dispatchEvent(new Event("fc:gift-or-promo-sent"));
     onClose();
@@ -2193,7 +2217,7 @@ function HowItWorksModal({ onClose }: { onClose: () => void }) {
     { t:"Every action type has a daily cap", d:"Each action (casts, likes, recasts, follows, etc.) can only earn up to a fixed amount per day. Repeating the same action past its cap stops earning more, so spamming one action isn't a shortcut." },
     { t:"Follow/unfollow churn is detected and excluded", d:"Following and quickly unfollowing the same accounts (or cycling through many accounts fast) is flagged as farming and those actions are excluded from your points, so they won't count even if they briefly showed up." },
     { t:"Your account needs to be a real, active Farcaster account", d:"A minimum follower count, cast history, and account-quality score are required to earn points at all. New or low-activity accounts may see their actions held until they meet this bar." },
-    { t:"Referrals pay out after your friend mints, and are capped", d:"You and your friend both get points once they mint the NFT Pass, not just from opening the link. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
+    { t:"Referrals pay out after your friend mints, and are capped", d:"You and your friend both get 200 points once they mint the NFT Pass, not just from opening the link. There's a lifetime cap per account on how many referrals can pay out, to stop one account from farming unlimited referral bonuses." },
     { t:"If something looks like fraud, it gets excluded (not silently kept)", d:"Rows flagged by fraud detection are marked excluded rather than deleted, so if a real action gets caught by mistake, it can be reviewed and restored. But by default, excluded points do not count toward your total or the airdrop, and this isn't always reversed automatically." },
     { t:"Why this matters", d:"The airdrop allocation is based on your final point total. Farmed or excluded points won't be part of that, so please don't rely on a total that includes flagged activity. If your count changes because something was caught by fraud detection, that's the system working as intended, not a bug." },
   ];
@@ -2685,7 +2709,7 @@ function RewardsTab({ fid }: { fid: number }) {
               <div>
                 <p style={{ color:C.text1, fontWeight:700, fontSize:15 }}>Refer Friends</p>
                 <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
-                  Earn <strong style={{ color:C.amber }}>+200 pts</strong> per friend who joins and mints the Pass
+                  You get <strong style={{ color:C.amber }}>+200 pts</strong>, your friend gets <strong style={{ color:C.amber }}>+200 pts</strong> too - once they join and mint the Pass
                 </p>
               </div>
               {!refLoad && refData.referrals.filter(r=>r.activated).length > 0 && (
@@ -2711,7 +2735,7 @@ function RewardsTab({ fid }: { fid: number }) {
               </span>
             </motion.button>
             <a href={`https://warpcast.com/~/compose?text=${encodeURIComponent(
-                "Join me on FidCaster, earn points and get in on the airdrop.",
+                "Join me on FidCaster - you get 200 bonus points when you mint the Pass, on your way to the airdrop.",
               )}&embeds[]=${encodeURIComponent(refUrl)}`}
               target="_blank" rel="noopener noreferrer"
               style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:6,

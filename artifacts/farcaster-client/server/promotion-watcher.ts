@@ -9,7 +9,7 @@
  * Promotion: cast contains "FidCaster" AND mentions APP_FID.
  *   → debit 50 allowance, award 50 pts (or reject if allowance exhausted).
  *
- * Gift: cast starts with "{N} FidCaster points @user" (N ≤ 500).
+ * Gift: cast starts with "Gifted {N} FidCaster points to @user" (N ≤ 500).
  *   → debit N allowance, credit/queue N pts for recipient atomically.
  */
 
@@ -141,7 +141,8 @@ export interface NeynarCastForPromotion {
 // ── Regex patterns ────────────────────────────────────────────────────────────
 
 const PROMO_REGEX = /fidcaster/i;
-const GIFT_REGEX  = /^(\d+)\s+fidcaster\s+points/i;
+// Matches the GiftModal compose text: "Gifted 50 FidCaster points to @user 🎁 via @fidcaster"
+const GIFT_REGEX  = /^gifted\s+(\d+)\s+fidcaster\s+points\s+to\s+@/i;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -230,10 +231,10 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
     .find(p => p.fid !== authorFid && p.fid !== appFid)?.fid ?? null;
   if (!recipientFid) {
     // Structured mention missing (see the fallback block's comment above) -
-    // fall back to resolving the FIRST "@handle" after "points" out of the
-    // cast text. That's the recipient; the trailing "via @fidcaster" is the
-    // app and is ignored by this anchored pattern.
-    const handleMatch = /^\d+\s+fidcaster\s+points\s+@([a-z0-9_.-]+)/i.exec(text);
+    // fall back to resolving the "@handle" right after "to" out of the cast
+    // text. That's the recipient; the trailing "via @fidcaster" is the app
+    // and is ignored by this anchored pattern.
+    const handleMatch = /^gifted\s+\d+\s+fidcaster\s+points\s+to\s+@([a-z0-9_.-]+)/i.exec(text);
     if (handleMatch) recipientFid = await resolveUsernameToFid(handleMatch[1]);
   }
   if (!recipientFid || recipientFid === authorFid || recipientFid === appFid) {
@@ -307,21 +308,25 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
 // The webhook is the primary detection path for promotions and gifts, but it
 // misses casts when: the server was down at delivery time, the Neynar filter
 // hadn't been synced yet (new user not in author_fids), or the HMAC secret was
-// stale. Polling via Neynar cast search roughly every 100s catches those gaps.
+// stale. Polling via Neynar cast search roughly every 15s catches those gaps
+// fast - cheap now that the app has a large Neynar API key pool to throttle
+// across (see neynar-limit.ts), so there's no reason to leave a slow fallback
+// as the difference between "instant" and "a minute-plus late" for anyone who
+// happened to hit the one gap the webhook missed.
 // The proof column in the DB makes this fully idempotent — already-processed
 // casts are silently skipped at the transaction level.
 
 let lastPollAt = 0;
 
 export async function pollForMissedCasts(): Promise<void> {
-  // Hard debounce: never run more than once per 90s regardless of call frequency.
+  // Hard debounce: never run more than once per 12s regardless of call frequency.
   const now = Date.now();
-  if (now - lastPollAt < 90_000) return;
+  if (now - lastPollAt < 12_000) return;
   lastPollAt = now;
 
   try {
     // A single search for "fidcaster" catches both promotion casts
-    // ("… FidCaster … @fidcaster") and gift casts ("N FidCaster points @user").
+    // ("… FidCaster … @fidcaster") and gift casts ("Gifted N FidCaster points to @user").
     const res = await neynarFetch(
       `${NEYNAR_BASE}/cast/search?q=fidcaster&limit=50&priority_mode=false`,
     );
@@ -351,7 +356,7 @@ export async function pollForMissedCasts(): Promise<void> {
 
 export async function processCastForAllowance(cast: NeynarCastForPromotion): Promise<void> {
   try {
-    // Gift text ("{N} FidCaster points @user") always also matches
+    // Gift text ("Gifted {N} FidCaster points to @user") always also matches
     // PROMO_REGEX (it contains the word "fidcaster"), so a gift whose
     // recipient mention happens to overlap with mentioning the app account
     // would get misclassified as a flat 50pt promotion instead of an N-pt
