@@ -164,6 +164,13 @@ export async function checkAndAwardNftHolderBonus(fid: number): Promise<NftHolde
     return { isHolder: false, alreadyAwarded: false, justAwarded: false };
   }
 
+  // Team/test accounts report their real holder status but never collect
+  // the points bonus for it - see bonus-exclusions.ts.
+  const { isExcludedFromBonuses } = await import("./bonus-exclusions.js");
+  if (await isExcludedFromBonuses(fid)) {
+    return { isHolder: true, alreadyAwarded: false, justAwarded: false };
+  }
+
   await logUserAction({
     fid, actionType: "nft_holder_bonus",
     payload: { source: "fastertask_nft", contract: FASTERTASK_NFT_ADDRESS },
