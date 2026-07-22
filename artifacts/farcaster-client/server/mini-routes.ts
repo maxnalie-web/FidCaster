@@ -20,7 +20,7 @@ import { logUserAction, logUserActionIfNew, touchUser } from "./db/ledger.js";
 import { scheduleWebhookSync } from "./push-routes.js";
 
 // Neynar's neynar_user_score is a 0-1 float (not a 0-100 scale).
-const SCORE_THRESHOLD = 0.3;
+const SCORE_THRESHOLD = 0.2;
 
 // Only actions that actually earn points count toward the daily streak.
 // Zero-value types (unlike, unrecast, unfollow, app_open, grow_campaign_start,
