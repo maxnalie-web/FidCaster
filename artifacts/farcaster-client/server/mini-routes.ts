@@ -27,7 +27,7 @@ const SCORE_THRESHOLD = 0.3;
 // gift, market_cancel) are trivially cheap to fabricate a verified row for —
 // counting them would let someone maintain a streak (and collect the 500pt
 // weekly streak_bonus) for free without ever doing anything real.
-const STREAK_EXCLUDED_TYPES = new Set(["streak_bonus", "nft_holder_bonus", "referral_welcome", "referral"]);
+const STREAK_EXCLUDED_TYPES = new Set(["streak_bonus", "nft_holder_bonus", "pass_mint_bonus", "referral_welcome", "referral"]);
 const STREAK_ELIGIBLE_TYPES = Object.entries(POINTS)
   .filter(([type, v]) => v.pts > 0 && !STREAK_EXCLUDED_TYPES.has(type))
   .map(([type]) => type);
