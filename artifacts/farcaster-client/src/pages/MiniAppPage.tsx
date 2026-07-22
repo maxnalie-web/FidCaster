@@ -3414,21 +3414,18 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
     };
   }, [quietRefetch]);
 
-  // Slow always-on quiet poll while the tab is visible: catches points that
-  // land from something OTHER than this session's own Promote/Gift taps -
-  // a friend's referral finishing, someone ELSE gifting points to this fid
-  // while the app is sitting open in the foreground, an achievement the
-  // server awarded async. None of those have a client-side event to hook,
-  // so without this the Level/XP bar, Total Points, and everything derived
-  // from them could sit stale (looking like it "doesn't match" real
-  // gift/referral earnings) until the user backgrounds and reopens the tab.
-  // Quiet (no loading state), so unlike the old 20s poll this never flickers.
+  // Quiet refetch every time the user navigates TO Home - catches points
+  // that land from something other than this session's own Promote/Gift
+  // taps (a friend's referral finishing, someone else gifting this fid)
+  // without polling on a timer. No loading flash. Skips the very first
+  // mount, since refetchAll() above already covers the initial load.
+  const skippedFirstHomeRefetch = useRef(false);
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") quietRefetch();
-    }, 45_000);
-    return () => clearInterval(timer);
-  }, [quietRefetch]);
+    if (tab !== "home") return;
+    if (!skippedFirstHomeRefetch.current) { skippedFirstHomeRefetch.current = true; return; }
+    quietRefetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   // NFT holder check: automatic exactly once ever (first time this fid opens
   // the app), guarded by a per-fid localStorage flag. After that, only the
