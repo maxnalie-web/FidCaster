@@ -223,6 +223,36 @@ export function registerMiniRoutes(app: Express): void {
     res.json(u);
   });
 
+  // ── GET /api/mini/check-follow?fid=XXX — does this fid follow @fidcaster? ───
+  // Used by the mandatory "Follow @fidcaster" onboarding step. Reads Neynar's
+  // viewer_context.following on the app's own account, viewed as this fid -
+  // no separate "list followers and search" call needed.
+  app.get("/api/mini/check-follow", limiter, async (req: Request, res: Response) => {
+    const fid = fidFromQuery(req.query.fid ? Number(req.query.fid) : null);
+    if (!fid) { res.status(400).json({ error: "?fid= required" }); return; }
+    const appFid = Number(process.env.APP_FID);
+    if (!Number.isFinite(appFid) || appFid <= 0) { res.status(503).json({ error: "APP_FID not configured" }); return; }
+    if (!hasAnyNeynarKey()) { res.status(503).json({ error: "Neynar not configured" }); return; }
+    try {
+      const apiKey = await neynarThrottle();
+      const r = await fetch(
+        `https://api.neynar.com/v2/farcaster/user/bulk?fids=${appFid}&viewer_fid=${fid}`,
+        { headers: { accept: "application/json", api_key: apiKey }, signal: AbortSignal.timeout(8_000) },
+      );
+      if (!r.ok) {
+        if (r.status === 429) penalize429(apiKey);
+        res.status(502).json({ error: "Neynar lookup failed" });
+        return;
+      }
+      const data = await r.json() as { users?: { viewer_context?: { following?: boolean } }[] };
+      const following = data.users?.[0]?.viewer_context?.following === true;
+      res.json({ following });
+    } catch (e) {
+      console.error("[mini] check-follow error:", (e as Error).message);
+      res.status(500).json({ error: "check failed" });
+    }
+  });
+
   // ── POST /api/mini/nft-holder-check — on demand, no background polling ──────
   // Called once automatically on first app open, and again on manual re-check.
   app.post("/api/mini/nft-holder-check", nftCheckLimiter, async (req: Request, res: Response) => {
