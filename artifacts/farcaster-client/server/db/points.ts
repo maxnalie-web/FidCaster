@@ -47,9 +47,6 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   // server/nft-holder-job.ts. Awarded once per fid, like referral_welcome.
   // Excluded for a small set of team/test accounts (see bonus-exclusions.ts).
   nft_holder_bonus:        { pts: 10000, dailyCap: 10000 },
-  // One-time bonus for minting the FidCaster Pass itself (server/nft-pass-
-  // routes.ts record-mint). Also excluded for the same accounts.
-  pass_mint_bonus:         { pts: 10000, dailyCap: 10000 },
   // ── Allowance-gated actions ────────────────────────────────────────────────
   // promotion's award scales with the promoter's own daily allowance (see
   // db/allowance.ts processPromotionAtomic) - a bigger allowance (higher
