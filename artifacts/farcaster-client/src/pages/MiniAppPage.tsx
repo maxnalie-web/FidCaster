@@ -1618,29 +1618,49 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
         </div>
       </div>
 
-      {/* ── Daily Allowance, as a thin bar right under Total Points/Rank -
-          it's a quick-glance budget indicator, not its own destination, so
-          it doesn't need a full card with an icon tile and a progress ring
-          the way it used to. Tap still opens the full Allowance view. ── */}
+      {/* ── Daily Allowance bar, right under Total Points/Rank. A quick-glance
+          budget indicator - bold and "fiery" per feedback rather than a
+          barely-visible thin line, but still a single row, not a full card
+          with an icon tile and ring the way it used to be. Tap opens the
+          full Allowance view. ── */}
       {allowance && !allowanceLoading && (() => {
         const pct = allowance.total > 0 ? Math.max(0, (allowance.remaining / allowance.total) * 100) : 0;
-        const barColor = pct > 30
-          ? `linear-gradient(90deg,${C.accent},#A855F7)`
-          : pct > 10
+        const hot = pct > 30;
+        const warm = pct > 10;
+        const barColor = hot
+          ? `linear-gradient(90deg,#FF8A00,#FFC24B,#FF3D71)`
+          : warm
           ? `linear-gradient(90deg,${C.amber},#F97316)`
           : `linear-gradient(90deg,${C.rose},#FB7185)`;
+        const glow = hot ? "rgba(255,140,0,0.55)" : warm ? "rgba(245,158,11,0.5)" : "rgba(244,63,94,0.5)";
         return (
-          <button onClick={onOpenAllowance} style={{ display:"flex", alignItems:"center", gap:8,
-            width:"100%", background:"none", border:"none", padding:"2px 2px 0", cursor:"pointer", fontFamily:"inherit" }}>
-            <Zap size={11} color={C.accentHi} style={{ flexShrink:0 }} />
-            <span style={{ color:C.text3, fontSize:10.5, fontWeight:700, flexShrink:0, whiteSpace:"nowrap" }}>
-              {allowance.remaining.toLocaleString()}/{allowance.total.toLocaleString()} allowance
-            </span>
-            <div style={{ flex:1, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
-              <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7 }}
-                style={{ height:"100%", borderRadius:2, background:barColor }} />
+          <motion.button onClick={onOpenAllowance} whileTap={{ scale:0.98 }}
+            style={{ display:"flex", flexDirection:"column", gap:8, width:"100%", textAlign:"left",
+              background:"linear-gradient(160deg, rgba(255,140,0,0.14), rgba(124,58,237,0.08) 60%, rgba(255,255,255,0.02))",
+              border:`1px solid ${hot ? "rgba(255,140,0,0.4)" : "rgba(255,255,255,0.14)"}`,
+              borderRadius:16, padding:"12px 14px", cursor:"pointer", fontFamily:"inherit",
+              boxShadow:`0 4px 20px ${hot ? "rgba(255,100,0,0.18)" : "rgba(0,0,0,0.2)"}, inset 0 1px 0 rgba(255,255,255,0.08)` }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                <div style={{ width:24, height:24, borderRadius:8, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+                  background:"linear-gradient(145deg, rgba(255,140,0,0.4), rgba(180,40,0,0.25))",
+                  border:"1px solid rgba(255,160,60,0.55)", boxShadow:`0 0 12px ${glow}` }}>
+                  <Zap size={13} color="#FFB74D" style={{ filter:`drop-shadow(0 0 4px ${glow})` }} />
+                </div>
+                <span style={{ color:C.text2, fontSize:11.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em" }}>
+                  Daily Allowance
+                </span>
+              </div>
+              <span style={{ color:C.text1, fontSize:14, fontWeight:900, whiteSpace:"nowrap" }}>
+                {allowance.remaining.toLocaleString()}<span style={{ color:C.text3, fontWeight:600, fontSize:12 }}> / {allowance.total.toLocaleString()}</span>
+              </span>
             </div>
-          </button>
+            <div style={{ height:9, background:"rgba(255,255,255,0.08)", borderRadius:5, overflow:"hidden", position:"relative" }}>
+              <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.8, ease:"easeOut" }}
+                style={{ height:"100%", borderRadius:5, background:barColor,
+                  boxShadow:`0 0 10px ${glow}, 0 0 2px ${glow}` }} />
+            </div>
+          </motion.button>
         );
       })()}
 
