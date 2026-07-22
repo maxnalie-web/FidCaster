@@ -1936,7 +1936,7 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
                     #{rank}
                   </div>
                 </div>
-                {/* Podium block with a shine sweep */}
+                {/* Podium block */}
                 <motion.div initial={{ height:0 }} animate={{ height }}
                   transition={{ delay: podiumIdx*0.14 + 0.15, duration:0.5, ease:"easeOut" }}
                   style={{ width:88, borderRadius:"12px 12px 0 0", position:"relative", overflow:"hidden",
@@ -1947,11 +1947,6 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
                     : "linear-gradient(180deg,rgba(205,127,50,0.22),rgba(160,100,40,0.08))",
                   border: `1px solid ${isFirst?"rgba(255,215,0,0.35)":rank===2?"rgba(192,192,192,0.3)":"rgba(205,127,50,0.25)"}`,
                   display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", padding:"0 4px 8px" }}>
-                  <motion.div animate={{ backgroundPositionX: ["150%", "-50%"] }}
-                    transition={{ duration:3, repeat:Infinity, ease:"easeInOut", delay: podiumIdx*0.4 }}
-                    style={{ position:"absolute", inset:0,
-                      background:"linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)",
-                      backgroundSize:"200% 100%" }} />
                   <p style={{ color:C.text1, fontSize:11, fontWeight:700, textAlign:"center", position:"relative",
                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", width:78 }}>
                     {row.username || `fid${row.fid}`}
