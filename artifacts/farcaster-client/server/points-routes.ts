@@ -15,8 +15,9 @@ import { getLeaderboard, getFidPoints, getFullSnapshot, getPointsHistory } from 
 import { fidToCode, claimReferral, getReferralList } from "./db/referrals.js";
 import { getHealthReport } from "./watcher.js";
 import { isLedgerConfigured, touchUser } from "./db/ledger.js";
-import { getAllowance, claimAndLogPending } from "./db/allowance.js";
+import { getAllowance, claimAndLogPending, giftReceiveCap, getGiftReceivedFromSenderToday } from "./db/allowance.js";
 import { fetchNeynarUsers } from "./mini-routes.js";
+import { resolveUsernameToFid } from "./promotion-watcher.js";
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -96,6 +97,38 @@ export function registerPointsRoutes(app: Express): void {
     } catch (e) {
       console.error("[allowance] error:", e);
       res.status(500).json({ error: "Failed to fetch allowance" });
+    }
+  });
+
+  // ── Gift lookup: resolve a username and report the SENDER's remaining
+  //    room to gift THAT specific recipient today (per-sender cap - see
+  //    processGiftAtomic in db/allowance.ts). Powers the Gift modal's live
+  //    "this person can receive up to N more from you" readout. ──────────────
+  app.get("/api/gift/lookup", readLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
+    const senderFid = fidFromQuery(req.query.senderFid ? Number(req.query.senderFid) : null);
+    const usernameRaw = typeof req.query.username === "string" ? req.query.username.trim().replace(/^@/, "").toLowerCase() : "";
+    if (!senderFid) { res.status(400).json({ error: "?senderFid= required" }); return; }
+    if (!usernameRaw) { res.status(400).json({ error: "?username= required" }); return; }
+    try {
+      const recipientFid = await resolveUsernameToFid(usernameRaw);
+      if (!recipientFid) { res.status(404).json({ error: "User not found" }); return; }
+      if (recipientFid === senderFid) { res.status(400).json({ error: "Cannot gift yourself" }); return; }
+      const [profileMap, recipientAllowance, receivedFromSenderToday] = await Promise.all([
+        fetchNeynarUsers([recipientFid]),
+        getAllowance(recipientFid),
+        getGiftReceivedFromSenderToday(recipientFid, senderFid),
+      ]);
+      const profile = profileMap.get(recipientFid);
+      const cap = giftReceiveCap(recipientAllowance.total);
+      const remainingFromSender = Math.max(0, cap - receivedFromSenderToday);
+      res.json({
+        recipientFid, username: profile?.username ?? usernameRaw, pfpUrl: profile?.pfpUrl ?? null,
+        capPerSender: cap, receivedFromSenderToday, remainingFromSender,
+      });
+    } catch (e) {
+      console.error("[gift] lookup error:", e);
+      res.status(500).json({ error: "Failed to look up recipient" });
     }
   });
 

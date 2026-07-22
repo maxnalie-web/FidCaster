@@ -51,7 +51,7 @@ async function neynarFetch(url: string): Promise<Response> {
   return res;
 }
 
-async function resolveUsernameToFid(username: string): Promise<number | null> {
+export async function resolveUsernameToFid(username: string): Promise<number | null> {
   try {
     const res = await neynarFetch(`${NEYNAR_BASE}/user/by_username?username=${encodeURIComponent(username)}`);
     if (!res.ok) return null;
@@ -116,6 +116,12 @@ async function notifyFid(targetFid: number, payload: { title: string; body: stri
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Defensive sanity ceiling on the amount parsed out of cast text, not the
+// real per-gift limit - that's enforced per (sender, recipient, day) in
+// processGiftAtomic via giftReceiveCap, which itself never exceeds
+// MAX_PROMO_PTS (500), so this can never be the binding constraint in
+// practice. It just stops a garbage/huge number in the regex match from
+// reaching the DB layer at all.
 const MAX_GIFT_PTS = 500;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -261,9 +267,14 @@ export async function handleGiftCast(cast: NeynarCastForPromotion): Promise<bool
       console.log(
         `[gift] fid ${authorFid} → fid ${recipientFid} (${amount} pts): ${result.reason}`,
       );
-      if (result.reason === "insufficient_allowance") {
+      // firstFailure=false means this exact cast already got a failure
+      // notification on a previous webhook redelivery/poll pass - skip
+      // sending it again (this used to fire every ~100s until the cast
+      // scrolled out of the poll window, producing duplicate "Gift not
+      // delivered" notifications for the same cast).
+      if (result.firstFailure !== false && result.reason === "insufficient_allowance") {
         await notifyFid(authorFid, { ...giftInsufficientAllowanceNotif(amount), data: { type: "gift_failed", castHash: cast.hash } });
-      } else if (result.reason === "recipient_gift_cap_reached") {
+      } else if (result.firstFailure !== false && result.reason === "recipient_gift_cap_reached") {
         const recipientHandle = cast.mentioned_profiles?.find(p => p.fid === recipientFid)?.username;
         await notifyFid(authorFid, {
           title: "Gift not delivered",

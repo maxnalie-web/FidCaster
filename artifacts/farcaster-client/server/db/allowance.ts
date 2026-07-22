@@ -117,19 +117,23 @@ export interface AllowanceData {
   promoRemaining: number;
   giftUsed: number;
   giftRemaining: number;
-  // How much this fid can RECEIVE via gift today, scaled by their own
-  // account strength (giftReceiveCap) - separate from giftUsed/giftRemaining
-  // above, which track allowance this fid has SPENT sending gifts to others.
+  // How much this fid can receive via gift FROM A SINGLE SENDER per day,
+  // scaled by their own account strength - each sender gets their own
+  // independent allowance up to this cap (see getGiftReceivedFromSenderToday
+  // and its use in processGiftAtomic below), it's not one shared pool split
+  // across everyone who gifts this fid. giftReceivedTodayTotal is purely
+  // informational here (sum across every sender) - it is NOT compared
+  // against giftReceiveCap, since the real per-sender cap can't be
+  // expressed as a single "used/remaining" pair without a specific sender.
   giftReceiveCap: number;
-  giftReceivedToday: number;
-  giftReceiveRemaining: number;
+  giftReceivedTodayTotal: number;
 }
 
 function categoryRemaining(total: number, categoryUsed: number): number {
   return Math.max(0, Math.round(total * CATEGORY_CAP_FRACTION) - categoryUsed);
 }
 
-/** Sum of gift_received payload.amount for this fid, today (UTC). */
+/** Sum of gift_received payload.amount for this fid today (UTC), across every sender. Informational only. */
 export async function getGiftReceivedToday(fid: number): Promise<number> {
   const pool = getPool();
   if (!pool) return 0;
@@ -143,17 +147,31 @@ export async function getGiftReceivedToday(fid: number): Promise<number> {
   return Number(rows[0]?.total ?? 0);
 }
 
+/** Sum of gift_received payload.amount recipientFid got specifically FROM senderFid today (UTC). */
+export async function getGiftReceivedFromSenderToday(recipientFid: number, senderFid: number): Promise<number> {
+  const pool = getPool();
+  if (!pool) return 0;
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM((payload->>'amount')::integer), 0) AS total
+     FROM user_actions
+     WHERE fid = $1 AND action_type = 'gift_received' AND verified = true AND excluded = false
+       AND (payload->>'fromFid')::bigint = $2
+       AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date`,
+    [recipientFid, senderFid],
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
 async function toAllowanceData(
   fid: number, total: number, used: number, promoUsed: number, giftUsed: number, resetsAt: string,
 ): Promise<AllowanceData> {
   const receiveCap = giftReceiveCap(total);
-  const receivedToday = await getGiftReceivedToday(fid);
+  const receivedTodayTotal = await getGiftReceivedToday(fid);
   return {
     total, used, remaining: Math.max(0, total - used), resetsAt,
     promoUsed, promoRemaining: categoryRemaining(total, promoUsed),
     giftUsed,  giftRemaining:  categoryRemaining(total, giftUsed),
-    giftReceiveCap: receiveCap, giftReceivedToday: receivedToday,
-    giftReceiveRemaining: Math.max(0, receiveCap - receivedToday),
+    giftReceiveCap: receiveCap, giftReceivedTodayTotal: receivedTodayTotal,
   };
 }
 
@@ -475,13 +493,34 @@ export async function processPromotionAtomic(params: {
  * All steps are atomic — if recipient credit fails, allowance is not spent.
  * The caller must call getAllowance(authorFid) BEFORE this.
  */
+// Records that this specific gift cast was seen and rejected, keyed on the
+// SAME proof the success path would have used - so the idempotency check at
+// the top of this function (step 1) catches it on every future webhook
+// redelivery or poll pass, instead of re-evaluating (and re-notifying) the
+// same doomed cast every ~100s forever. Uses a separate pool query rather
+// than the caller's client/transaction, since the caller immediately rolls
+// that transaction back on every failure path. Returns true only the FIRST
+// time this cast's failure is recorded, so the caller knows whether this is
+// a fresh failure worth notifying about or a repeat it already handled.
+async function markGiftAttemptFailed(
+  pool: NonNullable<ReturnType<typeof getPool>>, giftSentProof: string, authorFid: number, reason: string,
+): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `INSERT INTO user_actions (fid, action_type, payload, proof, verified, excluded, excluded_reason)
+     VALUES ($1, 'gift', $2, $3, false, true, $4)
+     ON CONFLICT (action_type, proof) WHERE proof IS NOT NULL DO NOTHING`,
+    [authorFid, JSON.stringify({ failed: true, reason }), giftSentProof, reason],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 export async function processGiftAtomic(params: {
   authorFid:    number;
   recipientFid: number;
   amount:       number;
   castHash:     string;
   recipientIsRegistered: boolean;
-}): Promise<{ ok: boolean; reason?: string }> {
+}): Promise<{ ok: boolean; reason?: string; firstFailure?: boolean }> {
   const pool = getPool();
   if (!pool) return { ok: false, reason: "db_not_configured" };
 
@@ -503,11 +542,16 @@ export async function processGiftAtomic(params: {
       return { ok: false, reason: "already_processed" };
     }
 
-    // 2. Recipient's own daily gift-RECEIVING cap, scaled by their account
-    //    strength (giftReceiveCap) - checked before touching the sender's
-    //    allowance so a maxed-out recipient doesn't cost the sender anything.
-    //    Only enforced for already-registered recipients; an unregistered
-    //    recipient has no allowance row to size a cap from yet.
+    // 2. Recipient's daily gift-RECEIVING cap, scaled by their own account
+    //    strength (giftReceiveCap) - checked PER SENDER, not as one pool
+    //    shared across everyone who gifts this recipient. Each sender gets
+    //    their own independent allowance up to the cap; once fid A has given
+    //    the recipient that much today, fid A is capped for the rest of the
+    //    day but fid B can still give up to the same cap. Checked before
+    //    touching the sender's allowance so a maxed-out relationship doesn't
+    //    cost the sender anything. Only enforced for already-registered
+    //    recipients; an unregistered recipient has no allowance row to size
+    //    a cap from yet.
     if (params.recipientIsRegistered) {
       const { rows: recipientRow } = await client.query(
         `SELECT base_amount FROM daily_allowance WHERE fid = $1 AND date = $2`,
@@ -515,10 +559,19 @@ export async function processGiftAtomic(params: {
       );
       const recipientBase = recipientRow.length > 0 ? Number(recipientRow[0].base_amount) : MIN_ALLOWANCE;
       const cap = giftReceiveCap(recipientBase);
-      const receivedToday = await getGiftReceivedToday(params.recipientFid);
-      if (receivedToday + params.amount > cap) {
+      const { rows: fromSenderRows } = await client.query(
+        `SELECT COALESCE(SUM((payload->>'amount')::integer), 0) AS total
+         FROM user_actions
+         WHERE fid = $1 AND action_type = 'gift_received' AND verified = true AND excluded = false
+           AND (payload->>'fromFid')::bigint = $2
+           AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date`,
+        [params.recipientFid, params.authorFid],
+      );
+      const receivedFromThisSenderToday = Number(fromSenderRows[0]?.total ?? 0);
+      if (receivedFromThisSenderToday + params.amount > cap) {
         await client.query("ROLLBACK");
-        return { ok: false, reason: "recipient_gift_cap_reached" };
+        const firstFailure = await markGiftAttemptFailed(pool, giftSentProof, params.authorFid, "recipient_gift_cap_reached");
+        return { ok: false, reason: "recipient_gift_cap_reached", firstFailure };
       }
     }
 
@@ -541,7 +594,8 @@ export async function processGiftAtomic(params: {
       const row = cur[0];
       const reason = row && (Number(row.base_amount) * CATEGORY_CAP_FRACTION - Number(row.gift_used)) < params.amount
         ? "gift_category_cap_reached" : "insufficient_allowance";
-      return { ok: false, reason };
+      const firstFailure = await markGiftAttemptFailed(pool, giftSentProof, params.authorFid, reason);
+      return { ok: false, reason, firstFailure };
     }
 
     // 4. Upsert sender user row + insert gift audit record
