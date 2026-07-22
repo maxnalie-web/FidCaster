@@ -1589,7 +1589,7 @@ function HomeTab({ fid, ctx, pts, stats, rank, board, statsLoading, ptsLoading, 
   // only as many leading circles as there's real history for - at streak 0
   // that's zero, so "now" sits first instead of stranded mid-row behind
   // three empty placeholders.
-  const nextBonusPts = stats?.nextStreakBonusPts ?? 500;
+  const nextBonusPts = stats?.nextStreakBonusPts ?? 750;
   const doneCount = Math.max(0, Math.min(streak - 1, 3));
   const chainDays: { kind: "done" | "now" | "future" }[] = [
     ...Array.from({ length: doneCount }, () => ({ kind: "done" as const })),
@@ -2144,14 +2144,14 @@ function LeaderboardTab({ fid, board, loading }: { fid: number; board: LBRow[]; 
 // "Promote" -> "promote" vs "promotion". Every one of those five progress
 // bars always read 0 earned regardless of how many real points had landed.
 const SCORING_ROWS = [
-  { Icon:Edit3,       action:"Cast",          key:"cast",                   pts:10,  cap:50   },
-  { Icon:RefreshCw,   action:"Recast",        key:"recast",                 pts:3,   cap:30   },
-  { Icon:Heart,       action:"Like",          key:"like",                   pts:1,   cap:50   },
-  { Icon:Users,       action:"Follow",        key:"follow",                 pts:2,   cap:50   },
-  { Icon:ShoppingBag, action:"Buy FID",       key:"market_buy",             pts:100, cap:300  },
-  { Icon:Tag,         action:"List FID",      key:"market_list",           pts:50,  cap:250  },
+  { Icon:Edit3,       action:"Cast",          key:"cast",                   pts:20,  cap:100  },
+  { Icon:RefreshCw,   action:"Recast",        key:"recast",                 pts:6,   cap:60   },
+  { Icon:Heart,       action:"Like",          key:"like",                   pts:2,   cap:100  },
+  { Icon:Users,       action:"Follow",        key:"follow",                 pts:4,   cap:100  },
+  { Icon:ShoppingBag, action:"Buy FID",       key:"market_buy",             pts:200, cap:600  },
+  { Icon:Tag,         action:"List FID",      key:"market_list",           pts:100, cap:500  },
   { Icon:Share2,      action:"Refer User",    key:"referral",               pts:200, cap:2000 },
-  { Icon:Sprout,      action:"Grow Campaign", key:"grow_campaign_complete", pts:30,  cap:150  },
+  { Icon:Sprout,      action:"Grow Campaign", key:"grow_campaign_complete", pts:60,  cap:300  },
   // Promote has no fixed daily point cap of its own - the only real limit is
   // the promoter's daily allowance (see AllowanceBarV2/scalePromoPointsClient).
   // pts/cap are display-only placeholders here; the row below special-cases
@@ -3016,8 +3016,8 @@ function RewardsTab({ fid }: { fid: number }) {
         <SectionLabel>Ways to Earn More</SectionLabel>
         <Card>
           {[
-            { icon:"⚡", label:"Cast on FidCaster", desc:"Earn 10 pts per cast (up to 50/day)", href:"https://fidcaster.xyz" },
-            { icon:"🛒", label:"Trade FIDs", desc:"100 pts per buy, 50 pts per listing", href:"https://fidcaster.xyz/market" },
+            { icon:"⚡", label:"Cast on FidCaster", desc:"Earn 20 pts per cast (up to 100/day)", href:"https://fidcaster.xyz" },
+            { icon:"🛒", label:"Trade FIDs", desc:"200 pts per buy, 100 pts per listing", href:"https://fidcaster.xyz/market" },
           ].map((row, i, arr) => (
             <div key={row.label}>
               <a href={row.href} target="_blank" rel="noopener noreferrer"

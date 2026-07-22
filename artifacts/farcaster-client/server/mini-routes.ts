@@ -78,6 +78,15 @@ function calcLevel(totalPoints: number): { level: number; xp: number; xpToNext: 
   return { level, xp, xpToNext };
 }
 
+// Scales with WHICH 7-day milestone is being hit (750/week, capped at 6000 -
+// reached at week 8 / day 56) instead of a flat 500 forever - rewards
+// sticking with a longer streak, not just crossing 7 days once. Must match
+// POINTS.streak_bonus.dailyCap in db/points.ts (the real ceiling).
+function streakBonusPts(streakDays: number): number {
+  const week = Math.round(streakDays / 7);
+  return Math.min(750 * week, 6000);
+}
+
 // ── Streak computation ─────────────────────────────────────────────────────────
 function computeStreak(dates: string[]): number {
   if (!dates.length) return 0;
@@ -338,7 +347,8 @@ export function registerMiniRoutes(app: Express): void {
           id: a.id, label: a.label, icon: a.icon, tier: a.tier, requirement: a.requirement,
           target: a.target, progress: 0, unlocked: false, pts: a.pts,
         })),
-        nextStreakBonusPts: POINTS.streak_bonus.pts,
+        breakdown: [],
+        nextStreakBonusPts: streakBonusPts(7),
         streakBonusAwarded: false,
         seasonEnd: "2025-12-31",
       });
@@ -361,8 +371,9 @@ export function registerMiniRoutes(app: Express): void {
       const activeDates = dateRows.map(r => r.d);
       const streak = computeStreak(activeDates);
 
-      // Award a one-time 500pt bonus each time the streak crosses a 7-day
-      // milestone, on the day it's actually reached (idempotent on proof).
+      // Award a one-time, milestone-scaled bonus each time the streak
+      // crosses a 7-day mark, on the day it's actually reached (idempotent
+      // on proof). See streakBonusPts above for the scaling.
       let streakBonusAwarded = false;
       const todayStr = new Date().toISOString().slice(0, 10);
       if (streak > 0 && streak % 7 === 0 && activeDates[0] === todayStr) {
@@ -371,7 +382,7 @@ export function registerMiniRoutes(app: Express): void {
         // user_actions should be inserted) instead of a raw INSERT here.
         streakBonusAwarded = await logUserActionIfNew({
           fid, actionType: "streak_bonus",
-          payload: { streak }, proof: `streak_bonus:${fid}:${todayStr}`,
+          payload: { streak, amount: streakBonusPts(streak) }, proof: `streak_bonus:${fid}:${todayStr}`,
           verified: true,
         }).catch(() => false);
       }
@@ -488,7 +499,7 @@ export function registerMiniRoutes(app: Express): void {
       res.json({
         streak, level, xp, xpToNext, totalPoints: finalTotalPoints, todayPoints: finalTodayPoints,
         missions, achievements, todayCounts, breakdown,
-        nextStreakBonusPts: POINTS.streak_bonus.pts,
+        nextStreakBonusPts: streakBonusPts(streak - (streak % 7) + 7),
         streakBonusAwarded,
         seasonEnd: "2025-12-31",
       });
