@@ -1714,6 +1714,11 @@ const server = app.listen(PORT, host, () => {
       // the fallback path (webhook is primary and should be near-instant), so
       // worst case for a webhook miss is now ~15s instead of the old 5 minutes.
       setInterval(() => { void pollForMissedCasts(); }, 15_000);
+      // One-time (idempotent) sweep: exclude any bonus rows the excluded
+      // team/test accounts already earned before the exclusion existed, so
+      // their score doesn't move because of it.
+      const { sweepExcludedBonusRows } = await import("./bonus-exclusions.js");
+      void sweepExcludedBonusRows();
     })
     .catch((e) => console.error("[ledger] init failed:", e));
   scheduleSpamLabelRefresh(); // background: downloads the ~125MB dataset only when it's stale/missing
