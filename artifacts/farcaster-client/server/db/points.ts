@@ -13,17 +13,17 @@ import { getPool } from "./pool.js";
 // ── Weights ───────────────────────────────────────────────────────────────────
 
 export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
-  cast:                    { pts: 10,  dailyCap: 50   },
-  like:                    { pts: 1,   dailyCap: 50   },
-  recast:                  { pts: 3,   dailyCap: 30   },
-  follow:                  { pts: 2,   dailyCap: 50   },
-  market_list:             { pts: 50,  dailyCap: 250  },
-  market_buy:              { pts: 100, dailyCap: 300  },
+  cast:                    { pts: 20,  dailyCap: 100  },
+  like:                    { pts: 2,   dailyCap: 100  },
+  recast:                  { pts: 6,   dailyCap: 60   },
+  follow:                  { pts: 4,   dailyCap: 100  },
+  market_list:             { pts: 100, dailyCap: 500  },
+  market_buy:              { pts: 200, dailyCap: 600  },
   market_cancel:           { pts: 0,   dailyCap: 0    },
   unfollow:                { pts: 0,   dailyCap: 0    },
   unlike:                  { pts: 0,   dailyCap: 0    },
   unrecast:                { pts: 0,   dailyCap: 0    },
-  grow_campaign_complete:  { pts: 30,  dailyCap: 150  },
+  grow_campaign_complete:  { pts: 60,  dailyCap: 300  },
   grow_campaign_start:     { pts: 0,   dailyCap: 0    },
   referral:                { pts: 200, dailyCap: 2000 },
   // One-time bonus for a newly-referred user (db/referrals.ts claimReferral).
@@ -31,10 +31,17 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
   // a referral earn the same amount, so the joining friend can be told
   // exactly what they're getting up front.
   referral_welcome:        { pts: 200, dailyCap: 200  },
-  quest:                   { pts: 100, dailyCap: 500  },
+  quest:                   { pts: 200, dailyCap: 1000 },
   app_open:                { pts: 0,   dailyCap: 0    },
-  // Awarded once per 7-day streak milestone reached (see mini-routes.ts).
-  streak_bonus:            { pts: 500, dailyCap: 500  },
+  // Awarded once per 7-day streak milestone reached (see mini-routes.ts),
+  // scaled by WHICH milestone (streakBonusPts in mini-routes.ts: 750/week,
+  // capped at 6000) instead of a flat 500 forever - a 500pt bonus for a full
+  // week of consistent activity read as stingy, and didn't reward sticking
+  // with a longer streak any more than just hitting 7 days once. The actual
+  // per-occurrence amount lives in payload.amount, same pattern as
+  // promotion/gift_received; `pts` here is unused for scoring (display
+  // default only), dailyCap is the real ceiling, see STREAK_CASE.
+  streak_bonus:            { pts: 750, dailyCap: 6000 },
   // One-time bonus for holding a FasterTask Pass NFT (ERC-1155 on Base),
   // detected server-side via the user's Farcaster custody address — see
   // server/nft-holder-job.ts. Awarded once per fid, like referral_welcome.
@@ -67,10 +74,12 @@ export const POINTS: Record<string, { pts: number; dailyCap: number }> = {
 };
 
 // Build the CASE expression once (avoids repeating in every query).
-// Excludes gift_received/promotion/achievement — all three are handled via
-// payload-based variable-amount CASE branches instead of a fixed per-type pts.
+// Excludes gift_received/promotion/achievement/streak_bonus — all four are
+// handled via payload-based variable-amount CASE branches instead of a
+// fixed per-type pts.
+const VARIABLE_AMOUNT_TYPES = new Set(["gift_received", "promotion", "achievement", "streak_bonus"]);
 const CASE_EXPR = Object.entries(POINTS)
-  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && type !== "gift_received" && type !== "promotion" && type !== "achievement")
+  .filter(([type, v]) => v.pts > 0 && v.dailyCap > 0 && !VARIABLE_AMOUNT_TYPES.has(type))
   .map(([type, { pts, dailyCap }]) =>
     `WHEN '${type}' THEN LEAST(cnt * ${pts}, ${dailyCap})`)
   .join("\n      ");
@@ -88,6 +97,11 @@ const GIFT_CASE = `WHEN 'gift_received' THEN LEAST(COALESCE(gift_sum, 0), 500)`;
 const PROMO_CASE = `WHEN 'promotion' THEN LEAST(COALESCE(promo_sum, 0), 5000)`;
 // achievement: same pattern — each row is a one-time unlock worth payload->>'amount'.
 const ACHIEVEMENT_CASE = `WHEN 'achievement' THEN LEAST(COALESCE(achievement_sum, 0), 6000)`;
+// streak_bonus: same pattern — payload->>'amount' holds the milestone-scaled
+// award (see streakBonusPts in mini-routes.ts). Only one can land per day
+// (the streak check runs once/day), so POINTS.streak_bonus.dailyCap (6000)
+// is really the ceiling here, not this LEAST - kept for defense in depth.
+const STREAK_CASE = `WHEN 'streak_bonus' THEN LEAST(COALESCE(streak_sum, 0), 6000)`;
 
 // ── Core SQL ──────────────────────────────────────────────────────────────────
 
@@ -112,7 +126,10 @@ WITH counted AS (
                   ELSE 0 END) AS promo_sum,
          SUM(CASE WHEN action_type = 'achievement'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS achievement_sum
+                  ELSE 0 END) AS achievement_sum,
+         SUM(CASE WHEN action_type = 'streak_bonus'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS streak_sum
   FROM user_actions
   WHERE verified = true AND excluded = false AND ${MINT_GATE_SQL}
   GROUP BY fid, action_type, d
@@ -122,6 +139,7 @@ scored AS (
     ${GIFT_CASE}
     ${PROMO_CASE}
     ${ACHIEVEMENT_CASE}
+    ${STREAK_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -155,16 +173,20 @@ WITH counted AS (
                   ELSE 0 END) AS promo_sum,
          SUM(CASE WHEN action_type = 'achievement'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS achievement_sum
+                  ELSE 0 END) AS achievement_sum,
+         SUM(CASE WHEN action_type = 'streak_bonus'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS streak_sum
   FROM user_actions
   WHERE fid = $1 AND verified = true AND excluded = false
   GROUP BY action_type, d
 ),
 scored AS (
-  SELECT action_type, d, cnt, gift_sum, promo_sum, achievement_sum, CASE action_type
+  SELECT action_type, d, cnt, gift_sum, promo_sum, achievement_sum, streak_sum, CASE action_type
     ${GIFT_CASE}
     ${PROMO_CASE}
     ${ACHIEVEMENT_CASE}
+    ${STREAK_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -250,7 +272,10 @@ WITH counted AS (
                   ELSE 0 END) AS promo_sum,
          SUM(CASE WHEN action_type = 'achievement'
                   THEN COALESCE((payload->>'amount')::integer, 0)
-                  ELSE 0 END) AS achievement_sum
+                  ELSE 0 END) AS achievement_sum,
+         SUM(CASE WHEN action_type = 'streak_bonus'
+                  THEN COALESCE((payload->>'amount')::integer, 0)
+                  ELSE 0 END) AS streak_sum
   FROM user_actions
   WHERE fid = $1 AND verified = true AND excluded = false
     AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date
@@ -261,6 +286,7 @@ scored AS (
     ${GIFT_CASE}
     ${PROMO_CASE}
     ${ACHIEVEMENT_CASE}
+    ${STREAK_CASE}
     ${CASE_EXPR}
     ELSE 0
   END AS day_pts
@@ -357,7 +383,7 @@ export async function getPointsHistory(fid: number, limit = 50): Promise<History
   // display default, and showing it instead of the real amount misrepresented
   // exactly how many points that row actually earned (e.g. every promotion
   // row read "+50" regardless of its real scaled award, which can be up to 500).
-  const VARIABLE_TYPES = new Set(["gift_received", "promotion", "achievement"]);
+  const VARIABLE_TYPES = new Set(["gift_received", "promotion", "achievement", "streak_bonus"]);
   return rows.map(r => ({
     id:          Number(r.id),
     action_type: r.action_type,
