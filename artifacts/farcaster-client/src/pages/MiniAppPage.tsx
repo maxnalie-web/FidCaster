@@ -1186,16 +1186,32 @@ function NFTPassCard({ fid, ethAddress, qaToken, onMinted }: { fid: number; ethA
 // ONBOARDING (unchanged flow, restyled)
 // ─────────────────────────────────────────────────────────────────────────────
 const OB_STEPS = [
-  { Icon: Star,   title: "Welcome to FidCaster", hint: "Step 1 of 3" },
-  { Icon: Shield, title: "Mint Your Pass",        hint: "Step 2 of 3" },
-  { Icon: Globe,  title: "Join fidcaster.xyz",    hint: "Step 3 of 3" },
+  { Icon: Star,   title: "Welcome to FidCaster", hint: "Step 1 of 5" },
+  { Icon: Shield, title: "Mint Your Pass",        hint: "Step 2 of 5" },
+  { Icon: Users,  title: "Follow @fidcaster",     hint: "Step 3 of 5" },
+  { Icon: Home,   title: "Add the Mini App",      hint: "Step 4 of 5" },
+  { Icon: Globe,  title: "Join fidcaster.xyz",    hint: "Step 5 of 5" },
 ];
 
-function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: MiniCtx | null; qaToken: string | null; onComplete: () => void }) {
+const FIDCASTER_FARCASTER_URL = "https://farcaster.xyz/fidcaster";
+
+async function apiCheckFollow(fid: number): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/mini/check-follow?fid=${fid}`);
+    if (!r.ok) return false;
+    const d = await r.json();
+    return d.following === true;
+  } catch { return false; }
+}
+
+function OnboardingFlow({ fid, ctx, qaToken, added, addApp, onComplete }: { fid: number; ctx: MiniCtx | null; qaToken: string | null; added: boolean; addApp: () => void; onComplete: () => void }) {
   const [step,    setStep]    = useState(0);
   const [minted,  setMinted]  = useState(false);
   const [eligData, setEligData] = useState<EligibilityData | null>(null);
   const [eligLoad, setEligLoad] = useState(false);
+  const [followed, setFollowed] = useState(false);
+  const [followChecking, setFollowChecking] = useState(false);
+  const [followOpened, setFollowOpened] = useState(false);
 
   const username = ctx?.user?.username ?? `fid${fid}`;
   const pfpUrl   = ctx?.user?.pfpUrl ?? null;
@@ -1208,7 +1224,24 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
     }
   }, [step, fid, eligData, eligLoad]);
 
-  const canContinue = step === 0 || (step === 1 && minted && eligData?.eligible !== false);
+  const checkFollow = useCallback(() => {
+    setFollowChecking(true);
+    apiCheckFollow(fid).then(f => { setFollowed(f); setFollowChecking(false); });
+  }, [fid]);
+
+  // Auto-check the moment they come back to this tab after tapping "Follow"
+  // (which sends them out to Farcaster), on top of the manual check button -
+  // covers the case where they follow and just switch back without tapping
+  // anything else first.
+  useEffect(() => {
+    if (step !== 2 || !followOpened || followed) return;
+    const onVisible = () => { if (document.visibilityState === "visible") checkFollow(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [step, followOpened, followed, checkFollow]);
+
+  const canContinue = step === 0 || (step === 1 && minted && eligData?.eligible !== false)
+    || (step === 2 && followed) || step === 3;
 
   const stepContent = [
     <motion.div key="s0" {...slideIn} style={{ display:"flex", flexDirection:"column", gap:14 }}>
@@ -1296,6 +1329,71 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
 
     <motion.div key="s2" {...slideIn} style={{ display:"flex", flexDirection:"column", gap:14 }}>
       <p style={{ color:C.text2, fontSize:14, lineHeight:1.7 }}>
+        One last thing before you're in: follow <strong style={{ color:C.text1 }}>@fidcaster</strong> on Farcaster.
+        This is required to continue.
+      </p>
+      <a href={FIDCASTER_FARCASTER_URL} target="_blank" rel="noopener noreferrer"
+        onClick={() => setFollowOpened(true)}
+        style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+          padding:"15px 20px", borderRadius:14,
+          background:`linear-gradient(135deg,${C.accent} 0%,#A855F7 100%)`,
+          color:"#fff", fontWeight:800, fontSize:15, textDecoration:"none",
+          boxShadow:`0 4px 24px rgba(139,92,246,0.35)` }}>
+        <Users size={16} /> Follow @fidcaster <ExternalLink size={15} />
+      </a>
+      {followed ? (
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
+          background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.22)", borderRadius:14 }}>
+          <Check size={16} color={C.green} />
+          <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>You're following @fidcaster. Tap Continue.</p>
+        </div>
+      ) : (
+        <>
+          <button onClick={checkFollow} disabled={followChecking}
+            style={{ width:"100%", background:C.card, border:`1px solid ${C.border}`,
+              borderRadius:14, padding:"13px 20px", color:C.text1, fontSize:14, fontWeight:700,
+              cursor: followChecking ? "default" : "pointer",
+              display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            {followChecking
+              ? <><Loader2 size={15} className="animate-spin" /> Checking…</>
+              : <>I followed - Check</>}
+          </button>
+          {followOpened && !followChecking && (
+            <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
+              background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.20)", borderRadius:14 }}>
+              <Shield size={15} color={C.amber} />
+              <p style={{ color:C.amber, fontSize:13 }}>Not seeing it yet? Follow on Farcaster, then tap the button above.</p>
+            </div>
+          )}
+        </>
+      )}
+    </motion.div>,
+
+    <motion.div key="s3" {...slideIn} style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      <p style={{ color:C.text2, fontSize:14, lineHeight:1.7 }}>
+        Add FidCaster to your apps for quick access and notifications when you earn points or get gifted some.
+        Totally optional - you can skip this.
+      </p>
+      {added ? (
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px",
+          background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.22)", borderRadius:14 }}>
+          <Check size={16} color={C.green} />
+          <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>FidCaster added.</p>
+        </div>
+      ) : (
+        <button onClick={addApp}
+          style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+            padding:"15px 20px", borderRadius:14,
+            background:`linear-gradient(135deg,${C.accent} 0%,#A855F7 100%)`,
+            color:"#fff", fontWeight:800, fontSize:15, border:"none", cursor:"pointer",
+            boxShadow:`0 4px 24px rgba(139,92,246,0.35)` }}>
+          <Home size={16} /> Add Mini App
+        </button>
+      )}
+    </motion.div>,
+
+    <motion.div key="s4" {...slideIn} style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      <p style={{ color:C.text2, fontSize:14, lineHeight:1.7 }}>
         All earning activities happen on <strong style={{ color:C.amber }}>fidcaster.xyz</strong>. Create your account there.
       </p>
       <Card style={{ padding:"4px 0" }}>
@@ -1359,7 +1457,7 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
       <div style={{ position:"relative", zIndex:1, flex:1, padding:"4px 20px 20px", overflowY:"auto" }}>
         <AnimatePresence mode="wait">{stepContent[step]}</AnimatePresence>
       </div>
-      {step < 2 && (
+      {step < 4 && (
         <div style={{ position:"relative", zIndex:1, padding:"12px 20px 32px", display:"flex", gap:10 }}>
           {step > 0 && (
             <button onClick={() => setStep(s => s-1)}
@@ -1367,7 +1465,7 @@ function OnboardingFlow({ fid, ctx, qaToken, onComplete }: { fid: number; ctx: M
               <ArrowLeft size={16} />
             </button>
           )}
-          <button onClick={() => step < 2 ? setStep(s => s+1) : undefined}
+          <button onClick={() => step < 4 ? setStep(s => s+1) : undefined}
             disabled={!canContinue}
             style={{ flex:1, padding:"14px 20px", borderRadius:14, border:"none",
               background: canContinue ? `linear-gradient(135deg,${C.accent} 0%,#A855F7 100%)` : C.cardHi,
@@ -3727,7 +3825,7 @@ export function MiniAppPage() {
   if (!onboardChecked) return <LoadingScreen />;
 
   if (!onboarded) {
-    return <OnboardingFlow fid={fid} ctx={ctx} qaToken={qaToken} onComplete={completeOnboarding} />;
+    return <OnboardingFlow fid={fid} ctx={ctx} qaToken={qaToken} added={added} addApp={addApp} onComplete={completeOnboarding} />;
   }
 
   return <MainApp fid={fid} ctx={ctx} added={added} addApp={addApp} qaToken={qaToken} />;
