@@ -2603,7 +2603,11 @@ function GiftFeedTab({ fid }: { fid: number }) {
         </Card>
       ) : items.length === 0 ? (
         <Card style={{ padding:"36px 16px", textAlign:"center" }}>
-          <div style={{ fontSize:30, marginBottom:8 }}>🎁</div>
+          <div style={{ width:44, height:44, borderRadius:"50%", margin:"0 auto 10px",
+            background:"rgba(139,92,246,0.14)", border:"1px solid rgba(139,92,246,0.3)",
+            display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Gift size={20} color={C.accentHi} />
+          </div>
           <p style={{ color:C.text2, fontSize:13, fontWeight:600 }}>No gifts yet</p>
           <p style={{ color:C.text3, fontSize:11.5, marginTop:4 }}>Be the first to send one from the Allowance tab</p>
         </Card>
@@ -2671,15 +2675,20 @@ function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: n
 
   return (
     <motion.div key="earn-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      {/* Actions vs Allowance vs Feed — three separate concerns, one segmented switch */}
+      {/* Actions vs Allowance vs Feed — three separate concerns, one segmented switch.
+          Icons are the app's own SVG set (lucide), matching the site's brand
+          palette - no native color emoji here, they clash against the
+          controlled purple/violet UI everywhere else. */}
       <div style={{ display:"flex", gap:6, background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
         borderRadius:14, padding:4 }}>
-        {([["actions","Actions"],["allowance","Allowance"],["feed","🎁 Feed"]] as const).map(([id,label]) => (
+        {([["actions","Actions",LayoutList],["allowance","Allowance",Zap],["feed","Feed",Gift]] as const).map(([id,label,Icon]) => (
           <button key={id} onClick={() => setView(id)}
-            style={{ flex:1, padding:"9px 0", borderRadius:11, border:"none",
+            style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:5,
+              padding:"9px 0", borderRadius:11, border:"none",
               background: view===id ? `linear-gradient(135deg,${C.accent},#A855F7)` : "transparent",
               color: view===id ? "#fff" : C.text3, fontSize:13, fontWeight:700, cursor:"pointer",
               transition:"all 0.15s" }}>
+            <Icon size={13} />
             {label}
           </button>
         ))}
@@ -2692,10 +2701,15 @@ function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: n
       ) : (
         <div>
           <SectionLabel>Quests & Actions</SectionLabel>
-          <p style={{ color:C.text3, fontSize:11.5, lineHeight:1.6, marginBottom:12, marginTop:-4 }}>
-            These earn points when done through FidCaster, not from posting on Farcaster directly.
-            Farcaster activity earns through your Allowance instead (Promote / Gift).
-          </p>
+          <div style={{ display:"flex", gap:9, alignItems:"flex-start", padding:"11px 13px", marginBottom:12,
+            borderRadius:13, background:"rgba(139,92,246,0.1)", border:"1px solid rgba(139,92,246,0.28)" }}>
+            <Info size={14} color={C.accentHi} style={{ flexShrink:0, marginTop:1 }} />
+            <p style={{ color:C.text1, fontSize:12, lineHeight:1.6 }}>
+              These only earn points when done <strong style={{ color:C.accentHi }}>on FidCaster itself</strong> - posting
+              directly on Farcaster earns nothing here. Farcaster activity earns through your{" "}
+              <strong style={{ color:C.accentHi }}>Allowance</strong> instead (Promote / Gift).
+            </p>
+          </div>
           {/* Filter tabs */}
           <div style={{ display:"flex", gap:6, marginBottom:12, overflowX:"auto", paddingBottom:2 }}>
             {filters.map(f => (
@@ -2814,7 +2828,10 @@ function RewardsTab({ fid }: { fid: number }) {
         <Card glow>
           <div style={{ padding:"16px 16px 12px" }}>
             <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
-              <div style={{ fontSize:32 }}>🎁</div>
+              <div style={{ width:44, height:44, borderRadius:13, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+                background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.25))", border:"1px solid rgba(168,85,247,0.4)" }}>
+                <Share2 size={19} color={C.accentHi} />
+              </div>
               <div>
                 <p style={{ color:C.text1, fontWeight:700, fontSize:15 }}>Refer Friends</p>
                 <p style={{ color:C.text2, fontSize:12, marginTop:2 }}>
@@ -3589,7 +3606,7 @@ function MainApp({ fid, ctx, added, addApp, qaToken }: {
                 borderRadius:14, backdropFilter:"blur(16px)", whiteSpace:"nowrap" }}>
               <Gift size={16} color={C.green} />
               <p style={{ color:C.green, fontSize:13, fontWeight:600 }}>
-                🎁 Claimed {claimedPts.toLocaleString()} gifted points!
+                Claimed {claimedPts.toLocaleString()} gifted points!
               </p>
             </motion.div>
           </div>
