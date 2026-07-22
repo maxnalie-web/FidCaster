@@ -2462,49 +2462,61 @@ function AllowanceBarV2({ fid }: { fid: number }) {
           </p>
         </div>
 
-        {/* Promote / Gift, as two clean stacked rows instead of a cramped 2-col grid */}
-        <div style={{ borderTop:`1px solid ${C.border}` }}>
-          <a href={promoAvailable ? composeUrl(promoText) : undefined}
-            target="_blank" rel="noopener noreferrer"
-            onClick={promoAvailable ? () => window.dispatchEvent(new Event("fc:gift-or-promo-sent")) : (e) => e.preventDefault()}
-            style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 16px", textDecoration:"none",
-              borderBottom:`1px solid ${C.border}`, cursor: promoAvailable ? "pointer" : "default",
-              opacity: promoAvailable ? 1 : 0.5 }}>
-            <div style={{ width:36, height:36, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
-              background:"linear-gradient(145deg,rgba(139,92,246,0.35),rgba(88,28,135,0.25))", border:"1px solid rgba(168,85,247,0.4)" }}>
-              <Zap size={16} color={C.accentHi} />
+        {/* Promote / Gift - each its own card with an obvious, colored CTA
+            button so it's unmistakably tappable, not just a clickable row. */}
+        <div style={{ display:"flex", flexDirection:"column", gap:10, padding:"14px 16px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px", borderRadius:16,
+            background:"linear-gradient(135deg, rgba(139,92,246,0.14), rgba(88,28,135,0.06))",
+            border:"1px solid rgba(168,85,247,0.3)", opacity: promoAvailable ? 1 : 0.55 }}>
+            <div style={{ width:40, height:40, borderRadius:12, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+              background:"linear-gradient(145deg,rgba(139,92,246,0.4),rgba(88,28,135,0.3))", border:"1px solid rgba(168,85,247,0.5)",
+              boxShadow:"0 0 14px rgba(139,92,246,0.35)" }}>
+              <Zap size={18} color={C.accentHi} />
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               <p style={{ color:C.text1, fontSize:13.5, fontWeight:700 }}>Promote</p>
-              <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
-                {promoAvailable ? "Post about FidCaster on Farcaster" : "Today's promote limit reached - resets tomorrow"}
+              <p style={{ color:C.text3, fontSize:11, marginTop:1 }}>
+                {promoAvailable ? `Earn ${promoCost.toLocaleString()}, costs ${promoCost.toLocaleString()}` : "Limit reached - resets tomorrow"}
               </p>
             </div>
-            {promoAvailable && (
-              <div style={{ textAlign:"right", flexShrink:0 }}>
-                <p style={{ color:C.green, fontSize:13, fontWeight:800 }}>+{promoCost.toLocaleString()}</p>
-                <p style={{ color:C.text3, fontSize:10 }}>costs {promoCost.toLocaleString()}</p>
-              </div>
+            {promoAvailable ? (
+              <motion.a href={composeUrl(promoText)} target="_blank" rel="noopener noreferrer" whileTap={{ scale:0.94 }}
+                onClick={() => window.dispatchEvent(new Event("fc:gift-or-promo-sent"))}
+                style={{ display:"flex", alignItems:"center", gap:5, flexShrink:0, padding:"9px 14px", borderRadius:11,
+                  background:`linear-gradient(135deg,${C.accent},#A855F7)`, color:"#fff", fontSize:12.5, fontWeight:800,
+                  textDecoration:"none", boxShadow:"0 4px 14px rgba(139,92,246,0.4)" }}>
+                Promote <ArrowRight size={13} />
+              </motion.a>
+            ) : (
+              <span style={{ color:C.text3, fontSize:11, flexShrink:0 }}><Lock size={13} /></span>
             )}
-          </a>
-          <button onClick={() => setModal("gift")} disabled={data.giftRemaining <= 0}
-            style={{ display:"flex", alignItems:"center", gap:12, width:"100%", padding:"14px 16px", textAlign:"left",
-              background:"none", border:"none", fontFamily:"inherit",
-              cursor: data.giftRemaining > 0 ? "pointer" : "default", opacity: data.giftRemaining > 0 ? 1 : 0.5 }}>
-            <div style={{ width:36, height:36, borderRadius:11, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
-              background:"linear-gradient(145deg,rgba(52,211,153,0.3),rgba(6,95,70,0.25))", border:"1px solid rgba(52,211,153,0.4)" }}>
-              <Gift size={16} color={C.green} />
+          </div>
+
+          <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px", borderRadius:16,
+            background:"linear-gradient(135deg, rgba(52,211,153,0.12), rgba(6,95,70,0.05))",
+            border:"1px solid rgba(52,211,153,0.3)", opacity: data.giftRemaining > 0 ? 1 : 0.55 }}>
+            <div style={{ width:40, height:40, borderRadius:12, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+              background:"linear-gradient(145deg,rgba(52,211,153,0.35),rgba(6,95,70,0.3))", border:"1px solid rgba(52,211,153,0.5)",
+              boxShadow:"0 0 14px rgba(52,211,153,0.3)" }}>
+              <Gift size={18} color={C.green} />
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               <p style={{ color:C.text1, fontSize:13.5, fontWeight:700 }}>Gift Points</p>
-              <p style={{ color:C.text3, fontSize:11.5, marginTop:1 }}>
-                {data.giftRemaining > 0 ? "Send points to a friend" : "Today's gift limit reached - resets tomorrow"}
+              <p style={{ color:C.text3, fontSize:11, marginTop:1 }}>
+                {data.giftRemaining > 0 ? "Send to a friend, costs what you send" : "Limit reached - resets tomorrow"}
               </p>
             </div>
-            {data.giftRemaining > 0 && (
-              <p style={{ color:C.text3, fontSize:10, flexShrink:0 }}>costs what you send</p>
+            {data.giftRemaining > 0 ? (
+              <motion.button onClick={() => setModal("gift")} whileTap={{ scale:0.94 }}
+                style={{ display:"flex", alignItems:"center", gap:5, flexShrink:0, padding:"9px 14px", borderRadius:11,
+                  background:"linear-gradient(135deg,#34D399,#059669)", color:"#fff", fontSize:12.5, fontWeight:800,
+                  border:"none", cursor:"pointer", fontFamily:"inherit", boxShadow:"0 4px 14px rgba(52,211,153,0.35)" }}>
+                Send <Send size={13} />
+              </motion.button>
+            ) : (
+              <span style={{ color:C.text3, fontSize:11, flexShrink:0 }}><Lock size={13} /></span>
             )}
-          </button>
+          </div>
         </div>
 
         {/* Receiving is a separate cap from sending above - scaled by THIS
@@ -2531,8 +2543,114 @@ function AllowanceBarV2({ fid }: { fid: number }) {
   );
 }
 
-function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: number; pts: FidPts | null; stats: StatsData | null; loading: boolean; initialView?: "actions"|"allowance" }) {
-  const [view, setView] = useState<"actions"|"allowance">(initialView);
+interface GiftFeedItem {
+  id: number;
+  senderFid: number; senderUsername: string | null; senderPfpUrl: string | null;
+  recipientFid: number; recipientUsername: string | null; recipientPfpUrl: string | null;
+  amount: number; createdAt: string;
+}
+async function apiGiftFeed(limit = 20): Promise<GiftFeedItem[]> {
+  try {
+    const r = await fetch(`/api/gift/feed?limit=${limit}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return Array.isArray(d.feed) ? d.feed : [];
+  } catch { return []; }
+}
+
+function FeedAvatar({ pfpUrl, username, size = 30 }: { pfpUrl: string | null; username: string | null; size?: number }) {
+  return pfpUrl
+    ? <img src={pfpUrl} alt="" style={{ width:size, height:size, borderRadius:"50%", flexShrink:0, border:"1.5px solid rgba(255,255,255,0.15)" }} />
+    : <div style={{ width:size, height:size, borderRadius:"50%", flexShrink:0,
+        background:`linear-gradient(135deg,${C.accent},#A855F7)`, display:"flex", alignItems:"center", justifyContent:"center",
+        fontSize:size*0.36, fontWeight:800, color:"#fff" }}>
+        {(username || "?").slice(0,2).toUpperCase()}
+      </div>;
+}
+
+// Live-ish feed of recent gifts across every user - re-polled quietly on an
+// interval while this sub-tab is mounted (stops the moment the user leaves
+// it, so it's not another always-on background timer). AnimatePresence
+// handles new items sliding in from the top as they appear.
+function GiftFeedTab({ fid }: { fid: number }) {
+  const [items, setItems] = useState<GiftFeedItem[] | null>(null);
+
+  useEffect(() => {
+    let dead = false;
+    const load = () => apiGiftFeed(25).then(f => { if (!dead) setItems(f); });
+    load();
+    const timer = setInterval(load, 8000);
+    return () => { dead = true; clearInterval(timer); };
+  }, []);
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+          <span style={{ position:"relative", display:"flex", width:8, height:8 }}>
+            <motion.span animate={{ scale:[1,2.2], opacity:[0.7,0] }} transition={{ duration:1.6, repeat:Infinity, ease:"easeOut" }}
+              style={{ position:"absolute", inset:0, borderRadius:"50%", background:C.green }} />
+            <span style={{ width:8, height:8, borderRadius:"50%", background:C.green }} />
+          </span>
+          <SectionLabel>Live Gift Feed</SectionLabel>
+        </div>
+        <span style={{ color:C.text3, fontSize:10.5 }}>updates automatically</span>
+      </div>
+
+      {items === null ? (
+        <Card style={{ padding:"32px 16px", textAlign:"center" }}>
+          <Loader2 size={18} className="animate-spin" style={{ color:C.text3 }} />
+        </Card>
+      ) : items.length === 0 ? (
+        <Card style={{ padding:"36px 16px", textAlign:"center" }}>
+          <div style={{ fontSize:30, marginBottom:8 }}>🎁</div>
+          <p style={{ color:C.text2, fontSize:13, fontWeight:600 }}>No gifts yet</p>
+          <p style={{ color:C.text3, fontSize:11.5, marginTop:4 }}>Be the first to send one from the Allowance tab</p>
+        </Card>
+      ) : (
+        <Card style={{ overflow:"hidden" }}>
+          <AnimatePresence initial={false}>
+            {items.map((it, i) => {
+              const isMe = it.senderFid === fid || it.recipientFid === fid;
+              return (
+                <motion.div key={it.id} layout
+                  initial={{ opacity:0, height:0, y:-8 }}
+                  animate={{ opacity:1, height:"auto", y:0 }}
+                  exit={{ opacity:0, height:0 }}
+                  transition={{ duration:0.35 }}
+                  style={{ overflow:"hidden" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px",
+                    background: isMe ? "rgba(139,92,246,0.08)" : "transparent" }}>
+                    <FeedAvatar pfpUrl={it.senderPfpUrl} username={it.senderUsername} />
+                    <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                      <span style={{ color:C.text1, fontSize:12.5, fontWeight:700 }}>
+                        {it.senderUsername ?? `fid${it.senderFid}`}
+                      </span>
+                      <Gift size={12} color={C.green} />
+                      <span style={{ color:C.green, fontSize:12.5, fontWeight:800 }}>{it.amount.toLocaleString()}</span>
+                      <span style={{ color:C.text3, fontSize:12 }}>to</span>
+                      <span style={{ color:C.text1, fontSize:12.5, fontWeight:700 }}>
+                        {it.recipientUsername ?? `fid${it.recipientFid}`}
+                      </span>
+                    </div>
+                    <FeedAvatar pfpUrl={it.recipientPfpUrl} username={it.recipientUsername} size={26} />
+                    <span style={{ color:C.text3, fontSize:10, flexShrink:0, minWidth:34, textAlign:"right" }}>
+                      {timeAgo(it.createdAt)}
+                    </span>
+                  </div>
+                  {i < items.length - 1 && <div style={{ height:1, background:C.border, margin:"0 14px" }} />}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: number; pts: FidPts | null; stats: StatsData | null; loading: boolean; initialView?: "actions"|"allowance"|"feed" }) {
+  const [view, setView] = useState<"actions"|"allowance"|"feed">(initialView);
   useEffect(() => { setView(initialView); }, [initialView]);
 
   const [filter, setFilter] = useState<"all"|"social"|"market"|"referral">("all");
@@ -2553,10 +2671,10 @@ function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: n
 
   return (
     <motion.div key="earn-tab" {...slideUp} style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      {/* Actions vs Allowance — two separate concerns, one segmented switch */}
+      {/* Actions vs Allowance vs Feed — three separate concerns, one segmented switch */}
       <div style={{ display:"flex", gap:6, background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`,
         borderRadius:14, padding:4 }}>
-        {([["actions","Actions"],["allowance","Allowance"]] as const).map(([id,label]) => (
+        {([["actions","Actions"],["allowance","Allowance"],["feed","🎁 Feed"]] as const).map(([id,label]) => (
           <button key={id} onClick={() => setView(id)}
             style={{ flex:1, padding:"9px 0", borderRadius:11, border:"none",
               background: view===id ? `linear-gradient(135deg,${C.accent},#A855F7)` : "transparent",
@@ -2569,6 +2687,8 @@ function EarnTab({ fid, pts, stats, loading, initialView = "actions" }: { fid: n
 
       {view === "allowance" ? (
         <AllowanceBarV2 fid={fid} />
+      ) : view === "feed" ? (
+        <GiftFeedTab fid={fid} />
       ) : (
         <div>
           <SectionLabel>Quests & Actions</SectionLabel>

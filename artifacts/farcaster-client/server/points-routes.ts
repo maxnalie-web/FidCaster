@@ -18,6 +18,7 @@ import { isLedgerConfigured, touchUser } from "./db/ledger.js";
 import { getAllowance, claimAndLogPending, giftReceiveCap, getGiftReceivedFromSenderToday } from "./db/allowance.js";
 import { fetchNeynarUsers } from "./mini-routes.js";
 import { resolveUsernameToFid } from "./promotion-watcher.js";
+import { getPool } from "./db/pool.js";
 
 const FID_MAX = 1_000_000_000;
 function validFid(v: unknown): v is number {
@@ -129,6 +130,46 @@ export function registerPointsRoutes(app: Express): void {
     } catch (e) {
       console.error("[gift] lookup error:", e);
       res.status(500).json({ error: "Failed to look up recipient" });
+    }
+  });
+
+  // ── Gift feed: recent gifts across every user, for the live "Feed" sub-tab
+  //    in the mini app's Earn/Allowance view. Reads the sender-side 'gift'
+  //    ledger rows (one per gift attempt that got far enough to debit
+  //    allowance) - payload already has both fids and the amount, no join
+  //    needed. Public and read-only, same rate limit as the leaderboard. ────
+  app.get("/api/gift/feed", readLimiter, async (req: Request, res: Response) => {
+    if (!isLedgerConfigured()) { res.status(503).json({ error: "Ledger not configured" }); return; }
+    const pool = getPool();
+    if (!pool) { res.status(503).json({ error: "DB not available" }); return; }
+    const limit = Math.min(Number(req.query.limit ?? 20), 50);
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, fid AS sender_fid, (payload->>'recipientFid')::bigint AS recipient_fid,
+                (payload->>'amount')::integer AS amount, created_at
+         FROM user_actions
+         WHERE action_type = 'gift' AND verified = true AND excluded = false
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [limit],
+      );
+      const fids = [...new Set(rows.flatMap(r => [Number(r.sender_fid), Number(r.recipient_fid)]))];
+      const userMap = await fetchNeynarUsers(fids);
+      const feed = rows.map(r => {
+        const sender = userMap.get(Number(r.sender_fid));
+        const recipient = userMap.get(Number(r.recipient_fid));
+        return {
+          id: Number(r.id),
+          senderFid: Number(r.sender_fid), senderUsername: sender?.username ?? null, senderPfpUrl: sender?.pfpUrl ?? null,
+          recipientFid: Number(r.recipient_fid), recipientUsername: recipient?.username ?? null, recipientPfpUrl: recipient?.pfpUrl ?? null,
+          amount: Number(r.amount),
+          createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        };
+      });
+      res.json({ feed });
+    } catch (e) {
+      console.error("[gift] feed error:", e);
+      res.status(500).json({ error: "Failed to fetch gift feed" });
     }
   });
 
